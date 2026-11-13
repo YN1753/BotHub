@@ -1,0 +1,84 @@
+package main
+
+import (
+	"context"
+	"embed"
+	"errors"
+	"flag"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/YN1753/vesper/bothub/internal/modules"
+	"github.com/YN1753/vesper/bothub/internal/pushplus"
+	"github.com/YN1753/vesper/bothub/internal/scheduler"
+	"github.com/YN1753/vesper/bothub/internal/server"
+	"github.com/YN1753/vesper/bothub/internal/store"
+)
+
+//go:embed static/*
+var staticFiles embed.FS
+
+func main() {
+	defaultAddr := envOr("BOTHUB_ADDR", ":8080")
+	defaultDB := envOr("BOTHUB_DB", "./data/bothub.db")
+
+	addr := flag.String("addr", defaultAddr, "HTTP listen address")
+	dbPath := flag.String("db", defaultDB, "SQLite database file path")
+	flag.Parse()
+
+	st, err := store.Open(*dbPath)
+	if err != nil {
+		log.Fatalf("[bothub] failed to open sqlite store (%s): %v", *dbPath, err)
+	}
+	defer st.Close()
+
+	pushClient := pushplus.NewClient(st)
+	morningMod := modules.NewMorningModule(st, pushClient)
+	radarMod := modules.NewRadarModule(st, pushClient)
+
+	sched := scheduler.New(st, morningMod, radarMod)
+	if err := sched.Start(); err != nil {
+		log.Fatalf("[bothub] failed to start scheduler: %v", err)
+	}
+	defer sched.Stop()
+
+	srvHandler, err := server.New(st, sched, pushClient, staticFiles)
+	if err != nil {
+		log.Fatalf("[bothub] failed to initialize http server: %v", err)
+	}
+
+	httpSrv := &http.Server{
+		Addr:              *addr,
+		Handler:           srvHandler.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	go func() {
+		log.Printf("[bothub] Vesper BotHub listening on %s (db=%s)", *addr, *dbPath)
+		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("[bothub] http server error: %v", err)
+		}
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+
+	log.Println("[bothub] shutting down gracefully...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = httpSrv.Shutdown(ctx)
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}

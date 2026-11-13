@@ -1,0 +1,15 @@
+# Compiled binaries
+bothub
+bothub-linux-amd64
+*.exe
+
+# Local SQLite database & runtime data
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
