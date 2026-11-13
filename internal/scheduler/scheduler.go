@@ -204,6 +204,10 @@ func (s *Scheduler) moduleConfig(id string) (bool, string) {
 		en, _ := s.store.GetConfig(store.KeyRadarEnabled)
 		cr, _ := s.store.GetConfig(store.KeyRadarCron)
 		return en != "false", cr
+	case "asset_watcher":
+		en, _ := s.store.GetConfig(store.KeyAssetWatcherEnabled)
+		cr, _ := s.store.GetConfig(store.KeyAssetWatcherCron)
+		return en != "false", cr
 	default:
 		return false, ""
 	}

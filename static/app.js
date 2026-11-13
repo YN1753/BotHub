@@ -5,13 +5,20 @@
   const loginError = document.getElementById("login-error");
   const toastEl = document.getElementById("toast");
 
+  // Modal elements
+  const modalOverlay = document.getElementById("asset-modal-overlay");
+  const closeModalBtn = document.getElementById("close-modal-btn");
+  const cancelModalBtn = document.getElementById("cancel-modal-btn");
+  const assetEditForm = document.getElementById("asset-edit-form");
+
   let toastTimer = null;
+  let cachedAssets = [];
 
   function showToast(msg) {
     toastEl.textContent = msg;
     toastEl.classList.remove("hidden");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 3200);
+    toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 3400);
   }
 
   function esc(str) {
@@ -32,6 +39,14 @@
     if (h < 24) return `${h}h ${m % 60}m`;
     const d = Math.floor(h / 24);
     return `${d}d ${h % 24}h`;
+  }
+
+  function formatDueDate(str) {
+    if (!str) return "--";
+    const d = new Date(str);
+    if (isNaN(d.getTime())) return str;
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   async function api(path, opts = {}) {
@@ -79,6 +94,7 @@
     try {
       const data = await api("/api/dashboard");
       renderStats(data);
+      renderAssets(data.assets || []);
       renderModules(data.modules || []);
       fillConfig(data.configs || {});
       renderLogs(data.push_logs || []);
@@ -89,12 +105,173 @@
 
   function renderStats(data) {
     const stats = data.stats || {};
+    document.getElementById("stat-assets").textContent = stats.total_assets ?? 0;
     document.getElementById("stat-sent").textContent = stats.sent_pushes ?? 0;
-    document.getElementById("stat-total").textContent = stats.total_pushes ?? 0;
     document.getElementById("stat-seen").textContent = stats.seen_items ?? 0;
     document.getElementById("stat-time").textContent = data.server_now || "--";
     document.getElementById("uptime-label").textContent = `UPTIME ${formatUptime(data.uptime_sec)}`;
   }
+
+  function renderAssets(assets) {
+    cachedAssets = assets;
+    const grid = document.getElementById("assets-grid");
+    if (!assets.length) {
+      grid.innerHTML = `<div class="empty-state">暂无追踪中的资产与会员，可配置或初始化资产表</div>`;
+      return;
+    }
+
+    grid.innerHTML = assets.map((a) => {
+      let catClass = "cat-life";
+      let catLabel = "生活订阅";
+      if (a.category === "compute") {
+        catClass = "cat-compute";
+        catLabel = "算力基建";
+      } else if (a.category === "domain") {
+        catClass = "cat-domain";
+        catLabel = "核心域名";
+      }
+
+      let daysClass = "days-safe";
+      let daysText = `剩余 ${a.days_left} 天`;
+      if (a.days_left < 0) {
+        daysClass = "days-danger";
+        daysText = `已逾期 ${Math.abs(a.days_left)} 天`;
+      } else if (a.days_left <= 3) {
+        daysClass = "days-danger";
+      } else if (a.days_left <= 7) {
+        daysClass = "days-warn";
+      }
+
+      const isTrial = (a.price && a.price.includes("活动")) ||
+                      (a.status && a.status.includes("活动")) ||
+                      (a.extra_config && a.extra_config.includes('"is_trial":true')) ||
+                      a.id === "qq_music";
+
+      return `
+        <article class="glass-card asset-card" data-id="${esc(a.id)}">
+          <div class="asset-head">
+            <div class="asset-title-block">
+              <h3 class="serif-title asset-name">
+                <span>${esc(a.name)}</span>
+              </h3>
+              <p class="asset-spec mono">${esc(a.spec || a.category)}</p>
+            </div>
+            <span class="category-tag ${catClass}">${esc(catLabel)}</span>
+          </div>
+
+          <div class="asset-countdown">
+            <span class="countdown-label">扣费 / 到期倒计时</span>
+            <span class="days-badge ${daysClass}">${esc(daysText)}</span>
+          </div>
+
+          <div class="asset-details mono">
+            <div class="detail-row">
+              <span>金额与周期</span>
+              <strong>${esc(a.price || "--")}</strong>
+            </div>
+            <div class="detail-row">
+              <span>当前状态</span>
+              <strong>${esc(a.status || "--")}</strong>
+            </div>
+            <div class="detail-row" style="grid-column: 1 / -1;">
+              <span>到期时间 (CST)</span>
+              <strong>${esc(formatDueDate(a.due_date))}</strong>
+            </div>
+          </div>
+
+          ${isTrial ? `
+            <div class="trial-alert-box">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+              <span>防自动扣款：活动体验到期前请确认是否已关闭免密续费</span>
+            </div>
+          ` : ""}
+
+          <div class="asset-footer">
+            <span class="auto-renew-tag ${a.auto_renew ? "on" : ""}">
+              自动续费: ${a.auto_renew ? "已开启" : "已关闭"}
+            </span>
+            <button type="button" class="btn btn-ghost btn-sm edit-asset-btn" data-id="${esc(a.id)}">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              <span>编辑 / 凭证</span>
+            </button>
+          </div>
+        </article>
+      `;
+    }).join("");
+
+    grid.querySelectorAll(".edit-asset-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.id;
+        const target = cachedAssets.find((item) => item.id === id);
+        if (target) {
+          openAssetModal(target);
+        }
+      });
+    });
+  }
+
+  function openAssetModal(asset) {
+    document.getElementById("modal-asset-title").textContent = `编辑资产 · ${asset.name}`;
+    document.getElementById("edit-asset-id").value = asset.id;
+    document.getElementById("edit-asset-name").value = asset.name || "";
+    document.getElementById("edit-asset-category").value = asset.category || "life";
+    document.getElementById("edit-asset-spec").value = asset.spec || "";
+    document.getElementById("edit-asset-price").value = asset.price || "";
+    document.getElementById("edit-asset-due").value = asset.due_date || "";
+    document.getElementById("edit-asset-status").value = asset.status || "";
+    document.getElementById("edit-asset-autorenew").value = asset.auto_renew ? "true" : "false";
+    document.getElementById("edit-asset-warndays").value = asset.warn_days || "[7, 3, 1]";
+
+    let extraStr = "{}";
+    try {
+      if (asset.extra_config) {
+        extraStr = JSON.stringify(JSON.parse(asset.extra_config), null, 2);
+      }
+    } catch {
+      extraStr = asset.extra_config || "{}";
+    }
+    document.getElementById("edit-asset-extra").value = extraStr;
+
+    modalOverlay.classList.remove("hidden");
+  }
+
+  function closeAssetModal() {
+    modalOverlay.classList.add("hidden");
+  }
+
+  closeModalBtn.addEventListener("click", closeAssetModal);
+  cancelModalBtn.addEventListener("click", closeAssetModal);
+  modalOverlay.addEventListener("click", (e) => {
+    if (e.target === modalOverlay) closeAssetModal();
+  });
+
+  assetEditForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = document.getElementById("edit-asset-id").value;
+    const payload = {
+      name: document.getElementById("edit-asset-name").value.trim(),
+      category: document.getElementById("edit-asset-category").value,
+      spec: document.getElementById("edit-asset-spec").value.trim(),
+      price: document.getElementById("edit-asset-price").value.trim(),
+      due_date: document.getElementById("edit-asset-due").value.trim(),
+      status: document.getElementById("edit-asset-status").value.trim(),
+      auto_renew: document.getElementById("edit-asset-autorenew").value === "true",
+      warn_days: document.getElementById("edit-asset-warndays").value.trim(),
+      extra_config: document.getElementById("edit-asset-extra").value.trim(),
+    };
+
+    try {
+      await api(`/api/assets/${encodeURIComponent(id)}`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      showToast("资产与凭证更新成功");
+      closeAssetModal();
+      await loadDashboard();
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
 
   function renderModules(mods) {
     const grid = document.getElementById("modules-grid");
@@ -197,6 +374,9 @@
     document.getElementById("cfg-nezha-url").value = cfg.nezha_url || "";
     document.getElementById("cfg-radar-enabled").value = cfg.radar_enabled || "true";
     document.getElementById("cfg-radar-cron").value = cfg.radar_cron || "0 12,20 * * *";
+    document.getElementById("cfg-asset-watcher-enabled").value = cfg.asset_watcher_enabled || "true";
+    document.getElementById("cfg-asset-watcher-cron").value = cfg.asset_watcher_cron || "0 3 * * *";
+    document.getElementById("cfg-cf-api-token").value = cfg.cf_api_token || "";
     document.getElementById("cfg-hn-score").value = cfg.radar_hn_min_score || "120";
     document.getElementById("cfg-radar-limit").value = cfg.radar_limit || "8";
     document.getElementById("cfg-pushplus-token").value = cfg.pushplus_token || "";
@@ -276,6 +456,27 @@
     }
   });
 
+  document.getElementById("sync-assets-btn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const origHTML = btn.innerHTML;
+    btn.innerHTML = `<span class="dot dot-live"></span><span>嗅探同步中...</span>`;
+    try {
+      const res = await api("/api/modules/asset_watcher/run", { method: "POST" });
+      if (res.ok) {
+        showToast(res.summary || "资产嗅探同步完成");
+      } else {
+        showToast(`嗅探提示: ${res.error || res.summary}`);
+      }
+      await loadDashboard();
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = origHTML;
+    }
+  });
+
   document.getElementById("config-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const payload = {
@@ -285,6 +486,9 @@
       nezha_url: document.getElementById("cfg-nezha-url").value.trim(),
       radar_enabled: document.getElementById("cfg-radar-enabled").value,
       radar_cron: document.getElementById("cfg-radar-cron").value.trim(),
+      asset_watcher_enabled: document.getElementById("cfg-asset-watcher-enabled").value,
+      asset_watcher_cron: document.getElementById("cfg-asset-watcher-cron").value.trim(),
+      cf_api_token: document.getElementById("cfg-cf-api-token").value.trim(),
       radar_hn_min_score: document.getElementById("cfg-hn-score").value.trim(),
       radar_limit: document.getElementById("cfg-radar-limit").value.trim(),
       pushplus_token: document.getElementById("cfg-pushplus-token").value.trim(),

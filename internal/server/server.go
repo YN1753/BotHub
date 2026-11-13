@@ -54,11 +54,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 
+	// Public Sanitized Read-only Assets Overview (with CORS support)
+	mux.HandleFunc("OPTIONS /api/v1/assets/overview", s.handleCORSPreflight)
+	mux.HandleFunc("GET /api/v1/assets/overview", s.handlePublicAssetsOverview)
+
+	// Authenticated Management Endpoints
 	mux.HandleFunc("GET /api/dashboard", s.requireAuth(s.handleDashboard))
 	mux.HandleFunc("POST /api/config", s.requireAuth(s.handleUpdateConfig))
 	mux.HandleFunc("POST /api/auth/password", s.requireAuth(s.handleUpdatePassword))
 	mux.HandleFunc("POST /api/modules/{id}/run", s.requireAuth(s.handleRunModule))
 	mux.HandleFunc("POST /api/test-push", s.requireAuth(s.handleTestPush))
+
+	// Authenticated Asset Management Endpoints
+	mux.HandleFunc("GET /api/assets", s.requireAuth(s.handleListAssets))
+	mux.HandleFunc("POST /api/assets/{id}", s.requireAuth(s.handleUpdateAsset))
 
 	fileServer := http.FileServer(http.FS(s.staticFS))
 	mux.Handle("GET /", fileServer)
@@ -81,6 +90,35 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"service":    "vesper-bothub",
 		"uptime_sec": int64(time.Since(s.startedAt).Seconds()),
 		"time":       store.NowShanghai(),
+	})
+}
+
+func (s *Server) handleCORSPreflight(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handlePublicAssetsOverview(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+	list, err := s.store.GetPublicAssets()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"code":    1,
+			"message": "获取资产概览失败: " + err.Error(),
+			"data":    []any{},
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"code":       0,
+		"data":       list,
+		"updated_at": store.NowShanghai(),
 	})
 }
 
@@ -133,6 +171,12 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
 }
 
+type AdminAssetItem struct {
+	store.Asset
+	DaysLeft int  `json:"days_left"`
+	WarnFlag bool `json:"warn_flag"`
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	mods, err := s.scheduler.Status()
 	if err != nil {
@@ -154,16 +198,132 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rawAssets, err := s.store.ListAssets()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "读取资产列表失败")
+		return
+	}
+
+	adminAssets := make([]AdminAssetItem, 0, len(rawAssets))
+	for _, a := range rawAssets {
+		days, _ := store.CalculateDaysLeft(a.DueDate)
+		warnFlag := (days >= 0 && days <= 7) || (a.Status == "即将到期" || a.Status == "已到期")
+		adminAssets = append(adminAssets, AdminAssetItem{
+			Asset:    a,
+			DaysLeft: days,
+			WarnFlag: warnFlag,
+		})
+	}
+
 	stats, _ := s.store.CountStats()
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"modules":    mods,
 		"configs":    cfgs,
+		"assets":     adminAssets,
 		"push_logs":  logs,
 		"stats":      stats,
 		"uptime_sec": int64(time.Since(s.startedAt).Seconds()),
 		"server_now": store.NowShanghai(),
 	})
+}
+
+func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
+	rawAssets, err := s.store.ListAssets()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "读取资产失败: "+err.Error())
+		return
+	}
+
+	adminAssets := make([]AdminAssetItem, 0, len(rawAssets))
+	for _, a := range rawAssets {
+		days, _ := store.CalculateDaysLeft(a.DueDate)
+		warnFlag := (days >= 0 && days <= 7) || (a.Status == "即将到期" || a.Status == "已到期")
+		adminAssets = append(adminAssets, AdminAssetItem{
+			Asset:    a,
+			DaysLeft: days,
+			WarnFlag: warnFlag,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"assets": adminAssets,
+	})
+}
+
+type updateAssetRequest struct {
+	Name        string `json:"name"`
+	Category    string `json:"category"`
+	Spec        string `json:"spec"`
+	Price       string `json:"price"`
+	Status      string `json:"status"`
+	DueDate     string `json:"due_date"`
+	AutoRenew   bool   `json:"auto_renew"`
+	WarnDays    string `json:"warn_days"`
+	ExtraConfig string `json:"extra_config"`
+}
+
+func (s *Server) handleUpdateAsset(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if strings.TrimSpace(id) == "" {
+		writeError(w, http.StatusBadRequest, "资产 ID 不能为空")
+		return
+	}
+
+	existing, err := s.store.GetAsset(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "读取资产失败: "+err.Error())
+		return
+	}
+	if existing == nil {
+		writeError(w, http.StatusNotFound, "未找到目标资产: "+id)
+		return
+	}
+
+	var req updateAssetRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效的请求格式")
+		return
+	}
+
+	if req.Name != "" {
+		existing.Name = strings.TrimSpace(req.Name)
+	}
+	if req.Category != "" {
+		existing.Category = strings.TrimSpace(req.Category)
+	}
+	if req.Spec != "" {
+		existing.Spec = strings.TrimSpace(req.Spec)
+	}
+	if req.Price != "" {
+		existing.Price = strings.TrimSpace(req.Price)
+	}
+	if req.Status != "" {
+		existing.Status = strings.TrimSpace(req.Status)
+	}
+	if req.DueDate != "" {
+		existing.DueDate = strings.TrimSpace(req.DueDate)
+	}
+	existing.AutoRenew = req.AutoRenew
+	if req.WarnDays != "" {
+		existing.WarnDays = strings.TrimSpace(req.WarnDays)
+	}
+	if req.ExtraConfig != "" {
+		// Validate JSON format
+		var test map[string]any
+		if err := json.Unmarshal([]byte(req.ExtraConfig), &test); err != nil {
+			writeError(w, http.StatusBadRequest, "额外配置需为有效 JSON")
+			return
+		}
+		existing.ExtraConfig = req.ExtraConfig
+	}
+
+	existing.LastCheckedAt = store.NowShanghai()
+	if err := s.store.SaveAsset(*existing); err != nil {
+		writeError(w, http.StatusInternalServerError, "保存资产更新失败: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "资产更新成功"})
 }
 
 func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
@@ -174,15 +334,18 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allowed := map[string]bool{
-		store.KeyMorningEnabled:  true,
-		store.KeyMorningCron:     true,
-		store.KeyMorningCity:     true,
-		store.KeyNezhaURL:        true,
-		store.KeyRadarEnabled:    true,
-		store.KeyRadarCron:       true,
-		store.KeyRadarHNMinScore: true,
-		store.KeyRadarLimit:      true,
-		store.KeyPushPlusToken:   true,
+		store.KeyMorningEnabled:      true,
+		store.KeyMorningCron:         true,
+		store.KeyMorningCity:         true,
+		store.KeyNezhaURL:            true,
+		store.KeyRadarEnabled:        true,
+		store.KeyRadarCron:           true,
+		store.KeyRadarHNMinScore:     true,
+		store.KeyRadarLimit:          true,
+		store.KeyAssetWatcherEnabled: true,
+		store.KeyAssetWatcherCron:    true,
+		store.KeyCFAPIToken:          true,
+		store.KeyPushPlusToken:       true,
 	}
 
 	for k, v := range updates {
@@ -190,13 +353,13 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		val := strings.TrimSpace(v)
-		if k == store.KeyMorningCron || k == store.KeyRadarCron {
+		if k == store.KeyMorningCron || k == store.KeyRadarCron || k == store.KeyAssetWatcherCron {
 			if _, err := cron.ParseStandard(val); err != nil {
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("Cron 表达式无效 (%s): %v", val, err))
 				return
 			}
 		}
-		if k == store.KeyMorningEnabled || k == store.KeyRadarEnabled {
+		if k == store.KeyMorningEnabled || k == store.KeyRadarEnabled || k == store.KeyAssetWatcherEnabled {
 			if val != "true" && val != "false" {
 				writeError(w, http.StatusBadRequest, "开关字段必须为 true 或 false")
 				return

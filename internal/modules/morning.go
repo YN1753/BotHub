@@ -82,6 +82,20 @@ func (m *MorningModule) Run(ctx context.Context) (RunResult, error) {
 
 	sb.WriteString("#### 3. 每日短句\n")
 	sb.WriteString(fmt.Sprintf("> %s\n\n", quote))
+
+	expiringAssets, _ := m.store.GetExpiringAssets(7)
+	if len(expiringAssets) > 0 {
+		sb.WriteString("#### 4. 数字资产临期提醒\n")
+		for _, a := range expiringAssets {
+			specDesc := a.Spec
+			if specDesc == "" {
+				specDesc = a.Name
+			}
+			sb.WriteString(fmt.Sprintf("- **临期资产**：%s（%s · 剩余 %d 天）\n", a.Name, specDesc, a.DaysLeft))
+		}
+		sb.WriteString("\n")
+	}
+
 	sb.WriteString("---\n")
 	sb.WriteString("*来自 Vesper BotHub · bot.starryheavens.uk*")
 
