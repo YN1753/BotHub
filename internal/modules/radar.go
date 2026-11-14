@@ -43,17 +43,54 @@ type hnStory struct {
 }
 
 func (r *RadarModule) Run(ctx context.Context) (RunResult, error) {
+	return r.RunWithTask(ctx, store.Task{
+		ID:   "radar",
+		Name: "全网开源技术雷达",
+		Type: "radar",
+	})
+}
+
+func (r *RadarModule) RunWithTask(ctx context.Context, task store.Task) (RunResult, error) {
 	limit := 8
-	if v, _ := r.store.GetConfig(store.KeyRadarLimit); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			limit = n
+	minScore := 120
+
+	var params map[string]any
+	_ = json.Unmarshal([]byte(task.Params), &params)
+	if params != nil {
+		if v, ok := params["limit"]; ok {
+			switch n := v.(type) {
+			case float64: if int(n) > 0 { limit = int(n) }
+			case int: if n > 0 { limit = n }
+			case string: if p, err := strconv.Atoi(n); err == nil && p > 0 { limit = p }
+			}
+		}
+		if v, ok := params["hn_min_score"]; ok {
+			switch n := v.(type) {
+			case float64: if int(n) > 0 { minScore = int(n) }
+			case int: if n > 0 { minScore = n }
+			case string: if p, err := strconv.Atoi(n); err == nil && p > 0 { minScore = p }
+			}
 		}
 	}
-	minScore := 120
-	if v, _ := r.store.GetConfig(store.KeyRadarHNMinScore); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			minScore = n
+
+	if limit == 8 {
+		if v, _ := r.store.GetConfig(store.KeyRadarLimit); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				limit = n
+			}
 		}
+	}
+	if minScore == 120 {
+		if v, _ := r.store.GetConfig(store.KeyRadarHNMinScore); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				minScore = n
+			}
+		}
+	}
+
+	taskName := task.Name
+	if taskName == "" {
+		taskName = "Vesper 开源技术雷达"
 	}
 
 	var ghRepos []ghRepo
@@ -96,7 +133,7 @@ func (r *RadarModule) Run(ctx context.Context) (RunResult, error) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### Vesper 开源技术雷达 · %s\n\n", time.Now().In(ShanghaiLocation()).Format("2006-01-02 15:04")))
+	sb.WriteString(fmt.Sprintf("### %s · %s\n\n", taskName, time.Now().In(ShanghaiLocation()).Format("2006-01-02 15:04")))
 
 	if len(freshGH) > 0 {
 		sb.WriteString("#### 1. GitHub Trending 每日热门\n")
@@ -122,9 +159,9 @@ func (r *RadarModule) Run(ctx context.Context) (RunResult, error) {
 	}
 
 	sb.WriteString("---\n*来自 Vesper BotHub · bot.starryheavens.uk*")
-	title := fmt.Sprintf("技术雷达 · 新增 %d 条精选（GH %d / HN %d）", totalNew, len(freshGH), len(freshHN))
+	title := fmt.Sprintf("%s · 新增 %d 条精选（GH %d / HN %d）", taskName, totalNew, len(freshGH), len(freshHN))
 
-	if err := r.push.SendMarkdown(ctx, r.ID(), title, sb.String()); err != nil {
+	if err := r.push.SendMarkdown(ctx, task.ID, title, sb.String()); err != nil {
 		return RunResult{Summary: "推送失败: " + err.Error()}, err
 	}
 

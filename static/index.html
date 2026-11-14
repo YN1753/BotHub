@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BotHub · Vesper 自动化情报与推送中枢</title>
-  <link rel="stylesheet" href="/styles.css?v=v1.2.0" />
+  <link rel="stylesheet" href="/styles.css?v=v1.3.0" />
 </head>
 <body>
   <canvas id="starfield" aria-hidden="true"></canvas>
@@ -32,7 +32,7 @@
         <span class="topbar-sub mono">bot.starryheavens.uk</span>
       </div>
       <div class="topbar-actions">
-        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v1.2.0</span></span>
+        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v1.3.0</span></span>
         <span class="stat-pill mono" id="uptime-label">UPTIME 0s</span>
         <button id="test-push-btn" class="btn btn-ghost" type="button">测试推送</button>
         <button id="refresh-btn" class="btn btn-ghost" type="button">刷新</button>
@@ -75,13 +75,18 @@
       <div id="assets-grid" class="assets-grid"></div>
     </section>
 
-    <!-- Modules Grid -->
+    <!-- Tasks Engine Grid -->
     <section class="section-block">
       <div class="section-head">
-        <h2 class="serif-title section-title">调度模块状态</h2>
-        <span class="section-hint">定时 Cron 轮询与单次即时触发</span>
+        <div>
+          <h2 class="serif-title section-title">自动化情报与调度任务 (Tasks Engine)</h2>
+          <span class="section-hint">动态模板引擎 · 支持面板自主创建、编辑与删除</span>
+        </div>
+        <div class="section-actions">
+          <button id="add-task-btn" class="btn btn-ghost" type="button">+ 创建任务</button>
+        </div>
       </div>
-      <div id="modules-grid" class="modules-grid"></div>
+      <div id="tasks-grid" class="modules-grid"></div>
     </section>
 
     <!-- Config & History (Two Columns) -->
@@ -226,8 +231,66 @@
     </div>
   </div>
 
+  <!-- Task Edit/Create Modal -->
+  <div id="task-modal-overlay" class="modal-overlay hidden">
+    <div class="glass-card modal-card">
+      <div class="modal-header">
+        <h3 class="serif-title" id="modal-task-title">创建情报调度任务</h3>
+        <button id="close-task-modal-btn" class="btn btn-ghost btn-sm" type="button">关闭</button>
+      </div>
+
+      <form id="task-edit-form" class="modal-body">
+        <input type="hidden" id="edit-task-id-hidden" />
+        <div class="form-grid">
+          <div class="form-field full-width" id="wrap-task-id">
+            <label for="edit-task-id">任务唯一标识 (ID，英文小写/下划线)</label>
+            <input id="edit-task-id" class="glass-input mono" placeholder="如 morning_tokyo / radar_weekend" required />
+          </div>
+          <div class="form-field">
+            <label for="edit-task-name">任务名称</label>
+            <input id="edit-task-name" class="glass-input" placeholder="如 东京晨间早报" required />
+          </div>
+          <div class="form-field">
+            <label for="edit-task-type">任务模板类型</label>
+            <select id="edit-task-type" class="glass-input">
+              <option value="morning">晨报小秘书模板 (morning)</option>
+              <option value="radar">开源技术雷达模板 (radar)</option>
+              <option value="asset_watcher">数字资产守望模板 (asset_watcher)</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="edit-task-cron">定时 Cron 表达式</label>
+            <input id="edit-task-cron" class="glass-input mono" placeholder="0 8 * * *" required />
+          </div>
+          <div class="form-field">
+            <label for="edit-task-enabled">任务状态</label>
+            <select id="edit-task-enabled" class="glass-input">
+              <option value="true">开启调度</option>
+              <option value="false">暂停调度</option>
+            </select>
+          </div>
+          <div class="form-field full-width">
+            <label for="edit-task-desc">任务描述说明</label>
+            <input id="edit-task-desc" class="glass-input" placeholder="简要说明该任务的执行目标..." />
+          </div>
+          <div class="form-field full-width">
+            <label for="edit-task-params-json">模板参数 (JSON 格式)</label>
+            <textarea id="edit-task-params-json" rows="3" class="glass-input mono" placeholder='{"city":"Tokyo"}'></textarea>
+          </div>
+        </div>
+        <div class="modal-actions-between">
+          <button type="button" class="btn btn-danger hidden" id="delete-task-btn">删除该任务</button>
+          <div class="modal-actions-right">
+            <button type="button" class="btn btn-ghost" id="cancel-task-modal-btn">取消</button>
+            <button type="submit" class="btn btn-primary" id="save-task-btn">保存任务</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
-  <script src="/starfield.js?v=v1.2.0"></script>
-  <script src="/app.js?v=v1.2.0"></script>
+  <script src="/starfield.js?v=v1.3.0"></script>
+  <script src="/app.js?v=v1.3.0"></script>
 </body>
 </html>

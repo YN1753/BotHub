@@ -367,6 +367,8 @@ button, input, select, textarea {
 .modal-actions-between { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 8px; }
 .modal-actions-right { display: flex; gap: 8px; align-items: center; }
 .section-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.task-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 8px; flex-wrap: wrap; }
+.task-actions-right { display: flex; align-items: center; gap: 6px; }
 
 /* Toast */
 .toast {

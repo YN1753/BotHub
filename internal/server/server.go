@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/YN1753/vesper/bothub/internal/modules"
 	"github.com/YN1753/vesper/bothub/internal/pushplus"
 	"github.com/YN1753/vesper/bothub/internal/scheduler"
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -113,8 +114,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/dashboard", s.requireAuth(s.handleDashboard))
 	mux.HandleFunc("POST /api/config", s.requireAuth(s.handleUpdateConfig))
 	mux.HandleFunc("POST /api/auth/password", s.requireAuth(s.handleUpdatePassword))
-	mux.HandleFunc("POST /api/modules/{id}/run", s.requireAuth(s.handleRunModule))
+	mux.HandleFunc("POST /api/modules/{id}/run", s.requireAuth(s.handleRunTask))
 	mux.HandleFunc("POST /api/test-push", s.requireAuth(s.handleTestPush))
+
+	// Tasks Management
+	mux.HandleFunc("GET /api/task-templates", s.requireAuth(s.handleListTaskTemplates))
+	mux.HandleFunc("GET /api/tasks", s.requireAuth(s.handleListTasks))
+	mux.HandleFunc("POST /api/tasks", s.requireAuth(s.handleCreateTask))
+	mux.HandleFunc("POST /api/tasks/{id}", s.requireAuth(s.handleUpdateTask))
+	mux.HandleFunc("DELETE /api/tasks/{id}", s.requireAuth(s.handleDeleteTask))
+	mux.HandleFunc("POST /api/tasks/{id}/run", s.requireAuth(s.handleRunTask))
+
+	// Assets Management
 	mux.HandleFunc("GET /api/assets", s.requireAuth(s.handleListAssets))
 	mux.HandleFunc("POST /api/assets", s.requireAuth(s.handleCreateAsset))
 	mux.HandleFunc("POST /api/assets/{id}", s.requireAuth(s.handleUpdateAsset))
@@ -247,9 +258,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	mods, err := s.scheduler.Status()
+	tasks, err := s.scheduler.Status()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "读取模块状态失败")
+		writeError(w, http.StatusInternalServerError, "读取任务状态失败")
 		return
 	}
 	cfgs, _ := s.store.GetAllConfigs()
@@ -264,7 +275,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"version":    s.version,
 		"commit":     s.commit,
 		"build_time": s.buildTime,
-		"modules":    mods,
+		"modules":    tasks, // 兼容前端历史模块字段
+		"tasks":      tasks,
+		"templates":  modules.BuiltinTemplates(),
 		"configs":    cfgs,
 		"assets":     assets,
 		"push_logs":  logs,
@@ -412,16 +425,145 @@ func (s *Server) handleUpdatePassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (s *Server) handleRunModule(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListTaskTemplates(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"templates": modules.BuiltinTemplates()})
+}
+
+func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
+	tasks, err := s.scheduler.Status()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
+}
+
+func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
+	var req store.Task
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效请求体")
+		return
+	}
+	req.ID = strings.TrimSpace(req.ID)
+	req.Name = strings.TrimSpace(req.Name)
+	req.Type = strings.TrimSpace(req.Type)
+	req.CronExpr = strings.TrimSpace(req.CronExpr)
+
+	if req.ID == "" || req.Name == "" || req.Type == "" || req.CronExpr == "" {
+		writeError(w, http.StatusBadRequest, "任务 ID、名称、模板类型与 Cron 表达式为必填项")
+		return
+	}
+
+	if _, err := cron.ParseStandard(req.CronExpr); err != nil {
+		writeError(w, http.StatusBadRequest, "Cron 表达式语法无效: "+err.Error())
+		return
+	}
+
+	existing, _ := s.store.GetTask(req.ID)
+	if existing != nil {
+		writeError(w, http.StatusConflict, "任务 ID 已存在")
+		return
+	}
+
+	if req.Params != "" {
+		var js map[string]any
+		if json.Unmarshal([]byte(req.Params), &js) != nil {
+			writeError(w, http.StatusBadRequest, "任务参数需为合法 JSON")
+			return
+		}
+	} else {
+		req.Params = "{}"
+	}
+
+	if err := s.store.SaveTask(req); err != nil {
+		writeError(w, http.StatusInternalServerError, "创建任务失败: "+err.Error())
+		return
+	}
+
+	if err := s.scheduler.Reload(); err != nil {
+		writeError(w, http.StatusInternalServerError, "重载调度失败: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": req.ID})
+}
+
+func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	existing, err := s.store.GetTask(id)
+	if err != nil || existing == nil {
+		writeError(w, http.StatusNotFound, "任务不存在")
+		return
+	}
+
+	var req store.Task
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效请求体")
+		return
+	}
+
+	if req.Name != "" { existing.Name = strings.TrimSpace(req.Name) }
+	if req.Description != "" { existing.Description = strings.TrimSpace(req.Description) }
+	if req.CronExpr != "" {
+		trimmed := strings.TrimSpace(req.CronExpr)
+		if _, err := cron.ParseStandard(trimmed); err != nil {
+			writeError(w, http.StatusBadRequest, "Cron 表达式语法无效: "+err.Error())
+			return
+		}
+		existing.CronExpr = trimmed
+	}
+	existing.Enabled = req.Enabled
+	if req.Params != "" {
+		var js map[string]any
+		if json.Unmarshal([]byte(req.Params), &js) != nil {
+			writeError(w, http.StatusBadRequest, "任务参数需为合法 JSON")
+			return
+		}
+		existing.Params = req.Params
+	}
+
+	if err := s.store.SaveTask(*existing); err != nil {
+		writeError(w, http.StatusInternalServerError, "更新任务失败: "+err.Error())
+		return
+	}
+
+	if err := s.scheduler.Reload(); err != nil {
+		writeError(w, http.StatusInternalServerError, "重载调度失败: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "缺少任务 ID")
+		return
+	}
+	if err := s.store.DeleteTask(id); err != nil {
+		writeError(w, http.StatusInternalServerError, "删除任务失败: "+err.Error())
+		return
+	}
+	_ = s.scheduler.Reload()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleRunTask(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 
-	res, err := s.scheduler.RunNow(ctx, r.PathValue("id"))
+	id := strings.TrimSpace(r.PathValue("id"))
+	res, err := s.scheduler.RunNow(ctx, id)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "summary": res.Summary, "error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "summary": res.Summary, "items_pushed": res.ItemsPushed})
+}
+
+func (s *Server) handleRunModule(w http.ResponseWriter, r *http.Request) {
+	s.handleRunTask(w, r)
 }
 
 func (s *Server) handleTestPush(w http.ResponseWriter, r *http.Request) {

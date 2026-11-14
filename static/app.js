@@ -3,8 +3,11 @@
   const dashView = document.getElementById("dashboard-view");
   const toastEl = document.getElementById("toast");
   const modalOverlay = document.getElementById("asset-modal-overlay");
+  const taskModalOverlay = document.getElementById("task-modal-overlay");
   let toastTimer = null;
   let cachedAssets = [];
+  let cachedTasks = [];
+  let cachedTemplates = [];
 
   function showToast(msg) {
     toastEl.textContent = msg;
@@ -61,9 +64,10 @@
   async function loadDashboard() {
     try {
       const data = await api("/api/dashboard");
+      cachedTemplates = data.templates || [];
       renderStats(data);
       renderAssets(data.assets || []);
-      renderModules(data.modules || []);
+      renderTasks(data.tasks || data.modules || []);
       fillConfig(data.configs || {});
       renderLogs(data.push_logs || []);
     } catch (err) {
@@ -153,46 +157,105 @@
     });
   }
 
-  function renderModules(mods) {
-    const grid = document.getElementById("modules-grid");
-    if (!mods.length) return;
-    grid.innerHTML = mods.map((m) => {
-      const last = m.last_run;
-      const dot = !m.enabled ? "dot-warn" : (m.is_running ? "dot-live" : (last && last.status === "error" ? "dot-err" : "dot-live"));
+  function renderTasks(tasks) {
+    cachedTasks = tasks;
+    const grid = document.getElementById("tasks-grid") || document.getElementById("modules-grid");
+    if (!grid) return;
+    if (!tasks.length) {
+      grid.innerHTML = `<div class="empty-state">暂无已注册的任务模板与实例</div>`;
+      return;
+    }
+
+    grid.innerHTML = tasks.map((t) => {
+      const last = t.last_run;
+      const dot = !t.enabled ? "dot-warn" : (t.is_running ? "dot-live" : (last && last.status === "error" ? "dot-err" : "dot-live"));
+      const typeLabel = t.type === "morning" ? "早报小秘书" : (t.type === "radar" ? "开源技术雷达" : (t.type === "asset_watcher" ? "数字资产守望" : esc(t.type)));
+      const typeClass = t.type === "morning" ? "cat-domain" : (t.type === "radar" ? "cat-compute" : "cat-life");
+
       return `
         <article class="glass-card module-card">
           <div class="module-top">
             <div>
-              <h3 class="serif-title module-name">${esc(m.name)}</h3>
-              <p class="module-desc">${esc(m.description)}</p>
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                <h3 class="serif-title module-name">${esc(t.name)}</h3>
+                <span class="cat-badge ${typeClass}">${typeLabel}</span>
+              </div>
+              <p class="module-desc">${esc(t.description || "无详细描述")}</p>
             </div>
-            <span class="stat-pill mono"><span class="dot ${dot}"></span>${m.enabled ? (m.is_running ? "RUN" : "ON") : "OFF"}</span>
+            <span class="stat-pill mono"><span class="dot ${dot}"></span>${t.enabled ? (t.is_running ? "RUN" : "ON") : "OFF"}</span>
           </div>
           <div class="module-cron-box mono">
-            <div><span>Cron</span><br><strong>${esc(m.cron_expr || "--")}</strong></div>
-            <div><span>下次执行</span><br><strong>${esc(m.enabled ? (m.next_run_at || "--") : "停用")}</strong></div>
+            <div><span>Cron 表达式</span><br><strong>${esc(t.cron_expr || "--")}</strong></div>
+            <div><span>下次执行 (CST)</span><br><strong>${esc(t.enabled ? (t.next_run_at || "--") : "停用")}</strong></div>
           </div>
-          <div class="module-summary">${esc(last ? last.summary : "等待执行")}</div>
-          <div style="display:flex; justify-content:flex-end;">
-            <button class="btn btn-primary run-btn" data-id="${esc(m.id)}" ${m.is_running ? "disabled" : ""}>
-              ${m.is_running ? "执行中..." : "立即触发"}
+          <div class="module-summary">${esc(last ? last.summary : "等待执行流水")}</div>
+          <div class="task-foot">
+            <button class="btn btn-primary btn-sm run-btn" data-id="${esc(t.id)}" ${t.is_running ? "disabled" : ""}>
+              ${t.is_running ? "执行中..." : "立即触发"}
             </button>
+            <div class="task-actions-right">
+              <button class="btn btn-ghost btn-sm edit-task-btn" data-id="${esc(t.id)}">配置/编辑</button>
+              <button class="btn btn-danger btn-sm del-task-btn" data-id="${esc(t.id)}">删除</button>
+            </div>
           </div>
         </article>
       `;
     }).join("");
 
+    // Bind Run
     grid.querySelectorAll(".run-btn").forEach((btn) => {
       btn.onclick = async () => {
         btn.disabled = true;
         btn.textContent = "执行中...";
         try {
-          const res = await api(`/api/modules/${encodeURIComponent(btn.dataset.id)}/run`, { method: "POST" });
+          const res = await api(`/api/tasks/${encodeURIComponent(btn.dataset.id)}/run`, { method: "POST" });
           showToast(res.summary || "执行完成");
           await loadDashboard();
         } catch (err) {
           showToast(err.message);
           await loadDashboard();
+        }
+      };
+    });
+
+    // Bind Edit Task
+    grid.querySelectorAll(".edit-task-btn").forEach((btn) => {
+      btn.onclick = () => {
+        const item = cachedTasks.find((x) => x.id === btn.dataset.id);
+        if (!item) return;
+        document.getElementById("modal-task-title").textContent = `编辑任务 · ${item.name}`;
+        document.getElementById("edit-task-id-hidden").value = item.id;
+        const idInput = document.getElementById("edit-task-id");
+        idInput.value = item.id;
+        idInput.disabled = true;
+        document.getElementById("delete-task-btn").classList.remove("hidden");
+
+        document.getElementById("edit-task-name").value = item.name;
+        document.getElementById("edit-task-type").value = item.type;
+        document.getElementById("edit-task-cron").value = item.cron_expr || "";
+        document.getElementById("edit-task-enabled").value = item.enabled ? "true" : "false";
+        document.getElementById("edit-task-desc").value = item.description || "";
+        try {
+          document.getElementById("edit-task-params-json").value = JSON.stringify(JSON.parse(item.params || "{}"), null, 2);
+        } catch {
+          document.getElementById("edit-task-params-json").value = item.params || "{}";
+        }
+        taskModalOverlay.classList.remove("hidden");
+      };
+    });
+
+    // Bind Delete Task
+    grid.querySelectorAll(".del-task-btn").forEach((btn) => {
+      btn.onclick = async () => {
+        const item = cachedTasks.find((x) => x.id === btn.dataset.id);
+        if (!item) return;
+        if (!confirm(`确定删除任务 [${item.name || item.id}] 吗？`)) return;
+        try {
+          await api(`/api/tasks/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+          showToast("任务已删除");
+          await loadDashboard();
+        } catch (err) {
+          showToast(err.message);
         }
       };
     });
@@ -400,6 +463,117 @@
       showToast(err.message);
     }
   };
+
+  // Task Modal Handlers
+  const addTaskBtn = document.getElementById("add-task-btn");
+  if (addTaskBtn) {
+    addTaskBtn.onclick = () => {
+      document.getElementById("modal-task-title").textContent = "创建情报调度任务";
+      document.getElementById("edit-task-id-hidden").value = "";
+      const idInput = document.getElementById("edit-task-id");
+      idInput.value = "";
+      idInput.disabled = false;
+      document.getElementById("delete-task-btn").classList.add("hidden");
+
+      document.getElementById("edit-task-name").value = "";
+      document.getElementById("edit-task-type").value = "morning";
+      document.getElementById("edit-task-cron").value = "0 8 * * *";
+      document.getElementById("edit-task-enabled").value = "true";
+      document.getElementById("edit-task-desc").value = "汇总目标城市气象建议、每日格言、节点脉搏与临期资产";
+      document.getElementById("edit-task-params-json").value = JSON.stringify({ city: "Shanghai", nezha_url: "https://dash.starryheavens.uk" }, null, 2);
+      taskModalOverlay.classList.remove("hidden");
+    };
+  }
+
+  // Type change template presets
+  const taskTypeSelect = document.getElementById("edit-task-type");
+  if (taskTypeSelect) {
+    taskTypeSelect.onchange = () => {
+      const type = taskTypeSelect.value;
+      const isNew = !document.getElementById("edit-task-id-hidden").value;
+      if (isNew) {
+        if (type === "morning") {
+          document.getElementById("edit-task-name").value = "每日晨报小秘书";
+          document.getElementById("edit-task-cron").value = "0 8 * * *";
+          document.getElementById("edit-task-desc").value = "汇总目标城市气象建议、每日格言、节点脉搏与临期资产";
+          document.getElementById("edit-task-params-json").value = JSON.stringify({ city: "Shanghai", nezha_url: "https://dash.starryheavens.uk" }, null, 2);
+        } else if (type === "radar") {
+          document.getElementById("edit-task-name").value = "全网开源技术雷达";
+          document.getElementById("edit-task-cron").value = "0 12,20 * * *";
+          document.getElementById("edit-task-desc").value = "抓取 GitHub Trending 与 Hacker News 热门高分条目";
+          document.getElementById("edit-task-params-json").value = JSON.stringify({ hn_min_score: 120, limit: 8 }, null, 2);
+        } else if (type === "asset_watcher") {
+          document.getElementById("edit-task-name").value = "数字资产与会员守望";
+          document.getElementById("edit-task-cron").value = "0 3 * * *";
+          document.getElementById("edit-task-desc").value = "自动巡检资产到期与自动扣费防坑预警";
+          document.getElementById("edit-task-params-json").value = "{}";
+        }
+      }
+    };
+  }
+
+  const closeTaskModalBtn = document.getElementById("close-task-modal-btn");
+  if (closeTaskModalBtn) closeTaskModalBtn.onclick = () => taskModalOverlay.classList.add("hidden");
+  const cancelTaskModalBtn = document.getElementById("cancel-task-modal-btn");
+  if (cancelTaskModalBtn) cancelTaskModalBtn.onclick = () => taskModalOverlay.classList.add("hidden");
+
+  const deleteTaskModalBtn = document.getElementById("delete-task-btn");
+  if (deleteTaskModalBtn) {
+    deleteTaskModalBtn.onclick = async () => {
+      const id = document.getElementById("edit-task-id-hidden").value;
+      const name = document.getElementById("edit-task-name").value;
+      if (!id) return;
+      if (!confirm(`确定删除任务 [${name || id}] 吗？`)) return;
+      try {
+        await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "DELETE" });
+        taskModalOverlay.classList.add("hidden");
+        showToast("任务已删除");
+        await loadDashboard();
+      } catch (err) {
+        showToast(err.message);
+      }
+    };
+  }
+
+  const taskEditForm = document.getElementById("task-edit-form");
+  if (taskEditForm) {
+    taskEditForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const existingID = document.getElementById("edit-task-id-hidden").value.trim();
+      const idInputVal = document.getElementById("edit-task-id").value.trim();
+      const isNew = !existingID;
+      const finalID = isNew ? idInputVal : existingID;
+
+      if (!finalID) {
+        showToast("任务 ID 不能为空");
+        return;
+      }
+
+      const payload = {
+        id: finalID,
+        name: document.getElementById("edit-task-name").value.trim(),
+        type: document.getElementById("edit-task-type").value,
+        cron_expr: document.getElementById("edit-task-cron").value.trim(),
+        enabled: document.getElementById("edit-task-enabled").value === "true",
+        description: document.getElementById("edit-task-desc").value.trim(),
+        params: document.getElementById("edit-task-params-json").value.trim(),
+      };
+
+      try {
+        if (isNew) {
+          await api("/api/tasks", { method: "POST", body: JSON.stringify(payload) });
+          showToast("新任务创建成功");
+        } else {
+          await api(`/api/tasks/${encodeURIComponent(finalID)}`, { method: "POST", body: JSON.stringify(payload) });
+          showToast("任务已更新并重载调度");
+        }
+        taskModalOverlay.classList.add("hidden");
+        await loadDashboard();
+      } catch (err) {
+        showToast(err.message);
+      }
+    };
+  }
 
   checkAuth();
 })();

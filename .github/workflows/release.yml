@@ -54,7 +54,7 @@ jobs:
         run: |
           COMMIT=$(echo "${{ github.sha }}" | cut -c1-7)
           BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          VERSION="${{ github.ref_type == 'tag' && github.ref_name || format('v1.2.0-{0}', github.sha) }}"
+          VERSION="${{ github.ref_type == 'tag' && github.ref_name || format('v1.3.0-{0}', github.sha) }}"
           mkdir -p dist
           LDFLAGS="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X 'main.BuildTime=${BUILD_TIME}'"
           go build -trimpath -ldflags="${LDFLAGS}" -o "dist/${{ matrix.binary_name }}" .

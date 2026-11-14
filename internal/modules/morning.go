@@ -39,11 +39,44 @@ type weatherInfo struct {
 }
 
 func (m *MorningModule) Run(ctx context.Context) (RunResult, error) {
-	city, _ := m.store.GetConfig(store.KeyMorningCity)
+	return m.RunWithTask(ctx, store.Task{
+		ID:   "morning",
+		Name: "每日早报小秘书",
+		Type: "morning",
+	})
+}
+
+func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunResult, error) {
+	var params map[string]any
+	_ = json.Unmarshal([]byte(task.Params), &params)
+
+	city := ""
+	if params != nil {
+		if c, ok := params["city"].(string); ok {
+			city = strings.TrimSpace(c)
+		}
+	}
+	if city == "" {
+		city, _ = m.store.GetConfig(store.KeyMorningCity)
+	}
 	if strings.TrimSpace(city) == "" {
 		city = "Shanghai"
 	}
-	nezhaURL, _ := m.store.GetConfig(store.KeyNezhaURL)
+
+	nezhaURL := ""
+	if params != nil {
+		if n, ok := params["nezha_url"].(string); ok {
+			nezhaURL = strings.TrimSpace(n)
+		}
+	}
+	if nezhaURL == "" {
+		nezhaURL, _ = m.store.GetConfig(store.KeyNezhaURL)
+	}
+
+	taskName := task.Name
+	if taskName == "" {
+		taskName = "Vesper 晨间简报"
+	}
 
 	now := time.Now().In(ShanghaiLocation())
 	dateStr := now.Format("2006-01-02")
@@ -54,7 +87,7 @@ func (m *MorningModule) Run(ctx context.Context) (RunResult, error) {
 	nodePulse := m.fetchNodePulse(ctx, nezhaURL)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### Vesper 晨间简报 · %s (%s)\n\n", dateStr, weekday))
+	sb.WriteString(fmt.Sprintf("### %s · %s (%s)\n\n", taskName, dateStr, weekday))
 
 	sb.WriteString("#### 1. 气象与出行建议\n")
 	if wErr == nil {
@@ -84,15 +117,15 @@ func (m *MorningModule) Run(ctx context.Context) (RunResult, error) {
 
 	sb.WriteString("---\n*来自 Vesper BotHub · bot.starryheavens.uk*")
 
-	title := fmt.Sprintf("Vesper 早报 · %s %s", dateStr, city)
+	title := fmt.Sprintf("%s · %s %s", taskName, dateStr, city)
 	if wErr == nil {
-		title = fmt.Sprintf("Vesper 早报 · %s %s %.0f~%.0f°C", dateStr, w.City, w.MinTemp, w.MaxTemp)
+		title = fmt.Sprintf("%s · %s %s %.0f~%.0f°C", taskName, dateStr, w.City, w.MinTemp, w.MaxTemp)
 	}
 
-	if err := m.push.SendMarkdown(ctx, m.ID(), title, sb.String()); err != nil {
+	if err := m.push.SendMarkdown(ctx, task.ID, title, sb.String()); err != nil {
 		return RunResult{Summary: "推送失败: " + err.Error()}, err
 	}
-	return RunResult{Summary: fmt.Sprintf("已推送 %s 早报（%s）", city, dateStr), ItemsPushed: 1}, nil
+	return RunResult{Summary: fmt.Sprintf("已推送 %s（城市: %s, 日期: %s）", taskName, city, dateStr), ItemsPushed: 1}, nil
 }
 
 func (m *MorningModule) fetchWeather(ctx context.Context, city string) (weatherInfo, error) {

@@ -29,6 +29,14 @@ func (w *AssetWatcherModule) Name() string        { return "数字资产与会�
 func (w *AssetWatcherModule) Description() string { return "嗅探域名、B站/QQ音乐会员与VPS周期，触发临期与防扣款微信预警" }
 
 func (w *AssetWatcherModule) Run(ctx context.Context) (RunResult, error) {
+	return w.RunWithTask(ctx, store.Task{
+		ID:   "asset_watcher",
+		Name: "数字资产与会员守望",
+		Type: "asset_watcher",
+	})
+}
+
+func (w *AssetWatcherModule) RunWithTask(ctx context.Context, task store.Task) (RunResult, error) {
 	assets, err := w.store.ListAssets()
 	if err != nil {
 		return RunResult{Summary: "读取资产失败: " + err.Error()}, err
@@ -65,7 +73,7 @@ func (w *AssetWatcherModule) Run(ctx context.Context) (RunResult, error) {
 
 	itemsPushed := 0
 	if len(noticeAssets) > 0 {
-		if err := w.dispatchNotice(ctx, noticeAssets, nowDateStr); err == nil {
+		if err := w.dispatchNotice(ctx, task.ID, noticeAssets, nowDateStr); err == nil {
 			itemsPushed = len(noticeAssets)
 			warnSeen := make([]store.SeenItem, 0, len(noticeAssets))
 			for _, a := range noticeAssets {
@@ -189,7 +197,7 @@ func (w *AssetWatcherModule) syncSingleAsset(ctx context.Context, asset *store.A
 	return updated
 }
 
-func (w *AssetWatcherModule) dispatchNotice(ctx context.Context, items []store.Asset, dateStr string) error {
+func (w *AssetWatcherModule) dispatchNotice(ctx context.Context, taskID string, items []store.Asset, dateStr string) error {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("### Vesper 数字资产与会员临期预警 · %s\n\n", dateStr))
 	sb.WriteString("守望哨兵检测到以下关键资产临近到期或扣费日：\n\n")
@@ -210,7 +218,7 @@ func (w *AssetWatcherModule) dispatchNotice(ctx context.Context, items []store.A
 
 	sb.WriteString("---\n*来自 Vesper BotHub 守望哨兵 · bot.starryheavens.uk*")
 	title := fmt.Sprintf("[资产临期预警] %d 项资产即将到期（最快剩余 %d 天）", len(items), items[0].DaysLeft)
-	return w.push.SendMarkdown(ctx, w.ID(), title, sb.String())
+	return w.push.SendMarkdown(ctx, taskID, title, sb.String())
 }
 
 // shouldWarn determines if an asset should trigger an alert based on its personalized

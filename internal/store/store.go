@@ -79,6 +79,18 @@ type Asset struct {
 	WarnFlag      bool   `json:"warn_flag"`
 }
 
+type Task struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"` // "morning", "radar", "asset_watcher", "http_probe"
+	Description string `json:"description"`
+	CronExpr    string `json:"cron_expr"`
+	Enabled     bool   `json:"enabled"`
+	Params      string `json:"params"` // JSON string
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
 type PublicAsset struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -167,6 +179,18 @@ CREATE TABLE IF NOT EXISTS assets (
 	warn_days TEXT NOT NULL DEFAULT '[7, 3, 1]',
 	last_checked_at TEXT NOT NULL DEFAULT '',
 	extra_config TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	type TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	cron_expr TEXT NOT NULL DEFAULT '',
+	enabled INTEGER NOT NULL DEFAULT 1,
+	params TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
 );`
 	_, err := s.db.Exec(schema)
 	return err
@@ -224,6 +248,49 @@ func (s *Store) seedDefaults() error {
 		}
 		for _, a := range initial {
 			_ = s.SaveAsset(a)
+		}
+	}
+
+	// Seed default tasks if tasks table is empty
+	var taskCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tasks`).Scan(&taskCount); err == nil && taskCount == 0 {
+		initialTasks := []Task{
+			{
+				ID:          "morning",
+				Name:        "每日晨报小秘书",
+				Type:        "morning",
+				Description: "汇总目标城市气象建议、每日格言、节点脉搏与临期资产",
+				CronExpr:    "0 8 * * *",
+				Enabled:     true,
+				Params:      `{"city":"Shanghai","nezha_url":"https://dash.starryheavens.uk"}`,
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			},
+			{
+				ID:          "radar",
+				Name:        "全网开源技术雷达",
+				Type:        "radar",
+				Description: "抓取 GitHub Trending 与 Hacker News 热门高分条目，自动排版去重推送",
+				CronExpr:    "0 12,20 * * *",
+				Enabled:     true,
+				Params:      `{"hn_min_score":120,"limit":8}`,
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			},
+			{
+				ID:          "asset_watcher",
+				Name:        "数字资产与会员守望",
+				Type:        "asset_watcher",
+				Description: "自动嗅探域名到期、B站大会员与VPS扣费周期，触发临期防扣款强提醒",
+				CronExpr:    "0 3 * * *",
+				Enabled:     true,
+				Params:      `{}`,
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			},
+		}
+		for _, t := range initialTasks {
+			_ = s.SaveTask(t)
 		}
 	}
 	return nil
@@ -467,6 +534,71 @@ ON CONFLICT(id) DO UPDATE SET
 
 func (s *Store) DeleteAsset(id string) error {
 	_, err := s.db.Exec(`DELETE FROM assets WHERE id = ?`, id)
+	return err
+}
+
+// Tasks Management
+
+func (s *Store) ListTasks() ([]Task, error) {
+	rows, err := s.db.Query(`SELECT id, name, type, description, cron_expr, enabled, params, created_at, updated_at FROM tasks ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []Task
+	for rows.Next() {
+		var t Task
+		var enabledInt int
+		if err := rows.Scan(&t.ID, &t.Name, &t.Type, &t.Description, &t.CronExpr, &enabledInt, &t.Params, &t.CreatedAt, &t.UpdatedAt); err == nil {
+			t.Enabled = (enabledInt == 1)
+			list = append(list, t)
+		}
+	}
+	return list, rows.Err()
+}
+
+func (s *Store) GetTask(id string) (*Task, error) {
+	var t Task
+	var enabledInt int
+	err := s.db.QueryRow(`SELECT id, name, type, description, cron_expr, enabled, params, created_at, updated_at FROM tasks WHERE id = ?`, id).
+		Scan(&t.ID, &t.Name, &t.Type, &t.Description, &t.CronExpr, &enabledInt, &t.Params, &t.CreatedAt, &t.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	t.Enabled = (enabledInt == 1)
+	return &t, nil
+}
+
+func (s *Store) SaveTask(t Task) error {
+	enInt := 0
+	if t.Enabled {
+		enInt = 1
+	}
+	now := NowShanghai()
+	if t.CreatedAt == "" {
+		t.CreatedAt = now
+	}
+	t.UpdatedAt = now
+	if t.Params == "" {
+		t.Params = "{}"
+	}
+	_, err := s.db.Exec(`
+INSERT INTO tasks (id, name, type, description, cron_expr, enabled, params, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+	name = excluded.name, type = excluded.type, description = excluded.description,
+	cron_expr = excluded.cron_expr, enabled = excluded.enabled, params = excluded.params,
+	updated_at = excluded.updated_at`,
+		t.ID, t.Name, t.Type, t.Description, t.CronExpr, enInt, t.Params, t.CreatedAt, t.UpdatedAt)
+	return err
+}
+
+func (s *Store) DeleteTask(id string) error {
+	_, err := s.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
 	return err
 }
 
