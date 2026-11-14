@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BotHub · Vesper 自动化情报与推送中枢</title>
-  <link rel="stylesheet" href="/styles.css?v=v1.4.0" />
+  <link rel="stylesheet" href="/styles.css?v=v1.5.0" />
 </head>
 <body>
   <canvas id="starfield" aria-hidden="true"></canvas>
@@ -154,12 +154,9 @@
             <input id="edit-asset-name" class="glass-input" placeholder="如 搬瓦工 GIA VPS / 核心域名" required />
           </div>
           <div class="form-field">
-            <label for="edit-asset-category">资产分类</label>
-            <select id="edit-asset-category" class="glass-input">
-              <option value="compute">算力与云主机 (compute)</option>
-              <option value="domain">核心域名资产 (domain)</option>
-              <option value="life">数字会员与生活订阅 (life)</option>
-            </select>
+            <label>资产分类</label>
+            <div id="mount-asset-category" class="v-select-mount"></div>
+            <input type="hidden" id="edit-asset-category" value="compute" />
           </div>
           <div class="form-field">
             <label for="edit-asset-spec">规格说明</label>
@@ -178,11 +175,9 @@
             <input id="edit-asset-status" class="glass-input" placeholder="如 运行中 / 正常" />
           </div>
           <div class="form-field">
-            <label for="edit-asset-autorenew">自动续费模式</label>
-            <select id="edit-asset-autorenew" class="glass-input">
-              <option value="true">开启 (到期日前防扣款提醒)</option>
-              <option value="false">关闭 (到期需人工手动处理)</option>
-            </select>
+            <label>自动续费模式</label>
+            <div id="mount-asset-autorenew" class="v-select-mount"></div>
+            <input type="hidden" id="edit-asset-autorenew" value="true" />
           </div>
           <div class="form-field full-width">
             <label for="edit-asset-warndays">临期预警梯度 (提前天数列表)</label>
@@ -242,19 +237,14 @@
             <input id="edit-task-name" class="glass-input" placeholder="如 晨间早报 / 技术雷达" required />
           </div>
           <div class="form-field">
-            <label for="edit-task-type">任务模板类型</label>
-            <select id="edit-task-type" class="glass-input">
-              <option value="morning">晨报小秘书模板 (morning)</option>
-              <option value="radar">开源技术雷达模板 (radar)</option>
-              <option value="asset_watcher">数字资产守望模板 (asset_watcher)</option>
-            </select>
+            <label>任务模板类型</label>
+            <div id="mount-task-type" class="v-select-mount"></div>
+            <input type="hidden" id="edit-task-type" value="morning" />
           </div>
           <div class="form-field">
-            <label for="edit-task-enabled">任务状态</label>
-            <select id="edit-task-enabled" class="glass-input">
-              <option value="true">开启常态调度</option>
-              <option value="false">暂停调度</option>
-            </select>
+            <label>任务调度状态</label>
+            <div id="mount-task-enabled" class="v-select-mount"></div>
+            <input type="hidden" id="edit-task-enabled" value="true" />
           </div>
           <div class="form-field full-width">
             <label for="edit-task-cron">定时 Cron 表达式</label>
@@ -300,8 +290,8 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/starfield.js?v=v1.4.0"></script>
-  <script src="/app.js?v=v1.4.0"></script>
+  <script src="/starfield.js?v=v1.5.0"></script>
+  <script src="/app.js?v=v1.5.0"></script>
 </body>
 </html>
 </html>

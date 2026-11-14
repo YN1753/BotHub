@@ -1,6 +1,7 @@
 /**
  * Vesper BotHub · Frontend Architecture
  * Micro-Component System (EventBus + Reactive AppStore + High-Cohesion Components)
+ * Includes Custom Twilight Select Component (STRICT NO SYSTEM DROPDOWNS)
  * STRICT NO EMOJI · Single Binary Embedded
  */
 (() => {
@@ -57,7 +58,156 @@
   };
 
   // ==========================================
-  // 2. EventBus (Decoupled Pub/Sub)
+  // 2. Custom Select Component (Vesper Twilight Theme)
+  // ==========================================
+  class CustomSelect {
+    constructor(mountEl, { options, value, onChange, placeholder = "请选择..." }) {
+      this.mount = typeof mountEl === "string" ? document.querySelector(mountEl) : mountEl;
+      this.options = options || [];
+      this.value = value !== undefined ? String(value) : (this.options[0]?.value ?? "");
+      this.onChange = onChange || (() => {});
+      this.placeholder = placeholder;
+      this.isOpen = false;
+      this.root = null;
+      this.labelSpan = null;
+
+      this.handleDocClick = (e) => {
+        if (this.root && !this.root.contains(e.target)) {
+          this.close();
+        }
+      };
+      document.addEventListener("click", this.handleDocClick);
+
+      this.render();
+    }
+
+    destroy() {
+      document.removeEventListener("click", this.handleDocClick);
+      if (this.root && this.root.parentNode) {
+        this.root.parentNode.removeChild(this.root);
+      }
+    }
+
+    setOptions(options, newValue) {
+      this.options = options || [];
+      if (newValue !== undefined) {
+        this.value = String(newValue);
+      } else if (!this.options.some((o) => String(o.value) === String(this.value))) {
+        this.value = this.options[0]?.value ?? "";
+      }
+      this.render();
+    }
+
+    setValue(val, triggerChange = false) {
+      this.value = String(val);
+      this.updateUI();
+      if (triggerChange) {
+        this.onChange(this.value);
+      }
+    }
+
+    getValue() {
+      return this.value;
+    }
+
+    toggle() {
+      if (this.isOpen) {
+        this.close();
+      } else {
+        this.open();
+      }
+    }
+
+    open() {
+      document.querySelectorAll(".v-select.is-open").forEach((el) => {
+        if (el !== this.root) el.classList.remove("is-open");
+      });
+      this.isOpen = true;
+      this.root?.classList.add("is-open");
+    }
+
+    close() {
+      this.isOpen = false;
+      this.root?.classList.remove("is-open");
+    }
+
+    select(val) {
+      this.value = String(val);
+      this.updateUI();
+      this.close();
+      this.onChange(this.value);
+    }
+
+    updateUI() {
+      if (!this.root) return;
+      const currentOpt = this.options.find((o) => String(o.value) === String(this.value));
+      const labelText = currentOpt ? currentOpt.label : this.placeholder;
+      if (this.labelSpan) this.labelSpan.textContent = labelText;
+
+      this.root.querySelectorAll(".v-select-option").forEach((optEl) => {
+        if (optEl.dataset.value === String(this.value)) {
+          optEl.classList.add("is-selected");
+        } else {
+          optEl.classList.remove("is-selected");
+        }
+      });
+    }
+
+    render() {
+      if (!this.mount) return;
+      this.mount.innerHTML = "";
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "v-select";
+      this.root = wrapper;
+
+      const currentOpt = this.options.find((o) => String(o.value) === String(this.value));
+      const labelText = currentOpt ? currentOpt.label : this.placeholder;
+
+      wrapper.innerHTML = `
+        <div class="v-select-trigger" tabindex="0" role="button" aria-haspopup="listbox">
+          <span class="v-select-label">${Utils.esc(labelText)}</span>
+          <span class="v-select-arrow" aria-hidden="true"></span>
+        </div>
+        <div class="v-select-dropdown" role="listbox">
+          ${this.options.map((opt) => `
+            <div class="v-select-option ${String(opt.value) === String(this.value) ? "is-selected" : ""}" data-value="${Utils.esc(opt.value)}" role="option">
+              <span>${Utils.esc(opt.label)}</span>
+            </div>
+          `).join("")}
+        </div>
+      `;
+
+      this.labelSpan = wrapper.querySelector(".v-select-label");
+      const trigger = wrapper.querySelector(".v-select-trigger");
+
+      trigger.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.toggle();
+      });
+
+      trigger.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          this.toggle();
+        } else if (e.key === "Escape") {
+          this.close();
+        }
+      });
+
+      wrapper.querySelectorAll(".v-select-option").forEach((optEl) => {
+        optEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.select(optEl.dataset.value);
+        });
+      });
+
+      this.mount.appendChild(wrapper);
+    }
+  }
+
+  // ==========================================
+  // 3. EventBus (Decoupled Pub/Sub)
   // ==========================================
   class EventBus {
     constructor() {
@@ -92,7 +242,7 @@
   }
 
   // ==========================================
-  // 3. ApiClient
+  // 4. ApiClient
   // ==========================================
   class ApiClient {
     constructor(bus) {
@@ -119,7 +269,7 @@
   }
 
   // ==========================================
-  // 4. AppStore (Reactive Central State)
+  // 5. AppStore (Reactive Central State)
   // ==========================================
   class AppStore {
     constructor(bus) {
@@ -127,7 +277,7 @@
       this.api = new ApiClient(bus);
       this.state = {
         authenticated: false,
-        version: "v1.4.0",
+        version: "v1.5.0",
         commit: "dev",
         buildTime: "local",
         uptimeSec: 0,
@@ -260,7 +410,7 @@
   }
 
   // ==========================================
-  // 5. Component Base Class
+  // 6. Component Base Class
   // ==========================================
   class BaseComponent {
     constructor(rootEl, store, bus) {
@@ -272,7 +422,7 @@
   }
 
   // ==========================================
-  // 6. UI Components Implementation
+  // 7. UI Components Implementation
   // ==========================================
 
   // --- Toast Component ---
@@ -648,7 +798,7 @@
     }
   }
 
-  // --- Asset Modal Component ---
+  // --- Asset Modal Component (Powered by CustomSelect) ---
   class AssetModalComponent extends BaseComponent {
     init() {
       this.overlay = document.getElementById("asset-modal-overlay");
@@ -657,18 +807,50 @@
       this.hiddenId = document.getElementById("edit-asset-id");
       this.idInput = document.getElementById("edit-asset-id-input");
       this.nameInput = document.getElementById("edit-asset-name");
-      this.catSelect = document.getElementById("edit-asset-category");
+      this.catHidden = document.getElementById("edit-asset-category");
       this.specInput = document.getElementById("edit-asset-spec");
       this.priceInput = document.getElementById("edit-asset-price");
       this.dueInput = document.getElementById("edit-asset-due");
       this.statusInput = document.getElementById("edit-asset-status");
-      this.renewSelect = document.getElementById("edit-asset-autorenew");
+      this.renewHidden = document.getElementById("edit-asset-autorenew");
       this.warnDaysInput = document.getElementById("edit-asset-warndays");
       this.dynFieldsContainer = document.getElementById("asset-dynamic-fields");
       this.extraTextarea = document.getElementById("edit-asset-extra");
       this.deleteBtn = document.getElementById("delete-asset-btn");
       this.closeBtn = document.getElementById("close-modal-btn");
       this.cancelBtn = document.getElementById("cancel-modal-btn");
+
+      this.dynamicSelects = [];
+
+      // Custom Select: Category
+      this.categorySelect = new CustomSelect("#mount-asset-category", {
+        options: [
+          { label: "算力与云主机 (compute)", value: "compute" },
+          { label: "核心域名资产 (domain)", value: "domain" },
+          { label: "数字会员与生活订阅 (life)", value: "life" },
+        ],
+        value: "compute",
+        onChange: (cat) => {
+          if (this.catHidden) this.catHidden.value = cat;
+          const extraObj = Utils.safeJSONParse(this.extraTextarea.value);
+          this.renderDynamicFields(cat, extraObj);
+          if (!this.hiddenId.value) {
+            this.idInput.value = Utils.generateSlug(this.nameInput.value, cat);
+          }
+        },
+      });
+
+      // Custom Select: AutoRenew
+      this.autorenewSelect = new CustomSelect("#mount-asset-autorenew", {
+        options: [
+          { label: "开启自动续费 (到期日前防扣款提醒)", value: "true" },
+          { label: "关闭自动续费 (到期需人工手动处理)", value: "false" },
+        ],
+        value: "true",
+        onChange: (val) => {
+          if (this.renewHidden) this.renewHidden.value = val;
+        },
+      });
 
       this.bus.on("modal:open-asset", (item) => this.open(item));
 
@@ -682,16 +864,7 @@
       // Name -> Slug
       this.nameInput?.addEventListener("input", () => {
         if (!this.hiddenId.value) {
-          this.idInput.value = Utils.generateSlug(this.nameInput.value, this.catSelect.value);
-        }
-      });
-
-      // Category -> Dynamic Fields
-      this.catSelect?.addEventListener("change", () => {
-        const cat = this.catSelect.value;
-        const extraObj = Utils.safeJSONParse(this.extraTextarea.value);
-        this.renderDynamicFields(cat, extraObj);
-        if (!this.hiddenId.value) {
+          const cat = this.catHidden ? this.catHidden.value : "compute";
           this.idInput.value = Utils.generateSlug(this.nameInput.value, cat);
         }
       });
@@ -740,12 +913,12 @@
         const payload = {
           id: finalID,
           name: this.nameInput.value.trim(),
-          category: this.catSelect.value,
+          category: this.catHidden ? this.catHidden.value : "compute",
           spec: this.specInput.value.trim(),
           price: this.priceInput.value.trim(),
           due_date: this.dueInput.value.trim(),
           status: this.statusInput.value.trim(),
-          auto_renew: this.renewSelect.value === "true",
+          auto_renew: this.renewHidden ? this.renewHidden.value === "true" : true,
           warn_days: this.warnDaysInput.value.trim(),
           extra_config: this.extraTextarea.value.trim(),
         };
@@ -769,12 +942,14 @@
         this.deleteBtn?.classList.add("hidden");
 
         this.nameInput.value = "";
-        this.catSelect.value = "compute";
+        if (this.catHidden) this.catHidden.value = "compute";
+        this.categorySelect?.setValue("compute", false);
         this.specInput.value = "";
         this.priceInput.value = "";
         this.dueInput.value = "";
         this.statusInput.value = "运行中";
-        this.renewSelect.value = "true";
+        if (this.renewHidden) this.renewHidden.value = "true";
+        this.autorenewSelect?.setValue("true", false);
         this.warnDaysInput.value = "[7, 3, 1]";
         this.extraTextarea.value = "{}";
 
@@ -787,17 +962,23 @@
         this.deleteBtn?.classList.remove("hidden");
 
         this.nameInput.value = item.name;
-        this.catSelect.value = item.category || "compute";
+        const cat = item.category || "compute";
+        if (this.catHidden) this.catHidden.value = cat;
+        this.categorySelect?.setValue(cat, false);
+
         this.specInput.value = item.spec || "";
         this.priceInput.value = item.price || "";
         this.dueInput.value = item.due_date || "";
         this.statusInput.value = item.status || "";
-        this.renewSelect.value = item.auto_renew ? "true" : "false";
+        const autoRenewStr = item.auto_renew ? "true" : "false";
+        if (this.renewHidden) this.renewHidden.value = autoRenewStr;
+        this.autorenewSelect?.setValue(autoRenewStr, false);
+
         this.warnDaysInput.value = item.warn_days || "[7, 3, 1]";
 
         const extraObj = Utils.safeJSONParse(item.extra_config);
         this.extraTextarea.value = JSON.stringify(extraObj, null, 2);
-        this.renderDynamicFields(item.category || "compute", extraObj);
+        this.renderDynamicFields(cat, extraObj);
       }
 
       this.overlay?.classList.remove("hidden");
@@ -809,6 +990,9 @@
 
     renderDynamicFields(category, extraConfigObj = {}) {
       if (!this.dynFieldsContainer) return;
+      this.dynamicSelects.forEach((s) => s.destroy());
+      this.dynamicSelects = [];
+
       const tpl = (this.store.state.assetTemplates || []).find((t) => t.category === category);
       if (!tpl || !tpl.fields || !tpl.fields.length) {
         this.dynFieldsContainer.innerHTML = `<div class="empty-state" style="padding:6px; font-size:11px;">该分类暂无特定扩展参数</div>`;
@@ -820,10 +1004,9 @@
         if (f.type === "select" && f.options && f.options.length) {
           return `
             <div class="form-field">
-              <label for="asset-dyn-${Utils.esc(f.key)}">${Utils.esc(f.label)}</label>
-              <select id="asset-dyn-${Utils.esc(f.key)}" class="glass-input asset-dyn-input" data-key="${Utils.esc(f.key)}">
-                ${f.options.map((opt) => `<option value="${Utils.esc(opt)}" ${String(val) === String(opt) ? "selected" : ""}>${Utils.esc(opt)}</option>`).join("")}
-              </select>
+              <label>${Utils.esc(f.label)}</label>
+              <div id="mount-asset-dyn-${Utils.esc(f.key)}" class="v-select-mount"></div>
+              <input type="hidden" class="asset-dyn-input" data-key="${Utils.esc(f.key)}" value="${Utils.esc(val)}" />
             </div>
           `;
         }
@@ -835,7 +1018,27 @@
         `;
       }).join("");
 
-      this.dynFieldsContainer.querySelectorAll(".asset-dyn-input").forEach((input) => {
+      // Bind dynamic custom selects
+      tpl.fields.forEach((f) => {
+        if (f.type === "select" && f.options && f.options.length) {
+          const mount = document.getElementById(`mount-asset-dyn-${f.key}`);
+          const hiddenInput = this.dynFieldsContainer.querySelector(`.asset-dyn-input[data-key="${f.key}"]`);
+          const val = extraConfigObj[f.key] !== undefined ? extraConfigObj[f.key] : (f.default_val || f.options[0]);
+          if (mount) {
+            const cs = new CustomSelect(mount, {
+              options: f.options.map((opt) => ({ label: opt, value: opt })),
+              value: val,
+              onChange: (newVal) => {
+                if (hiddenInput) hiddenInput.value = newVal;
+                this.syncInputsToJSON();
+              },
+            });
+            this.dynamicSelects.push(cs);
+          }
+        }
+      });
+
+      this.dynFieldsContainer.querySelectorAll("input.asset-dyn-input:not([type=hidden])").forEach((input) => {
         input.addEventListener("input", () => this.syncInputsToJSON());
         input.addEventListener("change", () => this.syncInputsToJSON());
       });
@@ -860,7 +1063,7 @@
     }
   }
 
-  // --- Task Modal Component ---
+  // --- Task Modal Component (Powered by CustomSelect) ---
   class TaskModalComponent extends BaseComponent {
     init() {
       this.overlay = document.getElementById("task-modal-overlay");
@@ -869,16 +1072,56 @@
       this.hiddenId = document.getElementById("edit-task-id-hidden");
       this.idInput = document.getElementById("edit-task-id");
       this.nameInput = document.getElementById("edit-task-name");
-      this.typeSelect = document.getElementById("edit-task-type");
+      this.typeHidden = document.getElementById("edit-task-type");
       this.cronInput = document.getElementById("edit-task-cron");
       this.cronHint = document.getElementById("cron-readable-hint");
-      this.enabledSelect = document.getElementById("edit-task-enabled");
+      this.enabledHidden = document.getElementById("edit-task-enabled");
       this.descInput = document.getElementById("edit-task-desc");
       this.dynParamsContainer = document.getElementById("task-dynamic-params");
       this.paramsTextarea = document.getElementById("edit-task-params-json");
       this.deleteBtn = document.getElementById("delete-task-btn");
       this.closeBtn = document.getElementById("close-task-modal-btn");
       this.cancelBtn = document.getElementById("cancel-task-modal-btn");
+
+      this.dynamicSelects = [];
+
+      // Custom Select: Task Type
+      this.typeSelect = new CustomSelect("#mount-task-type", {
+        options: [
+          { label: "晨报小秘书模板 (morning)", value: "morning" },
+          { label: "开源技术雷达模板 (radar)", value: "radar" },
+          { label: "数字资产守望模板 (asset_watcher)", value: "asset_watcher" },
+        ],
+        value: "morning",
+        onChange: (type) => {
+          if (this.typeHidden) this.typeHidden.value = type;
+          const tpl = (this.store.state.templates || []).find((t) => t.type === type);
+          const isNew = !this.hiddenId.value;
+
+          if (isNew && tpl) {
+            this.nameInput.value = tpl.name || "";
+            this.cronInput.value = tpl.default_cron || "0 8 * * *";
+            this.updateCronHint(tpl.default_cron || "0 8 * * *");
+            this.descInput.value = tpl.description || "";
+            this.idInput.value = Utils.generateSlug(tpl.name, type);
+          }
+
+          const paramsObj = Utils.safeJSONParse(this.paramsTextarea.value);
+          this.renderDynamicParams(type, paramsObj);
+        },
+      });
+
+      // Custom Select: Task Enabled
+      this.enabledSelect = new CustomSelect("#mount-task-enabled", {
+        options: [
+          { label: "开启常态调度", value: "true" },
+          { label: "暂停任务调度", value: "false" },
+        ],
+        value: "true",
+        onChange: (val) => {
+          if (this.enabledHidden) this.enabledHidden.value = val;
+        },
+      });
 
       this.bus.on("modal:open-task", (item) => this.open(item));
 
@@ -892,26 +1135,9 @@
       // Name -> Slug
       this.nameInput?.addEventListener("input", () => {
         if (!this.hiddenId.value) {
-          this.idInput.value = Utils.generateSlug(this.nameInput.value, this.typeSelect.value);
+          const type = this.typeHidden ? this.typeHidden.value : "morning";
+          this.idInput.value = Utils.generateSlug(this.nameInput.value, type);
         }
-      });
-
-      // Type -> Dynamic Params & Presets
-      this.typeSelect?.addEventListener("change", () => {
-        const type = this.typeSelect.value;
-        const tpl = (this.store.state.templates || []).find((t) => t.type === type);
-        const isNew = !this.hiddenId.value;
-
-        if (isNew && tpl) {
-          this.nameInput.value = tpl.name || "";
-          this.cronInput.value = tpl.default_cron || "0 8 * * *";
-          this.updateCronHint(tpl.default_cron || "0 8 * * *");
-          this.descInput.value = tpl.description || "";
-          this.idInput.value = Utils.generateSlug(tpl.name, type);
-        }
-
-        const paramsObj = Utils.safeJSONParse(this.paramsTextarea.value);
-        this.renderDynamicParams(type, paramsObj);
       });
 
       // Cron Manual Input
@@ -963,9 +1189,9 @@
         const payload = {
           id: finalID,
           name: this.nameInput.value.trim(),
-          type: this.typeSelect.value,
+          type: this.typeHidden ? this.typeHidden.value : "morning",
           cron_expr: this.cronInput.value.trim(),
-          enabled: this.enabledSelect.value === "true",
+          enabled: this.enabledHidden ? this.enabledHidden.value === "true" : true,
           description: this.descInput.value.trim(),
           params: this.paramsTextarea.value.trim(),
         };
@@ -995,10 +1221,12 @@
         this.deleteBtn?.classList.add("hidden");
 
         this.nameInput.value = "";
-        this.typeSelect.value = "morning";
+        if (this.typeHidden) this.typeHidden.value = "morning";
+        this.typeSelect?.setValue("morning", false);
         this.cronInput.value = "0 8 * * *";
         this.updateCronHint("0 8 * * *");
-        this.enabledSelect.value = "true";
+        if (this.enabledHidden) this.enabledHidden.value = "true";
+        this.enabledSelect?.setValue("true", false);
         this.descInput.value = "汇总目标城市气象建议、每日格言、节点脉搏与临期资产";
         const initialParams = { city: "Shanghai", nezha_url: "https://dash.starryheavens.uk" };
         this.paramsTextarea.value = JSON.stringify(initialParams, null, 2);
@@ -1012,10 +1240,13 @@
         this.deleteBtn?.classList.remove("hidden");
 
         this.nameInput.value = item.name;
-        this.typeSelect.value = item.type;
+        if (this.typeHidden) this.typeHidden.value = item.type;
+        this.typeSelect?.setValue(item.type, false);
         this.cronInput.value = item.cron_expr || "";
         this.updateCronHint(item.cron_expr || "");
-        this.enabledSelect.value = item.enabled ? "true" : "false";
+        const enStr = item.enabled ? "true" : "false";
+        if (this.enabledHidden) this.enabledHidden.value = enStr;
+        this.enabledSelect?.setValue(enStr, false);
         this.descInput.value = item.description || "";
 
         const paramsObj = Utils.safeJSONParse(item.params);
@@ -1032,6 +1263,9 @@
 
     renderDynamicParams(type, paramsObj = {}) {
       if (!this.dynParamsContainer) return;
+      this.dynamicSelects.forEach((s) => s.destroy());
+      this.dynamicSelects = [];
+
       const tpl = (this.store.state.templates || []).find((t) => t.type === type);
       if (!tpl || !tpl.params_schema || !tpl.params_schema.length) {
         this.dynParamsContainer.innerHTML = `<div class="empty-state" style="padding:6px; font-size:11px;">该模板无需额外业务参数</div>`;
@@ -1043,10 +1277,9 @@
         if (f.type === "select" && f.options && f.options.length) {
           return `
             <div class="form-field">
-              <label for="task-dyn-${Utils.esc(f.key)}">${Utils.esc(f.label)}</label>
-              <select id="task-dyn-${Utils.esc(f.key)}" class="glass-input task-dyn-input" data-key="${Utils.esc(f.key)}">
-                ${f.options.map((opt) => `<option value="${Utils.esc(opt)}" ${String(val) === String(opt) ? "selected" : ""}>${Utils.esc(opt)}</option>`).join("")}
-              </select>
+              <label>${Utils.esc(f.label)}</label>
+              <div id="mount-task-dyn-${Utils.esc(f.key)}" class="v-select-mount"></div>
+              <input type="hidden" class="task-dyn-input" data-key="${Utils.esc(f.key)}" value="${Utils.esc(val)}" />
             </div>
           `;
         }
@@ -1058,7 +1291,27 @@
         `;
       }).join("");
 
-      this.dynParamsContainer.querySelectorAll(".task-dyn-input").forEach((input) => {
+      // Bind dynamic custom selects
+      tpl.params_schema.forEach((f) => {
+        if (f.type === "select" && f.options && f.options.length) {
+          const mount = document.getElementById(`mount-task-dyn-${f.key}`);
+          const hiddenInput = this.dynParamsContainer.querySelector(`.task-dyn-input[data-key="${f.key}"]`);
+          const val = paramsObj[f.key] !== undefined ? paramsObj[f.key] : (f.default_val || f.options[0]);
+          if (mount) {
+            const cs = new CustomSelect(mount, {
+              options: f.options.map((opt) => ({ label: opt, value: opt })),
+              value: val,
+              onChange: (newVal) => {
+                if (hiddenInput) hiddenInput.value = newVal;
+                this.syncInputsToJSON();
+              },
+            });
+            this.dynamicSelects.push(cs);
+          }
+        }
+      });
+
+      this.dynParamsContainer.querySelectorAll("input.task-dyn-input:not([type=hidden])").forEach((input) => {
         input.addEventListener("input", () => this.syncInputsToJSON());
         input.addEventListener("change", () => this.syncInputsToJSON());
       });
@@ -1084,7 +1337,7 @@
   }
 
   // ==========================================
-  // 7. Application Bootstrap
+  // 8. Application Bootstrap
   // ==========================================
   function bootstrap() {
     const bus = new EventBus();
