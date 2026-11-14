@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BotHub · Vesper 自动化情报与推送中枢</title>
-  <link rel="stylesheet" href="/styles.css?v=v1.3.0" />
+  <link rel="stylesheet" href="/styles.css?v=v1.4.0" />
 </head>
 <body>
   <canvas id="starfield" aria-hidden="true"></canvas>
@@ -32,7 +32,7 @@
         <span class="topbar-sub mono">bot.starryheavens.uk</span>
       </div>
       <div class="topbar-actions">
-        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v1.3.0</span></span>
+        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v1.4.0</span></span>
         <span class="stat-pill mono" id="uptime-label">UPTIME 0s</span>
         <button id="test-push-btn" class="btn btn-ghost" type="button">测试推送</button>
         <button id="refresh-btn" class="btn btn-ghost" type="button">刷新</button>
@@ -65,7 +65,7 @@
       <div class="section-head">
         <div>
           <h2 class="serif-title section-title">数字资产与会员守望 (Asset Watcher)</h2>
-          <span class="section-hint">真实到期自动嗅探 · 7/3/1 天防自动扣费强提醒 · <code>/api/v1/assets/overview</code></span>
+          <span class="section-hint">真实到期自动嗅探 · 阶梯式防自动扣费强提醒 · 开放端点 <code>/api/v1/assets/overview</code></span>
         </div>
         <div class="section-actions">
           <button id="add-asset-btn" class="btn btn-ghost" type="button">+ 新增资产</button>
@@ -80,7 +80,7 @@
       <div class="section-head">
         <div>
           <h2 class="serif-title section-title">自动化情报与调度任务 (Tasks Engine)</h2>
-          <span class="section-hint">动态模板引擎 · 支持面板自主创建、编辑与删除</span>
+          <span class="section-hint">动态 Schema 驱动 · 支持面板自主创建、编辑、启停与销毁</span>
         </div>
         <div class="section-actions">
           <button id="add-task-btn" class="btn btn-ghost" type="button">+ 创建任务</button>
@@ -93,57 +93,30 @@
     <section class="section-block two-col">
       <!-- Config -->
       <article class="glass-card panel-card">
-        <h2 class="serif-title panel-title">参数与调度配置</h2>
+        <div class="panel-header-simple">
+          <h2 class="serif-title panel-title">全局凭据与系统安全</h2>
+          <span class="section-hint">全局令牌与安全设置 · 任务定时请在上方独立管理</span>
+        </div>
         <form id="config-form" class="config-form">
           <div class="form-grid">
-            <div class="form-field">
-              <label for="cfg-morning-enabled">早报开关</label>
-              <select id="cfg-morning-enabled" class="glass-input"><option value="true">开启</option><option value="false">关闭</option></select>
-            </div>
-            <div class="form-field">
-              <label for="cfg-morning-cron">早报 Cron</label>
-              <input id="cfg-morning-cron" class="glass-input mono" placeholder="0 8 * * *" />
-            </div>
-            <div class="form-field">
-              <label for="cfg-morning-city">目标城市</label>
-              <input id="cfg-morning-city" class="glass-input" placeholder="Shanghai" />
-            </div>
-            <div class="form-field">
-              <label for="cfg-nezha-url">哪吒探针</label>
-              <input id="cfg-nezha-url" class="glass-input mono" placeholder="https://..." />
-            </div>
-            <div class="form-field">
-              <label for="cfg-radar-enabled">雷达开关</label>
-              <select id="cfg-radar-enabled" class="glass-input"><option value="true">开启</option><option value="false">关闭</option></select>
-            </div>
-            <div class="form-field">
-              <label for="cfg-radar-cron">雷达 Cron</label>
-              <input id="cfg-radar-cron" class="glass-input mono" placeholder="0 12,20 * * *" />
-            </div>
-            <div class="form-field">
-              <label for="cfg-asset-watcher-enabled">守望开关</label>
-              <select id="cfg-asset-watcher-enabled" class="glass-input"><option value="true">开启</option><option value="false">关闭</option></select>
-            </div>
-            <div class="form-field">
-              <label for="cfg-asset-watcher-cron">守望 Cron</label>
-              <input id="cfg-asset-watcher-cron" class="glass-input mono" placeholder="0 3 * * *" />
+            <div class="form-field full-width">
+              <label for="cfg-pushplus-token">PushPlus Token (微信消息推送令牌)</label>
+              <input id="cfg-pushplus-token" type="password" class="glass-input mono" placeholder="输入 PushPlus 个人推送 Token" />
+              <span class="field-hint">微信通知全局下发通道，早报、雷达与资产临期预警均由此派发</span>
             </div>
             <div class="form-field full-width">
-              <label for="cfg-cf-api-token">Cloudflare API Token (全局域名嗅探)</label>
-              <input id="cfg-cf-api-token" type="password" class="glass-input mono" placeholder="CF API Token" />
-            </div>
-            <div class="form-field full-width">
-              <label for="cfg-pushplus-token">PushPlus Token</label>
-              <input id="cfg-pushplus-token" type="password" class="glass-input mono" placeholder="PushPlus Token" />
+              <label for="cfg-cf-api-token">Cloudflare API Token (全局域名嗅探凭据)</label>
+              <input id="cfg-cf-api-token" type="password" class="glass-input mono" placeholder="输入具备 Zone.Read 权限的 API Token" />
+              <span class="field-hint">用于资产守望任务自动轮询域名到期日与 DNS 解析健康度</span>
             </div>
           </div>
           <div class="panel-foot">
-            <button type="submit" class="btn btn-primary" id="save-config-btn">保存并重载配置</button>
+            <button type="submit" class="btn btn-primary" id="save-config-btn">保存系统凭据</button>
           </div>
         </form>
 
         <div class="divider"></div>
-        <h3 class="serif-title panel-sub-title">修改控制台密钥</h3>
+        <h3 class="serif-title panel-sub-title">修改控制台访问密钥</h3>
         <form id="password-form" class="pw-form">
           <input id="new-password" type="password" minlength="6" class="glass-input mono" placeholder="输入新密钥 (至少6位)" required />
           <button type="submit" class="btn btn-ghost">更新密钥</button>
@@ -154,7 +127,7 @@
       <article class="glass-card panel-card">
         <div class="panel-header-simple">
           <h2 class="serif-title panel-title">PushPlus 推送流水</h2>
-          <span class="section-hint">最近 40 条 (点击展开)</span>
+          <span class="section-hint">最近 40 条 (点击展开详情)</span>
         </div>
         <div id="logs-list" class="logs-list"></div>
       </article>
@@ -174,52 +147,70 @@
         <div class="form-grid">
           <div class="form-field full-width" id="wrap-asset-id">
             <label for="edit-asset-id-input">资产唯一标识 (ID，英文小写/下划线)</label>
-            <input id="edit-asset-id-input" class="glass-input mono" placeholder="如 racknerd_la / cf_domain" required />
+            <input id="edit-asset-id-input" class="glass-input mono" placeholder="输入名称后自动生成，也可自定义" required />
           </div>
           <div class="form-field">
-            <label for="edit-asset-name">名称</label>
-            <input id="edit-asset-name" class="glass-input" required />
+            <label for="edit-asset-name">资产名称</label>
+            <input id="edit-asset-name" class="glass-input" placeholder="如 搬瓦工 GIA VPS / 核心域名" required />
           </div>
           <div class="form-field">
-            <label for="edit-asset-category">分类</label>
+            <label for="edit-asset-category">资产分类</label>
             <select id="edit-asset-category" class="glass-input">
-              <option value="compute">算力基建 (compute)</option>
-              <option value="domain">核心域名 (domain)</option>
-              <option value="life">生活订阅 (life)</option>
+              <option value="compute">算力与云主机 (compute)</option>
+              <option value="domain">核心域名资产 (domain)</option>
+              <option value="life">数字会员与生活订阅 (life)</option>
             </select>
           </div>
           <div class="form-field">
-            <label for="edit-asset-spec">规格</label>
-            <input id="edit-asset-spec" class="glass-input" placeholder="规格摘要" />
+            <label for="edit-asset-spec">规格说明</label>
+            <input id="edit-asset-spec" class="glass-input" placeholder="如 2C2G / 洛杉矶 DC9 / Premium" />
           </div>
           <div class="form-field">
-            <label for="edit-asset-price">价格周期</label>
-            <input id="edit-asset-price" class="glass-input" placeholder="如 $1.75/月" />
+            <label for="edit-asset-price">续费金额与周期</label>
+            <input id="edit-asset-price" class="glass-input" placeholder="如 $49.99/年 或 ¥15/月" />
           </div>
           <div class="form-field">
-            <label for="edit-asset-due">到期时间 (RFC3339)</label>
+            <label for="edit-asset-due">到期时间 (RFC3339 或 YYYY-MM-DD)</label>
             <input id="edit-asset-due" class="glass-input mono" placeholder="2026-11-20T23:59:59+08:00" />
           </div>
           <div class="form-field">
-            <label for="edit-asset-status">状态</label>
-            <input id="edit-asset-status" class="glass-input" placeholder="如 运行中" />
+            <label for="edit-asset-status">运行状态</label>
+            <input id="edit-asset-status" class="glass-input" placeholder="如 运行中 / 正常" />
           </div>
           <div class="form-field">
-            <label for="edit-asset-autorenew">自动续费</label>
+            <label for="edit-asset-autorenew">自动续费模式</label>
             <select id="edit-asset-autorenew" class="glass-input">
-              <option value="true">开启</option>
-              <option value="false">关闭 (到期需注意)</option>
+              <option value="true">开启 (到期日前防扣款提醒)</option>
+              <option value="false">关闭 (到期需人工手动处理)</option>
             </select>
           </div>
-          <div class="form-field">
-            <label for="edit-asset-warndays">预警梯度</label>
-            <input id="edit-asset-warndays" class="glass-input mono" placeholder="[7, 3, 1]" />
-          </div>
           <div class="form-field full-width">
-            <label for="edit-asset-extra">鉴权与嗅探配置 (JSON)</label>
-            <textarea id="edit-asset-extra" rows="3" class="glass-input mono" placeholder='{"sessdata":"...","anchor_day":12}'></textarea>
+            <label for="edit-asset-warndays">临期预警梯度 (提前天数列表)</label>
+            <input id="edit-asset-warndays" class="glass-input mono" placeholder="[7, 3, 1]" />
+            <div class="preset-pill-group">
+              <button type="button" class="pill-btn" data-preset="[7, 3, 1]">[7, 3, 1] 标准梯度</button>
+              <button type="button" class="pill-btn" data-preset="[15, 7, 3, 1, 0]">[15, 7, 3, 1, 0] 密集阶梯</button>
+              <button type="button" class="pill-btn" data-preset="[30, 7, 1]">[30, 7, 1] 长周期提醒</button>
+              <button type="button" class="pill-btn" data-preset="[3, 1]">[3, 1] 极简冲刺</button>
+            </div>
           </div>
+
+          <!-- Dynamic Category Fields Container -->
+          <div class="full-width dynamic-field-section">
+            <div class="dynamic-field-title">分类专有参数配置</div>
+            <div id="asset-dynamic-fields" class="form-grid"></div>
+          </div>
+
+          <!-- Advanced JSON Details -->
+          <details class="full-width advanced-accordion">
+            <summary class="mono">高级参数与原始 JSON (极客选项)</summary>
+            <div class="advanced-box">
+              <textarea id="edit-asset-extra" rows="3" class="glass-input mono" placeholder='{"anchor_day":12}'></textarea>
+              <span class="field-hint">与上方可视化参数实时双向联动</span>
+            </div>
+          </details>
         </div>
+
         <div class="modal-actions-between">
           <button type="button" class="btn btn-danger hidden" id="delete-asset-btn">下架并删除</button>
           <div class="modal-actions-right">
@@ -244,11 +235,11 @@
         <div class="form-grid">
           <div class="form-field full-width" id="wrap-task-id">
             <label for="edit-task-id">任务唯一标识 (ID，英文小写/下划线)</label>
-            <input id="edit-task-id" class="glass-input mono" placeholder="如 morning_tokyo / radar_weekend" required />
+            <input id="edit-task-id" class="glass-input mono" placeholder="输入名称后自动生成，也可自定义" required />
           </div>
           <div class="form-field">
             <label for="edit-task-name">任务名称</label>
-            <input id="edit-task-name" class="glass-input" placeholder="如 东京晨间早报" required />
+            <input id="edit-task-name" class="glass-input" placeholder="如 晨间早报 / 技术雷达" required />
           </div>
           <div class="form-field">
             <label for="edit-task-type">任务模板类型</label>
@@ -259,25 +250,44 @@
             </select>
           </div>
           <div class="form-field">
-            <label for="edit-task-cron">定时 Cron 表达式</label>
-            <input id="edit-task-cron" class="glass-input mono" placeholder="0 8 * * *" required />
-          </div>
-          <div class="form-field">
             <label for="edit-task-enabled">任务状态</label>
             <select id="edit-task-enabled" class="glass-input">
-              <option value="true">开启调度</option>
+              <option value="true">开启常态调度</option>
               <option value="false">暂停调度</option>
             </select>
           </div>
           <div class="form-field full-width">
-            <label for="edit-task-desc">任务描述说明</label>
-            <input id="edit-task-desc" class="glass-input" placeholder="简要说明该任务的执行目标..." />
+            <label for="edit-task-cron">定时 Cron 表达式</label>
+            <input id="edit-task-cron" class="glass-input mono" placeholder="0 8 * * *" required />
+            <div class="preset-pill-group">
+              <button type="button" class="pill-btn cron-preset" data-cron="0 8 * * *">每日早08:00 (0 8 * * *)</button>
+              <button type="button" class="pill-btn cron-preset" data-cron="0 12,20 * * *">每日午晚12/20点 (0 12,20 * * *)</button>
+              <button type="button" class="pill-btn cron-preset" data-cron="0 3 * * *">每日凌晨03:00 (0 3 * * *)</button>
+              <button type="button" class="pill-btn cron-preset" data-cron="0 * * * *">每小时整点 (0 * * * *)</button>
+            </div>
+            <span id="cron-readable-hint" class="field-hint mono">当前表达式: 0 8 * * * (每天 08:00 执行)</span>
           </div>
           <div class="form-field full-width">
-            <label for="edit-task-params-json">模板参数 (JSON 格式)</label>
-            <textarea id="edit-task-params-json" rows="3" class="glass-input mono" placeholder='{"city":"Tokyo"}'></textarea>
+            <label for="edit-task-desc">任务描述说明</label>
+            <input id="edit-task-desc" class="glass-input" placeholder="说明该任务的执行逻辑与推送目标..." />
           </div>
+
+          <!-- Dynamic Task Schema Params Container -->
+          <div class="full-width dynamic-field-section">
+            <div class="dynamic-field-title">模板业务参数配置</div>
+            <div id="task-dynamic-params" class="form-grid"></div>
+          </div>
+
+          <!-- Advanced JSON Details -->
+          <details class="full-width advanced-accordion">
+            <summary class="mono">高级参数与原始 JSON (极客选项)</summary>
+            <div class="advanced-box">
+              <textarea id="edit-task-params-json" rows="3" class="glass-input mono" placeholder='{"city":"Tokyo"}'></textarea>
+              <span class="field-hint">与上方可视化参数实时双向联动</span>
+            </div>
+          </details>
         </div>
+
         <div class="modal-actions-between">
           <button type="button" class="btn btn-danger hidden" id="delete-task-btn">删除该任务</button>
           <div class="modal-actions-right">
@@ -290,7 +300,8 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/starfield.js?v=v1.3.0"></script>
-  <script src="/app.js?v=v1.3.0"></script>
+  <script src="/starfield.js?v=v1.4.0"></script>
+  <script src="/app.js?v=v1.4.0"></script>
 </body>
+</html>
 </html>

@@ -8,6 +8,7 @@
   let cachedAssets = [];
   let cachedTasks = [];
   let cachedTemplates = [];
+  let cachedAssetTemplates = [];
 
   function showToast(msg) {
     toastEl.textContent = msg;
@@ -26,6 +27,34 @@
     if (isNaN(d.getTime())) return str;
     const pad = (n) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function generateSlug(text, defaultPrefix = "item") {
+    const clean = String(text || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    if (clean) return clean;
+    return `${defaultPrefix}_${Date.now().toString(36).slice(-4)}`;
+  }
+
+  function describeCron(expr) {
+    const trimmed = String(expr || "").trim();
+    if (!trimmed) return "未指定 Cron 表达式";
+    if (trimmed === "0 8 * * *") return "每天早 08:00 执行";
+    if (trimmed === "0 12,20 * * *") return "每天 12:00 与 20:00 各执行一次";
+    if (trimmed === "0 3 * * *") return "每天凌晨 03:00 执行";
+    if (trimmed === "0 * * * *") return "每小时整点执行一次";
+    if (trimmed === "*/30 * * * *") return "每 30 分钟执行一次";
+    return `标准 5 段式 Cron 表达式: ${trimmed}`;
+  }
+
+  function updateCronHint(expr) {
+    const hint = document.getElementById("cron-readable-hint");
+    if (hint) {
+      hint.textContent = `当前语义: ${describeCron(expr)}`;
+    }
   }
 
   async function api(path, opts = {}) {
@@ -65,6 +94,7 @@
     try {
       const data = await api("/api/dashboard");
       cachedTemplates = data.templates || [];
+      cachedAssetTemplates = data.asset_templates || [];
       renderStats(data);
       renderAssets(data.assets || []);
       renderTasks(data.tasks || data.modules || []);
@@ -147,19 +177,80 @@
         document.getElementById("edit-asset-status").value = item.status || "";
         document.getElementById("edit-asset-autorenew").value = item.auto_renew ? "true" : "false";
         document.getElementById("edit-asset-warndays").value = item.warn_days || "[7, 3, 1]";
+
+        let extraObj = {};
         try {
-          document.getElementById("edit-asset-extra").value = JSON.stringify(JSON.parse(item.extra_config || "{}"), null, 2);
+          extraObj = JSON.parse(item.extra_config || "{}");
+          document.getElementById("edit-asset-extra").value = JSON.stringify(extraObj, null, 2);
         } catch {
           document.getElementById("edit-asset-extra").value = item.extra_config || "{}";
         }
+
+        renderAssetDynamicFields(item.category || "life", extraObj);
         modalOverlay.classList.remove("hidden");
       };
     });
   }
 
+  function renderAssetDynamicFields(category, extraConfigObj = {}) {
+    const container = document.getElementById("asset-dynamic-fields");
+    if (!container) return;
+    const tpl = cachedAssetTemplates.find((t) => t.category === category);
+    if (!tpl || !tpl.fields || !tpl.fields.length) {
+      container.innerHTML = `<div class="empty-state" style="padding:6px; font-size:11px;">该分类暂无特定扩展参数</div>`;
+      return;
+    }
+
+    container.innerHTML = tpl.fields.map((f) => {
+      const val = extraConfigObj[f.key] !== undefined ? extraConfigObj[f.key] : (f.default_val || "");
+      if (f.type === "select" && f.options && f.options.length) {
+        return `
+          <div class="form-field">
+            <label for="asset-dyn-${esc(f.key)}">${esc(f.label)}</label>
+            <select id="asset-dyn-${esc(f.key)}" class="glass-input asset-dyn-input" data-key="${esc(f.key)}">
+              ${f.options.map((opt) => `<option value="${esc(opt)}" ${String(val) === String(opt) ? "selected" : ""}>${esc(opt)}</option>`).join("")}
+            </select>
+          </div>
+        `;
+      }
+      return `
+        <div class="form-field">
+          <label for="asset-dyn-${esc(f.key)}">${esc(f.label)}</label>
+          <input id="asset-dyn-${esc(f.key)}" type="${f.type === "number" ? "number" : "text"}" class="glass-input mono asset-dyn-input" data-key="${esc(f.key)}" value="${esc(val)}" placeholder="${esc(f.placeholder || "")}" />
+        </div>
+      `;
+    }).join("");
+
+    container.querySelectorAll(".asset-dyn-input").forEach((input) => {
+      input.oninput = syncAssetInputsToJSON;
+      input.onchange = syncAssetInputsToJSON;
+    });
+  }
+
+  function syncAssetInputsToJSON() {
+    let currentExtra = {};
+    try {
+      currentExtra = JSON.parse(document.getElementById("edit-asset-extra").value || "{}");
+    } catch {}
+    document.querySelectorAll("#asset-dynamic-fields .asset-dyn-input").forEach((el) => {
+      const key = el.dataset.key;
+      let val = el.value.trim();
+      if (el.type === "number") {
+        const num = Number(val);
+        val = isNaN(num) ? val : num;
+      }
+      if (val !== "") {
+        currentExtra[key] = val;
+      } else {
+        delete currentExtra[key];
+      }
+    });
+    document.getElementById("edit-asset-extra").value = JSON.stringify(currentExtra, null, 2);
+  }
+
   function renderTasks(tasks) {
     cachedTasks = tasks;
-    const grid = document.getElementById("tasks-grid") || document.getElementById("modules-grid");
+    const grid = document.getElementById("tasks-grid");
     if (!grid) return;
     if (!tasks.length) {
       grid.innerHTML = `<div class="empty-state">暂无已注册的任务模板与实例</div>`;
@@ -172,11 +263,20 @@
       const typeLabel = t.type === "morning" ? "早报小秘书" : (t.type === "radar" ? "开源技术雷达" : (t.type === "asset_watcher" ? "数字资产守望" : esc(t.type)));
       const typeClass = t.type === "morning" ? "cat-domain" : (t.type === "radar" ? "cat-compute" : "cat-life");
 
+      // Extract high-level badge parameters for non-redundant preview
+      let badgeHTML = "";
+      try {
+        const p = JSON.parse(t.params || "{}");
+        if (p.city) badgeHTML += `<span class="pill-btn mono">城市: ${esc(p.city)}</span>`;
+        if (p.hn_min_score) badgeHTML += `<span class="pill-btn mono">HN分 >= ${esc(p.hn_min_score)}</span>`;
+        if (p.limit) badgeHTML += `<span class="pill-btn mono">最多 ${esc(p.limit)} 条</span>`;
+      } catch {}
+
       return `
         <article class="glass-card module-card">
           <div class="module-top">
             <div>
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
                 <h3 class="serif-title module-name">${esc(t.name)}</h3>
                 <span class="cat-badge ${typeClass}">${typeLabel}</span>
               </div>
@@ -188,6 +288,7 @@
             <div><span>Cron 表达式</span><br><strong>${esc(t.cron_expr || "--")}</strong></div>
             <div><span>下次执行 (CST)</span><br><strong>${esc(t.enabled ? (t.next_run_at || "--") : "停用")}</strong></div>
           </div>
+          ${badgeHTML ? `<div class="preset-pill-group" style="margin-top:-4px;">${badgeHTML}</div>` : ""}
           <div class="module-summary">${esc(last ? last.summary : "等待执行流水")}</div>
           <div class="task-foot">
             <button class="btn btn-primary btn-sm run-btn" data-id="${esc(t.id)}" ${t.is_running ? "disabled" : ""}>
@@ -233,13 +334,19 @@
         document.getElementById("edit-task-name").value = item.name;
         document.getElementById("edit-task-type").value = item.type;
         document.getElementById("edit-task-cron").value = item.cron_expr || "";
+        updateCronHint(item.cron_expr || "");
         document.getElementById("edit-task-enabled").value = item.enabled ? "true" : "false";
         document.getElementById("edit-task-desc").value = item.description || "";
+
+        let paramsObj = {};
         try {
-          document.getElementById("edit-task-params-json").value = JSON.stringify(JSON.parse(item.params || "{}"), null, 2);
+          paramsObj = JSON.parse(item.params || "{}");
+          document.getElementById("edit-task-params-json").value = JSON.stringify(paramsObj, null, 2);
         } catch {
           document.getElementById("edit-task-params-json").value = item.params || "{}";
         }
+
+        renderTaskDynamicParams(item.type, paramsObj);
         taskModalOverlay.classList.remove("hidden");
       };
     });
@@ -259,6 +366,62 @@
         }
       };
     });
+  }
+
+  function renderTaskDynamicParams(type, paramsObj = {}) {
+    const container = document.getElementById("task-dynamic-params");
+    if (!container) return;
+    const tpl = cachedTemplates.find((t) => t.type === type);
+    if (!tpl || !tpl.params_schema || !tpl.params_schema.length) {
+      container.innerHTML = `<div class="empty-state" style="padding:6px; font-size:11px;">该模板无需额外业务参数</div>`;
+      return;
+    }
+
+    container.innerHTML = tpl.params_schema.map((f) => {
+      const val = paramsObj[f.key] !== undefined ? paramsObj[f.key] : (f.default_val || "");
+      if (f.type === "select" && f.options && f.options.length) {
+        return `
+          <div class="form-field">
+            <label for="task-dyn-${esc(f.key)}">${esc(f.label)}</label>
+            <select id="task-dyn-${esc(f.key)}" class="glass-input task-dyn-input" data-key="${esc(f.key)}">
+              ${f.options.map((opt) => `<option value="${esc(opt)}" ${String(val) === String(opt) ? "selected" : ""}>${esc(opt)}</option>`).join("")}
+            </select>
+          </div>
+        `;
+      }
+      return `
+        <div class="form-field">
+          <label for="task-dyn-${esc(f.key)}">${esc(f.label)}</label>
+          <input id="task-dyn-${esc(f.key)}" type="${f.type === "number" ? "number" : "text"}" class="glass-input mono task-dyn-input" data-key="${esc(f.key)}" value="${esc(val)}" placeholder="${esc(f.placeholder || "")}" />
+        </div>
+      `;
+    }).join("");
+
+    container.querySelectorAll(".task-dyn-input").forEach((input) => {
+      input.oninput = syncTaskInputsToJSON;
+      input.onchange = syncTaskInputsToJSON;
+    });
+  }
+
+  function syncTaskInputsToJSON() {
+    let currentParams = {};
+    try {
+      currentParams = JSON.parse(document.getElementById("edit-task-params-json").value || "{}");
+    } catch {}
+    document.querySelectorAll("#task-dynamic-params .task-dyn-input").forEach((el) => {
+      const key = el.dataset.key;
+      let val = el.value.trim();
+      if (el.type === "number") {
+        const num = Number(val);
+        val = isNaN(num) ? val : num;
+      }
+      if (val !== "") {
+        currentParams[key] = val;
+      } else {
+        delete currentParams[key];
+      }
+    });
+    document.getElementById("edit-task-params-json").value = JSON.stringify(currentParams, null, 2);
   }
 
   function renderLogs(logs) {
@@ -287,14 +450,13 @@
   }
 
   function fillConfig(cfg) {
-    const keys = ["morning_enabled", "morning_cron", "morning_city", "nezha_url", "radar_enabled", "radar_cron", "asset_watcher_enabled", "asset_watcher_cron", "cf_api_token", "pushplus_token"];
-    keys.forEach((k) => {
-      const el = document.getElementById("cfg-" + k.replaceAll("_", "-"));
-      if (el) el.value = cfg[k] || "";
-    });
+    const pushplus = document.getElementById("cfg-pushplus-token");
+    if (pushplus) pushplus.value = cfg["pushplus_token"] || "";
+    const cf = document.getElementById("cfg-cf-api-token");
+    if (cf) cf.value = cfg["cf_api_token"] || "";
   }
 
-  // Event Listeners
+  // Event Listeners: Auth
   document.getElementById("login-form").onsubmit = async (e) => {
     e.preventDefault();
     const errEl = document.getElementById("login-error");
@@ -348,17 +510,16 @@
     }
   };
 
+  // Config Form
   document.getElementById("config-form").onsubmit = async (e) => {
     e.preventDefault();
-    const keys = ["morning_enabled", "morning_cron", "morning_city", "nezha_url", "radar_enabled", "radar_cron", "asset_watcher_enabled", "asset_watcher_cron", "cf_api_token", "pushplus_token"];
-    const payload = {};
-    keys.forEach((k) => {
-      const el = document.getElementById("cfg-" + k.replaceAll("_", "-"));
-      if (el) payload[k] = el.value.trim();
-    });
+    const payload = {
+      pushplus_token: (document.getElementById("cfg-pushplus-token")?.value || "").trim(),
+      cf_api_token: (document.getElementById("cfg-cf-api-token")?.value || "").trim(),
+    };
     try {
       await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
-      showToast("配置已更新并重载调度");
+      showToast("全局凭据已保存");
       await loadDashboard();
     } catch (err) {
       showToast(err.message);
@@ -377,10 +538,10 @@
     }
   };
 
+  // Asset Modal
   document.getElementById("close-modal-btn").onclick = () => modalOverlay.classList.add("hidden");
   document.getElementById("cancel-modal-btn").onclick = () => modalOverlay.classList.add("hidden");
 
-  // Add Asset Button
   const addAssetBtn = document.getElementById("add-asset-btn");
   if (addAssetBtn) {
     addAssetBtn.onclick = () => {
@@ -400,9 +561,65 @@
       document.getElementById("edit-asset-autorenew").value = "true";
       document.getElementById("edit-asset-warndays").value = "[7, 3, 1]";
       document.getElementById("edit-asset-extra").value = "{}";
+
+      renderAssetDynamicFields("compute", {});
       modalOverlay.classList.remove("hidden");
     };
   }
+
+  // Asset Name -> Slug auto generate
+  const assetNameInput = document.getElementById("edit-asset-name");
+  if (assetNameInput) {
+    assetNameInput.oninput = () => {
+      const isNew = !document.getElementById("edit-asset-id").value;
+      if (isNew) {
+        const cat = document.getElementById("edit-asset-category").value;
+        document.getElementById("edit-asset-id-input").value = generateSlug(assetNameInput.value, cat);
+      }
+    };
+  }
+
+  // Asset Category Change
+  const assetCategorySelect = document.getElementById("edit-asset-category");
+  if (assetCategorySelect) {
+    assetCategorySelect.onchange = () => {
+      const cat = assetCategorySelect.value;
+      let extraObj = {};
+      try {
+        extraObj = JSON.parse(document.getElementById("edit-asset-extra").value || "{}");
+      } catch {}
+      renderAssetDynamicFields(cat, extraObj);
+
+      const isNew = !document.getElementById("edit-asset-id").value;
+      if (isNew) {
+        const nameVal = document.getElementById("edit-asset-name").value;
+        document.getElementById("edit-asset-id-input").value = generateSlug(nameVal, cat);
+      }
+    };
+  }
+
+  // Asset Extra JSON manual edit sync
+  const assetExtraTextarea = document.getElementById("edit-asset-extra");
+  if (assetExtraTextarea) {
+    assetExtraTextarea.oninput = () => {
+      try {
+        const parsed = JSON.parse(assetExtraTextarea.value || "{}");
+        document.querySelectorAll("#asset-dynamic-fields .asset-dyn-input").forEach((el) => {
+          const key = el.dataset.key;
+          if (parsed[key] !== undefined) {
+            el.value = parsed[key];
+          }
+        });
+      } catch {}
+    };
+  }
+
+  // Asset WarnDays Presets
+  document.querySelectorAll(".preset-pill-group .pill-btn[data-preset]").forEach((btn) => {
+    btn.onclick = () => {
+      document.getElementById("edit-asset-warndays").value = btn.dataset.preset;
+    };
+  });
 
   // Delete Asset Button
   const deleteAssetBtn = document.getElementById("delete-asset-btn");
@@ -435,6 +652,8 @@
       showToast("资产 ID 不能为空");
       return;
     }
+
+    syncAssetInputsToJSON();
 
     const payload = {
       id: finalID,
@@ -478,37 +697,80 @@
       document.getElementById("edit-task-name").value = "";
       document.getElementById("edit-task-type").value = "morning";
       document.getElementById("edit-task-cron").value = "0 8 * * *";
+      updateCronHint("0 8 * * *");
       document.getElementById("edit-task-enabled").value = "true";
       document.getElementById("edit-task-desc").value = "汇总目标城市气象建议、每日格言、节点脉搏与临期资产";
-      document.getElementById("edit-task-params-json").value = JSON.stringify({ city: "Shanghai", nezha_url: "https://dash.starryheavens.uk" }, null, 2);
+      const initialParams = { city: "Shanghai", nezha_url: "https://dash.starryheavens.uk" };
+      document.getElementById("edit-task-params-json").value = JSON.stringify(initialParams, null, 2);
+
+      renderTaskDynamicParams("morning", initialParams);
       taskModalOverlay.classList.remove("hidden");
     };
   }
 
-  // Type change template presets
+  // Task Name -> Slug auto generate
+  const taskNameInput = document.getElementById("edit-task-name");
+  if (taskNameInput) {
+    taskNameInput.oninput = () => {
+      const isNew = !document.getElementById("edit-task-id-hidden").value;
+      if (isNew) {
+        const type = document.getElementById("edit-task-type").value;
+        document.getElementById("edit-task-id").value = generateSlug(taskNameInput.value, type);
+      }
+    };
+  }
+
+  // Task Type Change
   const taskTypeSelect = document.getElementById("edit-task-type");
   if (taskTypeSelect) {
     taskTypeSelect.onchange = () => {
       const type = taskTypeSelect.value;
+      const tpl = cachedTemplates.find((t) => t.type === type);
       const isNew = !document.getElementById("edit-task-id-hidden").value;
-      if (isNew) {
-        if (type === "morning") {
-          document.getElementById("edit-task-name").value = "每日晨报小秘书";
-          document.getElementById("edit-task-cron").value = "0 8 * * *";
-          document.getElementById("edit-task-desc").value = "汇总目标城市气象建议、每日格言、节点脉搏与临期资产";
-          document.getElementById("edit-task-params-json").value = JSON.stringify({ city: "Shanghai", nezha_url: "https://dash.starryheavens.uk" }, null, 2);
-        } else if (type === "radar") {
-          document.getElementById("edit-task-name").value = "全网开源技术雷达";
-          document.getElementById("edit-task-cron").value = "0 12,20 * * *";
-          document.getElementById("edit-task-desc").value = "抓取 GitHub Trending 与 Hacker News 热门高分条目";
-          document.getElementById("edit-task-params-json").value = JSON.stringify({ hn_min_score: 120, limit: 8 }, null, 2);
-        } else if (type === "asset_watcher") {
-          document.getElementById("edit-task-name").value = "数字资产与会员守望";
-          document.getElementById("edit-task-cron").value = "0 3 * * *";
-          document.getElementById("edit-task-desc").value = "自动巡检资产到期与自动扣费防坑预警";
-          document.getElementById("edit-task-params-json").value = "{}";
-        }
+
+      if (isNew && tpl) {
+        document.getElementById("edit-task-name").value = tpl.name || "";
+        document.getElementById("edit-task-cron").value = tpl.default_cron || "0 8 * * *";
+        updateCronHint(tpl.default_cron || "0 8 * * *");
+        document.getElementById("edit-task-desc").value = tpl.description || "";
+        document.getElementById("edit-task-id").value = generateSlug(tpl.name, type);
       }
+
+      let paramsObj = {};
+      try {
+        paramsObj = JSON.parse(document.getElementById("edit-task-params-json").value || "{}");
+      } catch {}
+      renderTaskDynamicParams(type, paramsObj);
+    };
+  }
+
+  // Cron Presets and manual input
+  document.querySelectorAll(".cron-preset").forEach((btn) => {
+    btn.onclick = () => {
+      const cron = btn.dataset.cron;
+      document.getElementById("edit-task-cron").value = cron;
+      updateCronHint(cron);
+    };
+  });
+
+  const taskCronInput = document.getElementById("edit-task-cron");
+  if (taskCronInput) {
+    taskCronInput.oninput = () => updateCronHint(taskCronInput.value);
+  }
+
+  // Task Params JSON manual edit sync
+  const taskParamsTextarea = document.getElementById("edit-task-params-json");
+  if (taskParamsTextarea) {
+    taskParamsTextarea.oninput = () => {
+      try {
+        const parsed = JSON.parse(taskParamsTextarea.value || "{}");
+        document.querySelectorAll("#task-dynamic-params .task-dyn-input").forEach((el) => {
+          const key = el.dataset.key;
+          if (parsed[key] !== undefined) {
+            el.value = parsed[key];
+          }
+        });
+      } catch {}
     };
   }
 
@@ -548,6 +810,8 @@
         showToast("任务 ID 不能为空");
         return;
       }
+
+      syncTaskInputsToJSON();
 
       const payload = {
         id: finalID,

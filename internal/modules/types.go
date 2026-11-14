@@ -41,6 +41,13 @@ type TaskTemplate struct {
 	ParamsSchema []ParamField `json:"params_schema"`
 }
 
+type AssetTemplate struct {
+	Category    string       `json:"category"`
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Fields      []ParamField `json:"fields"`
+}
+
 func BuiltinTemplates() []TaskTemplate {
 	return []TaskTemplate{
 		{
@@ -69,6 +76,40 @@ func BuiltinTemplates() []TaskTemplate {
 			Description: "自动巡检所有资产到期时间，触发个性化临期预警与防扣费强提醒",
 			DefaultCron: "0 3 * * *",
 			ParamsSchema: []ParamField{},
+		},
+	}
+}
+
+func BuiltinAssetTemplates() []AssetTemplate {
+	return []AssetTemplate{
+		{
+			Category:    "compute",
+			Name:        "算力与云主机 (VPS / Cloud)",
+			Description: "云服务器、边缘算力、轻量主机及 NAT 机器",
+			Fields: []ParamField{
+				{Key: "provider", Label: "服务提供商", Type: "text", Placeholder: "如 BandwagonHost / RackNerd / 阿里云"},
+				{Key: "anchor_day", Label: "每月固定扣费日 (1~31)", Type: "number", DefaultVal: "1", Placeholder: "每月扣费日锚点，如 12"},
+				{Key: "ip_address", Label: "公网 IP / 探针域名", Type: "text", Placeholder: "如 1.2.3.4 或 la.node.com"},
+			},
+		},
+		{
+			Category:    "domain",
+			Name:        "核心域名资产 (Domain)",
+			Description: "顶级域名、二级业务域名与权威 DNS 资产",
+			Fields: []ParamField{
+				{Key: "domain_name", Label: "域名主体", Type: "text", Placeholder: "如 starryheavens.uk"},
+				{Key: "registrar", Label: "注册托管机构", Type: "text", Placeholder: "如 Cloudflare / Spaceship / NameSilo"},
+			},
+		},
+		{
+			Category:    "life",
+			Name:        "数字会员与生活订阅 (Subscription)",
+			Description: "流媒体、AI 工具、云盘与各类软件定期扣款服务",
+			Fields: []ParamField{
+				{Key: "platform", Label: "订阅服务平台", Type: "text", Placeholder: "如 Spotify / Netflix / ChatGPT / B站大会员"},
+				{Key: "credentials", Label: "嗅探凭证/Cookie (可选)", Type: "text", Placeholder: "用于自动嗅探到期的 SESSDATA 或 Token"},
+				{Key: "billing_note", Label: "扣费渠道与绑卡备注", Type: "text", Placeholder: "如 绑定中行Visa卡 / 虚拟卡尾号8888"},
+			},
 		},
 	}
 }

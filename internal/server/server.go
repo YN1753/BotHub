@@ -126,6 +126,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tasks/{id}/run", s.requireAuth(s.handleRunTask))
 
 	// Assets Management
+	mux.HandleFunc("GET /api/asset-templates", s.requireAuth(s.handleListAssetTemplates))
 	mux.HandleFunc("GET /api/assets", s.requireAuth(s.handleListAssets))
 	mux.HandleFunc("POST /api/assets", s.requireAuth(s.handleCreateAsset))
 	mux.HandleFunc("POST /api/assets/{id}", s.requireAuth(s.handleUpdateAsset))
@@ -272,18 +273,19 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	stats, _ := s.store.CountStats()
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"version":    s.version,
-		"commit":     s.commit,
-		"build_time": s.buildTime,
-		"modules":    tasks, // 兼容前端历史模块字段
-		"tasks":      tasks,
-		"templates":  modules.BuiltinTemplates(),
-		"configs":    cfgs,
-		"assets":     assets,
-		"push_logs":  logs,
-		"stats":      stats,
-		"uptime_sec": int64(time.Since(s.startedAt).Seconds()),
-		"server_now": store.NowShanghai(),
+		"version":         s.version,
+		"commit":          s.commit,
+		"build_time":      s.buildTime,
+		"modules":         tasks, // 兼容前端历史模块字段
+		"tasks":           tasks,
+		"templates":       modules.BuiltinTemplates(),
+		"asset_templates": modules.BuiltinAssetTemplates(),
+		"configs":         cfgs,
+		"assets":          assets,
+		"push_logs":       logs,
+		"stats":           stats,
+		"uptime_sec":      int64(time.Since(s.startedAt).Seconds()),
+		"server_now":      store.NowShanghai(),
 	})
 }
 
@@ -395,14 +397,16 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	allowedKeys := map[string]bool{
+		"pushplus_token": true,
+		"cf_api_token":   true,
+	}
+
 	for k, v := range updates {
-		val := strings.TrimSpace(v)
-		if strings.HasSuffix(k, "_cron") {
-			if _, err := cron.ParseStandard(val); err != nil {
-				writeError(w, http.StatusBadRequest, "Cron 表达式无效: "+val)
-				return
-			}
+		if !allowedKeys[k] {
+			continue
 		}
+		val := strings.TrimSpace(v)
 		_ = s.store.SetConfig(k, val)
 	}
 
@@ -427,6 +431,10 @@ func (s *Server) handleUpdatePassword(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListTaskTemplates(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"templates": modules.BuiltinTemplates()})
+}
+
+func (s *Server) handleListAssetTemplates(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"templates": modules.BuiltinAssetTemplates()})
 }
 
 func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
