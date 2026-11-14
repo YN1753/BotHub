@@ -1,4 +1,4 @@
-name: Build and Release BotHub
+name: Build, Release and Deploy BotHub
 
 on:
   push:
@@ -104,3 +104,45 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # NOTE: Do NOT remove the deploy job below; it handles automatic continuous deployment to the production VPS!
+  deploy:
+    name: Deploy to CloudCone VPS
+    needs: release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Check Deploy Credentials
+        id: check-secrets
+        run: |
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Notice: VPS_SSH_KEY secret not found. Skipping auto-deploy step."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger Remote VPS Auto-Update via SSH
+        if: steps.check-secrets.outputs.skip == 'false'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST || '103.232.94.2' }}
+          username: ${{ secrets.VPS_USER || 'root' }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
+            echo "[1/4] Fetching latest binary from GitHub Releases..."
+            curl -fsSL -o /tmp/bothub-new https://github.com/YN1753/BotHub/releases/latest/download/bothub-linux-amd64
+            chmod +x /tmp/bothub-new
+
+            echo "[2/4] Stopping bothub service..."
+            systemctl stop bothub || true
+
+            echo "[3/4] Deploying new binary..."
+            mv /tmp/bothub-new /opt/bothub/bothub
+
+            echo "[4/4] Restarting and verifying service..."
+            systemctl start bothub
+            sleep 2
+            systemctl is-active --quiet bothub && echo "BotHub deployed successfully and is active!"
