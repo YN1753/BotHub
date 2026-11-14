@@ -556,17 +556,57 @@ button, input, select, textarea {
 
 .modal-card {
   width: 100%;
-  max-width: 520px;
+  max-width: 580px;
   max-height: 88dvh;
   overflow-y: auto;
   background: rgba(14, 18, 30, 0.96);
   border: 1px solid var(--glass-border-strong);
-  padding: 20px;
+  padding: 22px 20px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.65), inset 0 1px 0 var(--glass-highlight);
   animation: popModal 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Composite Field Layouts (Fool-proof Split Controls) */
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.text-cyan {
+  color: var(--live-teal);
+}
+.text-amber {
+  color: var(--accent-amber);
+}
+
+.composite-row {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+}
+.composite-price-grid {
+  grid-template-columns: 140px 1fr 140px;
+}
+.composite-date-grid {
+  grid-template-columns: 1.1fr 1fr 1fr;
+  margin-top: 6px;
+}
+.date-pill-group {
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+.date-pill.active {
+  background: rgba(94, 234, 212, 0.2);
+  border-color: var(--live-teal);
+  color: #ccfbf1;
+}
+.warn-pill.active {
+  background: rgba(242, 184, 128, 0.25);
+  border-color: var(--accent-amber);
+  color: #fce7cf;
 }
 
 @keyframes fadeInOverlay {

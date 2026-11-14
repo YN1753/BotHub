@@ -798,7 +798,7 @@
     }
   }
 
-  // --- Asset Modal Component (Powered by CustomSelect) ---
+  // --- Asset Modal Component (Powered by CustomSelect & Fool-proof Split Controls) ---
   class AssetModalComponent extends BaseComponent {
     init() {
       this.overlay = document.getElementById("asset-modal-overlay");
@@ -809,11 +809,27 @@
       this.nameInput = document.getElementById("edit-asset-name");
       this.catHidden = document.getElementById("edit-asset-category");
       this.specInput = document.getElementById("edit-asset-spec");
-      this.priceInput = document.getElementById("edit-asset-price");
-      this.dueInput = document.getElementById("edit-asset-due");
-      this.statusInput = document.getElementById("edit-asset-status");
+
+      // Composite Price Elements
+      this.priceHidden = document.getElementById("edit-asset-price");
+      this.currencyHidden = document.getElementById("edit-asset-currency");
+      this.amountInput = document.getElementById("edit-asset-amount");
+      this.cycleHidden = document.getElementById("edit-asset-cycle");
+      this.pricePreview = document.getElementById("preview-asset-price");
+
+      // Composite Due Date Elements
+      this.dueHidden = document.getElementById("edit-asset-due");
+      this.dueYearHidden = document.getElementById("edit-asset-due-year");
+      this.dueMonthHidden = document.getElementById("edit-asset-due-month");
+      this.dueDayHidden = document.getElementById("edit-asset-due-day");
+      this.duePreview = document.getElementById("preview-asset-due-relative");
+
+      // Status & AutoRenew Elements
+      this.statusHidden = document.getElementById("edit-asset-status");
       this.renewHidden = document.getElementById("edit-asset-autorenew");
       this.warnDaysInput = document.getElementById("edit-asset-warndays");
+      this.warnDaysHint = document.getElementById("preview-asset-warndays-hint");
+
       this.dynFieldsContainer = document.getElementById("asset-dynamic-fields");
       this.extraTextarea = document.getElementById("edit-asset-extra");
       this.deleteBtn = document.getElementById("delete-asset-btn");
@@ -822,7 +838,7 @@
 
       this.dynamicSelects = [];
 
-      // Custom Select: Category
+      // 1. Custom Select: Category
       this.categorySelect = new CustomSelect("#mount-asset-category", {
         options: [
           { label: "算力与云主机 (compute)", value: "compute" },
@@ -840,7 +856,98 @@
         },
       });
 
-      // Custom Select: AutoRenew
+      // 2. Custom Select: Currency
+      this.currencySelect = new CustomSelect("#mount-asset-currency", {
+        options: [
+          { label: "¥ 人民币 (CNY)", value: "CNY" },
+          { label: "$ 美元 (USD)", value: "USD" },
+          { label: "€ 欧元 (EUR)", value: "EUR" },
+          { label: "£ 英镑 (GBP)", value: "GBP" },
+          { label: "HK$ 港币 (HKD)", value: "HKD" },
+        ],
+        value: "CNY",
+        onChange: (curr) => {
+          if (this.currencyHidden) this.currencyHidden.value = curr;
+          this.syncPrice();
+        },
+      });
+
+      // 3. Custom Select: Billing Cycle
+      this.cycleSelect = new CustomSelect("#mount-asset-cycle", {
+        options: [
+          { label: "按月续费 (/月)", value: "/月" },
+          { label: "按季度 (/季)", value: "/季" },
+          { label: "半年付 (/半年)", value: "/半年" },
+          { label: "按年续费 (/年)", value: "/年" },
+          { label: "每两年 (/2年)", value: "/2年" },
+          { label: "一次性买断 (/终身)", value: "/终身" },
+          { label: "免费 / 赞助 (免续费)", value: "/免费" },
+        ],
+        value: "/月",
+        onChange: (cycle) => {
+          if (this.cycleHidden) this.cycleHidden.value = cycle;
+          this.syncPrice();
+        },
+      });
+
+      // Amount input sync
+      this.amountInput?.addEventListener("input", () => this.syncPrice());
+
+      // 4. Custom Select: Due Date (Year, Month, Day)
+      const currentYear = new Date().getFullYear();
+      const yearOptions = [];
+      for (let y = currentYear - 1; y <= currentYear + 10; y++) {
+        yearOptions.push({ label: `${y} 年`, value: String(y) });
+      }
+      this.yearSelect = new CustomSelect("#mount-asset-due-year", {
+        options: yearOptions,
+        value: String(currentYear),
+        onChange: (y) => {
+          if (this.dueYearHidden) this.dueYearHidden.value = y;
+          this.refreshDayOptions();
+          this.syncDueDate();
+        },
+      });
+
+      const monthOptions = [];
+      for (let m = 1; m <= 12; m++) {
+        const val = String(m).padStart(2, "0");
+        monthOptions.push({ label: `${val} 月`, value: val });
+      }
+      this.monthSelect = new CustomSelect("#mount-asset-due-month", {
+        options: monthOptions,
+        value: "01",
+        onChange: (m) => {
+          if (this.dueMonthHidden) this.dueMonthHidden.value = m;
+          this.refreshDayOptions();
+          this.syncDueDate();
+        },
+      });
+
+      this.daySelect = new CustomSelect("#mount-asset-due-day", {
+        options: [{ label: "01 日", value: "01" }],
+        value: "01",
+        onChange: (d) => {
+          if (this.dueDayHidden) this.dueDayHidden.value = d;
+          this.syncDueDate();
+        },
+      });
+
+      // 5. Custom Select: Running Status
+      this.statusSelect = new CustomSelect("#mount-asset-status", {
+        options: [
+          { label: "正常运行 (active)", value: "运行中" },
+          { label: "即将到期 (expiring)", value: "即将到期" },
+          { label: "已欠费暂停 (suspended)", value: "已暂停" },
+          { label: "长期有效 (permanent)", value: "长期有效" },
+        ],
+        value: "运行中",
+        onChange: (st) => {
+          if (this.statusHidden) this.statusHidden.value = st;
+        },
+      });
+
+      // 6. Custom Select: AutoRenew
       this.autorenewSelect = new CustomSelect("#mount-asset-autorenew", {
         options: [
           { label: "开启自动续费 (到期日前防扣款提醒)", value: "true" },
@@ -850,6 +957,42 @@
         onChange: (val) => {
           if (this.renewHidden) this.renewHidden.value = val;
         },
+      });
+
+      // Date Presets Pills
+      document.querySelectorAll(".date-pill-group .date-pill").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".date-pill-group .date-pill").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+
+          if (btn.dataset.permanent === "true") {
+            this.setDueValues("2099", "12", "31");
+            return;
+          }
+
+          const addM = parseInt(btn.dataset.addMonths, 10) || 1;
+          const target = new Date();
+          target.setMonth(target.getMonth() + addM);
+          const y = String(target.getFullYear());
+          const m = String(target.getMonth() + 1).padStart(2, "0");
+          const d = String(target.getDate()).padStart(2, "0");
+          this.setDueValues(y, m, d);
+        });
+      });
+
+      // Warn days Presets
+      document.querySelectorAll(".warn-pill").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".warn-pill").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          if (this.warnDaysInput) {
+            this.warnDaysInput.value = btn.dataset.preset;
+            this.updateWarnDaysHint(btn.dataset.preset);
+          }
+        });
+      });
+      this.warnDaysInput?.addEventListener("input", () => {
+        this.updateWarnDaysHint(this.warnDaysInput.value);
       });
 
       this.bus.on("modal:open-asset", (item) => this.open(item));
@@ -875,13 +1018,6 @@
         if (!parsed) return;
         this.dynFieldsContainer?.querySelectorAll(".asset-dyn-input").forEach((el) => {
           if (parsed[el.dataset.key] !== undefined) el.value = parsed[el.dataset.key];
-        });
-      });
-
-      // Presets
-      document.querySelectorAll(".preset-pill-group .pill-btn[data-preset]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          if (this.warnDaysInput) this.warnDaysInput.value = btn.dataset.preset;
         });
       });
 
@@ -915,9 +1051,9 @@
           name: this.nameInput.value.trim(),
           category: this.catHidden ? this.catHidden.value : "compute",
           spec: this.specInput.value.trim(),
-          price: this.priceInput.value.trim(),
-          due_date: this.dueInput.value.trim(),
-          status: this.statusInput.value.trim(),
+          price: this.priceHidden ? this.priceHidden.value.trim() : "",
+          due_date: this.dueHidden ? this.dueHidden.value.trim() : "",
+          status: this.statusHidden ? this.statusHidden.value.trim() : "运行中",
           auto_renew: this.renewHidden ? this.renewHidden.value === "true" : true,
           warn_days: this.warnDaysInput.value.trim(),
           extra_config: this.extraTextarea.value.trim(),
@@ -932,8 +1068,172 @@
       });
     }
 
+    // Helper: Price Calculation & Formatting
+    syncPrice() {
+      const curr = this.currencyHidden?.value || "CNY";
+      const cycle = this.cycleHidden?.value || "/月";
+      const amtVal = parseFloat(this.amountInput?.value || "0");
+      const isFree = cycle === "/免费" || (amtVal === 0 && cycle === "/免费");
+
+      const currSymbols = { CNY: "¥", USD: "$", EUR: "€", GBP: "£", HKD: "HK$" };
+      const symbol = currSymbols[curr] || "¥";
+
+      let finalPriceStr = "";
+      if (isFree) {
+        finalPriceStr = "免费";
+      } else {
+        const amtFormatted = isNaN(amtVal) ? "0.00" : amtVal.toFixed(2);
+        finalPriceStr = `${symbol}${amtFormatted}${cycle}`;
+      }
+
+      if (this.priceHidden) this.priceHidden.value = finalPriceStr;
+      if (this.pricePreview) {
+        this.pricePreview.textContent = isFree ? "免费 (免续费)" : `${symbol} ${isNaN(amtVal) ? "0.00" : amtVal.toFixed(2)} ${cycle}`;
+      }
+    }
+
+    parsePrice(priceStr) {
+      if (!priceStr || priceStr === "免费" || priceStr.includes("免续费")) {
+        if (this.amountInput) this.amountInput.value = "0";
+        this.cycleSelect?.setValue("/免费", false);
+        if (this.cycleHidden) this.cycleHidden.value = "/免费";
+        this.syncPrice();
+        return;
+      }
+
+      let curr = "CNY";
+      if (priceStr.includes("$") && !priceStr.includes("HK$")) curr = "USD";
+      else if (priceStr.includes("€")) curr = "EUR";
+      else if (priceStr.includes("£")) curr = "GBP";
+      else if (priceStr.includes("HK$")) curr = "HKD";
+      else if (priceStr.includes("¥") || priceStr.includes("元") || priceStr.includes("CNY")) curr = "CNY";
+
+      let cycle = "/月";
+      if (priceStr.includes("2年")) cycle = "/2年";
+      else if (priceStr.includes("年")) cycle = "/年";
+      else if (priceStr.includes("半年")) cycle = "/半年";
+      else if (priceStr.includes("季")) cycle = "/季";
+      else if (priceStr.includes("终身") || priceStr.includes("买断")) cycle = "/终身";
+      else if (priceStr.includes("免费") || priceStr.includes("活动")) cycle = "/免费";
+
+      const numMatch = priceStr.match(/([0-9]+(?:\.[0-9]+)?)/);
+      const amt = numMatch ? numMatch[1] : "0";
+
+      this.currencySelect?.setValue(curr, false);
+      if (this.currencyHidden) this.currencyHidden.value = curr;
+      if (this.amountInput) this.amountInput.value = amt;
+      this.cycleSelect?.setValue(cycle, false);
+      if (this.cycleHidden) this.cycleHidden.value = cycle;
+
+      this.syncPrice();
+    }
+
+    // Helper: Due Date Calculation & Dynamic Days
+    refreshDayOptions() {
+      const year = parseInt(this.dueYearHidden?.value || new Date().getFullYear(), 10);
+      const month = parseInt(this.dueMonthHidden?.value || (new Date().getMonth() + 1), 10);
+      const daysInMonth = new Date(year, month, 0).getDate();
+
+      const dayOpts = [];
+      for (let d = 1; d <= daysInMonth; d++) {
+        const val = String(d).padStart(2, "0");
+        dayOpts.push({ label: `${val} 日`, value: val });
+      }
+      this.daySelect?.setOptions(dayOpts);
+
+      const currentDayVal = parseInt(this.dueDayHidden?.value || "1", 10);
+      if (currentDayVal > daysInMonth) {
+        const safeDay = String(daysInMonth).padStart(2, "0");
+        this.daySelect?.setValue(safeDay, false);
+        if (this.dueDayHidden) this.dueDayHidden.value = safeDay;
+      }
+    }
+
+    setDueValues(year, month, day) {
+      if (this.dueYearHidden) this.dueYearHidden.value = year;
+      if (this.dueMonthHidden) this.dueMonthHidden.value = month;
+      if (this.dueDayHidden) this.dueDayHidden.value = day;
+
+      this.yearSelect?.setValue(year, false);
+      this.monthSelect?.setValue(month, false);
+      this.refreshDayOptions();
+      this.daySelect?.setValue(day, false);
+      this.syncDueDate();
+    }
+
+    syncDueDate() {
+      const y = this.dueYearHidden?.value || String(new Date().getFullYear());
+      const m = this.dueMonthHidden?.value || "01";
+      const d = this.dueDayHidden?.value || "01";
+
+      const rfcStr = `${y}-${m}-${d}T23:59:59+08:00`;
+      if (this.dueHidden) this.dueHidden.value = rfcStr;
+
+      if (this.duePreview) {
+        if (y === "2099") {
+          this.duePreview.textContent = "永久免续费";
+          return;
+        }
+        const target = new Date(`${y}-${m}-${d}T23:59:59`);
+        const now = new Date();
+        const diffMs = target.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+        if (diffDays < 0) {
+          this.duePreview.textContent = `已逾期 ${Math.abs(diffDays)} 天`;
+        } else if (diffDays === 0) {
+          this.duePreview.textContent = "今日即将到期";
+        } else if (diffDays > 365) {
+          this.duePreview.textContent = `距今约 ${(diffDays / 365).toFixed(1)} 年 (剩余 ${diffDays} 天)`;
+        } else {
+          this.duePreview.textContent = `距今剩余 ${diffDays} 天`;
+        }
+      }
+    }
+
+    parseDueDate(dueStr) {
+      if (!dueStr) {
+        const nextMonth = new Date();
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+        const y = String(nextMonth.getFullYear());
+        const m = String(nextMonth.getMonth() + 1).padStart(2, "0");
+        const d = String(nextMonth.getDate()).padStart(2, "0");
+        this.setDueValues(y, m, d);
+        return;
+      }
+
+      const parsed = new Date(dueStr);
+      if (isNaN(parsed.getTime())) {
+        const y = String(new Date().getFullYear());
+        this.setDueValues(y, "01", "01");
+        return;
+      }
+
+      const y = String(parsed.getFullYear());
+      const m = String(parsed.getMonth() + 1).padStart(2, "0");
+      const d = String(parsed.getDate()).padStart(2, "0");
+      this.setDueValues(y, m, d);
+    }
+
+    updateWarnDaysHint(val) {
+      if (!this.warnDaysHint) return;
+      try {
+        const arr = JSON.parse(val);
+        if (Array.isArray(arr) && arr.length) {
+          const formatted = arr.map((x) => (x === 0 ? "当天" : `${x}天`)).join("、");
+          this.warnDaysHint.textContent = `将在到期前 ${formatted} 推送提醒`;
+          return;
+        }
+      } catch (e) {}
+      this.warnDaysHint.textContent = "将在设定梯度触发微信提醒";
+    }
+
     open(item) {
       const isNew = !item;
+      // Reset pills active states
+      document.querySelectorAll(".date-pill-group .date-pill").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".warn-pill").forEach((b) => b.classList.remove("active"));
+
       if (isNew) {
         this.titleEl.textContent = "新增数字资产与订阅";
         this.hiddenId.value = "";
@@ -945,12 +1245,29 @@
         if (this.catHidden) this.catHidden.value = "compute";
         this.categorySelect?.setValue("compute", false);
         this.specInput.value = "";
-        this.priceInput.value = "";
-        this.dueInput.value = "";
-        this.statusInput.value = "运行中";
+
+        // Reset Price
+        if (this.amountInput) this.amountInput.value = "0";
+        this.currencySelect?.setValue("CNY", false);
+        this.cycleSelect?.setValue("/月", false);
+        this.syncPrice();
+
+        // Default Due Date: +1 month
+        const nextMonth = new Date();
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+        const y = String(nextMonth.getFullYear());
+        const m = String(nextMonth.getMonth() + 1).padStart(2, "0");
+        const d = String(nextMonth.getDate()).padStart(2, "0");
+        this.setDueValues(y, m, d);
+
+        // Status & AutoRenew
+        if (this.statusHidden) this.statusHidden.value = "运行中";
+        this.statusSelect?.setValue("运行中", false);
         if (this.renewHidden) this.renewHidden.value = "true";
         this.autorenewSelect?.setValue("true", false);
+
         this.warnDaysInput.value = "[7, 3, 1]";
+        this.updateWarnDaysHint("[7, 3, 1]");
         this.extraTextarea.value = "{}";
 
         this.renderDynamicFields("compute", {});
@@ -967,14 +1284,21 @@
         this.categorySelect?.setValue(cat, false);
 
         this.specInput.value = item.spec || "";
-        this.priceInput.value = item.price || "";
-        this.dueInput.value = item.due_date || "";
-        this.statusInput.value = item.status || "";
+
+        // Parse Price & Due Date
+        this.parsePrice(item.price || "");
+        this.parseDueDate(item.due_date || "");
+
+        const currentStatus = item.status || "运行中";
+        if (this.statusHidden) this.statusHidden.value = currentStatus;
+        this.statusSelect?.setValue(currentStatus, false);
+
         const autoRenewStr = item.auto_renew ? "true" : "false";
         if (this.renewHidden) this.renewHidden.value = autoRenewStr;
         this.autorenewSelect?.setValue(autoRenewStr, false);
 
         this.warnDaysInput.value = item.warn_days || "[7, 3, 1]";
+        this.updateWarnDaysHint(this.warnDaysInput.value);
 
         const extraObj = Utils.safeJSONParse(item.extra_config);
         this.extraTextarea.value = JSON.stringify(extraObj, null, 2);
