@@ -594,6 +594,10 @@ button, input, select, textarea {
   grid-template-columns: 1.1fr 1fr 1fr;
   margin-top: 6px;
 }
+.composite-schedule-grid {
+  grid-template-columns: 170px minmax(110px, 1.2fr) 100px 100px;
+  margin-top: 6px;
+}
 .date-pill-group {
   margin-top: 4px;
   margin-bottom: 2px;
@@ -603,7 +607,8 @@ button, input, select, textarea {
   border-color: var(--live-teal);
   color: #ccfbf1;
 }
-.warn-pill.active {
+.warn-pill.active,
+.sched-pill.active {
   background: rgba(242, 184, 128, 0.25);
   border-color: var(--accent-amber);
   color: #fce7cf;

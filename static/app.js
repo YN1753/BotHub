@@ -39,13 +39,44 @@
 
     describeCron(expr) {
       const trimmed = String(expr || "").trim();
-      if (!trimmed) return "未指定 Cron 表达式";
-      if (trimmed === "0 8 * * *") return "每天早 08:00 执行一次";
-      if (trimmed === "0 12,20 * * *") return "每天 12:00 与 20:00 各执行一次";
-      if (trimmed === "0 3 * * *") return "每天凌晨 03:00 执行一次";
-      if (trimmed === "0 * * * *") return "每小时整点执行一次";
-      if (trimmed === "*/30 * * * *") return "每 30 分钟轮询一次";
-      return `标准 5 段式 Cron 表达式: ${trimmed}`;
+      if (!trimmed) return "未指定调度策略";
+      const parts = trimmed.split(/\s+/);
+      if (parts.length !== 5) return `表达式: ${trimmed}`;
+
+      const [min, hour, dom, mon, dow] = parts;
+      const pad = (n) => String(n).padStart(2, "0");
+
+      if (min === "0" && hour === "*" && dom === "*" && mon === "*" && dow === "*") {
+        return "每小时整点执行一次";
+      }
+      if (min.startsWith("*/") && hour === "*" && dom === "*" && mon === "*" && dow === "*") {
+        return `每隔 ${min.slice(2)} 分钟轮询一次`;
+      }
+      if (min === "0" && hour.startsWith("*/") && dom === "*" && mon === "*" && dow === "*") {
+        return `每隔 ${hour.slice(2)} 小时整点执行`;
+      }
+      if (!isNaN(min) && !isNaN(hour) && dom === "*" && mon === "*" && dow === "*") {
+        const h = parseInt(hour, 10);
+        const period = h < 6 ? "凌晨" : (h < 12 ? "早间" : (h < 14 ? "午间" : (h < 18 ? "下午" : "晚间")));
+        return `每天 ${period} ${pad(hour)}:${pad(min)} 执行`;
+      }
+      if (!isNaN(min) && !isNaN(hour) && dom === "*" && mon === "*" && (dow === "1-5" || dow === "1,2,3,4,5")) {
+        return `工作日 (周一至五) ${pad(hour)}:${pad(min)} 执行`;
+      }
+      if (!isNaN(min) && !isNaN(hour) && dom === "*" && mon === "*" && (dow === "6,0" || dow === "0,6" || dow === "6,7")) {
+        return `周末 (周六日) ${pad(hour)}:${pad(min)} 执行`;
+      }
+      const weekMap = { "0": "周日", "1": "周一", "2": "周二", "3": "周三", "4": "周四", "5": "周五", "6": "周六", "7": "周日" };
+      if (!isNaN(min) && !isNaN(hour) && dom === "*" && mon === "*" && weekMap[dow]) {
+        return `每${weekMap[dow]} ${pad(hour)}:${pad(min)} 执行`;
+      }
+      if (!isNaN(min) && !isNaN(hour) && !isNaN(dom) && mon === "*" && dow === "*") {
+        return `每月 ${pad(dom)} 日 ${pad(hour)}:${pad(min)} 执行`;
+      }
+      if (!isNaN(min) && hour.includes(",") && dom === "*" && mon === "*" && dow === "*") {
+        return `每天 ${hour.split(",").map((h) => `${pad(h)}:${pad(min)}`).join(" 与 ")} 各执行一次`;
+      }
+      return `定时 Cron: ${trimmed}`;
     },
 
     safeJSONParse(str, fallback = {}) {
@@ -653,8 +684,15 @@
               <span class="stat-pill mono"><span class="dot ${dot}"></span>${t.enabled ? (t.is_running ? "RUN" : "ON") : "OFF"}</span>
             </div>
             <div class="module-cron-box mono">
-              <div><span>Cron 表达式</span><br><strong>${Utils.esc(t.cron_expr || "--")}</strong></div>
-              <div><span>下次执行 (CST)</span><br><strong>${Utils.esc(t.enabled ? (t.next_run_at || "--") : "停用")}</strong></div>
+              <div>
+                <span class="text-sub">调度策略</span><br>
+                <strong class="text-cyan">${Utils.esc(Utils.describeCron(t.cron_expr))}</strong>
+                <span class="text-muted" style="font-size:10px; display:block; margin-top:2px;">[${Utils.esc(t.cron_expr || "--")}]</span>
+              </div>
+              <div>
+                <span class="text-sub">下次触发 (CST)</span><br>
+                <strong>${Utils.esc(t.enabled ? (t.next_run_at || "--") : "已暂停调度")}</strong>
+              </div>
             </div>
             ${badgeHTML ? `<div class="preset-pill-group" style="margin-top:-4px;">${badgeHTML}</div>` : ""}
             <div class="module-summary">${Utils.esc(last ? last.summary : "等待执行流水")}</div>
@@ -1387,7 +1425,7 @@
     }
   }
 
-  // --- Task Modal Component (Powered by CustomSelect) ---
+  // --- Task Modal Component (Powered by CustomSelect & Natural Language Scheduler) ---
   class TaskModalComponent extends BaseComponent {
     init() {
       this.overlay = document.getElementById("task-modal-overlay");
@@ -1397,8 +1435,16 @@
       this.idInput = document.getElementById("edit-task-id");
       this.nameInput = document.getElementById("edit-task-name");
       this.typeHidden = document.getElementById("edit-task-type");
-      this.cronInput = document.getElementById("edit-task-cron");
-      this.cronHint = document.getElementById("cron-readable-hint");
+
+      // Schedule Elements
+      this.cronHidden = document.getElementById("edit-task-cron");
+      this.cronCustomInput = document.getElementById("edit-task-cron-custom");
+      this.wrapCustom = document.getElementById("wrap-schedule-custom");
+      this.wrapSub = document.getElementById("wrap-schedule-sub");
+      this.wrapHour = document.getElementById("wrap-schedule-hour");
+      this.wrapMinute = document.getElementById("wrap-schedule-minute");
+      this.schedPreview = document.getElementById("preview-schedule-desc");
+
       this.enabledHidden = document.getElementById("edit-task-enabled");
       this.descInput = document.getElementById("edit-task-desc");
       this.dynParamsContainer = document.getElementById("task-dynamic-params");
@@ -1409,7 +1455,7 @@
 
       this.dynamicSelects = [];
 
-      // Custom Select: Task Type
+      // 1. Custom Select: Task Type
       this.typeSelect = new CustomSelect("#mount-task-type", {
         options: [
           { label: "晨报小秘书模板 (morning)", value: "morning" },
@@ -1424,8 +1470,7 @@
 
           if (isNew && tpl) {
             this.nameInput.value = tpl.name || "";
-            this.cronInput.value = tpl.default_cron || "0 8 * * *";
-            this.updateCronHint(tpl.default_cron || "0 8 * * *");
+            this.parseCron(tpl.default_cron || "0 8 * * *");
             this.descInput.value = tpl.description || "";
             this.idInput.value = Utils.generateSlug(tpl.name, type);
           }
@@ -1435,7 +1480,7 @@
         },
       });
 
-      // Custom Select: Task Enabled
+      // 2. Custom Select: Task Enabled
       this.enabledSelect = new CustomSelect("#mount-task-enabled", {
         options: [
           { label: "开启常态调度", value: "true" },
@@ -1445,6 +1490,74 @@
         onChange: (val) => {
           if (this.enabledHidden) this.enabledHidden.value = val;
         },
+      });
+
+      // 3. Natural Language Schedule Selectors
+      this.freqSelect = new CustomSelect("#mount-schedule-freq", {
+        options: [
+          { label: "每天执行 (Daily)", value: "daily" },
+          { label: "工作日 (周一至五)", value: "workday" },
+          { label: "周末 (周六日)", value: "weekend" },
+          { label: "每周固定日 (Weekly)", value: "weekly" },
+          { label: "每月固定日 (Monthly)", value: "monthly" },
+          { label: "每隔若干小时 (Interval)", value: "interval" },
+          { label: "极客自定义 (Cron)", value: "custom" },
+        ],
+        value: "daily",
+        onChange: (freq) => {
+          this.updateScheduleVisibility(freq);
+          this.syncSchedule();
+        },
+      });
+
+      this.subSelect = new CustomSelect("#mount-schedule-sub", {
+        options: this.getSubOptions("weekly"),
+        value: "1",
+        onChange: () => this.syncSchedule(),
+      });
+
+      const hourOptions = [];
+      for (let h = 0; h < 24; h++) {
+        const val = String(h).padStart(2, "0");
+        const period = h < 6 ? "凌晨" : (h < 12 ? "早间" : (h < 14 ? "午间" : (h < 18 ? "下午" : "晚间")));
+        hourOptions.push({ label: `${val} 时 (${period})`, value: val });
+      }
+      this.hourSelect = new CustomSelect("#mount-schedule-hour", {
+        options: hourOptions,
+        value: "08",
+        onChange: () => this.syncSchedule(),
+      });
+
+      const minuteOptions = [
+        { label: "00 分 (整点)", value: "00" },
+        { label: "05 分", value: "05" },
+        { label: "10 分", value: "10" },
+        { label: "15 分 (一刻)", value: "15" },
+        { label: "20 分", value: "20" },
+        { label: "30 分 (半点)", value: "30" },
+        { label: "45 分", value: "45" },
+      ];
+      this.minuteSelect = new CustomSelect("#mount-schedule-minute", {
+        options: minuteOptions,
+        value: "00",
+        onChange: () => this.syncSchedule(),
+      });
+
+      // Custom Cron input listener
+      this.cronCustomInput?.addEventListener("input", () => {
+        if (this.freqSelect?.value === "custom") {
+          this.syncSchedule();
+        }
+      });
+
+      // Quick Schedule Preset Pills
+      document.querySelectorAll(".sched-pill").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".sched-pill").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          const cron = btn.dataset.cron;
+          this.parseCron(cron);
+        });
       });
 
       this.bus.on("modal:open-task", (item) => this.open(item));
@@ -1462,18 +1575,6 @@
           const type = this.typeHidden ? this.typeHidden.value : "morning";
           this.idInput.value = Utils.generateSlug(this.nameInput.value, type);
         }
-      });
-
-      // Cron Manual Input
-      this.cronInput?.addEventListener("input", () => this.updateCronHint(this.cronInput.value));
-
-      // Cron Presets
-      document.querySelectorAll(".cron-preset").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const cron = btn.dataset.cron;
-          this.cronInput.value = cron;
-          this.updateCronHint(cron);
-        });
       });
 
       // Params Textarea Manual Edit -> Sync to inputs
@@ -1514,7 +1615,7 @@
           id: finalID,
           name: this.nameInput.value.trim(),
           type: this.typeHidden ? this.typeHidden.value : "morning",
-          cron_expr: this.cronInput.value.trim(),
+          cron_expr: this.cronHidden?.value.trim() || "0 8 * * *",
           enabled: this.enabledHidden ? this.enabledHidden.value === "true" : true,
           description: this.descInput.value.trim(),
           params: this.paramsTextarea.value.trim(),
@@ -1529,14 +1630,199 @@
       });
     }
 
-    updateCronHint(expr) {
-      if (this.cronHint) {
-        this.cronHint.textContent = `当前语义: ${Utils.describeCron(expr)}`;
+    getSubOptions(freq) {
+      if (freq === "weekly") {
+        return [
+          { label: "每周一 (Monday)", value: "1" },
+          { label: "每周二 (Tuesday)", value: "2" },
+          { label: "每周三 (Wednesday)", value: "3" },
+          { label: "每周四 (Thursday)", value: "4" },
+          { label: "每周五 (Friday)", value: "5" },
+          { label: "每周六 (Saturday)", value: "6" },
+          { label: "每周日 (Sunday)", value: "0" },
+        ];
       }
+      if (freq === "monthly") {
+        const opts = [];
+        for (let d = 1; d <= 28; d++) {
+          const val = String(d).padStart(2, "0");
+          opts.push({ label: `每月 ${val} 号`, value: String(d) });
+        }
+        return opts;
+      }
+      if (freq === "interval") {
+        return [
+          { label: "每 1 小时", value: "1" },
+          { label: "每 2 小时", value: "2" },
+          { label: "每 3 小时", value: "3" },
+          { label: "每 4 小时", value: "4" },
+          { label: "每 6 小时", value: "6" },
+          { label: "每 12 小时", value: "12" },
+        ];
+      }
+      return [];
+    }
+
+    updateScheduleVisibility(freq) {
+      if (freq === "custom") {
+        this.wrapCustom?.classList.remove("hidden");
+        if (this.wrapSub) this.wrapSub.style.display = "none";
+        if (this.wrapHour) this.wrapHour.style.display = "none";
+        if (this.wrapMinute) this.wrapMinute.style.display = "none";
+      } else if (freq === "interval") {
+        this.wrapCustom?.classList.add("hidden");
+        if (this.wrapSub) {
+          this.wrapSub.style.display = "block";
+          this.subSelect?.setOptions(this.getSubOptions("interval"));
+          this.subSelect?.setValue("1", false);
+        }
+        if (this.wrapHour) this.wrapHour.style.display = "none";
+        if (this.wrapMinute) this.wrapMinute.style.display = "none";
+      } else if (freq === "weekly") {
+        this.wrapCustom?.classList.add("hidden");
+        if (this.wrapSub) {
+          this.wrapSub.style.display = "block";
+          this.subSelect?.setOptions(this.getSubOptions("weekly"));
+          this.subSelect?.setValue("1", false);
+        }
+        if (this.wrapHour) this.wrapHour.style.display = "block";
+        if (this.wrapMinute) this.wrapMinute.style.display = "block";
+      } else if (freq === "monthly") {
+        this.wrapCustom?.classList.add("hidden");
+        if (this.wrapSub) {
+          this.wrapSub.style.display = "block";
+          this.subSelect?.setOptions(this.getSubOptions("monthly"));
+          this.subSelect?.setValue("1", false);
+        }
+        if (this.wrapHour) this.wrapHour.style.display = "block";
+        if (this.wrapMinute) this.wrapMinute.style.display = "block";
+      } else {
+        // daily, workday, weekend
+        this.wrapCustom?.classList.add("hidden");
+        if (this.wrapSub) this.wrapSub.style.display = "none";
+        if (this.wrapHour) this.wrapHour.style.display = "block";
+        if (this.wrapMinute) this.wrapMinute.style.display = "block";
+      }
+    }
+
+    syncSchedule() {
+      const freq = this.freqSelect?.value || "daily";
+      const hour = this.hourSelect?.value || "08";
+      const min = this.minuteSelect?.value || "00";
+      const sub = this.subSelect?.value || "1";
+
+      const minNum = parseInt(min, 10);
+      const hourNum = parseInt(hour, 10);
+
+      let cron = "0 8 * * *";
+      if (freq === "daily") {
+        cron = `${minNum} ${hourNum} * * *`;
+      } else if (freq === "workday") {
+        cron = `${minNum} ${hourNum} * * 1-5`;
+      } else if (freq === "weekend") {
+        cron = `${minNum} ${hourNum} * * 6,0`;
+      } else if (freq === "weekly") {
+        cron = `${minNum} ${hourNum} * * ${sub}`;
+      } else if (freq === "monthly") {
+        cron = `${minNum} ${hourNum} ${sub} * *`;
+      } else if (freq === "interval") {
+        cron = sub === "1" ? "0 * * * *" : `0 */${sub} * * *`;
+      } else if (freq === "custom") {
+        cron = this.cronCustomInput?.value.trim() || "* * * * *";
+      }
+
+      if (this.cronHidden) this.cronHidden.value = cron;
+      if (this.schedPreview) {
+        this.schedPreview.textContent = Utils.describeCron(cron);
+      }
+    }
+
+    parseCron(cronExpr) {
+      const trimmed = String(cronExpr || "").trim();
+      const pad = (n) => String(n).padStart(2, "0");
+
+      if (trimmed === "0 * * * *") {
+        this.freqSelect?.setValue("interval", false);
+        this.updateScheduleVisibility("interval");
+        this.subSelect?.setValue("1", false);
+        this.syncSchedule();
+        return;
+      }
+
+      const intMatch = trimmed.match(/^0\s+\*\/([0-9]+)\s+\*\s+\*\s+\*$/);
+      if (intMatch) {
+        this.freqSelect?.setValue("interval", false);
+        this.updateScheduleVisibility("interval");
+        this.subSelect?.setValue(intMatch[1], false);
+        this.syncSchedule();
+        return;
+      }
+
+      const dailyMatch = trimmed.match(/^([0-9]+)\s+([0-9]+)\s+\*\s+\*\s+\*$/);
+      if (dailyMatch) {
+        this.freqSelect?.setValue("daily", false);
+        this.updateScheduleVisibility("daily");
+        this.hourSelect?.setValue(pad(dailyMatch[2]), false);
+        this.minuteSelect?.setValue(pad(dailyMatch[1]), false);
+        this.syncSchedule();
+        return;
+      }
+
+      const workdayMatch = trimmed.match(/^([0-9]+)\s+([0-9]+)\s+\*\s+\*\s+(?:1-5|1,2,3,4,5)$/);
+      if (workdayMatch) {
+        this.freqSelect?.setValue("workday", false);
+        this.updateScheduleVisibility("workday");
+        this.hourSelect?.setValue(pad(workdayMatch[2]), false);
+        this.minuteSelect?.setValue(pad(workdayMatch[1]), false);
+        this.syncSchedule();
+        return;
+      }
+
+      const weekendMatch = trimmed.match(/^([0-9]+)\s+([0-9]+)\s+\*\s+\*\s+(?:6,0|0,6|6,7)$/);
+      if (weekendMatch) {
+        this.freqSelect?.setValue("weekend", false);
+        this.updateScheduleVisibility("weekend");
+        this.hourSelect?.setValue(pad(weekendMatch[2]), false);
+        this.minuteSelect?.setValue(pad(weekendMatch[1]), false);
+        this.syncSchedule();
+        return;
+      }
+
+      const weekMatch = trimmed.match(/^([0-9]+)\s+([0-9]+)\s+\*\s+\*\s+([0-7])$/);
+      if (weekMatch) {
+        this.freqSelect?.setValue("weekly", false);
+        this.updateScheduleVisibility("weekly");
+        const dow = weekMatch[3] === "7" ? "0" : weekMatch[3];
+        this.subSelect?.setValue(dow, false);
+        this.hourSelect?.setValue(pad(weekMatch[2]), false);
+        this.minuteSelect?.setValue(pad(weekMatch[1]), false);
+        this.syncSchedule();
+        return;
+      }
+
+      const monthMatch = trimmed.match(/^([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+\*\s+\*$/);
+      if (monthMatch) {
+        this.freqSelect?.setValue("monthly", false);
+        this.updateScheduleVisibility("monthly");
+        this.subSelect?.setValue(monthMatch[3], false);
+        this.hourSelect?.setValue(pad(monthMatch[2]), false);
+        this.minuteSelect?.setValue(pad(monthMatch[1]), false);
+        this.syncSchedule();
+        return;
+      }
+
+      // Fallback: custom
+      this.freqSelect?.setValue("custom", false);
+      this.updateScheduleVisibility("custom");
+      if (this.cronCustomInput) this.cronCustomInput.value = trimmed;
+      this.syncSchedule();
     }
 
     open(item) {
       const isNew = !item;
+      // Reset pills active states
+      document.querySelectorAll(".sched-pill").forEach((b) => b.classList.remove("active"));
+
       if (isNew) {
         this.titleEl.textContent = "创建情报调度任务";
         this.hiddenId.value = "";
@@ -1547,8 +1833,9 @@
         this.nameInput.value = "";
         if (this.typeHidden) this.typeHidden.value = "morning";
         this.typeSelect?.setValue("morning", false);
-        this.cronInput.value = "0 8 * * *";
-        this.updateCronHint("0 8 * * *");
+
+        this.parseCron("0 8 * * *");
+
         if (this.enabledHidden) this.enabledHidden.value = "true";
         this.enabledSelect?.setValue("true", false);
         this.descInput.value = "汇总目标城市气象建议、每日格言、节点脉搏与临期资产";
@@ -1566,8 +1853,9 @@
         this.nameInput.value = item.name;
         if (this.typeHidden) this.typeHidden.value = item.type;
         this.typeSelect?.setValue(item.type, false);
-        this.cronInput.value = item.cron_expr || "";
-        this.updateCronHint(item.cron_expr || "");
+
+        this.parseCron(item.cron_expr || "0 8 * * *");
+
         const enStr = item.enabled ? "true" : "false";
         if (this.enabledHidden) this.enabledHidden.value = enStr;
         this.enabledSelect?.setValue(enStr, false);
