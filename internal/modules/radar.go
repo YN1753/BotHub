@@ -128,21 +128,35 @@ func (r *RadarModule) Run(ctx context.Context) (RunResult, error) {
 		return RunResult{Summary: "推送失败: " + err.Error()}, err
 	}
 
+	toMark := make([]store.SeenItem, 0, len(freshGH)+len(freshHN))
 	for _, repo := range freshGH {
-		_ = r.store.MarkSeen("github_trending", repo.Name, repo.Name, repo.URL)
+		toMark = append(toMark, store.SeenItem{
+			Source:  "github_trending",
+			ItemKey: repo.Name,
+			Title:   repo.Name,
+			URL:     repo.URL,
+		})
 	}
 	for _, st := range freshHN {
 		target := st.URL
 		if target == "" { target = fmt.Sprintf("https://news.ycombinator.com/item?id=%d", st.ID) }
-		_ = r.store.MarkSeen("hackernews", strconv.FormatInt(st.ID, 10), st.Title, target)
+		toMark = append(toMark, store.SeenItem{
+			Source:  "hackernews",
+			ItemKey: strconv.FormatInt(st.ID, 10),
+			Title:   st.Title,
+			URL:     target,
+		})
 	}
+	_ = r.store.BatchMarkSeen(toMark)
 
 	return RunResult{Summary: fmt.Sprintf("已推送 %d 条精选（GitHub %d, HN %d）", totalNew, len(freshGH), len(freshHN)), ItemsPushed: totalNew}, nil
 }
 
 func (r *RadarModule) fetchGitHubTrending(ctx context.Context, maxItems int) ([]ghRepo, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://github.com/trending?since=daily", nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 	resp, err := r.http.Do(req)
 	if err != nil {
 		return nil, err

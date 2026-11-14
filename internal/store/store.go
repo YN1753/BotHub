@@ -348,10 +348,54 @@ func (s *Store) IsSeen(source, itemKey string) (bool, error) {
 	return exists == 1, err
 }
 
+type SeenItem struct {
+	Source  string
+	ItemKey string
+	Title   string
+	URL     string
+}
+
 func (s *Store) MarkSeen(source, itemKey, title, url string) error {
 	_, err := s.db.Exec(`INSERT OR IGNORE INTO seen_items (source, item_key, title, url, first_seen_at) VALUES (?, ?, ?, ?, ?)`,
 		source, itemKey, title, url, NowShanghai())
 	return err
+}
+
+func (s *Store) BatchMarkSeen(items []SeenItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO seen_items (source, item_key, title, url, first_seen_at) VALUES (?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	now := NowShanghai()
+	for _, it := range items {
+		if _, err := stmt.Exec(it.Source, it.ItemKey, it.Title, it.URL, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) PruneOldRecords() error {
+	// Retain latest 500 push logs
+	_, _ = s.db.Exec(`DELETE FROM push_logs WHERE id NOT IN (SELECT id FROM push_logs ORDER BY id DESC LIMIT 500)`)
+	// Retain module runs within 60 days
+	_, _ = s.db.Exec(`DELETE FROM module_runs WHERE started_at < datetime('now', '-60 days')`)
+	// Retain seen items within 90 days
+	_, _ = s.db.Exec(`DELETE FROM seen_items WHERE first_seen_at < datetime('now', '-90 days')`)
+	// Non-blocking WAL checkpoint to keep db file size lean
+	_, _ = s.db.Exec(`PRAGMA wal_checkpoint(PASSIVE)`)
+	return nil
 }
 
 // Assets Management

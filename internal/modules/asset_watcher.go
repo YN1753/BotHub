@@ -50,8 +50,8 @@ func (w *AssetWatcherModule) Run(ctx context.Context) (RunResult, error) {
 			if updated {
 				syncedCount++
 			}
-			// Check expiration threshold
-			if asset.DaysLeft <= 7 && asset.DaysLeft >= 0 {
+			// Check expiration threshold against personalized warn_days or critical window
+			if w.shouldWarn(asset) {
 				itemKey := fmt.Sprintf("%s:%s:%d", asset.ID, nowDateStr, asset.DaysLeft)
 				seen, _ := w.store.IsSeen("asset_warn", itemKey)
 				if !seen {
@@ -67,12 +67,22 @@ func (w *AssetWatcherModule) Run(ctx context.Context) (RunResult, error) {
 	if len(noticeAssets) > 0 {
 		if err := w.dispatchNotice(ctx, noticeAssets, nowDateStr); err == nil {
 			itemsPushed = len(noticeAssets)
+			warnSeen := make([]store.SeenItem, 0, len(noticeAssets))
 			for _, a := range noticeAssets {
 				itemKey := fmt.Sprintf("%s:%s:%d", a.ID, nowDateStr, a.DaysLeft)
-				_ = w.store.MarkSeen("asset_warn", itemKey, a.Name, "bothub://asset/"+a.ID)
+				warnSeen = append(warnSeen, store.SeenItem{
+					Source:  "asset_warn",
+					ItemKey: itemKey,
+					Title:   a.Name,
+					URL:     "bothub://asset/" + a.ID,
+				})
 			}
+			_ = w.store.BatchMarkSeen(warnSeen)
 		}
 	}
+
+	// Automatic maintenance: prune logs older than retention period
+	_ = w.store.PruneOldRecords()
 
 	return RunResult{
 		Summary:     fmt.Sprintf("巡检 %d 项资产（同步 %d 项，发送 %d 项临期强提醒）", len(assets), syncedCount, itemsPushed),
@@ -154,16 +164,20 @@ func (w *AssetWatcherModule) syncSingleAsset(ctx context.Context, asset *store.A
 		case string:  anchorDay, _ = strconv.Atoi(v)
 		}
 		if anchorDay >= 1 && anchorDay <= 31 {
-			now := time.Now().In(ShanghaiLocation())
-			y, m, d := now.Date()
-			if d >= anchorDay {
-				m++
-			}
-			next := time.Date(y, m, anchorDay, 0, 0, 0, 0, ShanghaiLocation())
+			next := calcNextAnchorDate(anchorDay, ShanghaiLocation())
 			asset.DueDate = next.Format(time.RFC3339)
 			asset.Status = "运行中"
 			asset.AutoRenew = true
 			updated = true
+		}
+	} else if asset.ID == "qq_music" {
+		uin, _ := extra["uin"].(string)
+		qmKeyst, _ := extra["qm_keyst"].(string)
+		if strings.TrimSpace(uin) == "" || strings.TrimSpace(qmKeyst) == "" {
+			// 未配置 Cookie 时保持静态推算或标记
+			if asset.DueDate == "" {
+				asset.DueDate = "2026-11-20T23:59:59+08:00"
+			}
 		}
 	}
 
@@ -197,4 +211,52 @@ func (w *AssetWatcherModule) dispatchNotice(ctx context.Context, items []store.A
 	sb.WriteString("---\n*来自 Vesper BotHub 守望哨兵 · bot.starryheavens.uk*")
 	title := fmt.Sprintf("[资产临期预警] %d 项资产即将到期（最快剩余 %d 天）", len(items), items[0].DaysLeft)
 	return w.push.SendMarkdown(ctx, w.ID(), title, sb.String())
+}
+
+// shouldWarn determines if an asset should trigger an alert based on its personalized
+// WarnDays gradient, critical countdown (<=3 days), or active trial status.
+func (w *AssetWatcherModule) shouldWarn(asset store.Asset) bool {
+	if asset.DaysLeft < 0 {
+		return false
+	}
+	// Critical window (last 3 days) always triggers alert
+	if asset.DaysLeft <= 3 {
+		return true
+	}
+	// Check personalized gradient
+	warnDays := store.ParseWarnDays(asset.WarnDays)
+	for _, wd := range warnDays {
+		if asset.DaysLeft == wd {
+			return true
+		}
+	}
+	return false
+}
+
+// calcNextAnchorDate calculates the next billing date for a monthly subscription anchor day,
+// safely clamping to the actual days in the target month (e.g., 31st becomes 28th/29th in Feb, 30th in Apr).
+func calcNextAnchorDate(anchorDay int, loc *time.Location) time.Time {
+	now := time.Now().In(loc)
+	y, m, d := now.Date()
+
+	targetYear := y
+	targetMonth := m
+	if d >= anchorDay {
+		if targetMonth == time.December {
+			targetYear++
+			targetMonth = time.January
+		} else {
+			targetMonth++
+		}
+	}
+
+	// Calculate maximum days in target month
+	// Date(targetYear, targetMonth+1, 0) gives the last day of targetMonth
+	daysInMonth := time.Date(targetYear, targetMonth+1, 0, 0, 0, 0, 0, loc).Day()
+	actualDay := anchorDay
+	if actualDay > daysInMonth {
+		actualDay = daysInMonth
+	}
+
+	return time.Date(targetYear, targetMonth, actualDay, 0, 0, 0, 0, loc)
 }

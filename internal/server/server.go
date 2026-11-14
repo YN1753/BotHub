@@ -10,9 +10,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/pushplus"
@@ -32,6 +34,49 @@ type Server struct {
 	version   string
 	commit    string
 	buildTime string
+	limiter   *rateLimiter
+}
+
+type rateLimiter struct {
+	mu       sync.Mutex
+	attempts map[string]int
+	locked   map[string]time.Time
+}
+
+func newRateLimiter() *rateLimiter {
+	return &rateLimiter{
+		attempts: make(map[string]int),
+		locked:   make(map[string]time.Time),
+	}
+}
+
+func (rl *rateLimiter) isLocked(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	if t, ok := rl.locked[ip]; ok {
+		if time.Now().Before(t) {
+			return true
+		}
+		delete(rl.locked, ip)
+		delete(rl.attempts, ip)
+	}
+	return false
+}
+
+func (rl *rateLimiter) recordFail(ip string) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	rl.attempts[ip]++
+	if rl.attempts[ip] >= 5 {
+		rl.locked[ip] = time.Now().Add(3 * time.Minute)
+	}
+}
+
+func (rl *rateLimiter) recordSuccess(ip string) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	delete(rl.attempts, ip)
+	delete(rl.locked, ip)
 }
 
 func New(st *store.Store, sched *scheduler.Scheduler, push *pushplus.Client, staticEmbed embed.FS, version, commit, buildTime string) (*Server, error) {
@@ -48,6 +93,7 @@ func New(st *store.Store, sched *scheduler.Scheduler, push *pushplus.Client, sta
 		version:   version,
 		commit:    commit,
 		buildTime: buildTime,
+		limiter:   newRateLimiter(),
 	}, nil
 }
 
@@ -151,23 +197,34 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	if s.limiter.isLocked(ip) {
+		writeError(w, http.StatusTooManyRequests, "密码尝试过于频繁，已锁定 3 分钟")
+		return
+	}
+
 	var body struct {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil || !s.verifyPassword(body.Password) {
+		s.limiter.recordFail(ip)
 		writeError(w, http.StatusUnauthorized, "访问密钥不正确")
 		return
 	}
+	s.limiter.recordSuccess(ip)
+
 	token, err := s.issueSessionCookie()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "会话签发失败")
 		return
 	}
+	isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   7 * 24 * 3600,
 	})
@@ -336,8 +393,9 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) isAuthenticated(r *http.Request) bool {
 	// 1. Cloudflare Access Authenticated Email (Zero Trust Passkey / TouchID / FaceID)
+	// Guard against forged header from raw IP attacks: require Cf-Ray presence
 	if cfEmail := strings.TrimSpace(r.Header.Get("Cf-Access-Authenticated-User-Email")); cfEmail != "" {
-		if strings.EqualFold(cfEmail, "15347290648@163.com") {
+		if r.Header.Get("Cf-Ray") != "" && strings.EqualFold(cfEmail, "15347290648@163.com") {
 			return true
 		}
 	}
@@ -350,6 +408,22 @@ func (s *Server) isAuthenticated(r *http.Request) bool {
 	// 3. Cookie session
 	c, err := r.Cookie(sessionCookieName)
 	return err == nil && c.Value != "" && s.verifySessionCookie(c.Value)
+}
+
+func clientIP(r *http.Request) string {
+	if ip := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); ip != "" {
+		return ip
+	}
+	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+		if parts := strings.Split(xff, ","); len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func (s *Server) verifyPassword(raw string) bool {

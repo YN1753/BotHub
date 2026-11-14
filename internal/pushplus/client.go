@@ -45,6 +45,12 @@ func (c *Client) SendMarkdown(ctx context.Context, moduleID, title, content stri
 	cleanTitle := StripEmoji(strings.TrimSpace(title))
 	cleanContent := StripEmoji(strings.TrimSpace(content))
 
+	// Guard against PushPlus payload size limits (20KB limit)
+	const maxContentLen = 18000
+	if len(cleanContent) > maxContentLen {
+		cleanContent = cleanContent[:maxContentLen] + "\n\n... (内容超过 18KB 已自动截断)"
+	}
+
 	token, err := c.store.GetConfig(store.KeyPushPlusToken)
 	if err != nil {
 		return fmt.Errorf("read pushplus token: %w", err)
@@ -66,35 +72,58 @@ func (c *Client) SendMarkdown(ctx context.Context, moduleID, title, content stri
 		return fmt.Errorf("marshal pushplus payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, Endpoint, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("build pushplus request: %w", err)
+	// Retry mechanism: up to 2 attempts with a short backoff for transient network issues
+	var lastErr error
+	var respMsg string
+	for attempt := 1; attempt <= 2; attempt++ {
+		if attempt > 1 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(1500 * time.Millisecond):
+			}
+		}
+
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, Endpoint, bytes.NewReader(body))
+		if reqErr != nil {
+			lastErr = fmt.Errorf("build pushplus request: %w", reqErr)
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, doErr := c.http.Do(req)
+		if doErr != nil {
+			lastErr = fmt.Errorf("pushplus request failed: %w", doErr)
+			continue
+		}
+
+		respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+		_ = resp.Body.Close()
+
+		var parsed sendResponse
+		_ = json.Unmarshal(respBytes, &parsed)
+
+		respMsg = strings.TrimSpace(parsed.Msg)
+		if respMsg == "" {
+			respMsg = fmt.Sprintf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+		}
+
+		if resp.StatusCode >= 400 || (parsed.Code != 0 && parsed.Code != 200) {
+			lastErr = fmt.Errorf("pushplus error (code=%d): %s", parsed.Code, respMsg)
+			continue
+		}
+
+		// Success
+		_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "sent", respMsg)
+		return nil
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.http.Do(req)
-	if err != nil {
-		_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "failed", err.Error())
-		return fmt.Errorf("pushplus request failed: %w", err)
+	errMsg := "pushplus delivery failed"
+	if lastErr != nil {
+		errMsg = lastErr.Error()
 	}
-	defer resp.Body.Close()
-
-	respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	var parsed sendResponse
-	_ = json.Unmarshal(respBytes, &parsed)
-
-	respMsg := strings.TrimSpace(parsed.Msg)
-	if respMsg == "" {
-		respMsg = fmt.Sprintf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
-	}
-
-	if resp.StatusCode >= 400 || (parsed.Code != 0 && parsed.Code != 200) {
-		_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "failed", respMsg)
-		return fmt.Errorf("pushplus error (code=%d): %s", parsed.Code, respMsg)
-	}
-
-	_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "sent", respMsg)
-	return nil
+	_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "failed", errMsg)
+	return fmt.Errorf("%s", errMsg)
 }
 
 // StripEmoji removes Unicode emoji/pictograph runes and variation selectors to

@@ -6,6 +6,9 @@
   let width = 0;
   let height = 0;
   let stars = [];
+  let animId = null;
+  let lastDrawTime = 0;
+  const frameInterval = 1000 / 32; // Throttle to ~32fps for silky twinkle & ultra-low CPU/battery footprint
   const starCount = 140;
 
   function resize() {
@@ -34,6 +37,14 @@
   }
 
   function draw(t) {
+    if (document.hidden) return;
+
+    if (t - lastDrawTime < frameInterval) {
+      animId = requestAnimationFrame(draw);
+      return;
+    }
+    lastDrawTime = t;
+
     const grad = ctx.createLinearGradient(0, 0, 0, height);
     grad.addColorStop(0, "#04060d");
     grad.addColorStop(0.62, "#0b1124");
@@ -53,10 +64,24 @@
       ctx.fill();
     }
 
-    requestAnimationFrame(draw);
+    animId = requestAnimationFrame(draw);
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden) {
+      if (animId) {
+        cancelAnimationFrame(animId);
+        animId = null;
+      }
+    } else if (!animId) {
+      lastDrawTime = performance.now();
+      animId = requestAnimationFrame(draw);
+    }
   }
 
   window.addEventListener("resize", resize);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+
   resize();
-  requestAnimationFrame(draw);
+  animId = requestAnimationFrame(draw);
 })();
