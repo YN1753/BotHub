@@ -28,34 +28,38 @@ type TaskStatus struct {
 // ModuleStatus alias for backward compatibility
 type ModuleStatus = TaskStatus
 
+// Scheduler coordinates cron jobs and manual task triggers.
+// Loosely-coupled with execution logic via modules.Registry.
 type Scheduler struct {
-	store   *store.Store
-	mods    map[string]modules.Module
-	runners map[string]modules.TaskRunner
-	cron    *cron.Cron
-	entries map[string]cron.EntryID
-	running map[string]bool
-	mu      sync.Mutex
-	loc     *time.Location
+	store    *store.Store
+	registry *modules.Registry
+	cron     *cron.Cron
+	entries  map[string]cron.EntryID
+	running  map[string]bool
+	mu       sync.Mutex
+	loc      *time.Location
 }
 
-func New(st *store.Store, mods ...modules.Module) *Scheduler {
-	loc := modules.ShanghaiLocation()
-	s := &Scheduler{
-		store:   st,
-		mods:    make(map[string]modules.Module),
-		runners: make(map[string]modules.TaskRunner),
-		entries: make(map[string]cron.EntryID),
-		running: make(map[string]bool),
-		loc:     loc,
+// NewWithRegistry creates a Scheduler backed by a dynamic module Registry.
+func NewWithRegistry(st *store.Store, reg *modules.Registry) *Scheduler {
+	return &Scheduler{
+		store:    st,
+		registry: reg,
+		entries:  make(map[string]cron.EntryID),
+		running:  make(map[string]bool),
+		loc:      modules.ShanghaiLocation(),
 	}
+}
+
+// New retains backward compatibility for existing initializations.
+func New(st *store.Store, mods ...modules.Module) *Scheduler {
+	reg := modules.NewRegistry()
 	for _, m := range mods {
-		s.mods[m.ID()] = m
 		if r, ok := m.(modules.TaskRunner); ok {
-			s.runners[m.ID()] = r
+			reg.RegisterTaskRunner(m.ID(), r)
 		}
 	}
-	return s
+	return NewWithRegistry(st, reg)
 }
 
 func (s *Scheduler) Start() error {
@@ -133,28 +137,11 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (mo
 
 	task, err := s.store.GetTask(taskID)
 	if err != nil || task == nil {
-		// Fallback check legacy module ID
-		if mod, ok := s.mods[taskID]; ok {
-			task = &store.Task{
-				ID:   mod.ID(),
-				Name: mod.Name(),
-				Type: mod.ID(),
-			}
-		} else {
-			return modules.RunResult{}, fmt.Errorf("unknown task: %s", taskID)
-		}
+		return modules.RunResult{}, fmt.Errorf("unknown task: %s", taskID)
 	}
 
-	runner, ok := s.runners[task.Type]
+	runner, ok := s.registry.GetTaskRunner(task.Type)
 	if !ok {
-		// Try match legacy module
-		if mod, mOk := s.mods[task.Type]; mOk {
-			if r, rOk := mod.(modules.TaskRunner); rOk {
-				runner = r
-			}
-		}
-	}
-	if runner == nil {
 		return modules.RunResult{}, fmt.Errorf("no runner registered for template type: %s", task.Type)
 	}
 

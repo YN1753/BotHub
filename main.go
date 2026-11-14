@@ -52,11 +52,9 @@ func main() {
 	defer st.Close()
 
 	pushClient := pushplus.NewClient(st)
-	morningMod := modules.NewMorningModule(st, pushClient)
-	radarMod := modules.NewRadarModule(st, pushClient)
-	assetWatcherMod := modules.NewAssetWatcherModule(st, pushClient)
+	registry := modules.NewDefaultRegistry(st, pushClient)
 
-	sched := scheduler.New(st, morningMod, radarMod, assetWatcherMod)
+	sched := scheduler.NewWithRegistry(st, registry)
 	if err := sched.Start(); err != nil {
 		log.Fatalf("[bothub] failed to start scheduler: %v", err)
 	}
