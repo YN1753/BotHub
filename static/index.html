@@ -144,6 +144,24 @@
 
       <form id="asset-edit-form" class="modal-body">
         <input type="hidden" id="edit-asset-id" />
+
+        <!-- Novice Quick Preset Strip (Hidden when editing existing asset) -->
+        <div id="asset-quick-presets" class="quick-preset-banner">
+          <div class="quick-preset-head">
+            <span class="quick-preset-title">常用服务一键套用:</span>
+            <span class="quick-preset-sub">小白推荐，点击自动填充全套标准参数</span>
+          </div>
+          <div class="preset-pill-group">
+            <button type="button" class="pill-btn service-preset" data-service="bandwagon">搬瓦工 VPS ($49.99/年)</button>
+            <button type="button" class="pill-btn service-preset" data-service="cloudflare">Cloudflare 域名 ($9.77/年)</button>
+            <button type="button" class="pill-btn service-preset" data-service="bilibili">B站大会员 (¥148/年)</button>
+            <button type="button" class="pill-btn service-preset" data-service="qqmusic">QQ音乐绿钻 (¥15/月)</button>
+            <button type="button" class="pill-btn service-preset" data-service="chatgpt">ChatGPT Plus ($20/月)</button>
+            <button type="button" class="pill-btn service-preset" data-service="netflix">Netflix 奈飞 ($19.99/月)</button>
+            <button type="button" class="pill-btn service-preset" data-service="spotify">Spotify 家庭组 (HK$88/月)</button>
+          </div>
+        </div>
+
         <div class="form-grid">
           <div class="form-field full-width" id="wrap-asset-id">
             <label for="edit-asset-id-input">资产唯一标识 (ID，英文小写/下划线)</label>
@@ -274,6 +292,21 @@
 
       <form id="task-edit-form" class="modal-body">
         <input type="hidden" id="edit-task-id-hidden" />
+
+        <!-- Novice Task Quick Preset Strip (Hidden when editing existing task) -->
+        <div id="task-quick-presets" class="quick-preset-banner">
+          <div class="quick-preset-head">
+            <span class="quick-preset-title">典型场景一键套用:</span>
+            <span class="quick-preset-sub">小白推荐，点击自动初始化模板与调度参数</span>
+          </div>
+          <div class="preset-pill-group">
+            <button type="button" class="pill-btn task-preset" data-task-preset="morning_sh">上海晨间早报 (早08:00)</button>
+            <button type="button" class="pill-btn task-preset" data-task-preset="morning_bj">北京晨间早报 (早08:00)</button>
+            <button type="button" class="pill-btn task-preset" data-task-preset="radar_daily">开源技术风向标 (晚20:00)</button>
+            <button type="button" class="pill-btn task-preset" data-task-preset="asset_watcher">全量资产到期巡检 (凌晨03:00)</button>
+          </div>
+        </div>
+
         <div class="form-grid">
           <div class="form-field full-width" id="wrap-task-id">
             <label for="edit-task-id">任务唯一标识 (ID，英文小写/下划线)</label>

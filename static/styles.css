@@ -614,6 +614,40 @@ button, input, select, textarea {
   color: #fce7cf;
 }
 
+/* Quick Presets Banner */
+.quick-preset-banner {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(242, 184, 128, 0.08);
+  border: 1px solid rgba(242, 184, 128, 0.22);
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.quick-preset-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.quick-preset-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-amber);
+}
+.quick-preset-sub {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.service-preset:hover,
+.task-preset:hover {
+  background: rgba(242, 184, 128, 0.2);
+  border-color: var(--accent-amber);
+  color: #fff;
+}
+
 @keyframes fadeInOverlay {
   from { opacity: 0; }
   to { opacity: 1; }

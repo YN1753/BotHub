@@ -1033,6 +1033,103 @@
         this.updateWarnDaysHint(this.warnDaysInput.value);
       });
 
+      // Novice Service Presets (One-click Instant Starter)
+      const servicePresets = {
+        bandwagon: {
+          name: "搬瓦工 GIA VPS",
+          cat: "compute",
+          spec: "2C2G / 洛杉矶 DC9 CN2-GIA",
+          curr: "USD",
+          amt: "49.99",
+          cycle: "/年",
+          addMonths: 12,
+          autoRenew: "true",
+          warnDays: "[7, 3, 1]",
+          extra: { provider: "BandwagonHost", anchor_day: 1, ip_address: "" },
+        },
+        cloudflare: {
+          name: "Cloudflare 核心域名",
+          cat: "domain",
+          spec: "COM 顶级域名 / 权威托管",
+          curr: "USD",
+          amt: "9.77",
+          cycle: "/年",
+          addMonths: 12,
+          autoRenew: "true",
+          warnDays: "[30, 7, 1]",
+          extra: { domain_name: "starryheavens.uk", registrar: "Cloudflare Registrar" },
+        },
+        bilibili: {
+          name: "哔哩哔哩大会员",
+          cat: "life",
+          spec: "年度大会员 / 4K 高码率画质",
+          curr: "CNY",
+          amt: "148.00",
+          cycle: "/年",
+          addMonths: 12,
+          autoRenew: "true",
+          warnDays: "[7, 3, 1]",
+          extra: { platform: "bilibili", billing_note: "微信免密扣款", credentials: "" },
+        },
+        qqmusic: {
+          name: "QQ音乐豪华绿钻",
+          cat: "life",
+          spec: "绿钻豪华版 / 臻品母带音质",
+          curr: "CNY",
+          amt: "15.00",
+          cycle: "/月",
+          addMonths: 1,
+          autoRenew: "false",
+          warnDays: "[3, 1]",
+          extra: { platform: "qqmusic", billing_note: "活动体验到期防扣款", anchor_day: 12 },
+        },
+        chatgpt: {
+          name: "ChatGPT Plus 订阅",
+          cat: "life",
+          spec: "GPT-4o / Canvas / 高级语音",
+          curr: "USD",
+          amt: "20.00",
+          cycle: "/月",
+          addMonths: 1,
+          autoRenew: "true",
+          warnDays: "[3, 1]",
+          extra: { platform: "openai", billing_note: "海外虚拟卡尾号8888" },
+        },
+        netflix: {
+          name: "Netflix 奈飞高级车位",
+          cat: "life",
+          spec: "Ultra HD 4K / 独立 PIN 码车位",
+          curr: "USD",
+          amt: "19.99",
+          cycle: "/月",
+          addMonths: 1,
+          autoRenew: "true",
+          warnDays: "[3, 1]",
+          extra: { platform: "netflix", billing_note: "家庭组长期合租" },
+        },
+        spotify: {
+          name: "Spotify 音乐家庭组",
+          cat: "life",
+          spec: "Premium 6人家庭组主账号",
+          curr: "HKD",
+          amt: "88.00",
+          cycle: "/月",
+          addMonths: 1,
+          autoRenew: "true",
+          warnDays: "[7, 3, 1]",
+          extra: { platform: "spotify", billing_note: "港区万事达卡" },
+        },
+      };
+
+      document.querySelectorAll(".service-preset").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const key = btn.dataset.service;
+          const p = servicePresets[key];
+          if (!p) return;
+          this.applyServicePreset(p);
+        });
+      });
+
       this.bus.on("modal:open-asset", (item) => this.open(item));
 
       // Close handlers
@@ -1266,11 +1363,49 @@
       this.warnDaysHint.textContent = "将在设定梯度触发微信提醒";
     }
 
+    applyServicePreset(p) {
+      this.nameInput.value = p.name;
+      this.idInput.value = Utils.generateSlug(p.name, p.cat);
+      if (this.catHidden) this.catHidden.value = p.cat;
+      this.categorySelect?.setValue(p.cat, false);
+      this.specInput.value = p.spec;
+
+      // Price
+      this.currencySelect?.setValue(p.curr, false);
+      if (this.currencyHidden) this.currencyHidden.value = p.curr;
+      if (this.amountInput) this.amountInput.value = p.amt;
+      this.cycleSelect?.setValue(p.cycle, false);
+      if (this.cycleHidden) this.cycleHidden.value = p.cycle;
+      this.syncPrice();
+
+      // Due Date
+      const target = new Date();
+      target.setMonth(target.getMonth() + p.addMonths);
+      const y = String(target.getFullYear());
+      const m = String(target.getMonth() + 1).padStart(2, "0");
+      const d = String(target.getDate()).padStart(2, "0");
+      this.setDueValues(y, m, d);
+
+      // Auto renew & warn days
+      if (this.renewHidden) this.renewHidden.value = p.autoRenew;
+      this.autorenewSelect?.setValue(p.autoRenew, false);
+      this.warnDaysInput.value = p.warnDays;
+      this.updateWarnDaysHint(p.warnDays);
+
+      // Extra config
+      this.extraTextarea.value = JSON.stringify(p.extra, null, 2);
+      this.renderDynamicFields(p.cat, p.extra);
+
+      this.bus.emit("toast", `已套用 [${p.name}] 常用配置预设`);
+    }
+
     open(item) {
       const isNew = !item;
       // Reset pills active states
       document.querySelectorAll(".date-pill-group .date-pill").forEach((b) => b.classList.remove("active"));
       document.querySelectorAll(".warn-pill").forEach((b) => b.classList.remove("active"));
+
+      const quickBanner = document.getElementById("asset-quick-presets");
 
       if (isNew) {
         this.titleEl.textContent = "新增数字资产与订阅";
@@ -1278,6 +1413,7 @@
         this.idInput.value = "";
         this.idInput.disabled = false;
         this.deleteBtn?.classList.add("hidden");
+        quickBanner?.classList.remove("hidden");
 
         this.nameInput.value = "";
         if (this.catHidden) this.catHidden.value = "compute";
@@ -1315,6 +1451,7 @@
         this.idInput.value = item.id;
         this.idInput.disabled = true;
         this.deleteBtn?.classList.remove("hidden");
+        quickBanner?.classList.add("hidden");
 
         this.nameInput.value = item.name;
         const cat = item.category || "compute";
@@ -1369,6 +1506,7 @@
               <label>${Utils.esc(f.label)}</label>
               <div id="mount-asset-dyn-${Utils.esc(f.key)}" class="v-select-mount"></div>
               <input type="hidden" class="asset-dyn-input" data-key="${Utils.esc(f.key)}" value="${Utils.esc(val)}" />
+              ${f.hint ? `<span class="field-hint">${Utils.esc(f.hint)}</span>` : ""}
             </div>
           `;
         }
@@ -1376,6 +1514,7 @@
           <div class="form-field">
             <label for="asset-dyn-${Utils.esc(f.key)}">${Utils.esc(f.label)}</label>
             <input id="asset-dyn-${Utils.esc(f.key)}" type="${f.type === "number" ? "number" : "text"}" class="glass-input mono asset-dyn-input" data-key="${Utils.esc(f.key)}" value="${Utils.esc(val)}" placeholder="${Utils.esc(f.placeholder || "")}" />
+            ${f.hint ? `<span class="field-hint">${Utils.esc(f.hint)}</span>` : ""}
           </div>
         `;
       }).join("");
@@ -1557,6 +1696,47 @@
           btn.classList.add("active");
           const cron = btn.dataset.cron;
           this.parseCron(cron);
+        });
+      });
+
+      // Novice Task Presets
+      const taskPresets = {
+        morning_sh: {
+          name: "上海晨间早报",
+          type: "morning",
+          cron: "0 8 * * *",
+          desc: "每日早08:00定时汇总上海天气预报、出行建议、每日格言、节点脉搏与临期资产",
+          params: { city: "Shanghai", nezha_url: "https://dash.starryheavens.uk" },
+        },
+        morning_bj: {
+          name: "北京晨间早报",
+          type: "morning",
+          cron: "0 8 * * *",
+          desc: "每日早08:00定时汇总北京天气预报、穿衣与空气质量建议及节点脉搏",
+          params: { city: "Beijing", nezha_url: "https://dash.starryheavens.uk" },
+        },
+        radar_daily: {
+          name: "全网开源技术风向标",
+          type: "radar",
+          cron: "0 20 * * *",
+          desc: "每天晚20:00精选抓取 GitHub Trending 热门项目与 Hacker News 高分热榜",
+          params: { hn_min_score: 120, limit: 8 },
+        },
+        asset_watcher: {
+          name: "深夜资产临期巡检",
+          type: "asset_watcher",
+          cron: "0 3 * * *",
+          desc: "每日凌晨03:00自动巡检所有主机、域名与会员到期状态，触发防扣款强提醒",
+          params: {},
+        },
+      };
+
+      document.querySelectorAll(".task-preset").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const key = btn.dataset.taskPreset;
+          const p = taskPresets[key];
+          if (!p) return;
+          this.applyTaskPreset(p);
         });
       });
 
@@ -1818,10 +1998,26 @@
       this.syncSchedule();
     }
 
+    applyTaskPreset(p) {
+      this.nameInput.value = p.name;
+      this.idInput.value = Utils.generateSlug(p.name, p.type);
+      if (this.typeHidden) this.typeHidden.value = p.type;
+      this.typeSelect?.setValue(p.type, false);
+      this.descInput.value = p.desc;
+      this.parseCron(p.cron);
+
+      this.paramsTextarea.value = JSON.stringify(p.params, null, 2);
+      this.renderDynamicParams(p.type, p.params);
+
+      this.bus.emit("toast", `已套用 [${p.name}] 常用任务预设`);
+    }
+
     open(item) {
       const isNew = !item;
       // Reset pills active states
       document.querySelectorAll(".sched-pill").forEach((b) => b.classList.remove("active"));
+
+      const quickBanner = document.getElementById("task-quick-presets");
 
       if (isNew) {
         this.titleEl.textContent = "创建情报调度任务";
@@ -1829,6 +2025,7 @@
         this.idInput.value = "";
         this.idInput.disabled = false;
         this.deleteBtn?.classList.add("hidden");
+        quickBanner?.classList.remove("hidden");
 
         this.nameInput.value = "";
         if (this.typeHidden) this.typeHidden.value = "morning";
@@ -1849,6 +2046,7 @@
         this.idInput.value = item.id;
         this.idInput.disabled = true;
         this.deleteBtn?.classList.remove("hidden");
+        quickBanner?.classList.add("hidden");
 
         this.nameInput.value = item.name;
         if (this.typeHidden) this.typeHidden.value = item.type;
@@ -1892,6 +2090,7 @@
               <label>${Utils.esc(f.label)}</label>
               <div id="mount-task-dyn-${Utils.esc(f.key)}" class="v-select-mount"></div>
               <input type="hidden" class="task-dyn-input" data-key="${Utils.esc(f.key)}" value="${Utils.esc(val)}" />
+              ${f.hint ? `<span class="field-hint">${Utils.esc(f.hint)}</span>` : ""}
             </div>
           `;
         }
@@ -1899,6 +2098,7 @@
           <div class="form-field">
             <label for="task-dyn-${Utils.esc(f.key)}">${Utils.esc(f.label)}</label>
             <input id="task-dyn-${Utils.esc(f.key)}" type="${f.type === "number" ? "number" : "text"}" class="glass-input mono task-dyn-input" data-key="${Utils.esc(f.key)}" value="${Utils.esc(val)}" placeholder="${Utils.esc(f.placeholder || "")}" />
+            ${f.hint ? `<span class="field-hint">${Utils.esc(f.hint)}</span>` : ""}
           </div>
         `;
       }).join("");
