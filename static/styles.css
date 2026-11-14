@@ -414,19 +414,40 @@ html, body {
   gap: 6px;
 }
 
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-amber);
+}
+
 /* Modal */
 .modal-overlay {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(3, 5, 12, 0.75);
-  backdrop-filter: blur(12px);
+  background: rgba(3, 5, 12, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   display: grid;
   place-items: center;
   padding: 16px;
+  animation: fadeInOverlay 0.18s ease-out;
 }
 button, input, select, textarea {
   -webkit-tap-highlight-color: transparent;
+}
+.btn:active {
+  transform: scale(0.98);
 }
 
 .modal-card {
@@ -434,12 +455,24 @@ button, input, select, textarea {
   max-width: 520px;
   max-height: 88dvh;
   overflow-y: auto;
-  background: rgba(14, 18, 30, 0.95);
+  background: rgba(14, 18, 30, 0.96);
   border: 1px solid var(--glass-border-strong);
   padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.65), inset 0 1px 0 var(--glass-highlight);
+  animation: popModal 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInOverlay {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes popModal {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding-bottom: 10px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
