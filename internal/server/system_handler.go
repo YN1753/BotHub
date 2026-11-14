@@ -95,6 +95,96 @@ func (s *Server) handleTestPush(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "测试消息已成功投递至 PushPlus"})
 }
 
+type BackupData struct {
+	Version    string            `json:"version"`
+	ExportedAt string            `json:"exported_at"`
+	Configs    map[string]string `json:"configs"`
+	Assets     []store.Asset     `json:"assets"`
+	Tasks      []store.Task      `json:"tasks"`
+}
+
+func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
+	assets, err := s.store.ListAssets()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "导出资产失败: "+err.Error())
+		return
+	}
+	tasks, err := s.store.ListTasks()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "导出任务失败: "+err.Error())
+		return
+	}
+	cfgs, _ := s.store.GetAllConfigs()
+	delete(cfgs, store.KeyAdminPassHash)
+	delete(cfgs, store.KeySessionSecret)
+
+	backup := BackupData{
+		Version:    s.version,
+		ExportedAt: store.NowShanghai(),
+		Configs:    cfgs,
+		Assets:     assets,
+		Tasks:      tasks,
+	}
+
+	filename := fmt.Sprintf("bothub_backup_%s.json", time.Now().Format("20060102_150405"))
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	_ = json.NewEncoder(w).Encode(backup)
+}
+
+func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
+	var backup BackupData
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 5*1024*1024)).Decode(&backup); err != nil {
+		writeError(w, http.StatusBadRequest, "无效备份文件: "+err.Error())
+		return
+	}
+
+	// 1. Restore Configs
+	allowedKeys := map[string]bool{
+		"pushplus_token": true,
+		"cf_api_token":   true,
+	}
+	for k, v := range backup.Configs {
+		if allowedKeys[k] {
+			_ = s.store.SetConfig(k, strings.TrimSpace(v))
+		}
+	}
+
+	// 2. Restore Assets
+	assetsCount := 0
+	for _, a := range backup.Assets {
+		if strings.TrimSpace(a.ID) == "" || strings.TrimSpace(a.Name) == "" {
+			continue
+		}
+		if err := s.store.SaveAsset(a); err == nil {
+			assetsCount++
+		}
+	}
+
+	// 3. Restore Tasks
+	tasksCount := 0
+	for _, t := range backup.Tasks {
+		if strings.TrimSpace(t.ID) == "" || strings.TrimSpace(t.Name) == "" {
+			continue
+		}
+		if err := s.store.SaveTask(t); err == nil {
+			tasksCount++
+		}
+	}
+
+	// 4. Reload scheduler
+	if s.scheduler != nil {
+		_ = s.scheduler.Reload()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":              true,
+		"message":         fmt.Sprintf("备份恢复成功：已恢复 %d 个资产，%d 个任务及全局配置", assetsCount, tasksCount),
+		"assets_restored": assetsCount,
+		"tasks_restored":  tasksCount,
+	})
+}
+
 func (s *Server) spaFileServer() http.Handler {
 	fileServer := http.FileServer(http.FS(s.staticFS))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

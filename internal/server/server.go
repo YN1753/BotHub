@@ -83,6 +83,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/assets/{id}", s.requireAuth(s.handleUpdateAsset))
 	mux.HandleFunc("DELETE /api/assets/{id}", s.requireAuth(s.handleDeleteAsset))
 
+	// System Backup & Portability
+	mux.HandleFunc("GET /api/system/export", s.requireAuth(s.handleExportBackup))
+	mux.HandleFunc("POST /api/system/import", s.requireAuth(s.handleImportBackup))
+
 	// Embedded Static Single Binary SPA Router
 	mux.Handle("GET /", s.spaFileServer())
 

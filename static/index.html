@@ -32,7 +32,7 @@
         <span class="topbar-sub mono">bot.starryheavens.uk</span>
       </div>
       <div class="topbar-actions">
-        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v1.4.0</span></span>
+        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v1.6.0</span></span>
         <span class="stat-pill mono" id="uptime-label">UPTIME 0s</span>
         <button id="test-push-btn" class="btn btn-ghost" type="button">测试推送</button>
         <button id="refresh-btn" class="btn btn-ghost" type="button">刷新</button>
@@ -121,6 +121,19 @@
           <input id="new-password" type="password" minlength="6" class="glass-input mono" placeholder="输入新密钥 (至少6位)" required />
           <button type="submit" class="btn btn-ghost">更新密钥</button>
         </form>
+
+        <div class="divider"></div>
+        <div class="panel-header-simple">
+          <h3 class="serif-title panel-sub-title">系统数据便携备份与灾备恢复</h3>
+          <span class="section-hint">全量资产、任务与配置一键离线备份</span>
+        </div>
+        <div class="backup-actions-row">
+          <button type="button" class="btn btn-ghost" id="export-backup-btn">导出配置备份 (JSON)</button>
+          <label class="btn btn-ghost" style="cursor:pointer; display:inline-flex; align-items:center; margin-bottom:0;">
+            导入恢复备份
+            <input type="file" id="import-backup-file" accept=".json" style="display:none;" />
+          </label>
+        </div>
       </article>
 
       <!-- Push History -->
@@ -406,7 +419,7 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/starfield.js?v=v1.5.2"></script>
-  <script src="/app.js?v=v1.5.2"></script>
+  <script src="/starfield.js?v=v1.6.0"></script>
+  <script src="/app.js?v=v1.6.0"></script>
 </body>
 </html>

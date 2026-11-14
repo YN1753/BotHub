@@ -614,6 +614,13 @@ button, input, select, textarea {
   color: #fce7cf;
 }
 
+.backup-actions-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 /* Quick Presets Banner */
 .quick-preset-banner {
   padding: 10px 12px;

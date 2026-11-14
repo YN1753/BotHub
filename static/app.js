@@ -308,7 +308,7 @@
       this.api = new ApiClient(bus);
       this.state = {
         authenticated: false,
-        version: "v1.5.0",
+        version: "v1.6.0",
         commit: "dev",
         buildTime: "local",
         uptimeSec: 0,
@@ -436,6 +436,39 @@
     async syncAssets() {
       const res = await this.api.request("/api/modules/asset_watcher/run", { method: "POST" });
       this.bus.emit("toast", res.summary || "资产嗅探同步完成");
+      await this.loadDashboard();
+    }
+
+    async exportBackup() {
+      try {
+        const res = await fetch("/api/system/export", {
+          headers: { "X-Admin-Token": this.api.token },
+        });
+        if (!res.ok) throw new Error("导出失败");
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+        a.download = `bothub_backup_${dateStr}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        this.bus.emit("toast", "备份文件已成功导出下载");
+      } catch (err) {
+        this.bus.emit("toast", "导出备份异常: " + err.message);
+      }
+    }
+
+    async importBackup(backupObj) {
+      const res = await this.api.request("/api/system/import", {
+        method: "POST",
+        body: JSON.stringify(backupObj),
+      });
+      this.bus.emit("toast", res.message || "备份已成功恢复");
       await this.loadDashboard();
     }
   }
@@ -2148,6 +2181,45 @@
     }
   }
 
+  // --- System Backup Component ---
+  class SystemBackupComponent extends BaseComponent {
+    init() {
+      this.exportBtn = document.getElementById("export-backup-btn");
+      this.fileInput = document.getElementById("import-backup-file");
+
+      this.exportBtn?.addEventListener("click", () => {
+        this.store.exportBackup();
+      });
+
+      this.fileInput?.addEventListener("change", (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+          try {
+            const parsed = JSON.parse(evt.target.result);
+            if (!parsed || (!parsed.assets && !parsed.tasks && !parsed.configs)) {
+              throw new Error("文件格式不合法，未检测到有效数据");
+            }
+            const countAssets = (parsed.assets || []).length;
+            const countTasks = (parsed.tasks || []).length;
+            if (!confirm(`检测到备份文件 (包含 ${countAssets} 个资产、${countTasks} 个任务)，确定导入并恢复覆盖吗？`)) {
+              this.fileInput.value = "";
+              return;
+            }
+            await this.store.importBackup(parsed);
+          } catch (err) {
+            this.bus.emit("toast", "导入解析失败: " + err.message);
+          } finally {
+            this.fileInput.value = "";
+          }
+        };
+        reader.readAsText(file);
+      });
+    }
+  }
+
   // ==========================================
   // 8. Application Bootstrap
   // ==========================================
@@ -2167,6 +2239,7 @@
       new PushLogsComponent("#logs-list", store, bus),
       new AssetModalComponent("#asset-modal-overlay", store, bus),
       new TaskModalComponent("#task-modal-overlay", store, bus),
+      new SystemBackupComponent(".backup-actions-row", store, bus),
     ];
 
     components.forEach((c) => c.init());
