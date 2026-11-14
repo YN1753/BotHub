@@ -116,7 +116,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/modules/{id}/run", s.requireAuth(s.handleRunModule))
 	mux.HandleFunc("POST /api/test-push", s.requireAuth(s.handleTestPush))
 	mux.HandleFunc("GET /api/assets", s.requireAuth(s.handleListAssets))
+	mux.HandleFunc("POST /api/assets", s.requireAuth(s.handleCreateAsset))
 	mux.HandleFunc("POST /api/assets/{id}", s.requireAuth(s.handleUpdateAsset))
+	mux.HandleFunc("DELETE /api/assets/{id}", s.requireAuth(s.handleDeleteAsset))
 
 	// Embedded Static Single Binary SPA Router
 	mux.Handle("GET /", s.spaFileServer())
@@ -176,6 +178,7 @@ func (s *Server) handleCORSPreflight(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Max-Age", "86400")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -314,6 +317,59 @@ func (s *Server) handleUpdateAsset(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.store.SaveAsset(*existing); err != nil {
 		writeError(w, http.StatusInternalServerError, "保存资产失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
+	var req store.Asset
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效请求体")
+		return
+	}
+	req.ID = strings.TrimSpace(req.ID)
+	req.Name = strings.TrimSpace(req.Name)
+	if req.ID == "" || req.Name == "" {
+		writeError(w, http.StatusBadRequest, "资产 ID 与名称为必填项")
+		return
+	}
+	existing, _ := s.store.GetAsset(req.ID)
+	if existing != nil {
+		writeError(w, http.StatusConflict, "资产 ID 已存在")
+		return
+	}
+	if req.Category == "" {
+		req.Category = "compute"
+	}
+	if req.WarnDays == "" {
+		req.WarnDays = "[7, 3, 1]"
+	}
+	if req.ExtraConfig == "" {
+		req.ExtraConfig = "{}"
+	} else {
+		var js map[string]any
+		if json.Unmarshal([]byte(req.ExtraConfig), &js) != nil {
+			writeError(w, http.StatusBadRequest, "额外配置需为合法 JSON")
+			return
+		}
+	}
+	req.LastCheckedAt = store.NowShanghai()
+	if err := s.store.SaveAsset(req); err != nil {
+		writeError(w, http.StatusInternalServerError, "创建资产失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": req.ID})
+}
+
+func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "缺少资产 ID")
+		return
+	}
+	if err := s.store.DeleteAsset(id); err != nil {
+		writeError(w, http.StatusInternalServerError, "删除资产失败: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})

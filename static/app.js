@@ -130,6 +130,11 @@
         if (!item) return;
         document.getElementById("modal-asset-title").textContent = `编辑资产 · ${item.name}`;
         document.getElementById("edit-asset-id").value = item.id;
+        const idInput = document.getElementById("edit-asset-id-input");
+        idInput.value = item.id;
+        idInput.disabled = true;
+        document.getElementById("delete-asset-btn").classList.remove("hidden");
+
         document.getElementById("edit-asset-name").value = item.name;
         document.getElementById("edit-asset-category").value = item.category || "life";
         document.getElementById("edit-asset-spec").value = item.spec || "";
@@ -312,10 +317,64 @@
   document.getElementById("close-modal-btn").onclick = () => modalOverlay.classList.add("hidden");
   document.getElementById("cancel-modal-btn").onclick = () => modalOverlay.classList.add("hidden");
 
+  // Add Asset Button
+  const addAssetBtn = document.getElementById("add-asset-btn");
+  if (addAssetBtn) {
+    addAssetBtn.onclick = () => {
+      document.getElementById("modal-asset-title").textContent = "新增数字资产与订阅";
+      document.getElementById("edit-asset-id").value = "";
+      const idInput = document.getElementById("edit-asset-id-input");
+      idInput.value = "";
+      idInput.disabled = false;
+      document.getElementById("delete-asset-btn").classList.add("hidden");
+
+      document.getElementById("edit-asset-name").value = "";
+      document.getElementById("edit-asset-category").value = "compute";
+      document.getElementById("edit-asset-spec").value = "";
+      document.getElementById("edit-asset-price").value = "";
+      document.getElementById("edit-asset-due").value = "";
+      document.getElementById("edit-asset-status").value = "运行中";
+      document.getElementById("edit-asset-autorenew").value = "true";
+      document.getElementById("edit-asset-warndays").value = "[7, 3, 1]";
+      document.getElementById("edit-asset-extra").value = "{}";
+      modalOverlay.classList.remove("hidden");
+    };
+  }
+
+  // Delete Asset Button
+  const deleteAssetBtn = document.getElementById("delete-asset-btn");
+  if (deleteAssetBtn) {
+    deleteAssetBtn.onclick = async () => {
+      const id = document.getElementById("edit-asset-id").value;
+      const name = document.getElementById("edit-asset-name").value;
+      if (!id) return;
+      if (!confirm(`确定下架并删除资产 [${name || id}] 吗？`)) return;
+
+      try {
+        await api(`/api/assets/${encodeURIComponent(id)}`, { method: "DELETE" });
+        modalOverlay.classList.add("hidden");
+        showToast("资产已删除");
+        await loadDashboard();
+      } catch (err) {
+        showToast(err.message);
+      }
+    };
+  }
+
   document.getElementById("asset-edit-form").onsubmit = async (e) => {
     e.preventDefault();
-    const id = document.getElementById("edit-asset-id").value;
+    const existingID = document.getElementById("edit-asset-id").value.trim();
+    const idInputVal = document.getElementById("edit-asset-id-input").value.trim();
+    const isNew = !existingID;
+    const finalID = isNew ? idInputVal : existingID;
+
+    if (!finalID) {
+      showToast("资产 ID 不能为空");
+      return;
+    }
+
     const payload = {
+      id: finalID,
       name: document.getElementById("edit-asset-name").value.trim(),
       category: document.getElementById("edit-asset-category").value,
       spec: document.getElementById("edit-asset-spec").value.trim(),
@@ -326,10 +385,16 @@
       warn_days: document.getElementById("edit-asset-warndays").value.trim(),
       extra_config: document.getElementById("edit-asset-extra").value.trim(),
     };
+
     try {
-      await api(`/api/assets/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify(payload) });
+      if (isNew) {
+        await api("/api/assets", { method: "POST", body: JSON.stringify(payload) });
+        showToast("新资产创建成功");
+      } else {
+        await api(`/api/assets/${encodeURIComponent(finalID)}`, { method: "POST", body: JSON.stringify(payload) });
+        showToast("资产更新成功");
+      }
       modalOverlay.classList.add("hidden");
-      showToast("资产更新成功");
       await loadDashboard();
     } catch (err) {
       showToast(err.message);

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,7 +49,7 @@ func (m *MorningModule) Run(ctx context.Context) (RunResult, error) {
 	dateStr := now.Format("2006-01-02")
 	weekday := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}[now.Weekday()]
 
-	w, wErr := m.fetchWeather(ctx, city)
+	w, wErr := m.fetchWeatherWithFallback(ctx, city)
 	quote := dailyQuotes[now.YearDay()%len(dailyQuotes)]
 	nodePulse := m.fetchNodePulse(ctx, nezhaURL)
 
@@ -168,6 +169,78 @@ func (m *MorningModule) fetchWeather(ctx context.Context, city string) (weatherI
 	}, nil
 }
 
+func (m *MorningModule) fetchWeatherWithFallback(ctx context.Context, city string) (weatherInfo, error) {
+	// 1. Primary source: Open-Meteo
+	w, err := m.fetchWeather(ctx, city)
+	if err == nil {
+		return w, nil
+	}
+	// 2. Secondary fallback source: wttr.in (zero key, resilient)
+	wFallback, fbErr := m.fetchWeatherWttrIn(ctx, city)
+	if fbErr == nil {
+		return wFallback, nil
+	}
+	return weatherInfo{}, fmt.Errorf("主备气象接口均不可用 (open-meteo: %v; wttr.in: %v)", err, fbErr)
+}
+
+func (m *MorningModule) fetchWeatherWttrIn(ctx context.Context, city string) (weatherInfo, error) {
+	u := fmt.Sprintf("https://wttr.in/%s?format=j1", url.QueryEscape(city))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return weatherInfo{}, err
+	}
+	req.Header.Set("User-Agent", "curl/7.68.0")
+	resp, err := m.http.Do(req)
+	if err != nil {
+		return weatherInfo{}, err
+	}
+	defer resp.Body.Close()
+
+	var data struct {
+		Current []struct {
+			TempC        string `json:"temp_C"`
+			Windspeed    string `json:"windspeedKmph"`
+			WeatherDesc  []struct{ Value string `json:"value"` } `json:"weatherDesc"`
+		} `json:"current_condition"`
+		Weather []struct {
+			MaxTempC string `json:"maxtempC"`
+			MinTempC string `json:"mintempC"`
+			Hourly   []struct {
+				ChanceOfRain string `json:"chanceofrain"`
+			} `json:"hourly"`
+		} `json:"weather"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil || len(data.Current) == 0 || len(data.Weather) == 0 {
+		return weatherInfo{}, fmt.Errorf("解析 wttr.in 失败")
+	}
+
+	curr := data.Current[0]
+	today := data.Weather[0]
+	cTemp, _ := strconv.ParseFloat(curr.TempC, 64)
+	mxTemp, _ := strconv.ParseFloat(today.MaxTempC, 64)
+	mnTemp, _ := strconv.ParseFloat(today.MinTempC, 64)
+	wSpeed, _ := strconv.ParseFloat(curr.Windspeed, 64)
+
+	precip := 0
+	if len(today.Hourly) > 0 {
+		precip, _ = strconv.Atoi(today.Hourly[0].ChanceOfRain)
+	}
+	cond := "晴朗/多云"
+	if len(curr.WeatherDesc) > 0 && curr.WeatherDesc[0].Value != "" {
+		cond = curr.WeatherDesc[0].Value
+	}
+
+	return weatherInfo{
+		City:        city,
+		Condition:   cond,
+		CurrentTemp: cTemp,
+		MinTemp:     mnTemp,
+		MaxTemp:     mxTemp,
+		PrecipProb:  precip,
+		WindSpeed:   wSpeed,
+	}, nil
+}
+
 func (m *MorningModule) fetchNodePulse(ctx context.Context, nezhaURL string) string {
 	base := strings.TrimRight(strings.TrimSpace(nezhaURL), "/")
 	if base == "" {
@@ -209,6 +282,9 @@ func buildAdvice(w weatherInfo) string {
 	default:
 		parts = append(parts, "气温偏高，注意防晒补水")
 	}
+	if w.WindSpeed >= 30 {
+		parts = append(parts, fmt.Sprintf("风力偏大（%.0f km/h），注意防风保暖", w.WindSpeed))
+	}
 	if w.PrecipProb >= 40 {
 		parts = append(parts, fmt.Sprintf("降水概率 %d%%，出门请带伞", w.PrecipProb))
 	} else {
@@ -245,4 +321,27 @@ var dailyQuotes = []string{
 	"Programs must be written for people to read, and only incidentally for machines to execute.",
 	"风起于青萍之末，浪成于微澜之间；今日宜稳步推进。",
 	"Premature optimization is the root of all evil. —— Donald Knuth",
+	"秩序产生于自律，优雅来自于克制；心有山海，静水深流。",
+	"Any fool can write code that a computer can understand. Good programmers write code that humans can understand.",
+	"山海辽阔，群星闪烁；每一个稳定的守护都源自细微的打磨。",
+	"First, solve the problem. Then, write the code. —— John Johnson",
+	"在不确定的世界里，保持确定性的节奏与专注。",
+	"The best way to predict the future is to invent it. —— Alan Kay",
+	"行至水穷处，坐看云起时；系统与心灵皆需常驻静气。",
+	"There are only two hard things in Computer Science: cache invalidation and naming things.",
+	"删繁就简三秋树，领异标新二月花；轻量方可恒久。",
+	"Good design adds value faster than it adds cost. —— Thomas C. Gale",
+	"凡是过往，皆为序章；星轨交替，从容前行。",
+	"Talk is cheap. Show me the code. —— Linus Torvalds",
+	"万物皆有裂隙，那是光照进来的地方。",
+	"Computers are good at following instructions, but not at reading your mind. —— Donald Knuth",
+	"暮色深沉处，方见星光之纯粹。",
+	"The function of good software is to make the complex appear simple. —— Grady Booch",
+	"日日行，不怕千万里；常常做，不怕千万事。",
+	"Debugging is twice as hard as writing the code in the first place. —— Brian Kernighan",
+	"博观而约取，厚积而薄发；今日亦有新光景。",
+	"Truth can only be found in one place: the code. —— Robert C. Martin",
+	"海不辞水，故能成其大；山不辞土，故能成其高。",
+	"Software is a great combination between artistry and engineering. —— Bill Gates",
+	"夜尽天明，星河入怀；保持热爱，奔赴山海。",
 }

@@ -166,6 +166,15 @@ html, body {
   background: linear-gradient(135deg, rgba(242, 184, 128, 0.38), rgba(242, 184, 128, 0.22));
   border-color: var(--accent-amber);
 }
+.btn-danger {
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fca5a5;
+}
+.btn-danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.25);
+  border-color: var(--danger-red);
+}
 
 .glass-input {
   width: 100%;
@@ -355,6 +364,9 @@ button, input, select, textarea {
 }
 .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--glass-border); padding-bottom: 10px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.modal-actions-between { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 8px; }
+.modal-actions-right { display: flex; gap: 8px; align-items: center; }
+.section-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* Toast */
 .toast {

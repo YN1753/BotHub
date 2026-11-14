@@ -237,11 +237,20 @@ func (r *RadarModule) fetchHackerNews(ctx context.Context, minScore, maxItems in
 	var mu sync.Mutex
 	var stories []hnStory
 	var wg sync.WaitGroup
+	// Concurrency limiter: keep simultaneous outgoing requests capped at 6 to prevent burst socket load
+	sem := make(chan struct{}, 6)
 
 	for _, id := range ids {
 		wg.Add(1)
 		go func(storyID int64) {
 			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+
 			u := fmt.Sprintf("https://hacker-news.firebaseio.com/v0/item/%d.json", storyID)
 			sReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 			if sResp, sErr := r.http.Do(sReq); sErr == nil {

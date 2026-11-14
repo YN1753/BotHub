@@ -465,6 +465,11 @@ ON CONFLICT(id) DO UPDATE SET
 	return err
 }
 
+func (s *Store) DeleteAsset(id string) error {
+	_, err := s.db.Exec(`DELETE FROM assets WHERE id = ?`, id)
+	return err
+}
+
 func (s *Store) UpdateAssetSyncResult(id, dueDate, status string, autoRenew bool, lastChecked string) error {
 	autoInt := 0
 	if autoRenew {

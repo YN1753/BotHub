@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BotHub · Vesper 自动化情报与推送中枢</title>
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=v1.2.0" />
 </head>
 <body>
   <canvas id="starfield" aria-hidden="true"></canvas>
@@ -67,7 +67,10 @@
           <h2 class="serif-title section-title">数字资产与会员守望 (Asset Watcher)</h2>
           <span class="section-hint">真实到期自动嗅探 · 7/3/1 天防自动扣费强提醒 · <code>/api/v1/assets/overview</code></span>
         </div>
-        <button id="sync-assets-btn" class="btn btn-primary" type="button">立即嗅探同步</button>
+        <div class="section-actions">
+          <button id="add-asset-btn" class="btn btn-ghost" type="button">+ 新增资产</button>
+          <button id="sync-assets-btn" class="btn btn-primary" type="button">立即嗅探同步</button>
+        </div>
       </div>
       <div id="assets-grid" class="assets-grid"></div>
     </section>
@@ -164,6 +167,10 @@
       <form id="asset-edit-form" class="modal-body">
         <input type="hidden" id="edit-asset-id" />
         <div class="form-grid">
+          <div class="form-field full-width" id="wrap-asset-id">
+            <label for="edit-asset-id-input">资产唯一标识 (ID，英文小写/下划线)</label>
+            <input id="edit-asset-id-input" class="glass-input mono" placeholder="如 racknerd_la / cf_domain" required />
+          </div>
           <div class="form-field">
             <label for="edit-asset-name">名称</label>
             <input id="edit-asset-name" class="glass-input" required />
@@ -208,16 +215,19 @@
             <textarea id="edit-asset-extra" rows="3" class="glass-input mono" placeholder='{"sessdata":"...","anchor_day":12}'></textarea>
           </div>
         </div>
-        <div class="modal-actions">
-          <button type="button" class="btn btn-ghost" id="cancel-modal-btn">取消</button>
-          <button type="submit" class="btn btn-primary" id="save-asset-btn">保存配置</button>
+        <div class="modal-actions-between">
+          <button type="button" class="btn btn-danger hidden" id="delete-asset-btn">下架并删除</button>
+          <div class="modal-actions-right">
+            <button type="button" class="btn btn-ghost" id="cancel-modal-btn">取消</button>
+            <button type="submit" class="btn btn-primary" id="save-asset-btn">保存资产</button>
+          </div>
         </div>
       </form>
     </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/starfield.js"></script>
-  <script src="/app.js"></script>
+  <script src="/starfield.js?v=v1.2.0"></script>
+  <script src="/app.js?v=v1.2.0"></script>
 </body>
 </html>
