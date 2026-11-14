@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YN1753/vesper/bothub/internal/modules"
 	"github.com/YN1753/vesper/bothub/internal/pushplus"
 	"github.com/YN1753/vesper/bothub/internal/scheduler"
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -60,7 +59,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 
-	// Public Sanitized Read-only Assets Overview (with CORS support)
+	// Public Sanitized Read-only Assets Overview (CORS)
 	mux.HandleFunc("OPTIONS /api/v1/assets/overview", s.handleCORSPreflight)
 	mux.HandleFunc("GET /api/v1/assets/overview", s.handlePublicAssetsOverview)
 
@@ -70,8 +69,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/password", s.requireAuth(s.handleUpdatePassword))
 	mux.HandleFunc("POST /api/modules/{id}/run", s.requireAuth(s.handleRunModule))
 	mux.HandleFunc("POST /api/test-push", s.requireAuth(s.handleTestPush))
-
-	// Authenticated Asset Management Endpoints
 	mux.HandleFunc("GET /api/assets", s.requireAuth(s.handleListAssets))
 	mux.HandleFunc("POST /api/assets/{id}", s.requireAuth(s.handleUpdateAsset))
 
@@ -88,10 +85,7 @@ func (s *Server) spaFileServer() http.Handler {
 		if path == "" {
 			path = "index.html"
 		}
-
-		// Try opening the file in embedded staticFS
-		f, err := s.staticFS.Open(path)
-		if err == nil {
+		if f, err := s.staticFS.Open(path); err == nil {
 			_ = f.Close()
 			if strings.HasSuffix(path, ".html") {
 				w.Header().Set("Cache-Control", "no-cache")
@@ -101,15 +95,12 @@ func (s *Server) spaFileServer() http.Handler {
 			fileServer.ServeHTTP(w, r)
 			return
 		}
-
-		// If path is not API and not found, fallback to index.html (SPA friendly)
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Cache-Control", "no-cache")
 			r.URL.Path = "/"
 			fileServer.ServeHTTP(w, r)
 			return
 		}
-
 		http.NotFound(w, r)
 	})
 }
@@ -149,47 +140,29 @@ func (s *Server) handlePublicAssetsOverview(w http.ResponseWriter, r *http.Reque
 
 	list, err := s.store.GetPublicAssets()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"code":    1,
-			"message": "获取资产概览失败: " + err.Error(),
-			"data":    []any{},
-		})
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": 1, "message": err.Error(), "data": []any{}})
 		return
 	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"code":       0,
-		"data":       list,
-		"updated_at": store.NowShanghai(),
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": list, "updated_at": store.NowShanghai()})
 }
 
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"authenticated": s.isAuthenticated(r),
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"authenticated": s.isAuthenticated(r)})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "无效的请求体")
-		return
-	}
-
-	if !s.verifyPassword(body.Password) {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil || !s.verifyPassword(body.Password) {
 		writeError(w, http.StatusUnauthorized, "访问密钥不正确")
 		return
 	}
-
 	token, err := s.issueSessionCookie()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "会话签发失败")
 		return
 	}
-
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    token,
@@ -213,50 +186,18 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
 }
 
-type AdminAssetItem struct {
-	store.Asset
-	DaysLeft int  `json:"days_left"`
-	WarnFlag bool `json:"warn_flag"`
-}
-
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	mods, err := s.scheduler.Status()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "读取模块状态失败")
 		return
 	}
-
-	cfgs, err := s.store.GetAllConfigs()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "读取配置失败")
-		return
-	}
+	cfgs, _ := s.store.GetAllConfigs()
 	delete(cfgs, store.KeyAdminPassHash)
 	delete(cfgs, store.KeySessionSecret)
 
-	logs, err := s.store.ListPushLogs(40)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "读取推送日志失败")
-		return
-	}
-
-	rawAssets, err := s.store.ListAssets()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "读取资产列表失败")
-		return
-	}
-
-	adminAssets := make([]AdminAssetItem, 0, len(rawAssets))
-	for _, a := range rawAssets {
-		days, _ := store.CalculateDaysLeft(a.DueDate)
-		warnFlag := (days >= 0 && days <= 7) || (a.Status == "即将到期" || a.Status == "已到期")
-		adminAssets = append(adminAssets, AdminAssetItem{
-			Asset:    a,
-			DaysLeft: days,
-			WarnFlag: warnFlag,
-		})
-	}
-
+	logs, _ := s.store.ListPushLogs(40)
+	assets, _ := s.store.ListAssets()
 	stats, _ := s.store.CountStats()
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -265,7 +206,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"build_time": s.buildTime,
 		"modules":    mods,
 		"configs":    cfgs,
-		"assets":     adminAssets,
+		"assets":     assets,
 		"push_logs":  logs,
 		"stats":      stats,
 		"uptime_sec": int64(time.Since(s.startedAt).Seconds()),
@@ -274,159 +215,75 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
-	rawAssets, err := s.store.ListAssets()
+	assets, err := s.store.ListAssets()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "读取资产失败: "+err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	adminAssets := make([]AdminAssetItem, 0, len(rawAssets))
-	for _, a := range rawAssets {
-		days, _ := store.CalculateDaysLeft(a.DueDate)
-		warnFlag := (days >= 0 && days <= 7) || (a.Status == "即将到期" || a.Status == "已到期")
-		adminAssets = append(adminAssets, AdminAssetItem{
-			Asset:    a,
-			DaysLeft: days,
-			WarnFlag: warnFlag,
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"assets": adminAssets,
-	})
-}
-
-type updateAssetRequest struct {
-	Name        string `json:"name"`
-	Category    string `json:"category"`
-	Spec        string `json:"spec"`
-	Price       string `json:"price"`
-	Status      string `json:"status"`
-	DueDate     string `json:"due_date"`
-	AutoRenew   bool   `json:"auto_renew"`
-	WarnDays    string `json:"warn_days"`
-	ExtraConfig string `json:"extra_config"`
+	writeJSON(w, http.StatusOK, map[string]any{"assets": assets})
 }
 
 func (s *Server) handleUpdateAsset(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if strings.TrimSpace(id) == "" {
-		writeError(w, http.StatusBadRequest, "资产 ID 不能为空")
-		return
-	}
-
+	id := strings.TrimSpace(r.PathValue("id"))
 	existing, err := s.store.GetAsset(id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "读取资产失败: "+err.Error())
-		return
-	}
-	if existing == nil {
-		writeError(w, http.StatusNotFound, "未找到目标资产: "+id)
+	if err != nil || existing == nil {
+		writeError(w, http.StatusNotFound, "资产不存在")
 		return
 	}
 
-	var req updateAssetRequest
+	var req store.Asset
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效的请求格式")
+		writeError(w, http.StatusBadRequest, "无效请求体")
 		return
 	}
 
-	if req.Name != "" {
-		existing.Name = strings.TrimSpace(req.Name)
-	}
-	if req.Category != "" {
-		existing.Category = strings.TrimSpace(req.Category)
-	}
-	if req.Spec != "" {
-		existing.Spec = strings.TrimSpace(req.Spec)
-	}
-	if req.Price != "" {
-		existing.Price = strings.TrimSpace(req.Price)
-	}
-	if req.Status != "" {
-		existing.Status = strings.TrimSpace(req.Status)
-	}
-	if req.DueDate != "" {
-		existing.DueDate = strings.TrimSpace(req.DueDate)
-	}
+	if req.Name != "" { existing.Name = req.Name }
+	if req.Category != "" { existing.Category = req.Category }
+	if req.Spec != "" { existing.Spec = req.Spec }
+	if req.Price != "" { existing.Price = req.Price }
+	if req.Status != "" { existing.Status = req.Status }
+	if req.DueDate != "" { existing.DueDate = req.DueDate }
 	existing.AutoRenew = req.AutoRenew
-	if req.WarnDays != "" {
-		existing.WarnDays = strings.TrimSpace(req.WarnDays)
-	}
+	if req.WarnDays != "" { existing.WarnDays = req.WarnDays }
 	if req.ExtraConfig != "" {
-		// Validate JSON format
-		var test map[string]any
-		if err := json.Unmarshal([]byte(req.ExtraConfig), &test); err != nil {
-			writeError(w, http.StatusBadRequest, "额外配置需为有效 JSON")
+		var js map[string]any
+		if json.Unmarshal([]byte(req.ExtraConfig), &js) != nil {
+			writeError(w, http.StatusBadRequest, "额外配置需为合法 JSON")
 			return
 		}
 		existing.ExtraConfig = req.ExtraConfig
 	}
-
 	existing.LastCheckedAt = store.NowShanghai()
+
 	if err := s.store.SaveAsset(*existing); err != nil {
-		writeError(w, http.StatusInternalServerError, "保存资产更新失败: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "保存资产失败: "+err.Error())
 		return
 	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "资产更新成功"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	var updates map[string]string
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&updates); err != nil {
-		writeError(w, http.StatusBadRequest, "无效的配置 JSON")
+		writeError(w, http.StatusBadRequest, "无效 JSON")
 		return
-	}
-
-	allowed := map[string]bool{
-		store.KeyMorningEnabled:      true,
-		store.KeyMorningCron:         true,
-		store.KeyMorningCity:         true,
-		store.KeyNezhaURL:            true,
-		store.KeyRadarEnabled:        true,
-		store.KeyRadarCron:           true,
-		store.KeyRadarHNMinScore:     true,
-		store.KeyRadarLimit:          true,
-		store.KeyAssetWatcherEnabled: true,
-		store.KeyAssetWatcherCron:    true,
-		store.KeyCFAPIToken:          true,
-		store.KeyPushPlusToken:       true,
 	}
 
 	for k, v := range updates {
-		if !allowed[k] {
-			continue
-		}
 		val := strings.TrimSpace(v)
-		if k == store.KeyMorningCron || k == store.KeyRadarCron || k == store.KeyAssetWatcherCron {
+		if strings.HasSuffix(k, "_cron") {
 			if _, err := cron.ParseStandard(val); err != nil {
-				writeError(w, http.StatusBadRequest, fmt.Sprintf("Cron 表达式无效 (%s): %v", val, err))
+				writeError(w, http.StatusBadRequest, "Cron 表达式无效: "+val)
 				return
 			}
 		}
-		if k == store.KeyMorningEnabled || k == store.KeyRadarEnabled || k == store.KeyAssetWatcherEnabled {
-			if val != "true" && val != "false" {
-				writeError(w, http.StatusBadRequest, "开关字段必须为 true 或 false")
-				return
-			}
-		}
-		if k == store.KeyRadarHNMinScore || k == store.KeyRadarLimit {
-			if _, err := strconv.Atoi(val); err != nil {
-				writeError(w, http.StatusBadRequest, fmt.Sprintf("数值字段无效 (%s)", k))
-				return
-			}
-		}
-		if err := s.store.SetConfig(k, val); err != nil {
-			writeError(w, http.StatusInternalServerError, "保存配置失败: "+err.Error())
-			return
-		}
+		_ = s.store.SetConfig(k, val)
 	}
 
 	if err := s.scheduler.Reload(); err != nil {
-		writeError(w, http.StatusBadRequest, "重载调度器失败: "+err.Error())
+		writeError(w, http.StatusBadRequest, "重载调度失败: "+err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -434,72 +291,43 @@ func (s *Server) handleUpdatePassword(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		NewPassword string `json:"new_password"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "无效的请求体")
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil || len(strings.TrimSpace(body.NewPassword)) < 6 {
+		writeError(w, http.StatusBadRequest, "新密钥至少 6 位")
 		return
 	}
-	np := strings.TrimSpace(body.NewPassword)
-	if len(np) < 6 {
-		writeError(w, http.StatusBadRequest, "新密钥长度至少需要 6 位")
-		return
-	}
-	if err := s.store.SetConfig(store.KeyAdminPassHash, store.HashPassword(np)); err != nil {
-		writeError(w, http.StatusInternalServerError, "更新密钥失败")
-		return
-	}
+	_ = s.store.SetConfig(store.KeyAdminPassHash, store.HashPassword(strings.TrimSpace(body.NewPassword)))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) handleRunModule(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 
-	res, err := s.scheduler.RunNow(ctx, id)
+	res, err := s.scheduler.RunNow(ctx, r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":      false,
-			"summary": res.Summary,
-			"error":   err.Error(),
-		})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "summary": res.Summary, "error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":           true,
-		"summary":      res.Summary,
-		"items_pushed": res.ItemsPushed,
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "summary": res.Summary, "items_pushed": res.ItemsPushed})
 }
 
 func (s *Server) handleTestPush(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 
-	now := time.Now().In(modules.ShanghaiLocation()).Format("2006-01-02 15:04:05")
-	title := "Vesper BotHub 链路连通测试"
-	content := fmt.Sprintf(
-		"### Vesper BotHub 通道自检\n\n"+
-			"- **服务状态**：运行正常\n"+
-			"- **推送通道**：PushPlus Markdown\n"+
-			"- **触发时间**：`%s` (Asia/Shanghai)\n\n"+
-			"---\n*来自 Vesper BotHub · bot.starryheavens.uk*",
-		now,
-	)
-
-	if err := s.push.SendMarkdown(ctx, "system_test", title, content); err != nil {
-		writeError(w, http.StatusBadGateway, "测试推送失败: "+err.Error())
+	now := store.NowShanghai()
+	content := fmt.Sprintf("### Vesper BotHub 通道自检\n\n- **服务状态**：运行正常\n- **推送通道**：PushPlus Markdown\n- **触发时间**：`%s`\n\n---\n*来自 Vesper BotHub · bot.starryheavens.uk*", now)
+	if err := s.push.SendMarkdown(ctx, "system_test", "Vesper BotHub 链路连通测试", content); err != nil {
+		writeError(w, http.StatusBadGateway, "推送失败: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":      true,
-		"message": "测试消息已成功投递至 PushPlus",
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "测试消息已成功投递至 PushPlus"})
 }
 
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.isAuthenticated(r) {
-			writeError(w, http.StatusUnauthorized, "未授权访问，请先登录控制台")
+			writeError(w, http.StatusUnauthorized, "未授权访问")
 			return
 		}
 		next(w, r)
@@ -507,36 +335,26 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) isAuthenticated(r *http.Request) bool {
-	// 1. Trust Cloudflare Access Authenticated Email (Zero Trust Passkey / TouchID / FaceID)
+	// 1. Cloudflare Access Authenticated Email (Zero Trust Passkey / TouchID / FaceID)
 	if cfEmail := strings.TrimSpace(r.Header.Get("Cf-Access-Authenticated-User-Email")); cfEmail != "" {
 		if strings.EqualFold(cfEmail, "15347290648@163.com") {
 			return true
 		}
 	}
-
-	// 2. Bearer token in Authorization header
+	// 2. Bearer token
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-		raw := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-		if s.verifyPassword(raw) {
+		if s.verifyPassword(strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))) {
 			return true
 		}
 	}
-
 	// 3. Cookie session
 	c, err := r.Cookie(sessionCookieName)
-	if err != nil || c.Value == "" {
-		return false
-	}
-	return s.verifySessionCookie(c.Value)
+	return err == nil && c.Value != "" && s.verifySessionCookie(c.Value)
 }
 
 func (s *Server) verifyPassword(raw string) bool {
 	stored, err := s.store.GetConfig(store.KeyAdminPassHash)
-	if err != nil || stored == "" {
-		return false
-	}
-	candidate := store.HashPassword(raw)
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(stored)) == 1
+	return err == nil && stored != "" && subtle.ConstantTimeCompare([]byte(store.HashPassword(raw)), []byte(stored)) == 1
 }
 
 func (s *Server) issueSessionCookie() (string, error) {
@@ -545,8 +363,7 @@ func (s *Server) issueSessionCookie() (string, error) {
 		return "", fmt.Errorf("missing session secret")
 	}
 	exp := strconv.FormatInt(time.Now().Add(7*24*time.Hour).Unix(), 10)
-	sig := signHMAC(secret, exp)
-	return exp + "." + sig, nil
+	return exp + "." + signHMAC(secret, exp), nil
 }
 
 func (s *Server) verifySessionCookie(val string) bool {
@@ -559,11 +376,7 @@ func (s *Server) verifySessionCookie(val string) bool {
 		return false
 	}
 	secret, err := s.store.GetConfig(store.KeySessionSecret)
-	if err != nil || secret == "" {
-		return false
-	}
-	expected := signHMAC(secret, parts[0])
-	return hmac.Equal([]byte(parts[1]), []byte(expected))
+	return err == nil && secret != "" && hmac.Equal([]byte(parts[1]), []byte(signHMAC(secret, parts[0])))
 }
 
 func signHMAC(secret, payload string) string {
@@ -579,8 +392,5 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]any{
-		"ok":    false,
-		"error": msg,
-	})
+	writeJSON(w, status, map[string]any{"ok": false, "error": msg})
 }

@@ -1,11 +1,9 @@
-name: Build, Release and Deploy BotHub
+name: Build and Release BotHub
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -22,23 +20,18 @@ jobs:
           - goos: linux
             goarch: amd64
             binary_name: bothub-linux-amd64
-            archive_ext: tar.gz
           - goos: linux
             goarch: arm64
             binary_name: bothub-linux-arm64
-            archive_ext: tar.gz
           - goos: darwin
             goarch: arm64
             binary_name: bothub-darwin-arm64
-            archive_ext: tar.gz
           - goos: darwin
             goarch: amd64
             binary_name: bothub-darwin-amd64
-            archive_ext: tar.gz
           - goos: windows
             goarch: amd64
             binary_name: bothub-windows-amd64.exe
-            archive_ext: zip
 
     steps:
       - name: Checkout Source
@@ -53,141 +46,61 @@ jobs:
           check-latest: true
           cache: true
 
-      - name: Compute Build Metadata
-        id: meta
-        run: |
-          COMMIT=$(echo "${{ github.sha }}" | cut -c1-7)
-          BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            VERSION="${{ github.ref_name }}"
-          else
-            VERSION="v1.1.0-${COMMIT}"
-          fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "commit=${COMMIT}" >> "$GITHUB_OUTPUT"
-          echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
-
-      - name: Build Static Single Binary (Embedding Frontend)
+      - name: Build Static Single Binary (Embedded Frontend)
         env:
           CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
+          COMMIT=$(echo "${{ github.sha }}" | cut -c1-7)
+          BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          VERSION="${{ github.ref_type == 'tag' && github.ref_name || format('v1.1.0-{0}', github.sha) }}"
           mkdir -p dist
-          LDFLAGS="-s -w -X main.Version=${{ steps.meta.outputs.version }} -X main.Commit=${{ steps.meta.outputs.commit }} -X 'main.BuildTime=${{ steps.meta.outputs.build_time }}'"
+          LDFLAGS="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X 'main.BuildTime=${BUILD_TIME}'"
           go build -trimpath -ldflags="${LDFLAGS}" -o "dist/${{ matrix.binary_name }}" .
 
-      - name: Package Archive
-        run: |
-          cd dist
-          ARCHIVE_BASE="bothub-${{ steps.meta.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          if [ "${{ matrix.archive_ext }}" = "zip" ]; then
-            zip -9 "${ARCHIVE_BASE}.zip" "${{ matrix.binary_name }}" ../bothub.service ../README.md
-          else
-            tar -czf "${ARCHIVE_BASE}.tar.gz" "${{ matrix.binary_name }}" -C .. bothub.service README.md
-          fi
-
-      - name: Upload Artifact
+      - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*
-          retention-days: 2
+          name: ${{ matrix.binary_name }}
+          path: dist/${{ matrix.binary_name }}
+          retention-days: 1
 
   release:
-    name: Create GitHub Release
+    name: Publish GitHub Release
     needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Download all build artifacts
+      - name: Download all binaries
         uses: actions/download-artifact@v4
         with:
-          path: all_dist
+          path: release_assets
           merge-multiple: true
 
-      - name: Generate Checksums & Prepare Release Assets
+      - name: Generate Checksums
         run: |
-          mkdir -p release_assets
-          cp all_dist/* release_assets/
           cd release_assets
           sha256sum * > checksums.txt
           ls -lh
 
-      - name: Determine Release Target
-        id: target
-        run: |
-          COMMIT_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "tag_name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-            echo "release_title=BotHub ${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag_name=latest" >> "$GITHUB_OUTPUT"
-            echo "release_title=BotHub Latest Build (${COMMIT_SHORT})" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Ensure Tag Exists for Latest Branch Builds
+      - name: Ensure Tag for Latest Branch Builds
         if: github.ref_type != 'tag'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -f latest "${{ github.sha }}"
-          git push -f origin latest || echo "Tag push skipped or managed by release action"
+          git push -f origin latest || true
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.target.outputs.tag_name }}
-          name: ${{ steps.target.outputs.release_title }}
-          prerelease: ${{ steps.target.outputs.prerelease == 'true' }}
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
+          name: ${{ github.ref_type == 'tag' && format('BotHub {0}', github.ref_name) || 'BotHub Latest Build' }}
+          prerelease: false
           files: release_assets/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  deploy:
-    name: Deploy to CloudCone VPS
-    needs: release
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - name: Check Deploy Credentials
-        id: check-secrets
-        run: |
-          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Notice: VPS_SSH_KEY secret not found. Skipping auto-deploy step."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Trigger Remote VPS Auto-Update via SSH
-        if: steps.check-secrets.outputs.skip == 'false'
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.VPS_HOST || '103.232.94.2' }}
-          username: ${{ secrets.VPS_USER || 'root' }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          script: |
-            set -e
-            echo "[1/4] Fetching latest binary from GitHub Releases..."
-            curl -fsSL -o /tmp/bothub-new https://github.com/YN1753/BotHub/releases/latest/download/bothub-linux-amd64
-            chmod +x /tmp/bothub-new
-
-            echo "[2/4] Stopping bothub service..."
-            systemctl stop bothub || true
-
-            echo "[3/4] Deploying new binary..."
-            mv /tmp/bothub-new /opt/bothub/bothub
-
-            echo "[4/4] Restarting and verifying service..."
-            systemctl start bothub
-            sleep 2
-            systemctl is-active --quiet bothub && echo "BotHub deployed successfully and is active!"

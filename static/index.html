@@ -10,67 +10,40 @@
   <canvas id="starfield" aria-hidden="true"></canvas>
   <div class="ambient-glow" aria-hidden="true"></div>
 
-  <!-- Login Gate -->
+  <!-- Auth Gate -->
   <main id="login-view" class="auth-shell hidden">
     <section class="glass-card auth-card">
-      <div class="brand-badge">
-        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-        <span>VESPER BOTHUB</span>
-      </div>
+      <div class="brand-badge mono">VESPER BOTHUB</div>
       <h1 class="serif-title">星穹情报中枢</h1>
-      <p class="subtitle">bot.starryheavens.uk · 请输入管理密钥以解锁控制台</p>
+      <p class="subtitle mono">bot.starryheavens.uk · 请输入管理密钥</p>
       <form id="login-form" class="auth-form">
-        <label class="field-label" for="login-password">管理密钥</label>
-        <input id="login-password" type="password" class="glass-input" placeholder="输入访问密钥..." autocomplete="current-password" required />
-        <button type="submit" class="btn btn-primary" id="login-btn">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          <span>解锁控制台</span>
-        </button>
+        <input id="login-password" type="password" class="glass-input mono" placeholder="输入访问密钥..." autocomplete="current-password" required />
+        <button type="submit" class="btn btn-primary" id="login-btn">解锁控制台</button>
         <p id="login-error" class="error-text hidden"></p>
       </form>
     </section>
   </main>
 
-  <!-- Main Dashboard -->
+  <!-- Main App Shell -->
   <div id="dashboard-view" class="app-shell hidden">
     <header class="topbar glass-card">
-      <div class="topbar-left">
-        <div class="brand-mark">
-          <svg class="icon icon-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        </div>
-        <div>
-          <h1 class="serif-title topbar-title">Vesper BotHub</h1>
-          <p class="topbar-sub mono">bot.starryheavens.uk · 自动化情报与微信推送中枢</p>
-        </div>
+      <div class="topbar-brand">
+        <h1 class="serif-title">Vesper BotHub</h1>
+        <span class="topbar-sub mono">bot.starryheavens.uk</span>
       </div>
-
       <div class="topbar-actions">
-        <div class="stat-pill mono" title="版本号">
-          <span class="dot dot-live"></span>
-          <span id="version-label">v1.1.0</span>
-        </div>
-        <div class="stat-pill mono" title="运行时长">
-          <span class="dot dot-live"></span>
-          <span id="uptime-label">UPTIME 0s</span>
-        </div>
-        <button id="test-push-btn" class="btn btn-ghost" type="button">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-          <span>测试推送</span>
-        </button>
-        <button id="refresh-btn" class="btn btn-ghost" type="button" title="刷新状态">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-          <span>刷新</span>
-        </button>
-        <button id="logout-btn" class="btn btn-ghost" type="button" title="退出登录">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
-        </button>
+        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v1.1.0</span></span>
+        <span class="stat-pill mono" id="uptime-label">UPTIME 0s</span>
+        <button id="test-push-btn" class="btn btn-ghost" type="button">测试推送</button>
+        <button id="refresh-btn" class="btn btn-ghost" type="button">刷新</button>
+        <button id="logout-btn" class="btn btn-ghost" type="button">退出</button>
       </div>
     </header>
 
-    <!-- Overview Metrics -->
+    <!-- Metrics Bar -->
     <section class="metrics-grid">
       <article class="glass-card metric-card">
-        <span class="metric-label">数字资产追踪中</span>
+        <span class="metric-label">数字资产追踪</span>
         <strong class="metric-value mono" id="stat-assets">0</strong>
       </article>
       <article class="glass-card metric-card">
@@ -78,7 +51,7 @@
         <strong class="metric-value mono" id="stat-sent">0</strong>
       </article>
       <article class="glass-card metric-card">
-        <span class="metric-label">SQLite 已去重条目</span>
+        <span class="metric-label">SQLite 去重记录</span>
         <strong class="metric-value mono" id="stat-seen">0</strong>
       </article>
       <article class="glass-card metric-card">
@@ -87,19 +60,14 @@
       </article>
     </section>
 
-    <!-- Asset Watcher Section -->
+    <!-- Asset Watcher -->
     <section class="section-block">
       <div class="section-head">
         <div>
           <h2 class="serif-title section-title">数字资产与会员守望 (Asset Watcher)</h2>
-          <span class="section-hint">常驻哨兵自动化嗅探真实到期日 · 临期防扣款强提醒 · 对外只读 API: <code>/api/v1/assets/overview</code></span>
+          <span class="section-hint">真实到期自动嗅探 · 7/3/1 天防自动扣费强提醒 · <code>/api/v1/assets/overview</code></span>
         </div>
-        <div class="section-actions">
-          <button id="sync-assets-btn" class="btn btn-primary" type="button">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-            <span>立即嗅探同步</span>
-          </button>
-        </div>
+        <button id="sync-assets-btn" class="btn btn-primary" type="button">立即嗅探同步</button>
       </div>
       <div id="assets-grid" class="assets-grid"></div>
     </section>
@@ -108,147 +76,80 @@
     <section class="section-block">
       <div class="section-head">
         <h2 class="serif-title section-title">调度模块状态</h2>
-        <span class="section-hint">点击「立即触发一次」可实时执行并投递至 PushPlus</span>
+        <span class="section-hint">定时 Cron 轮询与单次即时触发</span>
       </div>
       <div id="modules-grid" class="modules-grid"></div>
     </section>
 
-    <!-- Config & Security -->
+    <!-- Config & History (Two Columns) -->
     <section class="section-block two-col">
+      <!-- Config -->
       <article class="glass-card panel-card">
-        <div class="panel-header">
-          <svg class="icon icon-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-          <h2 class="serif-title">参数与调度配置</h2>
-        </div>
+        <h2 class="serif-title panel-title">参数与调度配置</h2>
         <form id="config-form" class="config-form">
-          <!-- Morning -->
-          <div class="form-row">
-            <div class="form-group">
-              <label class="field-label" for="cfg-morning-enabled">早报模块开关</label>
-              <select id="cfg-morning-enabled" class="glass-input">
-                <option value="true">启用 (Enabled)</option>
-                <option value="false">停用 (Disabled)</option>
-              </select>
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="cfg-morning-enabled">早报开关</label>
+              <select id="cfg-morning-enabled" class="glass-input"><option value="true">开启</option><option value="false">关闭</option></select>
             </div>
-            <div class="form-group">
-              <label class="field-label" for="cfg-morning-cron">早报 Cron (CST)</label>
-              <input id="cfg-morning-cron" type="text" class="glass-input mono" placeholder="0 8 * * *" />
+            <div class="form-field">
+              <label for="cfg-morning-cron">早报 Cron</label>
+              <input id="cfg-morning-cron" class="glass-input mono" placeholder="0 8 * * *" />
             </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label class="field-label" for="cfg-morning-city">早报目标城市</label>
-              <input id="cfg-morning-city" type="text" class="glass-input" placeholder="Shanghai" />
+            <div class="form-field">
+              <label for="cfg-morning-city">目标城市</label>
+              <input id="cfg-morning-city" class="glass-input" placeholder="Shanghai" />
             </div>
-            <div class="form-group">
-              <label class="field-label" for="cfg-nezha-url">哪吒探针地址</label>
-              <input id="cfg-nezha-url" type="text" class="glass-input mono" placeholder="https://dash.starryheavens.uk" />
+            <div class="form-field">
+              <label for="cfg-nezha-url">哪吒探针</label>
+              <input id="cfg-nezha-url" class="glass-input mono" placeholder="https://..." />
             </div>
-          </div>
-
-          <!-- Radar -->
-          <div class="form-row">
-            <div class="form-group">
-              <label class="field-label" for="cfg-radar-enabled">技术雷达开关</label>
-              <select id="cfg-radar-enabled" class="glass-input">
-                <option value="true">启用 (Enabled)</option>
-                <option value="false">停用 (Disabled)</option>
-              </select>
+            <div class="form-field">
+              <label for="cfg-radar-enabled">雷达开关</label>
+              <select id="cfg-radar-enabled" class="glass-input"><option value="true">开启</option><option value="false">关闭</option></select>
             </div>
-            <div class="form-group">
-              <label class="field-label" for="cfg-radar-cron">技术雷达 Cron (CST)</label>
-              <input id="cfg-radar-cron" type="text" class="glass-input mono" placeholder="0 12,20 * * *" />
+            <div class="form-field">
+              <label for="cfg-radar-cron">雷达 Cron</label>
+              <input id="cfg-radar-cron" class="glass-input mono" placeholder="0 12,20 * * *" />
             </div>
-          </div>
-
-          <!-- Asset Watcher Config -->
-          <div class="form-row">
-            <div class="form-group">
-              <label class="field-label" for="cfg-asset-watcher-enabled">资产守望开关</label>
-              <select id="cfg-asset-watcher-enabled" class="glass-input">
-                <option value="true">启用 (Enabled)</option>
-                <option value="false">停用 (Disabled)</option>
-              </select>
+            <div class="form-field">
+              <label for="cfg-asset-watcher-enabled">守望开关</label>
+              <select id="cfg-asset-watcher-enabled" class="glass-input"><option value="true">开启</option><option value="false">关闭</option></select>
             </div>
-            <div class="form-group">
-              <label class="field-label" for="cfg-asset-watcher-cron">资产守望 Cron (CST)</label>
-              <input id="cfg-asset-watcher-cron" type="text" class="glass-input mono" placeholder="0 3 * * *" />
+            <div class="form-field">
+              <label for="cfg-asset-watcher-cron">守望 Cron</label>
+              <input id="cfg-asset-watcher-cron" class="glass-input mono" placeholder="0 3 * * *" />
+            </div>
+            <div class="form-field full-width">
+              <label for="cfg-cf-api-token">Cloudflare API Token (全局域名嗅探)</label>
+              <input id="cfg-cf-api-token" type="password" class="glass-input mono" placeholder="CF API Token" />
+            </div>
+            <div class="form-field full-width">
+              <label for="cfg-pushplus-token">PushPlus Token</label>
+              <input id="cfg-pushplus-token" type="password" class="glass-input mono" placeholder="PushPlus Token" />
             </div>
           </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label class="field-label" for="cfg-cf-api-token">Cloudflare API Token (全局)</label>
-              <input id="cfg-cf-api-token" type="password" class="glass-input mono" placeholder="用于查询 Registrar 域名到期时间" />
-            </div>
-            <div class="form-group">
-              <label class="field-label" for="cfg-pushplus-token">PushPlus Token</label>
-              <input id="cfg-pushplus-token" type="text" class="glass-input mono" placeholder="PushPlus Token" />
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label class="field-label" for="cfg-hn-score">HN 最低评分阈值</label>
-              <input id="cfg-hn-score" type="number" min="0" class="glass-input mono" placeholder="120" />
-            </div>
-            <div class="form-group">
-              <label class="field-label" for="cfg-radar-limit">单源单次推送上限</label>
-              <input id="cfg-radar-limit" type="number" min="1" max="20" class="glass-input mono" placeholder="8" />
-            </div>
-          </div>
-
-          <div class="form-actions">
-            <button type="submit" class="btn btn-primary" id="save-config-btn">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-              <span>保存并重载调度</span>
-            </button>
-          </div>
-        </form>
-      </article>
-
-      <article class="glass-card panel-card">
-        <div class="panel-header">
-          <svg class="icon icon-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          <h2 class="serif-title">安全鉴权设置</h2>
-        </div>
-        <p class="panel-desc">更新控制台访问密钥（至少 6 位）。若部署时通过环境变量 <code>BOTHUB_ADMIN_TOKEN</code> 注入，重启后将以环境变量为准。</p>
-        <form id="password-form" class="config-form">
-          <div class="form-group">
-            <label class="field-label" for="new-password">新管理密钥</label>
-            <input id="new-password" type="password" minlength="6" class="glass-input" placeholder="输入新的控制台密钥..." required />
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-ghost">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-              <span>更新密钥</span>
-            </button>
+          <div class="panel-foot">
+            <button type="submit" class="btn btn-primary" id="save-config-btn">保存并重载配置</button>
           </div>
         </form>
 
         <div class="divider"></div>
-        <div class="panel-header">
-          <svg class="icon icon-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" cy="12" r="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></svg>
-          <h3 class="serif-title">Vesper 守望规范</h3>
-        </div>
-        <ul class="spec-list">
-          <li>防自动扣款提醒：临期 7/3/1 天自动微信推送预警</li>
-          <li>对外脱敏 API：<code>GET /api/v1/assets/overview</code> 零密钥暴露</li>
-          <li>全链路严格执行 STRICT NO EMOJI 纯净规范</li>
-        </ul>
+        <h3 class="serif-title panel-sub-title">修改控制台密钥</h3>
+        <form id="password-form" class="pw-form">
+          <input id="new-password" type="password" minlength="6" class="glass-input mono" placeholder="输入新密钥 (至少6位)" required />
+          <button type="submit" class="btn btn-ghost">更新密钥</button>
+        </form>
       </article>
-    </section>
 
-    <!-- Push History -->
-    <section class="section-block">
-      <div class="section-head">
-        <h2 class="serif-title section-title">PushPlus 推送历史流水</h2>
-        <span class="section-hint">最近 40 条推送记录（来自 SQLite）</span>
-      </div>
-      <div class="glass-card logs-card">
+      <!-- Push History -->
+      <article class="glass-card panel-card">
+        <div class="panel-header-simple">
+          <h2 class="serif-title panel-title">PushPlus 推送流水</h2>
+          <span class="section-hint">最近 40 条 (点击展开)</span>
+        </div>
         <div id="logs-list" class="logs-list"></div>
-      </div>
+      </article>
     </section>
   </div>
 
@@ -256,88 +157,66 @@
   <div id="asset-modal-overlay" class="modal-overlay hidden">
     <div class="glass-card modal-card">
       <div class="modal-header">
-        <div class="modal-title-wrap">
-          <span class="dot dot-live"></span>
-          <h3 class="serif-title" id="modal-asset-title">编辑资产与凭证</h3>
-        </div>
-        <button id="close-modal-btn" class="btn btn-ghost btn-sm" type="button" title="关闭">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+        <h3 class="serif-title" id="modal-asset-title">编辑资产与凭证</h3>
+        <button id="close-modal-btn" class="btn btn-ghost btn-sm" type="button">关闭</button>
       </div>
 
-      <form id="asset-edit-form" class="config-form modal-body">
+      <form id="asset-edit-form" class="modal-body">
         <input type="hidden" id="edit-asset-id" />
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="field-label" for="edit-asset-name">资产名称</label>
-            <input id="edit-asset-name" type="text" class="glass-input" required />
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="edit-asset-name">名称</label>
+            <input id="edit-asset-name" class="glass-input" required />
           </div>
-          <div class="form-group">
-            <label class="field-label" for="edit-asset-category">资产分类</label>
+          <div class="form-field">
+            <label for="edit-asset-category">分类</label>
             <select id="edit-asset-category" class="glass-input">
               <option value="compute">算力基建 (compute)</option>
               <option value="domain">核心域名 (domain)</option>
-              <option value="life">生活与订阅 (life)</option>
+              <option value="life">生活订阅 (life)</option>
             </select>
           </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="field-label" for="edit-asset-spec">关键规格摘要</label>
-            <input id="edit-asset-spec" type="text" class="glass-input" placeholder="如 豪华绿钻、1C 1G" />
+          <div class="form-field">
+            <label for="edit-asset-spec">规格</label>
+            <input id="edit-asset-spec" class="glass-input" placeholder="规格摘要" />
           </div>
-          <div class="form-group">
-            <label class="field-label" for="edit-asset-price">金额周期</label>
-            <input id="edit-asset-price" type="text" class="glass-input" placeholder="如 $1.75 / 月、活动月卡" />
+          <div class="form-field">
+            <label for="edit-asset-price">价格周期</label>
+            <input id="edit-asset-price" class="glass-input" placeholder="如 $1.75/月" />
           </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="field-label" for="edit-asset-due">到期时间 (RFC3339 / 日期)</label>
-            <input id="edit-asset-due" type="text" class="glass-input mono" placeholder="2026-11-20T23:59:59+08:00" />
+          <div class="form-field">
+            <label for="edit-asset-due">到期时间 (RFC3339)</label>
+            <input id="edit-asset-due" class="glass-input mono" placeholder="2026-11-20T23:59:59+08:00" />
           </div>
-          <div class="form-group">
-            <label class="field-label" for="edit-asset-status">当前状态文本</label>
-            <input id="edit-asset-status" type="text" class="glass-input" placeholder="如 运行中、活动体验中" />
+          <div class="form-field">
+            <label for="edit-asset-status">状态</label>
+            <input id="edit-asset-status" class="glass-input" placeholder="如 运行中" />
           </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label class="field-label" for="edit-asset-autorenew">自动续费状态</label>
+          <div class="form-field">
+            <label for="edit-asset-autorenew">自动续费</label>
             <select id="edit-asset-autorenew" class="glass-input">
-              <option value="true">开启自动续费</option>
-              <option value="false">关闭自动续费 (手动/免密需关注)</option>
+              <option value="true">开启</option>
+              <option value="false">关闭 (到期需注意)</option>
             </select>
           </div>
-          <div class="form-group">
-            <label class="field-label" for="edit-asset-warndays">预警梯度天数 (JSON)</label>
-            <input id="edit-asset-warndays" type="text" class="glass-input mono" placeholder="[7, 3, 1]" />
+          <div class="form-field">
+            <label for="edit-asset-warndays">预警梯度</label>
+            <input id="edit-asset-warndays" class="glass-input mono" placeholder="[7, 3, 1]" />
+          </div>
+          <div class="form-field full-width">
+            <label for="edit-asset-extra">鉴权与嗅探配置 (JSON)</label>
+            <textarea id="edit-asset-extra" rows="3" class="glass-input mono" placeholder='{"sessdata":"...","anchor_day":12}'></textarea>
           </div>
         </div>
-
-        <div class="form-group">
-          <label class="field-label" for="edit-asset-extra">额外鉴权与嗅探配置 (JSON，包含凭证与锚点日)</label>
-          <textarea id="edit-asset-extra" rows="4" class="glass-input mono" placeholder='{"sessdata":"...","anchor_day":12}'></textarea>
-          <span class="field-hint">支持字段：B站 <code>{"sessdata":"..."}</code> · QQ音乐 <code>{"uin":"...","qm_keyst":"...","is_trial":true}</code> · 域名 <code>{"account_id":"...","domain":"...","cf_api_token":"..."}</code> · VPS <code>{"anchor_day":12}</code></span>
-        </div>
-
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="cancel-modal-btn">取消</button>
-          <button type="submit" class="btn btn-primary" id="save-asset-btn">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            <span>保存资产配置</span>
-          </button>
+          <button type="submit" class="btn btn-primary" id="save-asset-btn">保存配置</button>
         </div>
       </form>
     </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>
-
   <script src="/starfield.js"></script>
   <script src="/app.js"></script>
 </body>
