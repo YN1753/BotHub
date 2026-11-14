@@ -30,9 +30,12 @@ type Server struct {
 	push      *pushplus.Client
 	staticFS  fs.FS
 	startedAt time.Time
+	version   string
+	commit    string
+	buildTime string
 }
 
-func New(st *store.Store, sched *scheduler.Scheduler, push *pushplus.Client, staticEmbed embed.FS) (*Server, error) {
+func New(st *store.Store, sched *scheduler.Scheduler, push *pushplus.Client, staticEmbed embed.FS, version, commit, buildTime string) (*Server, error) {
 	sub, err := fs.Sub(staticEmbed, "static")
 	if err != nil {
 		return nil, err
@@ -43,6 +46,9 @@ func New(st *store.Store, sched *scheduler.Scheduler, push *pushplus.Client, sta
 		push:      push,
 		staticFS:  sub,
 		startedAt: time.Now(),
+		version:   version,
+		commit:    commit,
+		buildTime: buildTime,
 	}, nil
 }
 
@@ -69,10 +75,43 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/assets", s.requireAuth(s.handleListAssets))
 	mux.HandleFunc("POST /api/assets/{id}", s.requireAuth(s.handleUpdateAsset))
 
-	fileServer := http.FileServer(http.FS(s.staticFS))
-	mux.Handle("GET /", fileServer)
+	// Embedded Static Single Binary SPA Router
+	mux.Handle("GET /", s.spaFileServer())
 
 	return withSecurityHeaders(mux)
+}
+
+func (s *Server) spaFileServer() http.Handler {
+	fileServer := http.FileServer(http.FS(s.staticFS))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			path = "index.html"
+		}
+
+		// Try opening the file in embedded staticFS
+		f, err := s.staticFS.Open(path)
+		if err == nil {
+			_ = f.Close()
+			if strings.HasSuffix(path, ".html") {
+				w.Header().Set("Cache-Control", "no-cache")
+			} else {
+				w.Header().Set("Cache-Control", "public, max-age=86400")
+			}
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// If path is not API and not found, fallback to index.html (SPA friendly)
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Cache-Control", "no-cache")
+			r.URL.Path = "/"
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		http.NotFound(w, r)
+	})
 }
 
 func withSecurityHeaders(next http.Handler) http.Handler {
@@ -88,6 +127,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":         true,
 		"service":    "vesper-bothub",
+		"version":    s.version,
+		"commit":     s.commit,
+		"build_time": s.buildTime,
 		"uptime_sec": int64(time.Since(s.startedAt).Seconds()),
 		"time":       store.NowShanghai(),
 	})
@@ -218,6 +260,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	stats, _ := s.store.CountStats()
 
 	writeJSON(w, http.StatusOK, map[string]any{
+		"version":    s.version,
+		"commit":     s.commit,
+		"build_time": s.buildTime,
 		"modules":    mods,
 		"configs":    cfgs,
 		"assets":     adminAssets,
@@ -462,12 +507,22 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) isAuthenticated(r *http.Request) bool {
+	// 1. Trust Cloudflare Access Authenticated Email (Zero Trust Passkey / TouchID / FaceID)
+	if cfEmail := strings.TrimSpace(r.Header.Get("Cf-Access-Authenticated-User-Email")); cfEmail != "" {
+		if strings.EqualFold(cfEmail, "15347290648@163.com") {
+			return true
+		}
+	}
+
+	// 2. Bearer token in Authorization header
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 		raw := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 		if s.verifyPassword(raw) {
 			return true
 		}
 	}
+
+	// 3. Cookie session
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil || c.Value == "" {
 		return false

@@ -1,0 +1,152 @@
+name: Build and Release BotHub
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            binary_name: bothub-linux-amd64
+            archive_ext: tar.gz
+          - goos: linux
+            goarch: arm64
+            binary_name: bothub-linux-arm64
+            archive_ext: tar.gz
+          - goos: darwin
+            goarch: arm64
+            binary_name: bothub-darwin-arm64
+            archive_ext: tar.gz
+          - goos: darwin
+            goarch: amd64
+            binary_name: bothub-darwin-amd64
+            archive_ext: tar.gz
+          - goos: windows
+            goarch: amd64
+            binary_name: bothub-windows-amd64.exe
+            archive_ext: zip
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          check-latest: true
+          cache: true
+
+      - name: Compute Build Metadata
+        id: meta
+        run: |
+          COMMIT=$(echo "${{ github.sha }}" | cut -c1-7)
+          BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            VERSION="v1.1.0-${COMMIT}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "commit=${COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "build_time=${BUILD_TIME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Static Single Binary (Embedding Frontend)
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          LDFLAGS="-s -w -X main.Version=${{ steps.meta.outputs.version }} -X main.Commit=${{ steps.meta.outputs.commit }} -X 'main.BuildTime=${{ steps.meta.outputs.build_time }}'"
+          go build -trimpath -ldflags="${LDFLAGS}" -o "dist/${{ matrix.binary_name }}" .
+
+      - name: Package Archive
+        run: |
+          cd dist
+          ARCHIVE_BASE="bothub-${{ steps.meta.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ "${{ matrix.archive_ext }}" = "zip" ]; then
+            zip -9 "${ARCHIVE_BASE}.zip" "${{ matrix.binary_name }}" ../bothub.service ../README.md
+          else
+            tar -czf "${ARCHIVE_BASE}.tar.gz" "${{ matrix.binary_name }}" -C .. bothub.service README.md
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 2
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all_dist
+          merge-multiple: true
+
+      - name: Generate Checksums & Prepare Release Assets
+        run: |
+          mkdir -p release_assets
+          cp all_dist/* release_assets/
+          cd release_assets
+          sha256sum * > checksums.txt
+          ls -lh
+
+      - name: Determine Release Target
+        id: target
+        run: |
+          COMMIT_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag_name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "release_title=BotHub ${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_name=latest" >> "$GITHUB_OUTPUT"
+            echo "release_title=BotHub Latest Build (${COMMIT_SHORT})" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ensure Tag Exists for Latest Branch Builds
+        if: github.ref_type != 'tag'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f latest "${{ github.sha }}"
+          git push -f origin latest || echo "Tag push skipped or managed by release action"
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.target.outputs.tag_name }}
+          name: ${{ steps.target.outputs.release_title }}
+          prerelease: ${{ steps.target.outputs.prerelease == 'true' }}
+          files: release_assets/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

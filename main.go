@@ -5,6 +5,7 @@ import (
 	"embed"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -19,6 +20,13 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
+// Injected during build via -ldflags
+var (
+	Version   = "v1.1.0"
+	Commit    = "dev"
+	BuildTime = "local"
+)
+
 //go:embed static/*
 var staticFiles embed.FS
 
@@ -28,7 +36,14 @@ func main() {
 
 	addr := flag.String("addr", defaultAddr, "HTTP listen address")
 	dbPath := flag.String("db", defaultDB, "SQLite database file path")
+	showVersion := flag.Bool("v", false, "print version and exit")
+	flag.BoolVar(showVersion, "version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("BotHub %s (commit: %s, built at: %s)\n", Version, Commit, BuildTime)
+		os.Exit(0)
+	}
 
 	st, err := store.Open(*dbPath)
 	if err != nil {
@@ -47,7 +62,7 @@ func main() {
 	}
 	defer sched.Stop()
 
-	srvHandler, err := server.New(st, sched, pushClient, staticFiles)
+	srvHandler, err := server.New(st, sched, pushClient, staticFiles, Version, Commit, BuildTime)
 	if err != nil {
 		log.Fatalf("[bothub] failed to initialize http server: %v", err)
 	}
@@ -61,7 +76,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("[bothub] Vesper BotHub listening on %s (db=%s)", *addr, *dbPath)
+		log.Printf("[bothub] Vesper BotHub %s (%s) listening on %s (db=%s)", Version, Commit, *addr, *dbPath)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("[bothub] http server error: %v", err)
 		}

@@ -104,6 +104,9 @@
   }
 
   function renderStats(data) {
+    if (data.version) {
+      document.getElementById("version-label").textContent = `${data.version}`;
+    }
     const stats = data.stats || {};
     document.getElementById("stat-assets").textContent = stats.total_assets ?? 0;
     document.getElementById("stat-sent").textContent = stats.sent_pushes ?? 0;
