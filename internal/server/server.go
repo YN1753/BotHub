@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/YN1753/vesper/bothub/internal/pushplus"
+	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/scheduler"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
@@ -14,7 +14,7 @@ import (
 type Server struct {
 	store     *store.Store
 	scheduler *scheduler.Scheduler
-	push      *pushplus.Client
+	push      *notifier.Client
 	staticFS  fs.FS
 	startedAt time.Time
 	version   string
@@ -26,7 +26,7 @@ type Server struct {
 func New(
 	st *store.Store,
 	sched *scheduler.Scheduler,
-	push *pushplus.Client,
+	push *notifier.Client,
 	staticRoot fs.FS,
 	version, commit, buildTime string,
 ) (*Server, error) {

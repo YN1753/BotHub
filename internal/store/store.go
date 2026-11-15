@@ -15,7 +15,16 @@ import (
 
 const (
 	DefaultPushPlusToken = "f99b5ca6eee44e16ad94d1721bfc20f0"
+	DefaultWeComCorpID   = "wwda96f68ec84b1f74"
+	DefaultWeComAgentID  = "1000002"
+	DefaultWeComSecret   = "P8R70brpQMVWrmysZaGlWsiTqS6QV5GJOWfBHfWvjC4"
+	DefaultWeComToUser   = "@all"
 
+	KeyPushChannel         = "push_channel"
+	KeyWeComCorpID         = "wecom_corpid"
+	KeyWeComAgentID        = "wecom_agentid"
+	KeyWeComSecret         = "wecom_secret"
+	KeyWeComToUser         = "wecom_touser"
 	KeyMorningEnabled      = "morning_enabled"
 	KeyMorningCron         = "morning_cron"
 	KeyMorningCity         = "morning_city"
@@ -129,6 +138,27 @@ CREATE TABLE IF NOT EXISTS tasks (
 }
 
 func (s *Store) seedDefaults() error {
+	pushChannel := strings.TrimSpace(os.Getenv("BOTHUB_PUSH_CHANNEL"))
+	if pushChannel == "" {
+		pushChannel = "wecom"
+	}
+	wecomCorpID := strings.TrimSpace(os.Getenv("BOTHUB_WECOM_CORPID"))
+	if wecomCorpID == "" {
+		wecomCorpID = DefaultWeComCorpID
+	}
+	wecomAgentID := strings.TrimSpace(os.Getenv("BOTHUB_WECOM_AGENTID"))
+	if wecomAgentID == "" {
+		wecomAgentID = DefaultWeComAgentID
+	}
+	wecomSecret := strings.TrimSpace(os.Getenv("BOTHUB_WECOM_SECRET"))
+	if wecomSecret == "" {
+		wecomSecret = DefaultWeComSecret
+	}
+	wecomToUser := strings.TrimSpace(os.Getenv("BOTHUB_WECOM_TOUSER"))
+	if wecomToUser == "" {
+		wecomToUser = DefaultWeComToUser
+	}
+
 	pushToken := strings.TrimSpace(os.Getenv("BOTHUB_PUSHPLUS_TOKEN"))
 	if pushToken == "" {
 		pushToken = DefaultPushPlusToken
@@ -142,6 +172,11 @@ func (s *Store) seedDefaults() error {
 
 	now := NowShanghai()
 	defaults := map[string]string{
+		KeyPushChannel:         pushChannel,
+		KeyWeComCorpID:         wecomCorpID,
+		KeyWeComAgentID:        wecomAgentID,
+		KeyWeComSecret:         wecomSecret,
+		KeyWeComToUser:         wecomToUser,
 		KeyMorningEnabled:      "true",
 		KeyMorningCron:         "0 8 * * *",
 		KeyMorningCity:         "Shanghai",

@@ -86,6 +86,27 @@
         return fallback;
       }
     },
+
+    parseOptionItem(opt) {
+      const s = String(opt || "");
+      const idx = s.indexOf("|");
+      if (idx > 0) {
+        return { value: s.slice(0, idx), label: s.slice(idx + 1) };
+      }
+      return { value: s, label: s };
+    },
+
+    normalizeWarnDays(val) {
+      try {
+        const arr = JSON.parse(val || "[7, 3, 1]");
+        if (Array.isArray(arr)) {
+          return `[${arr.join(", ")}]`;
+        }
+      } catch {
+        // ignore
+      }
+      return String(val || "[7, 3, 1]").trim();
+    },
   };
 
   // ==========================================
@@ -584,15 +605,28 @@
   class MetricsComponent extends BaseComponent {
     init() {
       this.statAssets = document.getElementById("stat-assets");
+      this.statExpiring = document.getElementById("stat-expiring");
+      this.statTasks = document.getElementById("stat-tasks");
       this.statSent = document.getElementById("stat-sent");
-      this.statSeen = document.getElementById("stat-seen");
-      this.statTime = document.getElementById("stat-time");
 
       this.bus.on("data:loaded", (state) => {
-        if (this.statAssets) this.statAssets.textContent = state.stats.total_assets ?? 0;
-        if (this.statSent) this.statSent.textContent = state.stats.sent_pushes ?? 0;
-        if (this.statSeen) this.statSeen.textContent = state.stats.seen_items ?? 0;
-        if (this.statTime) this.statTime.textContent = state.serverNow || "--";
+        const assets = state.assets || [];
+        const tasks = state.tasks || [];
+
+        const expiringCount = assets.filter((a) => {
+          if (a.status === "长期有效" || String(a.due_date || "").startsWith("2099")) return false;
+          return typeof a.days_left === "number" && a.days_left >= 0 && a.days_left <= 7;
+        }).length;
+
+        const activeTasksCount = tasks.filter((t) => Boolean(t.enabled)).length;
+
+        if (this.statAssets) this.statAssets.textContent = state.stats?.total_assets ?? assets.length;
+        if (this.statExpiring) {
+          this.statExpiring.textContent = expiringCount;
+          this.statExpiring.className = `metric-value mono ${expiringCount > 0 ? "text-amber" : "text-cyan"}`;
+        }
+        if (this.statTasks) this.statTasks.textContent = activeTasksCount;
+        if (this.statSent) this.statSent.textContent = state.stats?.sent_pushes ?? 0;
       });
     }
   }
@@ -776,11 +810,38 @@
   class GlobalConfigComponent extends BaseComponent {
     init() {
       this.form = document.getElementById("config-form");
+      this.channelInput = document.getElementById("cfg-push-channel");
+      this.channelMount = document.getElementById("mount-push-channel");
+      this.wecomCorpInput = document.getElementById("cfg-wecom-corpid");
+      this.wecomAgentInput = document.getElementById("cfg-wecom-agentid");
+      this.wecomSecretInput = document.getElementById("cfg-wecom-secret");
+      this.wecomToUserInput = document.getElementById("cfg-wecom-touser");
       this.pushplusInput = document.getElementById("cfg-pushplus-token");
       this.cfInput = document.getElementById("cfg-cf-api-token");
       this.saveBtn = document.getElementById("save-config-btn");
+      this.testBtn = document.getElementById("cfg-test-push-btn");
+
+      if (this.channelMount) {
+        this.channelSelect = new CustomSelect(this.channelMount, {
+          options: [
+            { value: "wecom", label: "企业微信应用消息 (推荐 · 微信插件原生直达)" },
+            { value: "pushplus", label: "PushPlus 个人公众号 (备用通道)" },
+          ],
+          value: "wecom",
+          onChange: (val) => {
+            if (this.channelInput) this.channelInput.value = val;
+          },
+        });
+      }
 
       this.bus.on("data:loaded", (state) => {
+        const chan = state.configs["push_channel"] || "wecom";
+        if (this.channelInput) this.channelInput.value = chan;
+        if (this.channelSelect) this.channelSelect.setValue(chan);
+        if (this.wecomCorpInput) this.wecomCorpInput.value = state.configs["wecom_corpid"] || "";
+        if (this.wecomAgentInput) this.wecomAgentInput.value = state.configs["wecom_agentid"] || "";
+        if (this.wecomSecretInput) this.wecomSecretInput.value = state.configs["wecom_secret"] || "";
+        if (this.wecomToUserInput) this.wecomToUserInput.value = state.configs["wecom_touser"] || "@all";
         if (this.pushplusInput) this.pushplusInput.value = state.configs["pushplus_token"] || "";
         if (this.cfInput) this.cfInput.value = state.configs["cf_api_token"] || "";
       });
@@ -788,6 +849,11 @@
       this.form?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const payload = {
+          push_channel: (this.channelInput?.value || "wecom").trim(),
+          wecom_corpid: (this.wecomCorpInput?.value || "").trim(),
+          wecom_agentid: (this.wecomAgentInput?.value || "").trim(),
+          wecom_secret: (this.wecomSecretInput?.value || "").trim(),
+          wecom_touser: (this.wecomToUserInput?.value || "@all").trim(),
           pushplus_token: (this.pushplusInput?.value || "").trim(),
           cf_api_token: (this.cfInput?.value || "").trim(),
         };
@@ -796,6 +862,15 @@
           await this.store.saveConfig(payload);
         } finally {
           this.saveBtn.disabled = false;
+        }
+      });
+
+      this.testBtn?.addEventListener("click", async () => {
+        this.testBtn.disabled = true;
+        try {
+          await this.store.testPush();
+        } finally {
+          this.testBtn.disabled = false;
         }
       });
     }
@@ -1051,19 +1126,31 @@
         });
       });
 
-      // Warn days Presets
-      document.querySelectorAll(".warn-pill").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          document.querySelectorAll(".warn-pill").forEach((b) => b.classList.remove("active"));
-          btn.classList.add("active");
-          if (this.warnDaysInput) {
-            this.warnDaysInput.value = btn.dataset.preset;
-            this.updateWarnDaysHint(btn.dataset.preset);
-          }
-        });
+      // 7. Custom Select: Warn Days Strategy
+      this.baseWarnOptions = [
+        { label: "标准提醒 (提前 7天 / 3天 / 1天)", value: "[7, 3, 1]" },
+        { label: "密集防漏 (提前 15天 / 7天 / 3天 / 1天 / 当天)", value: "[15, 7, 3, 1, 0]" },
+        { label: "长周期预留 (提前 30天 / 7天 / 1天)", value: "[30, 7, 1]" },
+        { label: "极简冲刺 (仅提前 3天 / 1天)", value: "[3, 1]" },
+        { label: "临期前一天 (仅提前 1天)", value: "[1]" },
+        { label: "静默追踪 (不主动推送提醒)", value: "[]" },
+      ];
+      this.warnDaysSelect = new CustomSelect("#mount-asset-warndays", {
+        options: this.baseWarnOptions,
+        value: "[7, 3, 1]",
+        onChange: (val) => {
+          if (this.warnDaysInput) this.warnDaysInput.value = val;
+          this.updateWarnDaysHint(val);
+        },
       });
-      this.warnDaysInput?.addEventListener("input", () => {
-        this.updateWarnDaysHint(this.warnDaysInput.value);
+
+      // Spec Quick Pills
+      document.querySelectorAll(".spec-pill-group .spec-pill").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".spec-pill-group .spec-pill").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          if (this.specInput) this.specInput.value = btn.dataset.spec || "";
+        });
       });
 
       // Novice Service Presets (One-click Instant Starter)
@@ -1383,11 +1470,32 @@
       this.setDueValues(y, m, d);
     }
 
+    setWarnDaysValue(rawVal) {
+      const normalized = Utils.normalizeWarnDays(rawVal || "[7, 3, 1]");
+      if (this.warnDaysSelect && this.baseWarnOptions) {
+        const exists = this.baseWarnOptions.some((o) => o.value === normalized);
+        if (!exists) {
+          this.warnDaysSelect.setOptions(
+            [...this.baseWarnOptions, { label: `自定义梯度 (${normalized})`, value: normalized }],
+            normalized
+          );
+        } else {
+          this.warnDaysSelect.setOptions(this.baseWarnOptions, normalized);
+        }
+      }
+      if (this.warnDaysInput) this.warnDaysInput.value = normalized;
+      this.updateWarnDaysHint(normalized);
+    }
+
     updateWarnDaysHint(val) {
       if (!this.warnDaysHint) return;
       try {
         const arr = JSON.parse(val);
-        if (Array.isArray(arr) && arr.length) {
+        if (Array.isArray(arr)) {
+          if (arr.length === 0) {
+            this.warnDaysHint.textContent = "已开启静默追踪，到期前不主动推送";
+            return;
+          }
           const formatted = arr.map((x) => (x === 0 ? "当天" : `${x}天`)).join("、");
           this.warnDaysHint.textContent = `将在到期前 ${formatted} 推送提醒`;
           return;
@@ -1422,8 +1530,7 @@
       // Auto renew & warn days
       if (this.renewHidden) this.renewHidden.value = p.autoRenew;
       this.autorenewSelect?.setValue(p.autoRenew, false);
-      this.warnDaysInput.value = p.warnDays;
-      this.updateWarnDaysHint(p.warnDays);
+      this.setWarnDaysValue(p.warnDays);
 
       // Extra config
       this.extraTextarea.value = JSON.stringify(p.extra, null, 2);
@@ -1436,7 +1543,7 @@
       const isNew = !item;
       // Reset pills active states
       document.querySelectorAll(".date-pill-group .date-pill").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".warn-pill").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".spec-pill-group .spec-pill").forEach((b) => b.classList.remove("active"));
 
       const quickBanner = document.getElementById("asset-quick-presets");
 
@@ -1473,8 +1580,7 @@
         if (this.renewHidden) this.renewHidden.value = "true";
         this.autorenewSelect?.setValue("true", false);
 
-        this.warnDaysInput.value = "[7, 3, 1]";
-        this.updateWarnDaysHint("[7, 3, 1]");
+        this.setWarnDaysValue("[7, 3, 1]");
         this.extraTextarea.value = "{}";
 
         this.renderDynamicFields("compute", {});
@@ -1505,8 +1611,7 @@
         if (this.renewHidden) this.renewHidden.value = autoRenewStr;
         this.autorenewSelect?.setValue(autoRenewStr, false);
 
-        this.warnDaysInput.value = item.warn_days || "[7, 3, 1]";
-        this.updateWarnDaysHint(this.warnDaysInput.value);
+        this.setWarnDaysValue(item.warn_days || "[7, 3, 1]");
 
         const extraObj = Utils.safeJSONParse(item.extra_config);
         this.extraTextarea.value = JSON.stringify(extraObj, null, 2);
@@ -1557,11 +1662,16 @@
         if (f.type === "select" && f.options && f.options.length) {
           const mount = document.getElementById(`mount-asset-dyn-${f.key}`);
           const hiddenInput = this.dynFieldsContainer.querySelector(`.asset-dyn-input[data-key="${f.key}"]`);
-          const val = extraConfigObj[f.key] !== undefined ? extraConfigObj[f.key] : (f.default_val || f.options[0]);
+          const parsedOptions = f.options.map((opt) => Utils.parseOptionItem(opt));
+          const rawVal = extraConfigObj[f.key] !== undefined ? String(extraConfigObj[f.key]) : (f.default_val || parsedOptions[0]?.value || "");
+          if (rawVal && !parsedOptions.some((o) => String(o.value) === rawVal)) {
+            parsedOptions.push({ label: `${rawVal} (当前值)`, value: rawVal });
+          }
+          if (hiddenInput) hiddenInput.value = rawVal;
           if (mount) {
             const cs = new CustomSelect(mount, {
-              options: f.options.map((opt) => ({ label: opt, value: opt })),
-              value: val,
+              options: parsedOptions,
+              value: rawVal,
               onChange: (newVal) => {
                 if (hiddenInput) hiddenInput.value = newVal;
                 this.syncInputsToJSON();
@@ -2141,11 +2251,16 @@
         if (f.type === "select" && f.options && f.options.length) {
           const mount = document.getElementById(`mount-task-dyn-${f.key}`);
           const hiddenInput = this.dynParamsContainer.querySelector(`.task-dyn-input[data-key="${f.key}"]`);
-          const val = paramsObj[f.key] !== undefined ? paramsObj[f.key] : (f.default_val || f.options[0]);
+          const parsedOptions = f.options.map((opt) => Utils.parseOptionItem(opt));
+          const rawVal = paramsObj[f.key] !== undefined ? String(paramsObj[f.key]) : (f.default_val || parsedOptions[0]?.value || "");
+          if (rawVal && !parsedOptions.some((o) => String(o.value) === rawVal)) {
+            parsedOptions.push({ label: `${rawVal} (当前值)`, value: rawVal });
+          }
+          if (hiddenInput) hiddenInput.value = rawVal;
           if (mount) {
             const cs = new CustomSelect(mount, {
-              options: f.options.map((opt) => ({ label: opt, value: opt })),
-              value: val,
+              options: parsedOptions,
+              value: rawVal,
               onChange: (newVal) => {
                 if (hiddenInput) hiddenInput.value = newVal;
                 this.syncInputsToJSON();

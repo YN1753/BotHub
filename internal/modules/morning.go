@@ -10,17 +10,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YN1753/vesper/bothub/internal/pushplus"
+	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
 type MorningModule struct {
 	store *store.Store
-	push  *pushplus.Client
+	push  *notifier.Client
 	http  *http.Client
 }
 
-func NewMorningModule(st *store.Store, push *pushplus.Client) *MorningModule {
+func NewMorningModule(st *store.Store, push *notifier.Client) *MorningModule {
 	return &MorningModule{store: st, push: push, http: NewHTTPClient(15 * time.Second)}
 }
 

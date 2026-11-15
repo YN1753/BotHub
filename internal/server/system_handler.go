@@ -63,7 +63,12 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allowedKeys := map[string]bool{
+		"push_channel":   true,
 		"pushplus_token": true,
+		"wecom_corpid":   true,
+		"wecom_agentid":  true,
+		"wecom_secret":   true,
+		"wecom_touser":   true,
 		"cf_api_token":   true,
 	}
 
@@ -86,13 +91,24 @@ func (s *Server) handleTestPush(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 
+	channel, _ := s.store.GetConfig(store.KeyPushChannel)
+	channel = strings.ToLower(strings.TrimSpace(channel))
+	if channel == "" {
+		channel = "wecom"
+	}
+
+	channelName := "企业微信 · 长庚执更"
+	if channel == "pushplus" {
+		channelName = "PushPlus 备用通道"
+	}
+
 	now := store.NowShanghai()
-	content := fmt.Sprintf("### Vesper BotHub 通道自检\n\n- **服务状态**：运行正常\n- **推送通道**：PushPlus Markdown\n- **触发时间**：`%s`\n\n---\n*来自 Vesper BotHub · bot.starryheavens.uk*", now)
+	content := fmt.Sprintf("### Vesper BotHub 通道自检\n\n- **服务节点**：CloudCone LA\n- **活跃通道**：`%s`\n- **触发时间**：`%s`\n- **网络链路**：正常直连\n\n---\n*来自 Vesper BotHub · bot.starryheavens.uk*", channelName, now)
 	if err := s.push.SendMarkdown(ctx, "system_test", "Vesper BotHub 链路连通测试", content); err != nil {
 		writeError(w, http.StatusBadGateway, "推送失败: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "测试消息已成功投递至 PushPlus"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": fmt.Sprintf("测试消息已成功通过 [%s] 投递", channelName)})
 }
 
 type BackupData struct {
@@ -141,7 +157,12 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Restore Configs
 	allowedKeys := map[string]bool{
+		"push_channel":   true,
 		"pushplus_token": true,
+		"wecom_corpid":   true,
+		"wecom_agentid":  true,
+		"wecom_secret":   true,
+		"wecom_touser":   true,
 		"cf_api_token":   true,
 	}
 	for k, v := range backup.Configs {

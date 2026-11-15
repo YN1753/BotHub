@@ -10,17 +10,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/YN1753/vesper/bothub/internal/pushplus"
+	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
 type AssetWatcherModule struct {
 	store *store.Store
-	push  *pushplus.Client
+	push  *notifier.Client
 	http  *http.Client
 }
 
-func NewAssetWatcherModule(st *store.Store, push *pushplus.Client) *AssetWatcherModule {
+func NewAssetWatcherModule(st *store.Store, push *notifier.Client) *AssetWatcherModule {
 	return &AssetWatcherModule{store: st, push: push, http: NewHTTPClient(15 * time.Second)}
 }
 

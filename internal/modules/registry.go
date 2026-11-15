@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/YN1753/vesper/bothub/internal/pushplus"
+	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
@@ -74,7 +74,7 @@ func (r *Registry) AssetTemplates() []AssetTemplate {
 }
 
 // NewDefaultRegistry instantiates and registers all built-in modules and schemas.
-func NewDefaultRegistry(st *store.Store, push *pushplus.Client) *Registry {
+func NewDefaultRegistry(st *store.Store, push *notifier.Client) *Registry {
 	reg := NewRegistry()
 
 	// 1. Register Task Runners

@@ -11,18 +11,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/YN1753/vesper/bothub/internal/pushplus"
+	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
 	"golang.org/x/net/html"
 )
 
 type RadarModule struct {
 	store *store.Store
-	push  *pushplus.Client
+	push  *notifier.Client
 	http  *http.Client
 }
 
-func NewRadarModule(st *store.Store, push *pushplus.Client) *RadarModule {
+func NewRadarModule(st *store.Store, push *notifier.Client) *RadarModule {
 	return &RadarModule{store: st, push: push, http: NewHTTPClient(20 * time.Second)}
 }
 

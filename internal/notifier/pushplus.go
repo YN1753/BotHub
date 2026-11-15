@@ -1,4 +1,4 @@
-package pushplus
+package notifier
 
 import (
 	"bytes"
@@ -9,59 +9,43 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"unicode"
-
-	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
-const Endpoint = "http://www.pushplus.plus/send"
+const PushPlusEndpoint = "http://www.pushplus.plus/send"
 
-type Client struct {
-	http  *http.Client
-	store *store.Store
-}
-
-type sendRequest struct {
+type pushplusSendRequest struct {
 	Token    string `json:"token"`
 	Title    string `json:"title"`
 	Content  string `json:"content"`
 	Template string `json:"template"`
 }
 
-type sendResponse struct {
+type pushplusSendResponse struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 	Data string `json:"data"`
 }
 
-func NewClient(st *store.Store) *Client {
-	return &Client{
-		http:  &http.Client{Timeout: 15 * time.Second},
-		store: st,
-	}
-}
-
-func (c *Client) SendMarkdown(ctx context.Context, moduleID, title, content string) error {
+func (c *Client) SendPushPlus(ctx context.Context, moduleID, title, content string) error {
 	cleanTitle := StripEmoji(strings.TrimSpace(title))
 	cleanContent := StripEmoji(strings.TrimSpace(content))
 
-	// Guard against PushPlus payload size limits (20KB limit)
 	const maxContentLen = 18000
 	if len(cleanContent) > maxContentLen {
 		cleanContent = cleanContent[:maxContentLen] + "\n\n... (内容超过 18KB 已自动截断)"
 	}
 
-	token, err := c.store.GetConfig(store.KeyPushPlusToken)
+	token, err := c.store.GetConfig("pushplus_token")
 	if err != nil {
 		return fmt.Errorf("read pushplus token: %w", err)
 	}
 	token = strings.TrimSpace(token)
 	if token == "" {
-		_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "failed", "missing pushplus token")
+		_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "failed", "[PushPlus] missing token")
 		return fmt.Errorf("pushplus token is empty")
 	}
 
-	payload := sendRequest{
+	payload := pushplusSendRequest{
 		Token:    token,
 		Title:    cleanTitle,
 		Content:  cleanContent,
@@ -72,7 +56,6 @@ func (c *Client) SendMarkdown(ctx context.Context, moduleID, title, content stri
 		return fmt.Errorf("marshal pushplus payload: %w", err)
 	}
 
-	// Retry mechanism: up to 2 attempts with a short backoff for transient network issues
 	var lastErr error
 	var respMsg string
 	for attempt := 1; attempt <= 2; attempt++ {
@@ -84,7 +67,7 @@ func (c *Client) SendMarkdown(ctx context.Context, moduleID, title, content stri
 			}
 		}
 
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, Endpoint, bytes.NewReader(body))
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, PushPlusEndpoint, bytes.NewReader(body))
 		if reqErr != nil {
 			lastErr = fmt.Errorf("build pushplus request: %w", reqErr)
 			continue
@@ -100,7 +83,7 @@ func (c *Client) SendMarkdown(ctx context.Context, moduleID, title, content stri
 		respBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 		_ = resp.Body.Close()
 
-		var parsed sendResponse
+		var parsed pushplusSendResponse
 		_ = json.Unmarshal(respBytes, &parsed)
 
 		respMsg = strings.TrimSpace(parsed.Msg)
@@ -114,7 +97,7 @@ func (c *Client) SendMarkdown(ctx context.Context, moduleID, title, content stri
 		}
 
 		// Success
-		_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "sent", respMsg)
+		_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "sent", "[PushPlus] "+respMsg)
 		return nil
 	}
 
@@ -122,41 +105,6 @@ func (c *Client) SendMarkdown(ctx context.Context, moduleID, title, content stri
 	if lastErr != nil {
 		errMsg = lastErr.Error()
 	}
-	_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "failed", errMsg)
+	_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "failed", "[PushPlus] "+errMsg)
 	return fmt.Errorf("%s", errMsg)
-}
-
-// StripEmoji removes Unicode emoji/pictograph runes and variation selectors to
-// enforce the STRICT NO EMOJI policy across all WeChat Markdown dispatches.
-func StripEmoji(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if isEmojiRune(r) {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
-}
-
-func isEmojiRune(r rune) bool {
-	if r == 0xFE0F || r == 0xFE0E || r == 0x200D || r == 0x20E3 {
-		return true
-	}
-	switch {
-	case r >= 0x1F300 && r <= 0x1FAFF: // Misc symbols, pictographs, emoticons, transport, supplemental
-		return true
-	case r >= 0x1F000 && r <= 0x1F0FF: // Mahjong, Domino, Playing Cards
-		return true
-	case r >= 0x2600 && r <= 0x27BF: // Misc symbols & Dingbats
-		return true
-	case r >= 0x2300 && r <= 0x23FF: // Misc technical (watches, hourglasses, etc.)
-		return true
-	case r >= 0x2B00 && r <= 0x2BFF: // Misc symbols and arrows
-		return true
-	case unicode.In(r, unicode.So) && r > 0x2000:
-		return true
-	}
-	return false
 }

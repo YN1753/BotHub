@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/modules"
-	"github.com/YN1753/vesper/bothub/internal/pushplus"
+	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/scheduler"
 	"github.com/YN1753/vesper/bothub/internal/server"
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -22,7 +22,7 @@ import (
 
 // Injected during build via -ldflags
 var (
-	Version   = "v1.6.0"
+	Version   = "v1.7.0"
 	Commit    = "dev"
 	BuildTime = "local"
 )
@@ -51,7 +51,7 @@ func main() {
 	}
 	defer st.Close()
 
-	pushClient := pushplus.NewClient(st)
+	pushClient := notifier.NewClient(st)
 	registry := modules.NewDefaultRegistry(st, pushClient)
 
 	sched := scheduler.NewWithRegistry(st, registry)
