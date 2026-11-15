@@ -119,3 +119,60 @@ func TestLightModelRoutingInModules(t *testing.T) {
 		t.Fatalf("unexpected model=%q or out=%q", usedModel, out)
 	}
 }
+
+func TestSecurityMaskingAndWebhookDeduplication(t *testing.T) {
+	s, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// 1. Test secret masking in /api/dashboard and preservation on /api/config
+	_ = s.store.SetConfig(store.KeyDeepSeekAPIKey, "sk-1234567890abcdef")
+	reqDash := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	recDash := httptest.NewRecorder()
+	s.handleDashboard(recDash, reqDash)
+	if recDash.Code != http.StatusOK {
+		t.Fatalf("dashboard failed: %d", recDash.Code)
+	}
+	var dashResp struct {
+		Configs map[string]string `json:"configs"`
+	}
+	if err := json.Unmarshal(recDash.Body.Bytes(), &dashResp); err != nil {
+		t.Fatalf("unmarshal dashboard: %v", err)
+	}
+	masked := dashResp.Configs[store.KeyDeepSeekAPIKey]
+	if masked == "sk-1234567890abcdef" || !strings.Contains(masked, "****") {
+		t.Fatalf("expected masked deepseek_api_key, got %q", masked)
+	}
+
+	// Submitting the masked placeholder back to /api/config must not overwrite the real secret
+	cfgPayload, _ := json.Marshal(map[string]string{
+		"deepseek_api_key": masked,
+		"ai_model":         "deepseek-v4-pro",
+	})
+	reqCfg := httptest.NewRequest(http.MethodPost, "/api/config", strings.NewReader(string(cfgPayload)))
+	recCfg := httptest.NewRecorder()
+	s.handleUpdateConfig(recCfg, reqCfg)
+	if recCfg.Code != http.StatusOK {
+		t.Fatalf("update config failed: %d", recCfg.Code)
+	}
+	storedKey, _ := s.store.GetConfig(store.KeyDeepSeekAPIKey)
+	if storedKey != "sk-1234567890abcdef" {
+		t.Fatalf("expected real key preserved, got %q", storedKey)
+	}
+
+	// 2. Test Nezha webhook 5-minute cooldown deduplication
+	_ = s.store.SetConfig(store.KeyNezhaWebhookToken, "hook-tok")
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhook/nezha?token=hook-tok", strings.NewReader(`{"title":"Node-Alpha 离线告警","content":"ping timeout"}`))
+		rec := httptest.NewRecorder()
+		s.handleNezhaWebhook(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("webhook call %d failed: %d", i, rec.Code)
+		}
+		if i == 1 && !strings.Contains(rec.Body.String(), `"deduplicated":true`) {
+			t.Fatalf("expected second rapid identical webhook to be deduplicated, got: %s", rec.Body.String())
+		}
+	}
+	if s.store.LatestNotificationID() != 1 {
+		t.Fatalf("expected only 1 notification created due to deduplication, got %d", s.store.LatestNotificationID())
+	}
+}

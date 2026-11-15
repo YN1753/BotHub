@@ -25,15 +25,49 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+var sensitiveConfigKeys = map[string]bool{
+	store.KeyPushPlusToken:     true,
+	store.KeyWeComSecret:       true,
+	store.KeyCFAPIToken:        true,
+	store.KeyBiliSessdata:      true,
+	store.KeyDeepSeekAPIKey:    true,
+	store.KeyLightAPIKey:       true,
+	store.KeyAppBearerToken:    true,
+	store.KeyNezhaWebhookToken: true,
+}
+
+func maskSecret(val string) string {
+	v := strings.TrimSpace(val)
+	if v == "" {
+		return ""
+	}
+	runes := []rune(v)
+	if len(runes) <= 8 {
+		return "****"
+	}
+	return string(runes[:3]) + "****" + string(runes[len(runes)-4:])
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	tasks, err := s.scheduler.Status()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "读取任务状态失败")
-		return
+	var tasks []any
+	if s.scheduler != nil {
+		tList, err := s.scheduler.Status()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "读取任务状态失败")
+			return
+		}
+		for _, t := range tList {
+			tasks = append(tasks, t)
+		}
 	}
 	cfgs, _ := s.store.GetAllConfigs()
 	delete(cfgs, store.KeyAdminPassHash)
 	delete(cfgs, store.KeySessionSecret)
+	for k := range sensitiveConfigKeys {
+		if raw, ok := cfgs[k]; ok && strings.TrimSpace(raw) != "" {
+			cfgs[k] = maskSecret(raw)
+		}
+	}
 
 	logs, _ := s.store.ListPushLogs(40)
 	assets, _ := s.store.ListAssets()
@@ -97,12 +131,17 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		val := strings.TrimSpace(v)
+		if sensitiveConfigKeys[k] && strings.Contains(val, "****") {
+			continue
+		}
 		_ = s.store.SetConfig(k, val)
 	}
 
-	if err := s.scheduler.Reload(); err != nil {
-		writeError(w, http.StatusBadRequest, "重载调度失败: "+err.Error())
-		return
+	if s.scheduler != nil {
+		if err := s.scheduler.Reload(); err != nil {
+			writeError(w, http.StatusBadRequest, "重载调度失败: "+err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

@@ -263,6 +263,17 @@ func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 		content = "收到哪吒监控回环告警事件，请检查节点状态。"
 	}
 
+	// Deduplicate rapid repeated alerts for the same node/title within a 5-minute cooldown window
+	dedupKey := strings.ToLower(strings.TrimSpace(title))
+	if s.isNezhaAlertInCooldown(dedupKey, 5*time.Minute) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":           true,
+			"deduplicated": true,
+			"latest_id":    s.store.LatestNotificationID(),
+		})
+		return
+	}
+
 	now := store.NowShanghai()
 	markdown := fmt.Sprintf("### %s\n\n- **告警时间**：`%s`\n- **告警来源**：`哪吒探针 Webhook 回环`\n\n%s\n\n---\n*来自 Vesper BotHub · bot.starryheavens.uk*", title, now, content)
 
@@ -279,6 +290,30 @@ func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 		"ok":        true,
 		"latest_id": s.store.LatestNotificationID(),
 	})
+}
+
+func (s *Server) isNezhaAlertInCooldown(key string, window time.Duration) bool {
+	if key == "" {
+		return false
+	}
+	s.nezhaAlertMu.Lock()
+	defer s.nezhaAlertMu.Unlock()
+
+	now := time.Now()
+	if s.nezhaAlertCooldown == nil {
+		s.nezhaAlertCooldown = make(map[string]time.Time)
+	}
+	// Clean up expired keys occasionally
+	for k, ts := range s.nezhaAlertCooldown {
+		if now.Sub(ts) >= window {
+			delete(s.nezhaAlertCooldown, k)
+		}
+	}
+	if last, ok := s.nezhaAlertCooldown[key]; ok && now.Sub(last) < window {
+		return true
+	}
+	s.nezhaAlertCooldown[key] = now
+	return false
 }
 
 func (s *Server) handleV2AppVersion(w http.ResponseWriter, r *http.Request) {

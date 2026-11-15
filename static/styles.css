@@ -1018,3 +1018,178 @@ button, input, select, textarea {
   .btn { min-height: 38px; }
   .modal-card { padding: 16px 14px; }
 }
+
+/* ==========================================
+   BotHub v2.1.0 Enhancements
+   ========================================== */
+.unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: var(--accent-amber, #f59e0b);
+  color: #04060d;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.agent-composer-left,
+.agent-composer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.thinking-toggle-pill.active {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(56, 189, 248, 0.16);
+  color: var(--accent-cyan, #38bdf8);
+}
+
+.agent-msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.agent-msg-action-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease;
+}
+
+.agent-msg-action-btn:hover {
+  border-color: rgba(56, 189, 248, 0.45);
+  color: var(--text-main);
+}
+
+.md-body {
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.md-body h1, .md-body h2, .md-body h3, .md-body h4 {
+  margin: 12px 0 6px;
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.md-body h1 { font-size: 17px; }
+.md-body h2 { font-size: 15px; }
+.md-body h3, .md-body h4 { font-size: 14px; }
+
+.md-body p {
+  margin: 6px 0;
+}
+
+.md-body ul, .md-body ol {
+  margin: 6px 0 8px 18px;
+  padding: 0;
+}
+
+.md-body li {
+  margin: 3px 0;
+}
+
+.md-body a {
+  color: var(--accent-cyan, #38bdf8);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md-body code.md-inline-code {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.md-code-wrap {
+  margin: 8px 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(4, 6, 13, 0.78);
+  overflow: hidden;
+}
+
+.md-code-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.md-code-wrap pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #e2e8f0;
+}
+
+.md-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.md-body th, .md-body td {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.md-body th {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.modal-card-wide {
+  max-width: 780px;
+}
+
+.inbox-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.inbox-filter-bar .pill-btn.active {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(56, 189, 248, 0.16);
+  color: var(--accent-cyan, #38bdf8);
+}
+
+.inbox-item-unread {
+  border-left: 3px solid var(--accent-amber, #f59e0b);
+}
+
+.inbox-item-body {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+}

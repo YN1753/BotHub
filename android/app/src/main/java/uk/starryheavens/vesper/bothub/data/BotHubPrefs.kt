@@ -2,6 +2,8 @@ package uk.starryheavens.vesper.bothub.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import org.json.JSONArray
+import org.json.JSONObject
 
 class BotHubPrefs(context: Context) {
     private val prefs: SharedPreferences =
@@ -30,4 +32,51 @@ class BotHubPrefs(context: Context) {
     var realtimeServiceEnabled: Boolean
         get() = prefs.getBoolean("realtime_service_enabled", false)
         set(value) = prefs.edit().putBoolean("realtime_service_enabled", value).apply()
+
+    var enableThinking: Boolean
+        get() = prefs.getBoolean("enable_thinking", true)
+        set(value) = prefs.edit().putBoolean("enable_thinking", value).apply()
+
+    fun saveCachedNotifications(items: List<NotificationItem>) {
+        val arr = JSONArray()
+        items.take(50).forEach { n ->
+            arr.put(
+                JSONObject()
+                    .put("id", n.id)
+                    .put("module_id", n.moduleId)
+                    .put("title", n.title)
+                    .put("summary", n.summary)
+                    .put("markdown_body", n.markdownBody)
+                    .put("priority", n.priority)
+                    .put("created_at", n.createdAt)
+                    .put("read_at", n.readAt)
+            )
+        }
+        prefs.edit().putString("cached_notifications", arr.toString()).apply()
+    }
+
+    fun loadCachedNotifications(): List<NotificationItem> {
+        val raw = prefs.getString("cached_notifications", "") ?: return emptyList()
+        if (raw.isBlank()) return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            val list = mutableListOf<NotificationItem>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                list.add(
+                    NotificationItem(
+                        id = o.optLong("id"),
+                        moduleId = o.optString("module_id", "system"),
+                        title = o.optString("title", "情报通知"),
+                        summary = o.optString("summary", ""),
+                        markdownBody = o.optString("markdown_body", ""),
+                        priority = o.optString("priority", "normal"),
+                        createdAt = o.optString("created_at", ""),
+                        readAt = o.optString("read_at", "")
+                    )
+                )
+            }
+            list
+        }.getOrDefault(emptyList())
+    }
 }

@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/modules"
@@ -301,6 +303,89 @@ func stripHTMLToText(rawHTML string) string {
 	return notifier.StripEmoji(strings.TrimSpace(res))
 }
 
+func isPrivateOrLoopbackIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
+}
+
+func (e *Engine) safeFetchClient() *http.Client {
+	if e.allowLocalhostForTest {
+		return e.httpClient
+	}
+	dialer := &net.Dialer{
+		Timeout:   8 * time.Second,
+		KeepAlive: 15 * time.Second,
+		Control: func(network, address string, c syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return fmt.Errorf("无效目标地址: %w", err)
+			}
+			ip := net.ParseIP(host)
+			if isPrivateOrLoopbackIP(ip) {
+				return fmt.Errorf("安全拦截：禁止访问内网或本机回环地址 (%s)", host)
+			}
+			return nil
+		},
+	}
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			DialContext:           dialer.DialContext,
+			TLSHandshakeTimeout:   8 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("重定向次数过多")
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("安全拦截：不支持的重定向协议 %s", req.URL.Scheme)
+			}
+			return nil
+		},
+	}
+}
+
+func (e *Engine) fetchTextWithClient(ctx context.Context, client *http.Client, targetURL, accept string) (int, string, string, error) {
+	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return 0, "", "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; VesperBotHub/2.0)")
+	if accept == "" {
+		accept = "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8"
+	}
+	req.Header.Set("Accept", accept)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, "", "", err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	if err != nil {
+		return resp.StatusCode, "", "", err
+	}
+	return resp.StatusCode, strings.ToLower(resp.Header.Get("Content-Type")), string(bodyBytes), nil
+}
+
+func parseGitHubRepo(parsed *url.URL) (owner, repo string, ok bool) {
+	if !strings.EqualFold(parsed.Hostname(), "github.com") {
+		return "", "", false
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], strings.TrimSuffix(parts[1], ".git"), true
+}
+
 func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		URL      string `json:"url"`
@@ -323,33 +408,45 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 		maxChars = MaxReadURLChars
 	}
 
-	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, target, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; VesperBotHub/2.0)")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8")
-
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("请求网页失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
-	if err != nil {
-		return "", fmt.Errorf("读取响应失败: %w", err)
-	}
-
-	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	client := e.safeFetchClient()
+	var statusCode int
 	var text string
-	if strings.Contains(contentType, "json") || strings.Contains(contentType, "plain") {
-		text = notifier.StripEmoji(strings.TrimSpace(string(bodyBytes)))
-	} else {
-		text = stripHTMLToText(string(bodyBytes))
+	sourceMode := "direct"
+
+	// Fast-path: GitHub repository root URL -> fetch raw README.md directly
+	if owner, repo, ok := parseGitHubRepo(parsed); ok && !e.allowLocalhostForTest {
+		rawURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/HEAD/README.md", owner, repo)
+		if sc, _, body, gErr := e.fetchTextWithClient(ctx, client, rawURL, "text/plain"); gErr == nil && sc >= 200 && sc < 300 && strings.TrimSpace(body) != "" {
+			statusCode = sc
+			text = notifier.StripEmoji(strings.TrimSpace(body))
+			sourceMode = "github_raw_readme"
+		}
+	}
+
+	if text == "" {
+		sc, contentType, rawBody, fErr := e.fetchTextWithClient(ctx, client, target, "")
+		if fErr != nil {
+			return "", fmt.Errorf("请求网页失败: %w", fErr)
+		}
+		statusCode = sc
+		if strings.Contains(contentType, "json") || strings.Contains(contentType, "plain") {
+			text = notifier.StripEmoji(strings.TrimSpace(rawBody))
+		} else {
+			text = stripHTMLToText(rawBody)
+		}
+
+		// Fallback: if CSR/SPA page yields very little text, try Jina Reader Markdown extraction
+		if len([]rune(text)) < 200 && !e.allowLocalhostForTest && !strings.Contains(strings.ToLower(parsed.Hostname()), "r.jina.ai") {
+			jinaURL := "https://r.jina.ai/" + target
+			if jsc, _, jBody, jErr := e.fetchTextWithClient(ctx, client, jinaURL, "text/plain"); jErr == nil && jsc >= 200 && jsc < 300 {
+				jClean := notifier.StripEmoji(strings.TrimSpace(jBody))
+				if len([]rune(jClean)) > len([]rune(text)) {
+					text = jClean
+					statusCode = jsc
+					sourceMode = "jina_reader"
+				}
+			}
+		}
 	}
 
 	runes := []rune(text)
@@ -361,7 +458,8 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 
 	resultMap := map[string]any{
 		"url":         target,
-		"status_code": resp.StatusCode,
+		"status_code": statusCode,
+		"source_mode": sourceMode,
 		"char_count":  len([]rune(text)),
 		"truncated":   truncated,
 		"content":     text,

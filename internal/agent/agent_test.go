@@ -222,7 +222,7 @@ func TestBuiltinToolsExecution(t *testing.T) {
 		t.Fatalf("manage_tasks run failed: %v, out=%s", err, runOut)
 	}
 
-	// 4. Test read_url with httptest server (including noise removal and 10000 char truncation)
+	// 4. Test read_url SSRF protection blocks loopback by default
 	longText := strings.Repeat("A", 12000)
 	pageSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -231,6 +231,12 @@ func TestBuiltinToolsExecution(t *testing.T) {
 	defer pageSrv.Close()
 
 	urlArgs, _ := json.Marshal(map[string]string{"url": pageSrv.URL})
+	if _, ssrfErr := eng.ExecuteTool(context.Background(), "read_url", string(urlArgs)); ssrfErr == nil {
+		t.Fatalf("expected SSRF protection to block loopback URL %s", pageSrv.URL)
+	}
+
+	// Enable loopback for local mock test and verify noise removal + 10000 char truncation
+	eng.allowLocalhostForTest = true
 	readOut, err := eng.ExecuteTool(context.Background(), "read_url", string(urlArgs))
 	if err != nil || !strings.Contains(readOut, "Zero Docker Native SQLite WAL") {
 		t.Fatalf("read_url failed: %v, out=%s", err, readOut)

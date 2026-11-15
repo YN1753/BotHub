@@ -45,6 +45,21 @@ data class TaskItem(
     val lastSummary: String
 )
 
+data class AgentSessionSummary(
+    val id: String,
+    val title: String,
+    val persona: String,
+    val model: String,
+    val updatedAt: String
+)
+
+data class AgentHistoryMessage(
+    val id: Long,
+    val role: String,
+    val content: String,
+    val reasoningContent: String
+)
+
 data class DashboardSnapshot(
     val version: String,
     val totalAssets: Int,
@@ -213,11 +228,90 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun toggleTaskEnabled(taskId: String, enabled: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject().put("enabled", enabled).toString()
+            val req = authRequestBuilder("/api/tasks/$taskId")
+                .post(payload.toRequestBody(jsonMedia))
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("更新任务状态失败 (${resp.code})")
+            }
+        }
+    }
+
+    suspend fun syncAssetWatcher(): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = authRequestBuilder("/api/modules/asset_watcher/run")
+                .post("{}".toRequestBody(jsonMedia))
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("资产嗅探同步失败 (${resp.code})")
+                val raw = resp.body?.string().orEmpty()
+                val obj = runCatching { JSONObject(raw) }.getOrNull()
+                obj?.optString("summary")?.ifEmpty { "资产嗅探同步完成" } ?: "资产嗅探同步完成"
+            }
+        }
+    }
+
+    suspend fun fetchAgentSessions(): Result<List<AgentSessionSummary>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = authRequestBuilder("/api/agent/sessions").get().build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("获取会话列表失败 (${resp.code})")
+                val raw = resp.body?.string().orEmpty()
+                val arr = JSONObject(raw).optJSONArray("sessions") ?: JSONArray()
+                val list = mutableListOf<AgentSessionSummary>()
+                for (i in 0 until arr.length()) {
+                    val s = arr.getJSONObject(i)
+                    list.add(
+                        AgentSessionSummary(
+                            id = s.optString("id"),
+                            title = s.optString("title", "未命名会话"),
+                            persona = s.optString("persona", "grok"),
+                            model = s.optString("model", "deepseek-flash"),
+                            updatedAt = s.optString("updated_at", "")
+                        )
+                    )
+                }
+                list
+            }
+        }
+    }
+
+    suspend fun fetchAgentSessionMessages(sessionId: String): Result<List<AgentHistoryMessage>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = authRequestBuilder("/api/agent/sessions/$sessionId").get().build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("加载历史会话失败 (${resp.code})")
+                val raw = resp.body?.string().orEmpty()
+                val arr = JSONObject(raw).optJSONArray("messages") ?: JSONArray()
+                val list = mutableListOf<AgentHistoryMessage>()
+                for (i in 0 until arr.length()) {
+                    val m = arr.getJSONObject(i)
+                    val role = m.optString("role")
+                    if (role == "user" || role == "assistant") {
+                        list.add(
+                            AgentHistoryMessage(
+                                id = m.optLong("id"),
+                                role = role,
+                                content = m.optString("content", ""),
+                                reasoningContent = m.optString("reasoning_content", "")
+                            )
+                        )
+                    }
+                }
+                list
+            }
+        }
+    }
+
     suspend fun streamChat(
         sessionId: String,
         message: String,
         persona: String,
         model: String,
+        enableThinking: Boolean = true,
         onSession: (String) -> Unit,
         onReasoningDelta: (String) -> Unit,
         onToolCall: (String, String) -> Unit,
@@ -230,6 +324,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("message", message)
                 .put("persona", persona)
                 .put("model", model)
+                .put("enable_thinking", enableThinking)
                 .toString()
 
             val req = authRequestBuilder("/api/agent/chat")

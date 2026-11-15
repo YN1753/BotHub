@@ -72,10 +72,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import uk.starryheavens.vesper.bothub.data.AgentSessionSummary
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.NotificationItem
+import uk.starryheavens.vesper.bothub.data.TaskItem
 import uk.starryheavens.vesper.bothub.sync.RealtimePushService
 
 data class ChatTurnUi(
@@ -109,12 +111,15 @@ fun BotHubApp(
     var sessionId by remember { mutableStateOf("") }
     var activePersona by remember { mutableStateOf(prefs.activePersona) }
     var activeModel by remember { mutableStateOf(prefs.activeModel) }
+    var enableThinking by remember { mutableStateOf(prefs.enableThinking) }
+    var agentSessions by remember { mutableStateOf<List<AgentSessionSummary>>(emptyList()) }
+    var showSessionsSheet by remember { mutableStateOf(false) }
     var inputText by remember { mutableStateOf("") }
     var isStreaming by remember { mutableStateOf(false) }
     val chatMessages = remember { mutableStateListOf<ChatTurnUi>() }
 
-    // Inbox & Hub State
-    var notifications by remember { mutableStateOf<List<NotificationItem>>(emptyList()) }
+    // Inbox & Hub State (Cold-start loads offline cache immediately)
+    var notifications by remember { mutableStateOf(prefs.loadCachedNotifications()) }
     var dashboard by remember { mutableStateOf<DashboardSnapshot?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
 
@@ -124,6 +129,7 @@ fun BotHubApp(
             isRefreshing = true
             api.fetchNotifications(afterId = 0L, limit = 50).onSuccess { list ->
                 notifications = list
+                prefs.saveCachedNotifications(list)
                 val maxId = list.maxOfOrNull { it.id } ?: 0L
                 if (maxId > prefs.lastEventId) {
                     prefs.lastEventId = maxId
@@ -132,7 +138,37 @@ fun BotHubApp(
             api.fetchDashboard().onSuccess { snap ->
                 dashboard = snap
             }
+            api.fetchAgentSessions().onSuccess { sess ->
+                agentSessions = sess
+            }
             isRefreshing = false
+        }
+    }
+
+    fun loadAgentSession(sess: AgentSessionSummary) {
+        if (isStreaming) return
+        scope.launch {
+            api.fetchAgentSessionMessages(sess.id).onSuccess { msgs ->
+                sessionId = sess.id
+                activePersona = sess.persona
+                activeModel = sess.model
+                chatMessages.clear()
+                msgs.forEach { m ->
+                    chatMessages.add(
+                        ChatTurnUi(
+                            id = "hist_${m.id}",
+                            role = m.role,
+                            persona = sess.persona,
+                            model = sess.model,
+                            reasoning = m.reasoningContent,
+                            content = m.content
+                        )
+                    )
+                }
+                showSessionsSheet = false
+            }.onFailure { err ->
+                snackbarHostState.showSnackbar("加载历史会话失败: ${err.message}")
+            }
         }
     }
 
@@ -173,6 +209,7 @@ fun BotHubApp(
                 message = clean,
                 persona = activePersona,
                 model = activeModel,
+                enableThinking = enableThinking,
                 onSession = { sid -> sessionId = sid },
                 onReasoningDelta = { delta ->
                     val cur = chatMessages[assistantIdx]
@@ -309,6 +346,7 @@ fun BotHubApp(
                     .padding(innerPadding),
                 activePersona = activePersona,
                 activeModel = activeModel,
+                enableThinking = enableThinking,
                 onPersonaChange = {
                     activePersona = it
                     prefs.activePersona = it
@@ -316,6 +354,16 @@ fun BotHubApp(
                 onModelChange = {
                     activeModel = it
                     prefs.activeModel = it
+                },
+                onThinkingChange = {
+                    enableThinking = it
+                    prefs.enableThinking = it
+                },
+                onOpenSessions = {
+                    scope.launch {
+                        api.fetchAgentSessions().onSuccess { agentSessions = it }
+                    }
+                    showSessionsSheet = true
                 },
                 onNewSession = {
                     sessionId = ""
@@ -365,6 +413,27 @@ fun BotHubApp(
                             refreshAll()
                         }.onFailure { err ->
                             snackbarHostState.showSnackbar("执行失败: ${err.message}")
+                        }
+                    }
+                },
+                onToggleTask = { task, enabled ->
+                    scope.launch {
+                        api.toggleTaskEnabled(task.id, enabled).onSuccess {
+                            snackbarHostState.showSnackbar(if (enabled) "已启用: ${task.name}" else "已暂停: ${task.name}")
+                            refreshAll()
+                        }.onFailure { err ->
+                            snackbarHostState.showSnackbar("更新失败: ${err.message}")
+                        }
+                    }
+                },
+                onSyncAssets = {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("正在嗅探同步云端资产...")
+                        api.syncAssetWatcher().onSuccess { msg ->
+                            snackbarHostState.showSnackbar(msg)
+                            refreshAll()
+                        }.onFailure { err ->
+                            snackbarHostState.showSnackbar("同步失败: ${err.message}")
                         }
                     }
                 }
@@ -517,6 +586,76 @@ fun BotHubApp(
             }
         }
     }
+
+    if (showSessionsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSessionsSheet = false },
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                contentPadding = PaddingValues(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "跨端历史会话 (${agentSessions.size})",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                sessionId = ""
+                                chatMessages.clear()
+                                showSessionsSheet = false
+                            },
+                            modifier = Modifier.sizeIn(minHeight = 48.dp)
+                        ) {
+                            Text("+ 新对话")
+                        }
+                    }
+                }
+                if (agentSessions.isEmpty()) {
+                    item {
+                        Text(
+                            text = "暂无历史会话记录",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    }
+                }
+                items(agentSessions, key = { it.id }) { sess ->
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (sess.id == sessionId) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            }
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { loadAgentSession(sess) }
+                    ) {
+                        ListItem(
+                            headlineContent = { Text(sess.title, fontWeight = FontWeight.Medium) },
+                            supportingContent = { Text("${sess.persona} · ${sess.model} · ${sess.updatedAt.take(16)}") }
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -524,8 +663,11 @@ private fun AgentTabScreen(
     modifier: Modifier = Modifier,
     activePersona: String,
     activeModel: String,
+    enableThinking: Boolean,
     onPersonaChange: (String) -> Unit,
     onModelChange: (String) -> Unit,
+    onThinkingChange: (Boolean) -> Unit,
+    onOpenSessions: () -> Unit,
     onNewSession: () -> Unit,
     messages: List<ChatTurnUi>,
     inputText: String,
@@ -562,6 +704,21 @@ private fun AgentTabScreen(
                     selected = activeModel == id,
                     onClick = { onModelChange(id) },
                     label = { Text(label) },
+                    modifier = Modifier.sizeIn(minHeight = 48.dp)
+                )
+            }
+            item {
+                FilterChip(
+                    selected = enableThinking,
+                    onClick = { onThinkingChange(!enableThinking) },
+                    label = { Text(if (enableThinking) "深度思考: 开" else "深度思考: 关") },
+                    modifier = Modifier.sizeIn(minHeight = 48.dp)
+                )
+            }
+            item {
+                AssistChip(
+                    onClick = onOpenSessions,
+                    label = { Text("历史会话") },
                     modifier = Modifier.sizeIn(minHeight = 48.dp)
                 )
             }
@@ -834,7 +991,9 @@ private fun InboxTabScreen(
 private fun HubTabScreen(
     modifier: Modifier = Modifier,
     snapshot: DashboardSnapshot?,
-    onRunTask: (uk.starryheavens.vesper.bothub.data.TaskItem) -> Unit
+    onRunTask: (TaskItem) -> Unit,
+    onToggleTask: (TaskItem, Boolean) -> Unit,
+    onSyncAssets: () -> Unit
 ) {
     LazyColumn(
         modifier = modifier,
@@ -887,12 +1046,21 @@ private fun HubTabScreen(
                         Text("${task.cronExpr} · 下次: ${task.nextRunAt}\n${task.lastSummary}")
                     },
                     trailingContent = {
-                        Button(
-                            onClick = { onRunTask(task) },
-                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = "触发")
-                            Text("触发")
+                            Switch(
+                                checked = task.enabled,
+                                onCheckedChange = { checked -> onToggleTask(task, checked) }
+                            )
+                            Button(
+                                onClick = { onRunTask(task) },
+                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = "触发")
+                                Text("触发")
+                            }
                         }
                     }
                 )
@@ -901,11 +1069,24 @@ private fun HubTabScreen(
 
         item {
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "数字资产与会员守望",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "数字资产与会员守望",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                OutlinedButton(
+                    onClick = onSyncAssets,
+                    modifier = Modifier.sizeIn(minHeight = 48.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null)
+                    Text(" 嗅探同步", style = MaterialTheme.typography.labelMedium)
+                }
+            }
         }
 
         val assets = snapshot?.assets ?: emptyList()

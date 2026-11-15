@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/agent"
@@ -13,16 +14,18 @@ import (
 )
 
 type Server struct {
-	store     *store.Store
-	scheduler *scheduler.Scheduler
-	push      *notifier.Client
-	agent     *agent.Engine
-	staticFS  fs.FS
-	startedAt time.Time
-	version   string
-	commit    string
-	buildTime string
-	limiter   *rateLimiter
+	store              *store.Store
+	scheduler          *scheduler.Scheduler
+	push               *notifier.Client
+	agent              *agent.Engine
+	staticFS           fs.FS
+	startedAt          time.Time
+	version            string
+	commit             string
+	buildTime          string
+	limiter            *rateLimiter
+	nezhaAlertMu       sync.Mutex
+	nezhaAlertCooldown map[string]time.Time
 }
 
 func New(
@@ -47,7 +50,8 @@ func New(
 		version:   version,
 		commit:    commit,
 		buildTime: buildTime,
-		limiter:   newRateLimiter(),
+		limiter:            newRateLimiter(),
+		nezhaAlertCooldown: make(map[string]time.Time),
 	}, nil
 }
 

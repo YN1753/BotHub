@@ -32,7 +32,8 @@
         <span class="topbar-sub mono">bot.starryheavens.uk</span>
       </div>
       <div class="topbar-actions">
-        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v2.0.0</span></span>
+        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v2.1.0</span></span>
+        <button id="open-inbox-btn" class="btn btn-ghost" type="button">情报收件箱 <span id="inbox-unread-badge" class="unread-badge hidden">0</span></button>
         <button id="open-memories-btn" class="btn btn-ghost" type="button">长期记忆</button>
         <button id="open-logs-btn" class="btn btn-ghost" type="button">推送流水</button>
         <button id="open-settings-btn" class="btn btn-ghost" type="button">系统设置</button>
@@ -126,8 +127,14 @@
             required
           ></textarea>
           <div class="agent-composer-actions">
-            <span id="agent-stream-status" class="mono section-hint">就绪</span>
-            <button type="submit" class="btn btn-primary" id="agent-send-btn">发送指令</button>
+            <div class="agent-composer-left">
+              <button type="button" class="pill-btn thinking-toggle-pill active" id="agent-thinking-toggle" title="DeepSeek Flash 思考模式开关">深度思考: 开</button>
+              <span id="agent-stream-status" class="mono section-hint">就绪</span>
+            </div>
+            <div class="agent-composer-right">
+              <button type="button" class="btn btn-danger btn-sm hidden" id="agent-stop-btn">停止生成</button>
+              <button type="submit" class="btn btn-primary" id="agent-send-btn">发送指令</button>
+            </div>
           </div>
         </form>
       </div>
@@ -199,6 +206,32 @@
         </form>
         <div class="divider"></div>
         <div id="memories-list" class="logs-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Native Notifications Inbox Modal -->
+  <div id="inbox-modal-overlay" class="modal-overlay hidden">
+    <div class="glass-card modal-card modal-card-wide">
+      <div class="modal-header">
+        <div>
+          <h3 class="serif-title">原生情报收件箱 (Inbox)</h3>
+          <span class="section-hint">实时接收 AI 晨报、前沿雷达、资产到期提醒与哪吒探针告警</span>
+        </div>
+        <div class="modal-actions-right">
+          <button id="inbox-read-all-btn" class="btn btn-ghost btn-sm" type="button">全部已读</button>
+          <button id="close-inbox-modal-btn" class="btn btn-ghost btn-sm" type="button">关闭</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="inbox-filter-bar" id="inbox-filter-bar">
+          <button type="button" class="pill-btn active" data-filter="all">全部</button>
+          <button type="button" class="pill-btn" data-filter="morning">AI 晨报</button>
+          <button type="button" class="pill-btn" data-filter="radar">前沿雷达</button>
+          <button type="button" class="pill-btn" data-filter="asset">资产守望</button>
+          <button type="button" class="pill-btn" data-filter="alert">探针告警</button>
+        </div>
+        <div id="inbox-list" class="logs-list"></div>
       </div>
     </div>
   </div>

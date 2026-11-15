@@ -20,9 +20,10 @@ import (
 
 // Engine orchestrates DeepSeek streaming chat, persona injection, long-term memory, and tool calling.
 type Engine struct {
-	store      *store.Store
-	scheduler  TaskController
-	httpClient *http.Client
+	store                 *store.Store
+	scheduler             TaskController
+	httpClient            *http.Client
+	allowLocalhostForTest bool
 }
 
 func NewEngine(st *store.Store, sched TaskController) *Engine {
@@ -36,10 +37,11 @@ func NewEngine(st *store.Store, sched TaskController) *Engine {
 }
 
 type ChatRequest struct {
-	SessionID string `json:"session_id"`
-	Message   string `json:"message"`
-	Persona   string `json:"persona"`
-	Model     string `json:"model"`
+	SessionID      string `json:"session_id"`
+	Message        string `json:"message"`
+	Persona        string `json:"persona"`
+	Model          string `json:"model"`
+	EnableThinking *bool  `json:"enable_thinking,omitempty"`
 }
 
 type ToolTrace struct {
@@ -79,11 +81,16 @@ type apiToolFunction struct {
 	Arguments string `json:"arguments"`
 }
 
+type thinkingConfig struct {
+	Type string `json:"type"`
+}
+
 type chatCompletionRequest struct {
 	Model    string           `json:"model"`
 	Messages []apiMessage     `json:"messages"`
 	Tools    []ToolDefinition `json:"tools,omitempty"`
 	Stream   bool             `json:"stream"`
+	Thinking *thinkingConfig  `json:"thinking,omitempty"`
 }
 
 type streamChunk struct {
@@ -317,9 +324,14 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 			}
 			messages = append(messages, msg)
 		case "tool":
+			content := m.Content
+			runes := []rune(content)
+			if len(runes) > 600 {
+				content = string(runes[:600]) + "\n...[历史工具输出已折叠，核心结论见下方助手回复]"
+			}
 			messages = append(messages, apiMessage{
 				Role:       "tool",
-				Content:    m.Content,
+				Content:    content,
 				ToolCallID: m.ToolCallID,
 			})
 		}
@@ -330,6 +342,15 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 		Content: userMsg,
 	})
 
+	var thinkingCfg *thinkingConfig
+	if req.EnableThinking != nil && strings.Contains(strings.ToLower(model), "flash") {
+		if *req.EnableThinking {
+			thinkingCfg = &thinkingConfig{Type: "enabled"}
+		} else {
+			thinkingCfg = &thinkingConfig{Type: "disabled"}
+		}
+	}
+
 	tools := BuiltinTools()
 	var totalReasoning strings.Builder
 	var finalContent strings.Builder
@@ -337,7 +358,7 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 
 	const maxRounds = 5
 	for round := 0; round < maxRounds; round++ {
-		roundReasoning, roundContent, toolCalls, err := e.streamSingleRound(ctx, baseURL, apiKey, model, messages, tools, func(deltaReasoning, deltaContent string) {
+		roundReasoning, roundContent, toolCalls, err := e.streamSingleRound(ctx, baseURL, apiKey, model, messages, tools, thinkingCfg, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
 				clean := notifier.StripEmoji(deltaReasoning)
 				totalReasoning.WriteString(clean)
@@ -457,6 +478,7 @@ func (e *Engine) streamSingleRound(
 	baseURL, apiKey, model string,
 	messages []apiMessage,
 	tools []ToolDefinition,
+	thinking *thinkingConfig,
 	onDelta func(deltaReasoning, deltaContent string),
 ) (string, string, []apiToolCall, error) {
 	reqBody := chatCompletionRequest{
@@ -464,6 +486,7 @@ func (e *Engine) streamSingleRound(
 		Messages: messages,
 		Tools:    tools,
 		Stream:   true,
+		Thinking: thinking,
 	}
 	payload, err := json.Marshal(reqBody)
 	if err != nil {

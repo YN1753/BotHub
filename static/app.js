@@ -19,6 +19,96 @@
         .replaceAll('"', "&quot;");
     },
 
+    renderMarkdown(raw) {
+      const src = String(raw || "").replace(/\r\n/g, "\n");
+      if (!src.trim()) return "";
+
+      // Extract fenced code blocks first to keep them untouched
+      const codeBlocks = [];
+      const withPlaceholders = src.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+        const idx = codeBlocks.length;
+        const safeLang = Utils.esc(lang || "text");
+        const safeCode = Utils.esc(code.replace(/\n$/, ""));
+        codeBlocks.push(
+          `<div class="md-code-wrap"><div class="md-code-head"><span class="mono">${safeLang}</span><button type="button" class="agent-msg-action-btn md-copy-code-btn">复制代码</button></div><pre><code>${safeCode}</code></pre></div>`
+        );
+        return `\n@@CODEBLOCK_${idx}@@\n`;
+      });
+
+      const formatInline = (text) => {
+        let out = Utils.esc(text);
+        out = out.replace(/`([^`\n]+)`/g, '<code class="md-inline-code">$1</code>');
+        out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+        return out;
+      };
+
+      const lines = withPlaceholders.split("\n");
+      const html = [];
+      let inList = false;
+      let listType = "";
+
+      const closeList = () => {
+        if (inList) {
+          html.push(listType === "ol" ? "</ol>" : "</ul>");
+          inList = false;
+          listType = "";
+        }
+      };
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        const cbMatch = trimmed.match(/^@@CODEBLOCK_(\d+)@@$/);
+        if (cbMatch) {
+          closeList();
+          html.push(codeBlocks[Number(cbMatch[1])] || "");
+          continue;
+        }
+        if (!trimmed) {
+          closeList();
+          continue;
+        }
+        if (/^---+$/.test(trimmed)) {
+          closeList();
+          html.push('<div class="divider"></div>');
+          continue;
+        }
+        const hMatch = trimmed.match(/^(#{1,4})\s+(.+)$/);
+        if (hMatch) {
+          closeList();
+          const lvl = hMatch[1].length;
+          html.push(`<h${lvl}>${formatInline(hMatch[2])}</h${lvl}>`);
+          continue;
+        }
+        const ulMatch = trimmed.match(/^[-*]\s+(.+)$/);
+        if (ulMatch) {
+          if (!inList || listType !== "ul") {
+            closeList();
+            html.push("<ul>");
+            inList = true;
+            listType = "ul";
+          }
+          html.push(`<li>${formatInline(ulMatch[1])}</li>`);
+          continue;
+        }
+        const olMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+        if (olMatch) {
+          if (!inList || listType !== "ol") {
+            closeList();
+            html.push("<ol>");
+            inList = true;
+            listType = "ol";
+          }
+          html.push(`<li>${formatInline(olMatch[1])}</li>`);
+          continue;
+        }
+        closeList();
+        html.push(`<p>${formatInline(trimmed)}</p>`);
+      }
+      closeList();
+      return `<div class="md-body">${html.join("")}</div>`;
+    },
+
     formatTime(str) {
       if (!str) return "--";
       const d = new Date(str);
@@ -353,9 +443,12 @@
         personas: [],
         agentSessions: [],
         agentMemories: [],
+        notifications: [],
+        unreadCount: 0,
         configs: {},
         pushLogs: [],
       };
+      this.sseSource = null;
     }
 
     async checkAuth() {
@@ -365,6 +458,7 @@
         this.bus.emit("auth:state", { authenticated: this.state.authenticated });
         if (this.state.authenticated) {
           await this.loadDashboard();
+          this.startNotificationStream();
         }
       } catch {
         this.state.authenticated = false;
@@ -380,10 +474,12 @@
       this.state.authenticated = true;
       this.bus.emit("auth:state", { authenticated: true });
       await this.loadDashboard();
+      this.startNotificationStream();
       return data;
     }
 
     async logout() {
+      this.stopNotificationStream();
       await this.api.request("/api/auth/logout", { method: "POST" }).catch(() => {});
       this.state.authenticated = false;
       this.bus.emit("auth:state", { authenticated: false });
@@ -405,6 +501,8 @@
         this.state.personas = data.personas || [];
         this.state.agentSessions = data.agent_sessions || [];
         this.state.agentMemories = data.agent_memories || [];
+        this.state.notifications = data.notifications || [];
+        this.state.unreadCount = Number(data.stats?.unread_notifications) || this.state.notifications.filter((n) => !n.read_at).length;
         this.state.configs = data.configs || {};
         this.state.pushLogs = data.push_logs || [];
 
@@ -412,6 +510,66 @@
       } catch (err) {
         this.bus.emit("toast", err.message);
       }
+    }
+
+    startNotificationStream() {
+      if (this.sseSource || typeof EventSource === "undefined") return;
+      const latestId = this.state.notifications.length > 0 ? this.state.notifications[0].id : 0;
+      const url = `/api/v2/events?last_event_id=${encodeURIComponent(latestId)}`;
+      const es = new EventSource(url);
+      this.sseSource = es;
+
+      es.addEventListener("notification", (ev) => {
+        try {
+          const item = JSON.parse(ev.data);
+          if (!item || !item.id) return;
+          const exists = this.state.notifications.some((n) => n.id === item.id);
+          if (!exists) {
+            this.state.notifications = [item, ...this.state.notifications].slice(0, 60);
+            if (!item.read_at) {
+              this.state.unreadCount += 1;
+            }
+            this.bus.emit("notifications:updated", this.state);
+            this.bus.emit("toast", `新情报到达: ${item.title}`);
+          }
+        } catch {
+          // ignore malformed SSE frame
+        }
+      });
+
+      es.onerror = () => {
+        // EventSource automatically reconnects; close only if logged out
+        if (!this.state.authenticated) {
+          this.stopNotificationStream();
+        }
+      };
+    }
+
+    stopNotificationStream() {
+      if (this.sseSource) {
+        this.sseSource.close();
+        this.sseSource = null;
+      }
+    }
+
+    async markNotificationRead(id) {
+      const target = this.state.notifications.find((n) => n.id === id);
+      if (target && target.read_at) return;
+      await this.api.request(`/api/v2/notifications/${encodeURIComponent(id)}/read`, { method: "POST" });
+      if (target) target.read_at = new Date().toISOString();
+      this.state.unreadCount = this.state.notifications.filter((n) => !n.read_at).length;
+      this.bus.emit("notifications:updated", this.state);
+    }
+
+    async markAllNotificationsRead() {
+      await this.api.request("/api/v2/notifications/read-all", { method: "POST" });
+      const now = new Date().toISOString();
+      this.state.notifications.forEach((n) => {
+        if (!n.read_at) n.read_at = now;
+      });
+      this.state.unreadCount = 0;
+      this.bus.emit("notifications:updated", this.state);
+      this.bus.emit("toast", "全部情报已标记为已读");
     }
 
     async saveAsset(payload, isNew) {
@@ -2620,10 +2778,27 @@
       this.form = document.getElementById("agent-chat-form");
       this.input = document.getElementById("agent-chat-input");
       this.sendBtn = document.getElementById("agent-send-btn");
+      this.stopBtn = document.getElementById("agent-stop-btn");
+      this.thinkingBtn = document.getElementById("agent-thinking-toggle");
       this.statusEl = document.getElementById("agent-stream-status");
 
       this.isStreaming = false;
+      this.enableThinking = true;
+      this.abortController = null;
+      this.lastUserPrompt = "";
       this.initializedDefaults = false;
+
+      this.thinkingBtn?.addEventListener("click", () => {
+        this.enableThinking = !this.enableThinking;
+        this.thinkingBtn.classList.toggle("active", this.enableThinking);
+        this.thinkingBtn.textContent = this.enableThinking ? "深度思考: 开" : "深度思考: 关";
+      });
+
+      this.stopBtn?.addEventListener("click", () => {
+        if (this.abortController) {
+          this.abortController.abort();
+        }
+      });
 
       if (this.sessionMount) {
         this.sessionSelect = new CustomSelect(this.sessionMount, {
@@ -2833,6 +3008,10 @@
         </details>
         <div class="agent-tools-list"></div>
         <div class="agent-msg-content"></div>
+        <div class="agent-msg-actions hidden">
+          <button type="button" class="agent-msg-action-btn agent-copy-btn">复制全文</button>
+          <button type="button" class="agent-msg-action-btn agent-retry-btn">重新生成</button>
+        </div>
       `;
       this.messagesEl?.appendChild(div);
 
@@ -2841,10 +3020,47 @@
       const reasonBody = div.querySelector(".agent-reasoning-body");
       const toolsList = div.querySelector(".agent-tools-list");
       const contentBody = div.querySelector(".agent-msg-content");
+      const actionsBar = div.querySelector(".agent-msg-actions");
+      const copyBtn = div.querySelector(".agent-copy-btn");
+      const retryBtn = div.querySelector(".agent-retry-btn");
       const toolEls = new Map();
 
       let reasonBuf = "";
       let contentBuf = "";
+
+      const renderContentMarkdown = (text) => {
+        if (!contentBody) return;
+        contentBody.innerHTML = Utils.renderMarkdown(text);
+        contentBody.querySelectorAll(".md-copy-code-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const code = btn.closest(".md-code-wrap")?.querySelector("pre code")?.textContent || "";
+            try {
+              await navigator.clipboard.writeText(code);
+              btn.textContent = "已复制";
+              setTimeout(() => { btn.textContent = "复制代码"; }, 1500);
+            } catch {
+              this.bus.emit("toast", "复制失败，请手动复制");
+            }
+          });
+        });
+      };
+
+      copyBtn?.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(contentBuf);
+          this.bus.emit("toast", "已复制回复全文");
+        } catch {
+          this.bus.emit("toast", "复制失败");
+        }
+      });
+
+      retryBtn?.addEventListener("click", () => {
+        if (this.isStreaming || !this.lastUserPrompt) return;
+        if (this.input) {
+          this.input.value = this.lastUserPrompt;
+          this.sendMessage();
+        }
+      });
 
       return {
         appendReasoning: (delta) => {
@@ -2885,18 +3101,28 @@
         },
         appendContent: (delta) => {
           contentBuf += delta;
-          if (contentBody) contentBody.textContent = contentBuf;
+          renderContentMarkdown(contentBuf);
           this.scrollToBottom();
         },
         setContent: (full) => {
           contentBuf = full;
-          if (contentBody) contentBody.textContent = full;
+          renderContentMarkdown(full);
           if (stateSpan) stateSpan.textContent = "已完成";
+          actionsBar?.classList.remove("hidden");
         },
         markDone: () => {
           if (stateSpan) stateSpan.textContent = "已完成";
           if (reasonBuf) {
             reasonDetails?.removeAttribute("open");
+          }
+          if (contentBuf) {
+            actionsBar?.classList.remove("hidden");
+          }
+        },
+        markAborted: () => {
+          if (stateSpan) stateSpan.textContent = "已手动停止";
+          if (contentBuf) {
+            actionsBar?.classList.remove("hidden");
           }
         },
         markError: (errMsg) => {
@@ -2926,12 +3152,15 @@
       const persona = this.personaHidden?.value || "grok";
       const model = this.modelHidden?.value || "deepseek-flash";
 
+      this.lastUserPrompt = msg;
       this.input.value = "";
       this.isStreaming = true;
+      this.abortController = new AbortController();
       if (this.sendBtn) {
         this.sendBtn.disabled = true;
         this.sendBtn.textContent = "推理中...";
       }
+      this.stopBtn?.classList.remove("hidden");
       if (this.statusEl) this.statusEl.textContent = "正在连接 DeepSeek 流式通道...";
 
       this.appendUserBubble(msg);
@@ -2941,12 +3170,14 @@
         const res = await fetch("/api/agent/chat", {
           method: "POST",
           credentials: "same-origin",
+          signal: this.abortController.signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             session_id: sessionId,
             message: msg,
             persona,
             model,
+            enable_thinking: this.enableThinking,
           }),
         });
 
@@ -2989,11 +3220,19 @@
         if (this.statusEl) this.statusEl.textContent = "就绪";
         await this.store.loadDashboard();
       } catch (err) {
-        assistantUI.markError(err.message);
-        if (this.statusEl) this.statusEl.textContent = "发生错误";
-        this.bus.emit("toast", err.message);
+        if (err.name === "AbortError") {
+          assistantUI.markAborted();
+          if (this.statusEl) this.statusEl.textContent = "已手动停止";
+          this.bus.emit("toast", "已停止生成");
+        } else {
+          assistantUI.markError(err.message);
+          if (this.statusEl) this.statusEl.textContent = "发生错误";
+          this.bus.emit("toast", err.message);
+        }
       } finally {
         this.isStreaming = false;
+        this.abortController = null;
+        this.stopBtn?.classList.add("hidden");
         if (this.sendBtn) {
           this.sendBtn.disabled = false;
           this.sendBtn.textContent = "发送指令";
@@ -3116,6 +3355,115 @@
     }
   }
 
+  // --- Native Notifications Inbox Modal Component ---
+  class InboxModalComponent extends BaseComponent {
+    init() {
+      this.overlay = document.getElementById("inbox-modal-overlay");
+      this.openBtn = document.getElementById("open-inbox-btn");
+      this.closeBtn = document.getElementById("close-inbox-modal-btn");
+      this.readAllBtn = document.getElementById("inbox-read-all-btn");
+      this.badgeEl = document.getElementById("inbox-unread-badge");
+      this.listEl = document.getElementById("inbox-list");
+      this.filterBtns = document.querySelectorAll("#inbox-filter-bar .pill-btn");
+
+      this.activeFilter = "all";
+
+      this.openBtn?.addEventListener("click", () => this.open());
+      this.closeBtn?.addEventListener("click", () => this.close());
+      this.overlay?.addEventListener("click", (e) => {
+        if (e.target === this.overlay) this.close();
+      });
+
+      this.readAllBtn?.addEventListener("click", async () => {
+        await this.store.markAllNotificationsRead();
+      });
+
+      this.filterBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          this.activeFilter = btn.dataset.filter || "all";
+          this.filterBtns.forEach((b) => b.classList.toggle("active", b === btn));
+          this.render(this.store.state.notifications || [], this.store.state.unreadCount || 0);
+        });
+      });
+
+      this.bus.on("data:loaded", (state) => {
+        this.render(state.notifications || [], state.unreadCount || 0);
+      });
+      this.bus.on("notifications:updated", (state) => {
+        this.render(state.notifications || [], state.unreadCount || 0);
+      });
+    }
+
+    open() {
+      this.overlay?.classList.remove("hidden");
+    }
+
+    close() {
+      this.overlay?.classList.add("hidden");
+    }
+
+    matchesFilter(source) {
+      if (this.activeFilter === "all") return true;
+      const s = String(source || "").toLowerCase();
+      if (this.activeFilter === "morning") return s.includes("morning");
+      if (this.activeFilter === "radar") return s.includes("radar") || s.includes("bili");
+      if (this.activeFilter === "asset") return s.includes("asset");
+      if (this.activeFilter === "alert") return s.includes("nezha") || s.includes("alert") || s.includes("webhook");
+      return true;
+    }
+
+    render(notifications, unreadCount) {
+      if (this.badgeEl) {
+        if (unreadCount > 0) {
+          this.badgeEl.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+          this.badgeEl.classList.remove("hidden");
+        } else {
+          this.badgeEl.classList.add("hidden");
+        }
+      }
+      if (!this.listEl) return;
+
+      const filtered = (notifications || []).filter((n) => this.matchesFilter(n.source));
+      if (!filtered.length) {
+        this.listEl.innerHTML = `<div class="empty-state">当前分类下暂无情报消息</div>`;
+        return;
+      }
+
+      this.listEl.innerHTML = filtered.map((n) => {
+        const isUnread = !n.read_at;
+        const prioClass = n.priority === "high" ? "cat-vps" : "cat-compute";
+        return `
+          <article class="log-item ${isUnread ? "inbox-item-unread" : ""}" data-nid="${Utils.esc(n.id)}">
+            <div class="log-top">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span class="cat-badge ${prioClass} mono">${Utils.esc(n.source)}</span>
+                <strong>${Utils.esc(n.title)}</strong>
+                ${isUnread ? '<span class="mono text-amber" style="font-size:11px;">[未读]</span>' : ""}
+              </div>
+              <span class="mono" style="font-size:11px; color:var(--text-muted);">${Utils.esc(Utils.formatTime(n.created_at))}</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">${Utils.esc(n.summary)}</div>
+            <details class="inbox-details" style="margin-top:6px;">
+              <summary class="mono" style="cursor:pointer; font-size:11px; color:var(--accent-cyan);">展开全文</summary>
+              <div class="inbox-item-body">${Utils.renderMarkdown(n.markdown || n.summary)}</div>
+            </details>
+          </article>
+        `;
+      }).join("");
+
+      this.listEl.querySelectorAll(".inbox-details").forEach((det) => {
+        det.addEventListener("toggle", () => {
+          if (det.open) {
+            const nid = Number(det.closest(".log-item")?.dataset.nid || 0);
+            if (nid > 0) {
+              this.store.markNotificationRead(nid).catch(() => {});
+            }
+          }
+        });
+      });
+    }
+  }
+
   // ==========================================
   // 8. Application Bootstrap
   // ==========================================
@@ -3131,6 +3479,7 @@
       new WorkspaceSwitcherComponent(".workspace-tabs", store, bus),
       new AgentHubComponent("#workspace-agent", store, bus),
       new AgentMemoriesModalComponent("#memories-modal-overlay", store, bus),
+      new InboxModalComponent("#inbox-modal-overlay", store, bus),
       new AssetsSectionComponent("#assets-grid", store, bus),
       new TasksSectionComponent("#tasks-grid", store, bus),
       new GlobalConfigComponent("#config-form", store, bus),
