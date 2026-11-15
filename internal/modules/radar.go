@@ -158,6 +158,14 @@ func (r *RadarModule) RunWithTask(ctx context.Context, task store.Task) (RunResu
 		sb.WriteString("\n")
 	}
 
+	// Optional AI synthesis & curation when DeepSeek API Key is configured
+	sysPrompt := "你是 Vesper BotHub 的开源技术雷达架构师。请从以下抓取的 GitHub Trending 与 Hacker News 列表中，挑选最值得关注的 3 个项目或话题，逐条给出核心亮点、技术价值与适用场景简评（中文，高信息密度）。严禁输出任何 Emoji 或特殊装饰符号。"
+	if aiReview, aiErr := SummarizeWithDeepSeek(ctx, r.store, sysPrompt, sb.String()); aiErr == nil && aiReview != "" {
+		sb.WriteString("#### 3. DeepSeek 架构师精选锐评\n")
+		sb.WriteString(aiReview)
+		sb.WriteString("\n\n")
+	}
+
 	sb.WriteString("---\n*来自 Vesper BotHub · bot.starryheavens.uk*")
 	title := fmt.Sprintf("%s · 新增 %d 条精选（GH %d / HN %d）", taskName, totalNew, len(freshGH), len(freshHN))
 

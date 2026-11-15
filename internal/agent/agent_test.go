@@ -111,7 +111,7 @@ func TestChatStreamWithToolCallsAndReasoner(t *testing.T) {
 
 	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "sk-test-key")
 	_ = st.SetConfig(store.KeyDeepSeekBaseURL, mockDeepSeek.URL)
-	_ = st.SetConfig(store.KeyAIModel, "deepseek-reasoner")
+	_ = st.SetConfig(store.KeyAIModel, "deepseek-v4-pro")
 	_ = st.SetConfig(store.KeyActivePersona, PersonaGrok)
 
 	eng := NewEngine(st, &fakeTaskController{st: st})
@@ -222,10 +222,11 @@ func TestBuiltinToolsExecution(t *testing.T) {
 		t.Fatalf("manage_tasks run failed: %v, out=%s", err, runOut)
 	}
 
-	// 4. Test read_url with httptest server
+	// 4. Test read_url with httptest server (including noise removal and 10000 char truncation)
+	longText := strings.Repeat("A", 12000)
 	pageSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(`<html><head><script>console.log(1)</script></head><body><h1>Vesper Architecture</h1><p>Zero Docker Native SQLite WAL.</p></body></html>`))
+		_, _ = w.Write([]byte(`<html><head><script>console.log(1)</script><style>.a{}</style></head><body><nav>noisy nav</nav><h1>Vesper Architecture</h1><p>Zero Docker Native SQLite WAL. ` + longText + `</p><footer>noisy footer</footer></body></html>`))
 	}))
 	defer pageSrv.Close()
 
@@ -233,5 +234,18 @@ func TestBuiltinToolsExecution(t *testing.T) {
 	readOut, err := eng.ExecuteTool(context.Background(), "read_url", string(urlArgs))
 	if err != nil || !strings.Contains(readOut, "Zero Docker Native SQLite WAL") {
 		t.Fatalf("read_url failed: %v, out=%s", err, readOut)
+	}
+	if strings.Contains(readOut, "noisy nav") || strings.Contains(readOut, "noisy footer") {
+		t.Fatalf("expected nav/footer noise to be stripped, got: %s", readOut)
+	}
+	var parsedRead struct {
+		CharCount int  `json:"char_count"`
+		Truncated bool `json:"truncated"`
+	}
+	if err := json.Unmarshal([]byte(readOut), &parsedRead); err != nil {
+		t.Fatalf("unmarshal read_url output failed: %v", err)
+	}
+	if !parsedRead.Truncated || parsedRead.CharCount > MaxReadURLChars {
+		t.Fatalf("expected truncated=true and char_count <= %d, got %+v", MaxReadURLChars, parsedRead)
 	}
 }

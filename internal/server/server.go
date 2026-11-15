@@ -95,6 +95,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/agent/memories", s.requireAuth(s.handleSaveAgentMemory))
 	mux.HandleFunc("DELETE /api/agent/memories/{id}", s.requireAuth(s.handleDeleteAgentMemory))
 
+	// BotHub v2 Native Push Stream, Inbox & Webhooks
+	mux.HandleFunc("POST /api/v2/auth/token", s.handleV2AuthToken)
+	mux.HandleFunc("GET /api/v2/events", s.requireAuth(s.handleV2Events))
+	mux.HandleFunc("GET /api/v2/notifications", s.requireAuth(s.handleV2ListNotifications))
+	mux.HandleFunc("POST /api/v2/notifications/{id}/read", s.requireAuth(s.handleV2MarkNotificationRead))
+	mux.HandleFunc("POST /api/v2/notifications/read-all", s.requireAuth(s.handleV2MarkAllNotificationsRead))
+	mux.HandleFunc("POST /api/v1/webhook/nezha", s.handleNezhaWebhook)
+	mux.HandleFunc("POST /api/v2/webhook/nezha", s.handleNezhaWebhook)
+
 	// System Backup & Portability
 	mux.HandleFunc("GET /api/system/export", s.requireAuth(s.handleExportBackup))
 	mux.HandleFunc("POST /api/system/import", s.requireAuth(s.handleImportBackup))

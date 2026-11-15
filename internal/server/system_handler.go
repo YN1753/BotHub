@@ -40,6 +40,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	stats, _ := s.store.CountStats()
 	sessions, _ := s.store.ListAgentSessions(30)
 	memories, _ := s.store.ListAgentMemories("", 50)
+	notifications, _ := s.store.ListNotifications(0, 40, false)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":         s.version,
@@ -52,6 +53,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"personas":        agent.BuiltinPersonas(),
 		"agent_sessions":  sessions,
 		"agent_memories":  memories,
+		"notifications":   notifications,
 		"configs":         cfgs,
 		"assets":          assets,
 		"push_logs":       logs,
@@ -69,20 +71,25 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allowedKeys := map[string]bool{
-		"push_channel":      true,
-		"pushplus_token":    true,
-		"wecom_corpid":      true,
-		"wecom_agentid":     true,
-		"wecom_secret":      true,
-		"wecom_touser":      true,
-		"cf_api_token":      true,
-		"nezha_url":         true,
-		"nezha_db_path":     true,
-		"bili_sessdata":     true,
-		"deepseek_api_key":  true,
-		"deepseek_base_url": true,
-		"ai_model":          true,
-		"active_persona":    true,
+		"push_channel":        true,
+		"pushplus_token":      true,
+		"wecom_corpid":        true,
+		"wecom_agentid":       true,
+		"wecom_secret":        true,
+		"wecom_touser":        true,
+		"cf_api_token":        true,
+		"nezha_url":           true,
+		"nezha_db_path":       true,
+		"nezha_webhook_token": true,
+		"bili_sessdata":       true,
+		"deepseek_api_key":    true,
+		"deepseek_base_url":   true,
+		"ai_model":            true,
+		"active_persona":      true,
+		"light_api_key":       true,
+		"light_base_url":      true,
+		"light_model":         true,
+		"app_bearer_token":    true,
 	}
 
 	for k, v := range updates {
@@ -173,20 +180,25 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Restore Configs
 	allowedKeys := map[string]bool{
-		"push_channel":      true,
-		"pushplus_token":    true,
-		"wecom_corpid":      true,
-		"wecom_agentid":     true,
-		"wecom_secret":      true,
-		"wecom_touser":      true,
-		"cf_api_token":      true,
-		"nezha_url":         true,
-		"nezha_db_path":     true,
-		"bili_sessdata":     true,
-		"deepseek_api_key":  true,
-		"deepseek_base_url": true,
-		"ai_model":          true,
-		"active_persona":    true,
+		"push_channel":        true,
+		"pushplus_token":      true,
+		"wecom_corpid":        true,
+		"wecom_agentid":       true,
+		"wecom_secret":        true,
+		"wecom_touser":        true,
+		"cf_api_token":        true,
+		"nezha_url":           true,
+		"nezha_db_path":       true,
+		"nezha_webhook_token": true,
+		"bili_sessdata":       true,
+		"deepseek_api_key":    true,
+		"deepseek_base_url":   true,
+		"ai_model":            true,
+		"active_persona":      true,
+		"light_api_key":       true,
+		"light_base_url":      true,
+		"light_model":         true,
+		"app_bearer_token":    true,
 	}
 	for k, v := range backup.Configs {
 		if allowedKeys[k] {

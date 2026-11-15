@@ -869,6 +869,7 @@
 
       this.nezhaUrlInput = document.getElementById("cfg-nezha-url");
       this.nezhaDbPathInput = document.getElementById("cfg-nezha-db-path");
+      this.appTokenInput = document.getElementById("cfg-app-bearer-token");
       this.cfInput = document.getElementById("cfg-cf-api-token");
       this.biliSessdataInput = document.getElementById("cfg-bili-sessdata");
 
@@ -878,6 +879,10 @@
       this.aiModelMount = document.getElementById("mount-cfg-ai-model");
       this.activePersonaInput = document.getElementById("cfg-active-persona");
       this.activePersonaMount = document.getElementById("mount-cfg-active-persona");
+
+      this.lightBaseInput = document.getElementById("cfg-light-base-url");
+      this.lightKeyInput = document.getElementById("cfg-light-api-key");
+      this.lightModelInput = document.getElementById("cfg-light-model");
 
       this.saveAiBtn = document.getElementById("save-ai-config-btn");
       this.saveBtn = document.getElementById("save-config-btn");
@@ -912,10 +917,10 @@
       if (this.aiModelMount) {
         this.aiModelSelect = new CustomSelect(this.aiModelMount, {
           options: [
-            { value: "deepseek-reasoner", label: "DeepSeek Reasoner (深度思考 R1 - 推荐)" },
-            { value: "deepseek-chat", label: "DeepSeek Chat (极速对话 V3)" },
+            { value: "deepseek-flash", label: "DeepSeek Flash (默认主力 · 支持思考开关)" },
+            { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro (深度主力推理)" },
           ],
-          value: "deepseek-reasoner",
+          value: "deepseek-flash",
           onChange: (val) => {
             if (this.aiModelInput) this.aiModelInput.value = val;
           },
@@ -939,8 +944,9 @@
       if (this.channelMount) {
         this.channelSelect = new CustomSelect(this.channelMount, {
           options: [
-            { value: "wecom", label: "企业微信应用消息 (推荐 · 微信插件原生直达)" },
-            { value: "pushplus", label: "PushPlus 个人公众号 (备用通道)" },
+            { value: "native", label: "自建原生推送流 (Android 客户端 + 控制台收件箱)" },
+            { value: "wecom", label: "企业微信应用消息 (原生收件箱 + 微信插件直达)" },
+            { value: "pushplus", label: "PushPlus 个人公众号 (原生收件箱 + 备用通道)" },
           ],
           value: "wecom",
           onChange: (val) => {
@@ -988,18 +994,23 @@
         if (this.pushplusInput) this.pushplusInput.value = cfgs["pushplus_token"] || "";
         if (this.nezhaUrlInput) this.nezhaUrlInput.value = cfgs["nezha_url"] || "https://dash.starryheavens.uk";
         if (this.nezhaDbPathInput) this.nezhaDbPathInput.value = cfgs["nezha_db_path"] || "/opt/nezha/dashboard/data/sqlite.db";
+        if (this.appTokenInput) this.appTokenInput.value = cfgs["app_bearer_token"] || "";
         if (this.cfInput) this.cfInput.value = cfgs["cf_api_token"] || "";
         if (this.biliSessdataInput) this.biliSessdataInput.value = cfgs["bili_sessdata"] || "";
 
         if (this.deepseekKeyInput) this.deepseekKeyInput.value = cfgs["deepseek_api_key"] || "";
-        if (this.deepseekBaseInput) this.deepseekBaseInput.value = cfgs["deepseek_base_url"] || "https://api.deepseek.com";
-        const aiModel = cfgs["ai_model"] || "deepseek-reasoner";
+        if (this.deepseekBaseInput) this.deepseekBaseInput.value = cfgs["deepseek_base_url"] || "https://api.deepseek.com/v1";
+        const aiModel = cfgs["ai_model"] || "deepseek-flash";
         if (this.aiModelInput) this.aiModelInput.value = aiModel;
         this.aiModelSelect?.setValue(aiModel, false);
 
         const persona = cfgs["active_persona"] || "grok";
         if (this.activePersonaInput) this.activePersonaInput.value = persona;
         this.activePersonaSelect?.setValue(persona, false);
+
+        if (this.lightBaseInput) this.lightBaseInput.value = cfgs["light_base_url"] || "";
+        if (this.lightKeyInput) this.lightKeyInput.value = cfgs["light_api_key"] || "";
+        if (this.lightModelInput) this.lightModelInput.value = cfgs["light_model"] || "";
       });
 
       this.form?.addEventListener("submit", async (e) => {
@@ -1013,12 +1024,16 @@
           pushplus_token: (this.pushplusInput?.value || "").trim(),
           nezha_url: (this.nezhaUrlInput?.value || "").trim(),
           nezha_db_path: (this.nezhaDbPathInput?.value || "").trim(),
+          app_bearer_token: (this.appTokenInput?.value || "").trim(),
           cf_api_token: (this.cfInput?.value || "").trim(),
           bili_sessdata: (this.biliSessdataInput?.value || "").trim(),
           deepseek_api_key: (this.deepseekKeyInput?.value || "").trim(),
-          deepseek_base_url: (this.deepseekBaseInput?.value || "https://api.deepseek.com").trim(),
-          ai_model: (this.aiModelInput?.value || "deepseek-reasoner").trim(),
+          deepseek_base_url: (this.deepseekBaseInput?.value || "https://api.deepseek.com/v1").trim(),
+          ai_model: (this.aiModelInput?.value || "deepseek-flash").trim(),
           active_persona: (this.activePersonaInput?.value || "grok").trim(),
+          light_base_url: (this.lightBaseInput?.value || "").trim(),
+          light_api_key: (this.lightKeyInput?.value || "").trim(),
+          light_model: (this.lightModelInput?.value || "").trim(),
         };
         if (this.saveAiBtn) this.saveAiBtn.disabled = true;
         if (this.saveBtn) this.saveBtn.disabled = true;
@@ -1043,9 +1058,10 @@
     }
 
     toggleChannelFields(channel) {
+      const isNative = channel === "native";
       const isPushPlus = channel === "pushplus";
-      this.wecomGroup?.classList.toggle("hidden", isPushPlus);
-      this.pushplusGroup?.classList.toggle("hidden", !isPushPlus);
+      this.wecomGroup?.classList.toggle("hidden", isPushPlus || isNative);
+      this.pushplusGroup?.classList.toggle("hidden", !isPushPlus || isNative);
     }
 
     open() {
@@ -2641,10 +2657,10 @@
       if (this.modelMount) {
         this.modelSelect = new CustomSelect(this.modelMount, {
           options: [
-            { value: "deepseek-reasoner", label: "DeepSeek Reasoner (深度推理 R1)" },
-            { value: "deepseek-chat", label: "DeepSeek Chat (极速对话 V3)" },
+            { value: "deepseek-flash", label: "DeepSeek Flash (默认主力 · 支持思考)" },
+            { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro (深度主力推理)" },
           ],
-          value: "deepseek-reasoner",
+          value: "deepseek-flash",
           onChange: (val) => {
             if (this.modelHidden) this.modelHidden.value = val;
           },
@@ -2698,7 +2714,7 @@
         const cfgs = state.configs || {};
         if (!this.initializedDefaults) {
           const defPersona = cfgs["active_persona"] || "grok";
-          const defModel = cfgs["ai_model"] || "deepseek-reasoner";
+          const defModel = cfgs["ai_model"] || "deepseek-flash";
           if (this.personaHidden) this.personaHidden.value = defPersona;
           this.personaSelect?.setValue(defPersona, false);
           if (this.modelHidden) this.modelHidden.value = defModel;
@@ -2741,8 +2757,8 @@
         if (sess) {
           if (this.personaHidden) this.personaHidden.value = sess.persona || "grok";
           this.personaSelect?.setValue(sess.persona || "grok", false);
-          if (this.modelHidden) this.modelHidden.value = sess.model || "deepseek-reasoner";
-          this.modelSelect?.setValue(sess.model || "deepseek-reasoner", false);
+          if (this.modelHidden) this.modelHidden.value = sess.model || "deepseek-flash";
+          this.modelSelect?.setValue(sess.model || "deepseek-flash", false);
         }
 
         if (!this.messagesEl) return;
@@ -2763,7 +2779,7 @@
               tcs = [];
             }
             if (m.content || m.reasoning_content || tcs.length) {
-              const bubble = this.createAssistantBubble(sess?.persona || "grok", sess?.model || "deepseek-reasoner");
+              const bubble = this.createAssistantBubble(sess?.persona || "grok", sess?.model || "deepseek-flash");
               if (m.reasoning_content) {
                 bubble.setReasoning(m.reasoning_content);
               }
@@ -2908,7 +2924,7 @@
 
       const sessionId = this.sessionHidden?.value || "";
       const persona = this.personaHidden?.value || "grok";
-      const model = this.modelHidden?.value || "deepseek-reasoner";
+      const model = this.modelHidden?.value || "deepseek-flash";
 
       this.input.value = "";
       this.isStreaming = true;

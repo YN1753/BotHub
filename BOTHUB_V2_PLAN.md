@@ -10,7 +10,7 @@
 
 | 维度 | BotHub v1.x（现状） | BotHub v2.0（目标架构） |
 | :--- | :--- | :--- |
-| **大脑能力** | 固定代码模板拼接早报、雷达与到期文本 | **DeepSeek Agent 引擎**（`deepseek-chat` / `deepseek-reasoner`），支持多轮推理、流式输出与 Function Calling 工具调用 |
+| **大脑能力** | 固定代码模板拼接早报、雷达与到期文本 | **DeepSeek Agent 引擎**（`deepseek-flash` / `deepseek-v4-pro`），支持多轮推理、流式输出、Function Calling 工具调用与 `light_model` 轻量省钱路由 |
 | **情报生产** | 爬虫抓取后直接截断原文硬拼 Markdown | 抓完原始数据后交由 DeepSeek 二次筛选、主题归纳、生成锐评与风险提示 |
 | **交互方式** | 单向定时推送 + 网页控制台开关按钮 | **网页端 + Android 原生 App 双向对话**、自然语言操控基建、系统级分享链接直达总结 |
 | **消息推送** | 依赖企业微信 / PushPlus 第三方下发 | **自建原生收件箱 (`notifications`) + SSE/WebSocket 长连接 + WorkManager 后台保活补发**，App 直接弹 Android 原生通知；企微与 PushPlus 降级为可选备份开关 |
@@ -23,7 +23,7 @@
 ### 子系统 1：DeepSeek Agent 引擎 (`bothub/internal/agent/`)
 1. **模型与协议兼容**：
    - 直连 DeepSeek 官方 OpenAI 兼容接口（`https://api.deepseek.com/v1/chat/completions`），支持配置自定义 `base_url`（方便未来无缝切入 Cloudflare AI Gateway 或其它兼容模型）。
-   - 支持 **快速对话 (`deepseek-chat`)** 与 **深度推理 (`deepseek-reasoner`)** 切换，并在流式 SSE 中透传推理思考内容 (`reasoning_content`) 与工具执行轨迹。
+   - 支持 **默认主力 (`deepseek-flash`)** 与 **深度主力 (`deepseek-v4-pro`)** 切换，并在流式 SSE 中透传推理思考内容 (`reasoning_content`) 与工具执行轨迹；同时在 `configs` 拆出第二套轻量模型配置（`light_base_url`、`light_api_key`、`light_model`），用于 `read_url` 长文摘要、记忆提炼及晨报/雷达批处理任务（未配置时自动回退主模型）。
 2. **四大内置 Tool Calling 工具箱**：
    - **联网搜索与网页正文提取 (`web_search` / `read_url`)**：
      - `read_url(url)`：直接抓取并清洗目标网页 / GitHub 仓库页面 / 技术文章为纯净 Markdown（支持 Jina Reader 或本地可读性提取 + 长度截断保护），彻底实现「随手甩链接直接总结」。

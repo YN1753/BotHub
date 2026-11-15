@@ -92,7 +92,7 @@
             <div class="agent-control-item">
               <label class="mono">推理模型</label>
               <div id="mount-agent-model" class="v-select-mount"></div>
-              <input type="hidden" id="agent-model" value="deepseek-reasoner" />
+              <input type="hidden" id="agent-model" value="deepseek-flash" />
             </div>
           </div>
           <div class="agent-toolbar-actions">
@@ -234,14 +234,31 @@
                 <span class="field-hint">兼容官方 DeepSeek API 或任意 OpenAI 规范代理网关</span>
               </div>
               <div class="form-field">
-                <label>默认推理模型</label>
+                <label>默认主力模型</label>
                 <div id="mount-cfg-ai-model" class="v-select-mount"></div>
-                <input type="hidden" id="cfg-ai-model" value="deepseek-reasoner" />
+                <input type="hidden" id="cfg-ai-model" value="deepseek-flash" />
               </div>
               <div class="form-field">
                 <label>默认中枢人设</label>
                 <div id="mount-cfg-active-persona" class="v-select-mount"></div>
                 <input type="hidden" id="cfg-active-persona" value="grok" />
+              </div>
+              <div class="form-field full-width">
+                <div class="divider"></div>
+                <h4 class="serif-title panel-sub-title">第二套轻量省钱模型配置 (可选 · 长文提炼与晨报/雷达批处理)</h4>
+                <span class="field-hint">用于 read_url 长文摘要、记忆提炼及晨报/雷达批处理任务；留空时自动回退使用上方 DeepSeek 主模型</span>
+              </div>
+              <div class="form-field full-width">
+                <label for="cfg-light-base-url">轻量模型接口地址 (Light Base URL)</label>
+                <input id="cfg-light-base-url" type="text" class="glass-input mono" placeholder="如 https://api.siliconflow.cn/v1 或 https://api.groq.com/openai/v1" />
+              </div>
+              <div class="form-field">
+                <label for="cfg-light-api-key">轻量模型 API Key</label>
+                <input id="cfg-light-api-key" type="password" class="glass-input mono" placeholder="留空则回退主模型密钥" />
+              </div>
+              <div class="form-field">
+                <label for="cfg-light-model">轻量模型 ID (Light Model)</label>
+                <input id="cfg-light-model" type="text" class="glass-input mono" placeholder="如 deepseek-flash / gemini-2.5-flash" />
               </div>
             </div>
             <div class="panel-foot">
@@ -307,6 +324,11 @@
                 <label for="cfg-nezha-db-path">哪吒 SQLite 数据库本机路径 (只读直连)</label>
                 <input id="cfg-nezha-db-path" type="text" class="glass-input mono" placeholder="/opt/nezha/dashboard/data/sqlite.db" />
                 <span class="field-hint">当 BotHub 与哪吒面板同机部署时，Agent 可通过只读模式直连查询实时节点库</span>
+              </div>
+              <div class="form-field full-width">
+                <label for="cfg-app-bearer-token">Android 原生客户端专属令牌 (App Bearer Token)</label>
+                <input id="cfg-app-bearer-token" type="text" class="glass-input mono" placeholder="bh2_..." />
+                <span class="field-hint">供 Android App 连接 /api/v2/events 实时推送流与收件箱鉴权使用</span>
               </div>
               <div class="form-field full-width">
                 <label for="cfg-cf-api-token">Cloudflare API Token</label>

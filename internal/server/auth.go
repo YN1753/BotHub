@@ -141,15 +141,30 @@ func (s *Server) isAuthenticated(r *http.Request) bool {
 			return true
 		}
 	}
-	// 2. Bearer token
+	// 2. Bearer token (supports admin password OR dedicated App Bearer Token)
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-		if s.verifyPassword(strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))) {
+		tok := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+		if s.verifyPassword(tok) || s.verifyAppToken(tok) {
 			return true
 		}
 	}
-	// 3. Cookie session
+	// 3. Query token fallback for SSE EventSource connections
+	if qTok := strings.TrimSpace(r.URL.Query().Get("token")); qTok != "" {
+		if s.verifyPassword(qTok) || s.verifyAppToken(qTok) {
+			return true
+		}
+	}
+	// 4. Cookie session
 	c, err := r.Cookie(sessionCookieName)
 	return err == nil && c.Value != "" && s.verifySessionCookie(c.Value)
+}
+
+func (s *Server) verifyAppToken(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	stored, err := s.store.GetConfig(store.KeyAppBearerToken)
+	return err == nil && stored != "" && subtle.ConstantTimeCompare([]byte(raw), []byte(stored)) == 1
 }
 
 func (s *Server) verifyPassword(raw string) bool {

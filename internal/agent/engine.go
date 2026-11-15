@@ -117,6 +117,96 @@ func truncateTitle(msg string) string {
 	return clean
 }
 
+func NormalizeModelID(model string) string {
+	m := strings.TrimSpace(model)
+	switch m {
+	case "", "deepseek-chat":
+		return store.DefaultAIModel // "deepseek-flash"
+	case "deepseek-reasoner":
+		return "deepseek-v4-pro"
+	default:
+		return m
+	}
+}
+
+// CallLightModel executes a non-streaming completion using the secondary lightweight model config
+// (light_base_url / light_api_key / light_model), falling back to the primary DeepSeek config if unset.
+func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	baseURL, _ := e.store.GetConfig(store.KeyLightBaseURL)
+	apiKey, _ := e.store.GetConfig(store.KeyLightAPIKey)
+	model, _ := e.store.GetConfig(store.KeyLightModel)
+
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	apiKey = strings.TrimSpace(apiKey)
+	model = strings.TrimSpace(model)
+
+	if apiKey == "" {
+		apiKey, _ = e.store.GetConfig(store.KeyDeepSeekAPIKey)
+		apiKey = strings.TrimSpace(apiKey)
+	}
+	if apiKey == "" {
+		return "", fmt.Errorf("未配置轻量模型或主模型 API Key")
+	}
+	if baseURL == "" {
+		baseURL, _ = e.store.GetConfig(store.KeyDeepSeekBaseURL)
+		baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+		if baseURL == "" {
+			baseURL = store.DefaultDeepSeekBaseURL
+		}
+	}
+	if model == "" {
+		model = store.DefaultAIModel
+	} else {
+		model = NormalizeModelID(model)
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+
+	bodyMap := map[string]any{
+		"model":  model,
+		"stream": false,
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt},
+			{"role": "user", "content": userPrompt},
+		},
+	}
+	payload, err := json.Marshal(bodyMap)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return "", fmt.Errorf("light model HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(errBytes)))
+	}
+
+	var parsed struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil || len(parsed.Choices) == 0 {
+		return "", fmt.Errorf("解析轻量模型响应失败")
+	}
+	return notifier.StripEmoji(strings.TrimSpace(parsed.Choices[0].Message.Content)), nil
+}
+
 // ChatStream executes a multi-round streaming conversation with DeepSeek and invokes emit for SSE events.
 // Event types: "session", "reasoning", "tool_start", "tool_result", "content", "done", "error".
 func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(event string, data any)) (*ChatResponse, error) {
@@ -140,11 +230,8 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 	model := strings.TrimSpace(req.Model)
 	if model == "" {
 		model, _ = e.store.GetConfig(store.KeyAIModel)
-		model = strings.TrimSpace(model)
 	}
-	if model == "" {
-		model = store.DefaultAIModel
-	}
+	model = NormalizeModelID(model)
 
 	personaID := strings.TrimSpace(req.Persona)
 	if personaID == "" {

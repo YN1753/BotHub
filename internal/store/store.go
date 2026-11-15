@@ -20,7 +20,7 @@ const (
 	DefaultWeComSecret     = "P8R70brpQMVWrmysZaGlWsiTqS6QV5GJOWfBHfWvjC4"
 	DefaultWeComToUser     = "@all"
 	DefaultDeepSeekBaseURL = "https://api.deepseek.com/v1"
-	DefaultAIModel         = "deepseek-chat"
+	DefaultAIModel         = "deepseek-flash"
 	DefaultActivePersona   = "grok"
 	DefaultNezhaDBPath     = "/opt/nezha/dashboard/data/sqlite.db"
 
@@ -47,6 +47,11 @@ const (
 	KeyDeepSeekBaseURL     = "deepseek_base_url"
 	KeyAIModel             = "ai_model"
 	KeyActivePersona       = "active_persona"
+	KeyLightAPIKey         = "light_api_key"
+	KeyLightBaseURL        = "light_base_url"
+	KeyLightModel          = "light_model"
+	KeyAppBearerToken      = "app_bearer_token"
+	KeyNezhaWebhookToken   = "nezha_webhook_token"
 	KeyAdminPassHash       = "admin_pass_hash"
 	KeySessionSecret       = "session_secret"
 )
@@ -173,7 +178,20 @@ CREATE TABLE IF NOT EXISTS agent_memories (
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_agent_memories_cat ON agent_memories(category, updated_at DESC);`
+CREATE INDEX IF NOT EXISTS idx_agent_memories_cat ON agent_memories(category, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS notifications (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	module_id TEXT NOT NULL DEFAULT 'system',
+	title TEXT NOT NULL,
+	summary TEXT NOT NULL DEFAULT '',
+	markdown_body TEXT NOT NULL,
+	priority TEXT NOT NULL DEFAULT 'normal',
+	created_at TEXT NOT NULL,
+	read_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_id ON notifications(id DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read_at, id DESC);`
 	_, err := s.db.Exec(schema)
 	return err
 }
@@ -229,6 +247,17 @@ func (s *Store) seedDefaults() error {
 		nezhaDBPath = DefaultNezhaDBPath
 	}
 
+	lightKey := strings.TrimSpace(os.Getenv("BOTHUB_LIGHT_API_KEY"))
+	lightBaseURL := strings.TrimSpace(os.Getenv("BOTHUB_LIGHT_BASE_URL"))
+	lightModel := strings.TrimSpace(os.Getenv("BOTHUB_LIGHT_MODEL"))
+
+	appToken := strings.TrimSpace(os.Getenv("BOTHUB_APP_TOKEN"))
+	if appToken == "" {
+		appBytes := make([]byte, 24)
+		_, _ = rand.Read(appBytes)
+		appToken = "bh2_" + hex.EncodeToString(appBytes)
+	}
+
 	now := NowShanghai()
 	defaults := map[string]string{
 		KeyPushChannel:         pushChannel,
@@ -254,6 +283,11 @@ func (s *Store) seedDefaults() error {
 		KeyDeepSeekBaseURL:     deepseekBaseURL,
 		KeyAIModel:             aiModel,
 		KeyActivePersona:       activePersona,
+		KeyLightAPIKey:         lightKey,
+		KeyLightBaseURL:        lightBaseURL,
+		KeyLightModel:          lightModel,
+		KeyAppBearerToken:      appToken,
+		KeyNezhaWebhookToken:   "",
 		KeyAdminPassHash:       HashPassword(adminToken),
 		KeySessionSecret:       hex.EncodeToString(secretBytes),
 	}
@@ -263,6 +297,12 @@ func (s *Store) seedDefaults() error {
 			return err
 		}
 	}
+
+	// Automatically upgrade retired model IDs (deepseek-chat / deepseek-reasoner) in existing databases
+	_, _ = s.db.Exec(`UPDATE configs SET value = 'deepseek-flash', updated_at = ? WHERE key = 'ai_model' AND value = 'deepseek-chat'`, now)
+	_, _ = s.db.Exec(`UPDATE configs SET value = 'deepseek-v4-pro', updated_at = ? WHERE key = 'ai_model' AND value = 'deepseek-reasoner'`, now)
+	_, _ = s.db.Exec(`UPDATE agent_sessions SET model = 'deepseek-flash' WHERE model = 'deepseek-chat'`)
+	_, _ = s.db.Exec(`UPDATE agent_sessions SET model = 'deepseek-v4-pro' WHERE model = 'deepseek-reasoner'`)
 	if envPass := strings.TrimSpace(os.Getenv("BOTHUB_ADMIN_TOKEN")); envPass != "" {
 		_ = s.SetConfig(KeyAdminPassHash, HashPassword(envPass))
 	}

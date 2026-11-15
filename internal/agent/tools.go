@@ -264,18 +264,25 @@ func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) 
 	}
 }
 
+const MaxReadURLChars = 10000
+
 var (
-	reScriptStyle = regexp.MustCompile(`(?is)<(script|style|noscript|svg|iframe)[^>]*>.*?</(script|style|noscript|svg|iframe)>`)
-	reHTMLTags    = regexp.MustCompile(`(?s)<[^>]+>`)
-	reMultiSpace  = regexp.MustCompile(`[ \t\r\f]+`)
+	reHTMLComment  = regexp.MustCompile(`(?s)<!--.*?-->`)
+	reNoiseBlocks  = regexp.MustCompile(`(?is)<(script|style|noscript|svg|iframe|nav|header|footer|aside|form|button)[^>]*>.*?</(script|style|noscript|svg|iframe|nav|header|footer|aside|form|button)>`)
+	reHTMLTags     = regexp.MustCompile(`(?s)<[^>]+>`)
+	reMultiSpace   = regexp.MustCompile(`[ \t\r\f]+`)
 	reMultiNewline = regexp.MustCompile(`\n{3,}`)
 )
 
 func stripHTMLToText(rawHTML string) string {
-	cleaned := reScriptStyle.ReplaceAllString(rawHTML, " ")
+	cleaned := reHTMLComment.ReplaceAllString(rawHTML, " ")
+	cleaned = reNoiseBlocks.ReplaceAllString(cleaned, " ")
 	cleaned = strings.ReplaceAll(cleaned, "</p>", "\n")
 	cleaned = strings.ReplaceAll(cleaned, "</div>", "\n")
 	cleaned = strings.ReplaceAll(cleaned, "</li>", "\n")
+	cleaned = strings.ReplaceAll(cleaned, "</h1>", "\n")
+	cleaned = strings.ReplaceAll(cleaned, "</h2>", "\n")
+	cleaned = strings.ReplaceAll(cleaned, "</h3>", "\n")
 	cleaned = strings.ReplaceAll(cleaned, "<br>", "\n")
 	cleaned = strings.ReplaceAll(cleaned, "<br/>", "\n")
 	cleaned = reHTMLTags.ReplaceAllString(cleaned, " ")
@@ -296,7 +303,8 @@ func stripHTMLToText(rawHTML string) string {
 
 func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		URL string `json:"url"`
+		URL      string `json:"url"`
+		MaxChars int    `json:"max_chars"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 read_url 参数失败: %w", err)
@@ -308,6 +316,11 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 	parsed, err := url.Parse(target)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return "", fmt.Errorf("仅支持 http 或 https 协议的 URL")
+	}
+
+	maxChars := args.MaxChars
+	if maxChars <= 0 || maxChars > MaxReadURLChars {
+		maxChars = MaxReadURLChars
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -341,17 +354,28 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 
 	runes := []rune(text)
 	truncated := false
-	if len(runes) > 8000 {
-		text = string(runes[:8000])
+	if len(runes) > maxChars {
+		text = string(runes[:maxChars])
 		truncated = true
 	}
 
-	payload, _ := json.Marshal(map[string]any{
+	resultMap := map[string]any{
 		"url":         target,
 		"status_code": resp.StatusCode,
+		"char_count":  len([]rune(text)),
 		"truncated":   truncated,
 		"content":     text,
-	})
+	}
+
+	// If a dedicated lightweight model is configured and the article is long (> 3000 chars),
+	// pre-distill a summary via the lightweight model to save tokens on the primary reasoning model.
+	if lightKey, _ := e.store.GetConfig(store.KeyLightAPIKey); strings.TrimSpace(lightKey) != "" && len([]rune(text)) > 3000 {
+		if lightSum, lErr := e.CallLightModel(ctx, "你是正文提炼助手。请将网页正文提炼为高信息密度的核心要点摘要，严禁使用 Emoji。", text); lErr == nil && lightSum != "" {
+			resultMap["light_summary"] = lightSum
+		}
+	}
+
+	payload, _ := json.Marshal(resultMap)
 	return string(payload), nil
 }
 

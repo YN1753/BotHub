@@ -115,6 +115,14 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 		sb.WriteString("\n")
 	}
 
+	// Optional AI synthesis when DeepSeek API Key is configured
+	sysPrompt := "你是 Vesper BotHub 的晨间参谋。请基于提供的今日气象、哪吒节点脉搏与临期资产原始数据，用不超过 150 字输出「今日执更要点与优先级建议」（分 2-3 条简明要点）。严禁输出任何 Emoji 或特殊装饰符号。"
+	if aiInsight, aiErr := SummarizeWithDeepSeek(ctx, m.store, sysPrompt, sb.String()); aiErr == nil && aiInsight != "" {
+		sb.WriteString("#### AI 执更参谋锐评\n")
+		sb.WriteString(aiInsight)
+		sb.WriteString("\n\n")
+	}
+
 	sb.WriteString("---\n*来自 Vesper BotHub · bot.starryheavens.uk*")
 
 	title := fmt.Sprintf("%s · %s %s", taskName, dateStr, city)
