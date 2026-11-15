@@ -22,7 +22,7 @@ import (
 
 // Injected during build via -ldflags
 var (
-	Version   = "v2.1.0"
+	Version   = "v2.2.0"
 	Commit    = "dev"
 	BuildTime = "local"
 )
@@ -85,6 +85,7 @@ func main() {
 	<-sigCh
 
 	log.Println("[bothub] shutting down gracefully...")
+	srvHandler.ClosePushStream()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)

@@ -3,6 +3,7 @@ package uk.starryheavens.vesper.bothub.ui
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Inbox
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -66,12 +69,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import okhttp3.Call
 import uk.starryheavens.vesper.bothub.data.AgentSessionSummary
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
@@ -99,6 +106,7 @@ fun BotHubApp(
     onSharedTextConsumed: () -> Unit
 ) {
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -116,6 +124,8 @@ fun BotHubApp(
     var showSessionsSheet by remember { mutableStateOf(false) }
     var inputText by remember { mutableStateOf("") }
     var isStreaming by remember { mutableStateOf(false) }
+    var activeChatJob by remember { mutableStateOf<Job?>(null) }
+    var activeStreamCall by remember { mutableStateOf<Call?>(null) }
     val chatMessages = remember { mutableStateListOf<ChatTurnUi>() }
 
     // Inbox & Hub State (Cold-start loads offline cache immediately)
@@ -203,13 +213,14 @@ fun BotHubApp(
             )
         )
 
-        scope.launch {
+        activeChatJob = scope.launch {
             api.streamChat(
                 sessionId = sessionId,
                 message = clean,
                 persona = activePersona,
                 model = activeModel,
                 enableThinking = enableThinking,
+                onCallCreated = { call -> activeStreamCall = call },
                 onSession = { sid -> sessionId = sid },
                 onReasoningDelta = { delta ->
                     val cur = chatMessages[assistantIdx]
@@ -231,9 +242,18 @@ fun BotHubApp(
                     chatMessages[assistantIdx] = cur.copy(content = fallback)
                 }
             )
+            activeStreamCall = null
             isStreaming = false
             refreshAll()
         }
+    }
+
+    fun stopAgentStream() {
+        activeStreamCall?.cancel()
+        activeChatJob?.cancel()
+        activeStreamCall = null
+        activeChatJob = null
+        isStreaming = false
     }
 
     LaunchedEffect(Unit) {
@@ -374,6 +394,14 @@ fun BotHubApp(
                 onInputChange = { inputText = it },
                 isStreaming = isStreaming,
                 onSend = { sendAgentPrompt(inputText) },
+                onStop = {
+                    stopAgentStream()
+                    scope.launch { snackbarHostState.showSnackbar("已停止生成") }
+                },
+                onCopyText = { txt ->
+                    clipboard.setText(AnnotatedString(txt))
+                    scope.launch { snackbarHostState.showSnackbar("已复制全文") }
+                },
                 onQuickPrompt = { sendAgentPrompt(it) }
             )
 
@@ -483,6 +511,37 @@ fun BotHubApp(
                         )
                     }
                 }
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(item.markdownBody))
+                                scope.launch { snackbarHostState.showSnackbar("已复制通知正文") }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .sizeIn(minHeight = 48.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null)
+                            Text(" 复制全文")
+                        }
+                        Button(
+                            onClick = {
+                                selectedNotification = null
+                                selectedTab = 0
+                                sendAgentPrompt("请帮我分析这条通知并给出排查或处置建议：\n\n标题：${item.title}\n\n${item.markdownBody}")
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .sizeIn(minHeight = 48.dp)
+                        ) {
+                            Text("交给 AI 诊断")
+                        }
+                    }
+                }
             }
         }
     }
@@ -567,6 +626,43 @@ fun BotHubApp(
                         .sizeIn(minHeight = 48.dp)
                 ) {
                     Text(if (connecting) "验证并同步中..." else "保存并验证连接")
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                api.testHealth(urlInput).onSuccess { (ms, ver) ->
+                                    snackbarHostState.showSnackbar("连通正常 (${ms}ms · $ver)")
+                                }.onFailure { err ->
+                                    snackbarHostState.showSnackbar("连通测试失败: ${err.message}")
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .sizeIn(minHeight = 48.dp)
+                    ) {
+                        Text("测试连通性")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val batIntent = Intent(
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                            runCatching { context.startActivity(batIntent) }.onFailure {
+                                context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .sizeIn(minHeight = 48.dp)
+                    ) {
+                        Text("后台保活白名单")
+                    }
                 }
                 OutlinedButton(
                     onClick = {
@@ -674,6 +770,8 @@ private fun AgentTabScreen(
     onInputChange: (String) -> Unit,
     isStreaming: Boolean,
     onSend: () -> Unit,
+    onStop: () -> Unit,
+    onCopyText: (String) -> Unit,
     onQuickPrompt: (String) -> Unit
 ) {
     Column(modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -858,6 +956,21 @@ private fun AgentTabScreen(
                             text = msg.content.ifEmpty { if (isStreaming) "思考与生成中..." else "" },
                             style = MaterialTheme.typography.bodyMedium
                         )
+
+                        if (!isUser && msg.content.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                OutlinedButton(
+                                    onClick = { onCopyText(msg.content) },
+                                    modifier = Modifier.sizeIn(minHeight = 48.dp)
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "复制")
+                                    Text(" 复制全文", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -878,13 +991,23 @@ private fun AgentTabScreen(
                 maxLines = 4,
                 shape = RoundedCornerShape(16.dp)
             )
-            Button(
-                onClick = onSend,
-                enabled = !isStreaming && inputText.isNotBlank(),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 52.dp)
-            ) {
-                Icon(Icons.Default.Send, contentDescription = "发送")
+            if (isStreaming) {
+                Button(
+                    onClick = onStop,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 52.dp)
+                ) {
+                    Icon(Icons.Default.Stop, contentDescription = "停止")
+                }
+            } else {
+                Button(
+                    onClick = onSend,
+                    enabled = inputText.isNotBlank(),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 52.dp)
+                ) {
+                    Icon(Icons.Default.Send, contentDescription = "发送")
+                }
             }
         }
     }

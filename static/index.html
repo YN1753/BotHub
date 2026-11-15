@@ -32,7 +32,7 @@
         <span class="topbar-sub mono">bot.starryheavens.uk</span>
       </div>
       <div class="topbar-actions">
-        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v2.1.0</span></span>
+        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v2.2.0</span></span>
         <button id="open-inbox-btn" class="btn btn-ghost" type="button">情报收件箱 <span id="inbox-unread-badge" class="unread-badge hidden">0</span></button>
         <button id="open-memories-btn" class="btn btn-ghost" type="button">长期记忆</button>
         <button id="open-logs-btn" class="btn btn-ghost" type="button">推送流水</button>
@@ -97,6 +97,7 @@
             </div>
           </div>
           <div class="agent-toolbar-actions">
+            <button type="button" class="btn btn-ghost btn-sm" id="agent-export-session-btn">导出会话</button>
             <button type="button" class="btn btn-ghost btn-sm" id="agent-new-session-btn">+ 新对话</button>
             <button type="button" class="btn btn-ghost btn-sm" id="agent-delete-session-btn">清空当前会话</button>
           </div>
@@ -152,6 +153,15 @@
         <div class="section-actions">
           <button id="add-asset-btn" class="btn btn-ghost" type="button">+ 新增资产</button>
           <button id="sync-assets-btn" class="btn btn-primary" type="button">立即嗅探同步</button>
+        </div>
+      </div>
+      <div class="asset-filter-bar">
+        <input id="asset-search-input" type="search" class="glass-input asset-search-input" placeholder="搜索资产名称、规格或服务商..." />
+        <div class="asset-cat-pills" id="asset-cat-pills">
+          <button type="button" class="pill-btn active" data-cat="all">全部</button>
+          <button type="button" class="pill-btn" data-cat="compute">算力基建</button>
+          <button type="button" class="pill-btn" data-cat="domain">核心域名</button>
+          <button type="button" class="pill-btn" data-cat="life">生活订阅</button>
         </div>
       </div>
       <div id="assets-grid" class="assets-grid"></div>
@@ -219,6 +229,7 @@
           <span class="section-hint">实时接收 AI 晨报、前沿雷达、资产到期提醒与哪吒探针告警</span>
         </div>
         <div class="modal-actions-right">
+          <button id="inbox-desktop-notify-btn" class="btn btn-ghost btn-sm" type="button">桌面弹窗: 关</button>
           <button id="inbox-read-all-btn" class="btn btn-ghost btn-sm" type="button">全部已读</button>
           <button id="close-inbox-modal-btn" class="btn btn-ghost btn-sm" type="button">关闭</button>
         </div>
@@ -400,6 +411,7 @@
               导入恢复备份
               <input type="file" id="import-backup-file" accept=".json" style="display:none;" />
             </label>
+            <button type="button" class="btn btn-danger" id="rotate-app-token-btn">重置移动端 App Token</button>
           </div>
         </div>
       </div>

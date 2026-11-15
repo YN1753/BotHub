@@ -56,8 +56,11 @@
         }
       };
 
-      for (const line of lines) {
-        const trimmed = line.trim();
+      const isTableRow = (l) => /^\|(.+)\|$/.test(l.trim());
+      const isTableSep = (l) => /^\|[\s:|-]+\|$/.test(l.trim());
+
+      for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
         const cbMatch = trimmed.match(/^@@CODEBLOCK_(\d+)@@$/);
         if (cbMatch) {
           closeList();
@@ -68,9 +71,30 @@
           closeList();
           continue;
         }
+        if (isTableRow(trimmed) && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+          closeList();
+          const splitCells = (row) => row.trim().slice(1, -1).split("|").map((c) => formatInline(c.trim()));
+          const headers = splitCells(trimmed);
+          i += 2;
+          const rows = [];
+          while (i < lines.length && isTableRow(lines[i])) {
+            rows.push(splitCells(lines[i]));
+            i++;
+          }
+          i--;
+          const thead = `<thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>`;
+          const tbody = `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>`;
+          html.push(`<table>${thead}${tbody}</table>`);
+          continue;
+        }
         if (/^---+$/.test(trimmed)) {
           closeList();
           html.push('<div class="divider"></div>');
+          continue;
+        }
+        if (trimmed.startsWith("> ")) {
+          closeList();
+          html.push(`<blockquote>${formatInline(trimmed.slice(2))}</blockquote>`);
           continue;
         }
         const hMatch = trimmed.match(/^(#{1,4})\s+(.+)$/);
@@ -531,6 +555,20 @@
             }
             this.bus.emit("notifications:updated", this.state);
             this.bus.emit("toast", `新情报到达: ${item.title}`);
+            if (
+              localStorage.getItem("bothub_desktop_notify") === "1" &&
+              typeof Notification !== "undefined" &&
+              Notification.permission === "granted" &&
+              (document.hidden || item.priority === "high")
+            ) {
+              try {
+                new Notification(`Vesper BotHub · ${item.title}`, {
+                  body: item.summary || "收到新的情报推送",
+                });
+              } catch {
+                // ignore browser notification errors
+              }
+            }
           }
         } catch {
           // ignore malformed SSE frame
@@ -570,6 +608,13 @@
       this.state.unreadCount = 0;
       this.bus.emit("notifications:updated", this.state);
       this.bus.emit("toast", "全部情报已标记为已读");
+    }
+
+    async rotateAppToken() {
+      const res = await this.api.request("/api/v2/auth/token/rotate", { method: "POST" });
+      this.bus.emit("toast", res.message || "已生成全新 App Bearer Token");
+      await this.loadDashboard();
+      return res;
     }
 
     async saveAsset(payload, isNew) {
@@ -837,6 +882,23 @@
       this.grid = document.getElementById("assets-grid");
       this.addBtn = document.getElementById("add-asset-btn");
       this.syncBtn = document.getElementById("sync-assets-btn");
+      this.searchInput = document.getElementById("asset-search-input");
+      this.catPills = document.querySelectorAll("#asset-cat-pills .pill-btn");
+      this.activeCat = "all";
+      this.searchQuery = "";
+
+      this.searchInput?.addEventListener("input", () => {
+        this.searchQuery = (this.searchInput.value || "").trim().toLowerCase();
+        this.render(this.store.state.assets);
+      });
+
+      this.catPills.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          this.activeCat = btn.dataset.cat || "all";
+          this.catPills.forEach((b) => b.classList.toggle("active", b === btn));
+          this.render(this.store.state.assets);
+        });
+      });
 
       this.addBtn?.addEventListener("click", () => {
         this.bus.emit("modal:open-asset", null);
@@ -858,12 +920,21 @@
 
     render(assets) {
       if (!this.grid) return;
-      if (!assets || !assets.length) {
-        this.grid.innerHTML = `<div class="empty-state">暂无追踪中的资产</div>`;
+      const filtered = (assets || []).filter((a) => {
+        if (this.activeCat !== "all" && a.category !== this.activeCat) return false;
+        if (this.searchQuery) {
+          const hay = `${a.name || ""} ${a.spec || ""} ${a.status || ""} ${a.extra_config || ""}`.toLowerCase();
+          if (!hay.includes(this.searchQuery)) return false;
+        }
+        return true;
+      });
+
+      if (!filtered.length) {
+        this.grid.innerHTML = `<div class="empty-state">${(assets || []).length ? "当前筛选条件下无匹配资产" : "暂无追踪中的资产"}</div>`;
         return;
       }
 
-      this.grid.innerHTML = assets.map((a) => {
+      this.grid.innerHTML = filtered.map((a) => {
         const catClass = a.category === "compute" ? "cat-compute" : (a.category === "domain" ? "cat-domain" : "cat-life");
         const catName = a.category === "compute" ? "算力基建" : (a.category === "domain" ? "核心域名" : "生活订阅");
         const isPermanent = a.status === "长期有效" || String(a.due_date || "").startsWith("2099");
@@ -2704,6 +2775,21 @@
     init() {
       this.exportBtn = document.getElementById("export-backup-btn");
       this.fileInput = document.getElementById("import-backup-file");
+      this.rotateTokenBtn = document.getElementById("rotate-app-token-btn");
+
+      this.rotateTokenBtn?.addEventListener("click", async () => {
+        if (!confirm("确定重置移动端 App Bearer Token 吗？重置后手机端需重新配置新令牌。")) return;
+        this.rotateTokenBtn.disabled = true;
+        try {
+          const res = await this.store.rotateAppToken();
+          if (res?.token) {
+            await navigator.clipboard?.writeText(res.token).catch(() => {});
+            this.bus.emit("toast", "新 App Token 已生成并尝试复制到剪贴板");
+          }
+        } finally {
+          this.rotateTokenBtn.disabled = false;
+        }
+      });
 
       this.exportBtn?.addEventListener("click", () => {
         this.store.exportBackup();
@@ -2771,8 +2857,35 @@
       this.modelMount = document.getElementById("mount-agent-model");
       this.modelHidden = document.getElementById("agent-model");
 
+      this.exportSessionBtn = document.getElementById("agent-export-session-btn");
       this.newSessionBtn = document.getElementById("agent-new-session-btn");
       this.deleteSessionBtn = document.getElementById("agent-delete-session-btn");
+
+      this.exportSessionBtn?.addEventListener("click", () => {
+        const msgs = this.messagesEl?.querySelectorAll(".agent-msg");
+        if (!msgs || !msgs.length) {
+          this.bus.emit("toast", "当前会话暂无内容可导出");
+          return;
+        }
+        const parts = [`# Vesper BotHub 会话导出\n\n- 导出时间: ${new Date().toISOString()}\n`];
+        msgs.forEach((node) => {
+          const isUser = node.classList.contains("agent-msg-user");
+          const meta = node.querySelector(".agent-msg-meta")?.innerText?.replace(/\s+/g, " ").trim() || "";
+          const content = node.querySelector(".agent-msg-content")?.innerText?.trim() || "";
+          const reasoning = node.querySelector(".agent-reasoning-body")?.innerText?.trim() || "";
+          parts.push(`\n---\n\n### ${isUser ? "管理员指令" : meta}\n`);
+          if (reasoning) parts.push(`\n> 深度思考:\n> ${reasoning.replace(/\n/g, "\n> ")}\n`);
+          if (content) parts.push(`\n${content}\n`);
+        });
+        const blob = new Blob([parts.join("")], { type: "text/markdown;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `bothub_chat_${Date.now()}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.bus.emit("toast", "会话已导出为 Markdown");
+      });
       this.messagesEl = document.getElementById("agent-chat-messages");
       this.emptyEl = document.getElementById("agent-empty-state");
       this.form = document.getElementById("agent-chat-form");
@@ -3110,8 +3223,12 @@
           if (stateSpan) stateSpan.textContent = "已完成";
           actionsBar?.classList.remove("hidden");
         },
-        markDone: () => {
-          if (stateSpan) stateSpan.textContent = "已完成";
+        markDone: (usage) => {
+          if (stateSpan) {
+            stateSpan.textContent = usage && usage.total_tokens
+              ? `已完成 (${usage.prompt_tokens}+${usage.completion_tokens} Tokens)`
+              : "已完成";
+          }
           if (reasonBuf) {
             reasonDetails?.removeAttribute("open");
           }
@@ -3259,7 +3376,7 @@
       } else if (event === "error") {
         assistantUI.markError(payload.error || "未知流式错误");
       } else if (event === "done") {
-        assistantUI.markDone();
+        assistantUI.markDone(payload.usage);
       }
     }
   }
@@ -3362,7 +3479,37 @@
       this.openBtn = document.getElementById("open-inbox-btn");
       this.closeBtn = document.getElementById("close-inbox-modal-btn");
       this.readAllBtn = document.getElementById("inbox-read-all-btn");
+      this.desktopNotifyBtn = document.getElementById("inbox-desktop-notify-btn");
       this.badgeEl = document.getElementById("inbox-unread-badge");
+
+      const syncNotifyBtn = () => {
+        if (!this.desktopNotifyBtn) return;
+        const enabled = localStorage.getItem("bothub_desktop_notify") === "1" && typeof Notification !== "undefined" && Notification.permission === "granted";
+        this.desktopNotifyBtn.textContent = enabled ? "桌面弹窗: 开" : "桌面弹窗: 关";
+      };
+      syncNotifyBtn();
+
+      this.desktopNotifyBtn?.addEventListener("click", async () => {
+        if (typeof Notification === "undefined") {
+          this.bus.emit("toast", "当前浏览器不支持桌面通知 API");
+          return;
+        }
+        const cur = localStorage.getItem("bothub_desktop_notify") === "1";
+        if (cur) {
+          localStorage.setItem("bothub_desktop_notify", "0");
+          syncNotifyBtn();
+          this.bus.emit("toast", "已关闭桌面告警弹窗");
+          return;
+        }
+        const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+        if (perm === "granted") {
+          localStorage.setItem("bothub_desktop_notify", "1");
+          this.bus.emit("toast", "已开启后台高优告警桌面弹窗");
+        } else {
+          this.bus.emit("toast", "浏览器未授予通知权限");
+        }
+        syncNotifyBtn();
+      });
       this.listEl = document.getElementById("inbox-list");
       this.filterBtns = document.querySelectorAll("#inbox-filter-bar .pill-btn");
 

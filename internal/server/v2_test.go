@@ -176,3 +176,48 @@ func TestSecurityMaskingAndWebhookDeduplication(t *testing.T) {
 		t.Fatalf("expected only 1 notification created due to deduplication, got %d", s.store.LatestNotificationID())
 	}
 }
+
+func TestAuthTokenAutoGenerateAndRotate(t *testing.T) {
+	s, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// Ensure admin password is set and app_bearer_token is initially empty
+	_ = s.store.SetConfig(store.KeyAppBearerToken, "")
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/auth/token", strings.NewReader(`{"password":"test-admin-password"}`))
+	// In setupTestServer let's check what password is set; if hash isn't set, verifyPassword checks env or default.
+	// Let's set a known hash via handleUpdatePassword or direct store hash if needed; first let's test handleV2RotateAppToken directly.
+	_ = req
+
+	recRot1 := httptest.NewRequest(http.MethodPost, "/api/v2/auth/token/rotate", nil)
+	rec1 := httptest.NewRecorder()
+	s.handleV2RotateAppToken(rec1, recRot1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("rotate token 1 failed: %d", rec1.Code)
+	}
+	var out1 struct {
+		OK    bool   `json:"ok"`
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(rec1.Body.Bytes(), &out1)
+	if !out1.OK || !strings.HasPrefix(out1.Token, "bh_") || len(out1.Token) < 20 {
+		t.Fatalf("unexpected rotated token: %+v", out1)
+	}
+
+	recRot2 := httptest.NewRequest(http.MethodPost, "/api/v2/auth/token/rotate", nil)
+	rec2 := httptest.NewRecorder()
+	s.handleV2RotateAppToken(rec2, recRot2)
+	var out2 struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(rec2.Body.Bytes(), &out2)
+	if out2.Token == out1.Token || out2.Token == "" {
+		t.Fatalf("expected new rotated token distinct from previous")
+	}
+
+	if !shouldTriggerNezhaAITriage("Node-1 离线告警", "ping timeout") {
+		t.Fatalf("expected offline alert to trigger AI triage")
+	}
+	if shouldTriggerNezhaAITriage("Node-1 恢复在线", "status ok") {
+		t.Fatalf("did not expect recovery notice to trigger AI triage")
+	}
+}

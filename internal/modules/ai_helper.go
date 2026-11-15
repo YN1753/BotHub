@@ -73,12 +73,16 @@ func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, u
 	defer cancel()
 
 	reqBody := map[string]any{
-		"model":  model,
-		"stream": false,
+		"model":      model,
+		"stream":     false,
+		"max_tokens": 1200,
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": userPrompt},
 		},
+	}
+	if strings.Contains(strings.ToLower(model), "flash") {
+		reqBody["thinking"] = map[string]string{"type": "disabled"}
 	}
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {

@@ -10,11 +10,29 @@ import (
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[chan store.Notification]struct{}
+	done    chan struct{}
+	closed  bool
 }
 
 func NewHub() *Hub {
 	return &Hub{
 		clients: make(map[chan store.Notification]struct{}),
+		done:    make(chan struct{}),
+	}
+}
+
+// Done returns a channel that is closed when the Hub is shutting down.
+func (h *Hub) Done() <-chan struct{} {
+	return h.done
+}
+
+// CloseAll signals all active SSE subscribers to terminate cleanly during server shutdown.
+func (h *Hub) CloseAll() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !h.closed {
+		h.closed = true
+		close(h.done)
 	}
 }
 

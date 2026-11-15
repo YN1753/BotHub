@@ -1193,3 +1193,38 @@ button, input, select, textarea {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   font-size: 13px;
 }
+
+.asset-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.asset-search-input {
+  max-width: 280px;
+}
+
+.asset-cat-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.asset-cat-pills .pill-btn.active {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(56, 189, 248, 0.16);
+  color: var(--accent-cyan, #38bdf8);
+}
+
+.md-body blockquote {
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-left: 3px solid rgba(56, 189, 248, 0.6);
+  background: rgba(56, 189, 248, 0.06);
+  color: var(--text-muted);
+  border-radius: 0 8px 8px 0;
+}

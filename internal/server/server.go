@@ -55,6 +55,12 @@ func New(
 	}, nil
 }
 
+func (s *Server) ClosePushStream() {
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().CloseAll()
+	}
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
@@ -102,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 	// BotHub v2 Native Push Stream, Inbox & Webhooks
 	mux.HandleFunc("GET /api/v2/app/version", s.handleV2AppVersion)
 	mux.HandleFunc("POST /api/v2/auth/token", s.handleV2AuthToken)
+	mux.HandleFunc("POST /api/v2/auth/token/rotate", s.requireAuth(s.handleV2RotateAppToken))
 	mux.HandleFunc("GET /api/v2/events", s.requireAuth(s.handleV2Events))
 	mux.HandleFunc("GET /api/v2/notifications", s.requireAuth(s.handleV2ListNotifications))
 	mux.HandleFunc("POST /api/v2/notifications/{id}/read", s.requireAuth(s.handleV2MarkNotificationRead))

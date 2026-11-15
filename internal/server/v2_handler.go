@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +16,14 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
+
+func generateRandomToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "bh_" + hex.EncodeToString(b), nil
+}
 
 // handleV2AuthToken exchanges the admin password (or existing app token) for the persistent App Bearer Token.
 func (s *Server) handleV2AuthToken(w http.ResponseWriter, r *http.Request) {
@@ -46,13 +56,36 @@ func (s *Server) handleV2AuthToken(w http.ResponseWriter, r *http.Request) {
 	appToken, _ := s.store.GetConfig(store.KeyAppBearerToken)
 	appToken = strings.TrimSpace(appToken)
 	if appToken == "" {
-		appToken = secret
+		generated, err := generateRandomToken()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "签发 App Token 失败")
+			return
+		}
+		_ = s.store.SetConfig(store.KeyAppBearerToken, generated)
+		appToken = generated
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
 		"token":   appToken,
 		"version": s.version,
+	})
+}
+
+func (s *Server) handleV2RotateAppToken(w http.ResponseWriter, r *http.Request) {
+	generated, err := generateRandomToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "轮换 App Token 失败")
+		return
+	}
+	if err := s.store.SetConfig(store.KeyAppBearerToken, generated); err != nil {
+		writeError(w, http.StatusInternalServerError, "保存新 Token 失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"token":   generated,
+		"message": "已生成全新 App Bearer Token，旧令牌已即时失效",
 	})
 }
 
@@ -121,6 +154,8 @@ func (s *Server) handleV2Events(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-s.push.Hub().Done():
 			return
 		case n, ok := <-ch:
 			if !ok {
@@ -286,10 +321,51 @@ func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 		_, _ = s.store.CreateNotification("nezha_webhook", title, content, markdown, "high")
 	}
 
+	if shouldTriggerNezhaAITriage(title, content) && s.agent != nil {
+		go s.triageNezhaAlertAsync(title, content)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":        true,
 		"latest_id": s.store.LatestNotificationID(),
 	})
+}
+
+func shouldTriggerNezhaAITriage(title, content string) bool {
+	combined := strings.ToLower(title + " " + content)
+	for _, kw := range []string{"离线", "宕机", "offline", "down", "timeout", "高负载", "cpu", "内存", "oom"} {
+		if strings.Contains(combined, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) triageNezhaAlertAsync(title, content string) {
+	lightKey, _ := s.store.GetConfig(store.KeyLightAPIKey)
+	mainKey, _ := s.store.GetConfig(store.KeyDeepSeekAPIKey)
+	if strings.TrimSpace(lightKey) == "" && strings.TrimSpace(mainKey) == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
+	nodeSnapshot, _ := s.agent.ExecuteTool(ctx, "query_nezha_nodes", "{}")
+	sysPrompt := "你是运维根因诊断助手。结合哪吒探针实时快照与告警内容，给出不超过 3 条、高信息密度的排查建议，严禁使用任何 Emoji。"
+	userPrompt := fmt.Sprintf("告警标题：%s\n告警详情：%s\n实时探针快照：%s", title, content, nodeSnapshot)
+
+	analysis, err := s.agent.CallLightModel(ctx, sysPrompt, userPrompt)
+	if err != nil || strings.TrimSpace(analysis) == "" {
+		return
+	}
+	triageTitle := notifier.StripEmoji("AI 诊断 · " + title)
+	triageMD := fmt.Sprintf("### %s\n\n%s\n\n---\n*由 BotHub 轻量诊断引擎自动生成*", triageTitle, notifier.StripEmoji(analysis))
+	if s.push != nil {
+		_ = s.push.SendWithPriority(ctx, "nezha_ai_triage", triageTitle, triageMD, "normal")
+	} else {
+		_, _ = s.store.CreateNotification("nezha_ai_triage", triageTitle, analysis, triageMD, "normal")
+	}
 }
 
 func (s *Server) isNezhaAlertInCooldown(key string, window time.Duration) bool {

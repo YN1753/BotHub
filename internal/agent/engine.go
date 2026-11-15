@@ -51,6 +51,12 @@ type ToolTrace struct {
 	Result    string `json:"result"`
 }
 
+type TokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 type ChatResponse struct {
 	SessionID        string      `json:"session_id"`
 	Persona          string      `json:"persona"`
@@ -58,6 +64,7 @@ type ChatResponse struct {
 	ReasoningContent string      `json:"reasoning_content,omitempty"`
 	Content          string      `json:"content"`
 	ToolTraces       []ToolTrace `json:"tool_traces,omitempty"`
+	Usage            *TokenUsage `json:"usage,omitempty"`
 }
 
 type apiMessage struct {
@@ -85,12 +92,17 @@ type thinkingConfig struct {
 	Type string `json:"type"`
 }
 
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
 type chatCompletionRequest struct {
-	Model    string           `json:"model"`
-	Messages []apiMessage     `json:"messages"`
-	Tools    []ToolDefinition `json:"tools,omitempty"`
-	Stream   bool             `json:"stream"`
-	Thinking *thinkingConfig  `json:"thinking,omitempty"`
+	Model         string           `json:"model"`
+	Messages      []apiMessage     `json:"messages"`
+	Tools         []ToolDefinition `json:"tools,omitempty"`
+	Stream        bool             `json:"stream"`
+	StreamOptions *streamOptions   `json:"stream_options,omitempty"`
+	Thinking      *thinkingConfig  `json:"thinking,omitempty"`
 }
 
 type streamChunk struct {
@@ -103,6 +115,7 @@ type streamChunk struct {
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+	Usage *TokenUsage `json:"usage"`
 }
 
 func newSessionID() string {
@@ -355,10 +368,12 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 	var totalReasoning strings.Builder
 	var finalContent strings.Builder
 	traces := make([]ToolTrace, 0)
+	var totalUsage TokenUsage
+	hasUsage := false
 
 	const maxRounds = 5
 	for round := 0; round < maxRounds; round++ {
-		roundReasoning, roundContent, toolCalls, err := e.streamSingleRound(ctx, baseURL, apiKey, model, messages, tools, thinkingCfg, func(deltaReasoning, deltaContent string) {
+		roundReasoning, roundContent, toolCalls, roundUsage, err := e.streamSingleRound(ctx, baseURL, apiKey, model, messages, tools, thinkingCfg, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
 				clean := notifier.StripEmoji(deltaReasoning)
 				totalReasoning.WriteString(clean)
@@ -376,6 +391,12 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 		})
 		if err != nil {
 			return nil, err
+		}
+		if roundUsage != nil {
+			hasUsage = true
+			totalUsage.PromptTokens += roundUsage.PromptTokens
+			totalUsage.CompletionTokens += roundUsage.CompletionTokens
+			totalUsage.TotalTokens += roundUsage.TotalTokens
 		}
 
 		// If no tool calls were requested, we have our final answer
@@ -467,10 +488,60 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 		Content:          finalContent.String(),
 		ToolTraces:       traces,
 	}
+	if hasUsage {
+		resp.Usage = &totalUsage
+	}
 	if emit != nil {
 		emit("done", resp)
 	}
+
+	// Background memory distillation using the lightweight model when configured and no explicit remember_fact was invoked
+	rememberedInTurn := false
+	for _, tr := range traces {
+		if tr.Name == "remember_fact" {
+			rememberedInTurn = true
+			break
+		}
+	}
+	if !rememberedInTurn && strings.TrimSpace(finalContent.String()) != "" {
+		if lightKey, _ := e.store.GetConfig(store.KeyLightAPIKey); strings.TrimSpace(lightKey) != "" {
+			go e.distillMemoryAsync(userMsg, finalContent.String())
+		}
+	}
+
 	return resp, nil
+}
+
+func (e *Engine) distillMemoryAsync(userMsg, assistantReply string) {
+	if len([]rune(userMsg)) < 8 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	sys := `你是长期记忆提炼器。从用户和助手的最新一轮对话中判断是否包含值得长期跨会话记住的稳定事实（如服务器地址、个人偏好、常用域名、架构约定）。
+如果有，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"category":"infra|preference|schedule|general","fact_key":"英文蛇形键名","content":"简洁中文事实"}。
+如果只是一次性闲聊、常规状态查询或无新长期事实，输出：{"save":false}。严禁包含任何 Emoji。`
+	prompt := fmt.Sprintf("用户：%s\n助手：%s", userMsg, assistantReply)
+	raw, err := e.CallLightModel(ctx, sys, prompt)
+	if err != nil {
+		return
+	}
+	clean := strings.TrimSpace(raw)
+	clean = strings.TrimPrefix(clean, "```json")
+	clean = strings.TrimPrefix(clean, "```")
+	clean = strings.TrimSuffix(clean, "```")
+	clean = strings.TrimSpace(clean)
+
+	var parsed struct {
+		Save     bool   `json:"save"`
+		Category string `json:"category"`
+		FactKey  string `json:"fact_key"`
+		Content  string `json:"content"`
+	}
+	if json.Unmarshal([]byte(clean), &parsed) == nil && parsed.Save && strings.TrimSpace(parsed.FactKey) != "" && strings.TrimSpace(parsed.Content) != "" {
+		_ = e.store.SaveAgentMemory(parsed.Category, parsed.FactKey, notifier.StripEmoji(parsed.Content))
+	}
 }
 
 func (e *Engine) streamSingleRound(
@@ -480,23 +551,24 @@ func (e *Engine) streamSingleRound(
 	tools []ToolDefinition,
 	thinking *thinkingConfig,
 	onDelta func(deltaReasoning, deltaContent string),
-) (string, string, []apiToolCall, error) {
+) (string, string, []apiToolCall, *TokenUsage, error) {
 	reqBody := chatCompletionRequest{
-		Model:    model,
-		Messages: messages,
-		Tools:    tools,
-		Stream:   true,
-		Thinking: thinking,
+		Model:         model,
+		Messages:      messages,
+		Tools:         tools,
+		Stream:        true,
+		StreamOptions: &streamOptions{IncludeUsage: true},
+		Thinking:      thinking,
 	}
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", nil, nil, err
 	}
 
 	endpoint := baseURL + "/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return "", "", nil, err
+		return "", "", nil, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
@@ -504,18 +576,19 @@ func (e *Engine) streamSingleRound(
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("调用 DeepSeek 接口失败: %w", err)
+		return "", "", nil, nil, fmt.Errorf("调用 DeepSeek 接口失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		return "", "", nil, fmt.Errorf("DeepSeek API 返回错误 (%d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
+		return "", "", nil, nil, fmt.Errorf("DeepSeek API 返回错误 (%d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 	}
 
 	var reasoningBuf strings.Builder
 	var contentBuf strings.Builder
 	toolMap := make(map[int]*apiToolCall)
+	var finalUsage *TokenUsage
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 512*1024)
@@ -536,6 +609,9 @@ func (e *Engine) streamSingleRound(
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+		if chunk.Usage != nil && (chunk.Usage.TotalTokens > 0 || chunk.Usage.PromptTokens > 0) {
+			finalUsage = chunk.Usage
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -579,7 +655,7 @@ func (e *Engine) streamSingleRound(
 	}
 
 	if err := scanner.Err(); err != nil {
-		return reasoningBuf.String(), contentBuf.String(), nil, fmt.Errorf("读取流式响应中断: %w", err)
+		return reasoningBuf.String(), contentBuf.String(), nil, finalUsage, fmt.Errorf("读取流式响应中断: %w", err)
 	}
 
 	var toolCalls []apiToolCall
@@ -602,5 +678,5 @@ func (e *Engine) streamSingleRound(
 		}
 	}
 
-	return reasoningBuf.String(), contentBuf.String(), toolCalls, nil
+	return reasoningBuf.String(), contentBuf.String(), toolCalls, finalUsage, nil
 }

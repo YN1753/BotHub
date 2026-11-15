@@ -2,6 +2,7 @@ package uk.starryheavens.vesper.bothub.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -306,12 +307,28 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun testHealth(serverUrlOverride: String? = null): Result<Pair<Long, String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val base = (serverUrlOverride ?: prefs.serverUrl).trim().trimEnd('/')
+            val started = System.currentTimeMillis()
+            val req = Request.Builder().url("$base/healthz").get().build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                val elapsed = System.currentTimeMillis() - started
+                val obj = JSONObject(resp.body?.string().orEmpty())
+                val ver = obj.optString("version", "unknown")
+                elapsed to ver
+            }
+        }
+    }
+
     suspend fun streamChat(
         sessionId: String,
         message: String,
         persona: String,
         model: String,
         enableThinking: Boolean = true,
+        onCallCreated: (Call) -> Unit = {},
         onSession: (String) -> Unit,
         onReasoningDelta: (String) -> Unit,
         onToolCall: (String, String) -> Unit,
@@ -332,7 +349,9 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .post(payload.toRequestBody(jsonMedia))
                 .build()
 
-            httpClient.newCall(req).execute().use { resp ->
+            val call = httpClient.newCall(req)
+            onCallCreated(call)
+            call.execute().use { resp ->
                 if (!resp.isSuccessful) {
                     val errText = resp.body?.string().orEmpty()
                     val msg = runCatching { JSONObject(errText).optString("error") }.getOrDefault("")

@@ -2,6 +2,8 @@ package uk.starryheavens.vesper.bothub.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -9,13 +11,41 @@ class BotHubPrefs(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("vesper_bothub_prefs", Context.MODE_PRIVATE)
 
+    private val securePrefs: SharedPreferences by lazy {
+        runCatching {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                "vesper_bothub_secure_prefs",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }.getOrElse { prefs }
+    }
+
     var serverUrl: String
         get() = prefs.getString("server_url", "https://bot.starryheavens.uk")?.trimEnd('/') ?: "https://bot.starryheavens.uk"
         set(value) = prefs.edit().putString("server_url", value.trim().trimEnd('/')).apply()
 
     var bearerToken: String
-        get() = prefs.getString("bearer_token", "")?.trim() ?: ""
-        set(value) = prefs.edit().putString("bearer_token", value.trim()).apply()
+        get() {
+            val sec = securePrefs.getString("bearer_token", "")?.trim().orEmpty()
+            if (sec.isNotEmpty()) return sec
+            // One-time transparent migration from legacy plaintext SharedPreferences
+            val legacy = prefs.getString("bearer_token", "")?.trim().orEmpty()
+            if (legacy.isNotEmpty()) {
+                securePrefs.edit().putString("bearer_token", legacy).apply()
+                prefs.edit().remove("bearer_token").apply()
+            }
+            return legacy
+        }
+        set(value) {
+            securePrefs.edit().putString("bearer_token", value.trim()).apply()
+            prefs.edit().remove("bearer_token").apply()
+        }
 
     var lastEventId: Long
         get() = prefs.getLong("last_event_id", 0L)
