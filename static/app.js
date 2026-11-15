@@ -350,6 +350,9 @@
         tasks: [],
         templates: [],
         assetTemplates: [],
+        personas: [],
+        agentSessions: [],
+        agentMemories: [],
         configs: {},
         pushLogs: [],
       };
@@ -399,6 +402,9 @@
         this.state.tasks = data.tasks || data.modules || [];
         this.state.templates = data.templates || [];
         this.state.assetTemplates = data.asset_templates || [];
+        this.state.personas = data.personas || [];
+        this.state.agentSessions = data.agent_sessions || [];
+        this.state.agentMemories = data.agent_memories || [];
         this.state.configs = data.configs || {};
         this.state.pushLogs = data.push_logs || [];
 
@@ -501,6 +507,31 @@
         body: JSON.stringify(backupObj),
       });
       this.bus.emit("toast", res.message || "备份已成功恢复");
+      await this.loadDashboard();
+    }
+
+    async loadAgentSession(id) {
+      return await this.api.request(`/api/agent/sessions/${encodeURIComponent(id)}`);
+    }
+
+    async deleteAgentSession(id) {
+      await this.api.request(`/api/agent/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+      this.bus.emit("toast", "对话会话已清空");
+      await this.loadDashboard();
+    }
+
+    async saveAgentMemory(payload) {
+      await this.api.request("/api/agent/memories", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      this.bus.emit("toast", "长期记忆已写入 SQLite");
+      await this.loadDashboard();
+    }
+
+    async deleteAgentMemory(id) {
+      await this.api.request(`/api/agent/memories/${encodeURIComponent(id)}`, { method: "DELETE" });
+      this.bus.emit("toast", "记忆条目已移除");
       await this.loadDashboard();
     }
   }
@@ -837,9 +868,18 @@
       this.pushplusInput = document.getElementById("cfg-pushplus-token");
 
       this.nezhaUrlInput = document.getElementById("cfg-nezha-url");
+      this.nezhaDbPathInput = document.getElementById("cfg-nezha-db-path");
       this.cfInput = document.getElementById("cfg-cf-api-token");
       this.biliSessdataInput = document.getElementById("cfg-bili-sessdata");
 
+      this.deepseekKeyInput = document.getElementById("cfg-deepseek-api-key");
+      this.deepseekBaseInput = document.getElementById("cfg-deepseek-base-url");
+      this.aiModelInput = document.getElementById("cfg-ai-model");
+      this.aiModelMount = document.getElementById("mount-cfg-ai-model");
+      this.activePersonaInput = document.getElementById("cfg-active-persona");
+      this.activePersonaMount = document.getElementById("mount-cfg-active-persona");
+
+      this.saveAiBtn = document.getElementById("save-ai-config-btn");
       this.saveBtn = document.getElementById("save-config-btn");
       this.saveIntegrationsBtn = document.getElementById("save-integrations-btn");
       this.testBtn = document.getElementById("cfg-test-push-btn");
@@ -853,6 +893,7 @@
       // Tabs switching
       this.tabBtns = document.querySelectorAll(".settings-tab-btn");
       this.tabPanes = {
+        ai: document.getElementById("tab-pane-ai"),
         push: document.getElementById("tab-pane-push"),
         integrations: document.getElementById("tab-pane-integrations"),
         security: document.getElementById("tab-pane-security"),
@@ -867,6 +908,33 @@
           });
         });
       });
+
+      if (this.aiModelMount) {
+        this.aiModelSelect = new CustomSelect(this.aiModelMount, {
+          options: [
+            { value: "deepseek-reasoner", label: "DeepSeek Reasoner (深度思考 R1 - 推荐)" },
+            { value: "deepseek-chat", label: "DeepSeek Chat (极速对话 V3)" },
+          ],
+          value: "deepseek-reasoner",
+          onChange: (val) => {
+            if (this.aiModelInput) this.aiModelInput.value = val;
+          },
+        });
+      }
+
+      if (this.activePersonaMount) {
+        this.activePersonaSelect = new CustomSelect(this.activePersonaMount, {
+          options: [
+            { value: "grok", label: "Grok 锐评模式 (开门见山、高信息密度)" },
+            { value: "butler", label: "执更管家模式 (严谨细致、运维与账单盘点)" },
+            { value: "architect", label: "架构师模式 (根因剖析、系统权衡与方案)" },
+          ],
+          value: "grok",
+          onChange: (val) => {
+            if (this.activePersonaInput) this.activePersonaInput.value = val;
+          },
+        });
+      }
 
       if (this.channelMount) {
         this.channelSelect = new CustomSelect(this.channelMount, {
@@ -919,8 +987,19 @@
 
         if (this.pushplusInput) this.pushplusInput.value = cfgs["pushplus_token"] || "";
         if (this.nezhaUrlInput) this.nezhaUrlInput.value = cfgs["nezha_url"] || "https://dash.starryheavens.uk";
+        if (this.nezhaDbPathInput) this.nezhaDbPathInput.value = cfgs["nezha_db_path"] || "/opt/nezha/dashboard/data/sqlite.db";
         if (this.cfInput) this.cfInput.value = cfgs["cf_api_token"] || "";
         if (this.biliSessdataInput) this.biliSessdataInput.value = cfgs["bili_sessdata"] || "";
+
+        if (this.deepseekKeyInput) this.deepseekKeyInput.value = cfgs["deepseek_api_key"] || "";
+        if (this.deepseekBaseInput) this.deepseekBaseInput.value = cfgs["deepseek_base_url"] || "https://api.deepseek.com";
+        const aiModel = cfgs["ai_model"] || "deepseek-reasoner";
+        if (this.aiModelInput) this.aiModelInput.value = aiModel;
+        this.aiModelSelect?.setValue(aiModel, false);
+
+        const persona = cfgs["active_persona"] || "grok";
+        if (this.activePersonaInput) this.activePersonaInput.value = persona;
+        this.activePersonaSelect?.setValue(persona, false);
       });
 
       this.form?.addEventListener("submit", async (e) => {
@@ -933,14 +1012,21 @@
           wecom_touser: (this.wecomToUserInput?.value || "@all").trim(),
           pushplus_token: (this.pushplusInput?.value || "").trim(),
           nezha_url: (this.nezhaUrlInput?.value || "").trim(),
+          nezha_db_path: (this.nezhaDbPathInput?.value || "").trim(),
           cf_api_token: (this.cfInput?.value || "").trim(),
           bili_sessdata: (this.biliSessdataInput?.value || "").trim(),
+          deepseek_api_key: (this.deepseekKeyInput?.value || "").trim(),
+          deepseek_base_url: (this.deepseekBaseInput?.value || "https://api.deepseek.com").trim(),
+          ai_model: (this.aiModelInput?.value || "deepseek-reasoner").trim(),
+          active_persona: (this.activePersonaInput?.value || "grok").trim(),
         };
+        if (this.saveAiBtn) this.saveAiBtn.disabled = true;
         if (this.saveBtn) this.saveBtn.disabled = true;
         if (this.saveIntegrationsBtn) this.saveIntegrationsBtn.disabled = true;
         try {
           await this.store.saveConfig(payload);
         } finally {
+          if (this.saveAiBtn) this.saveAiBtn.disabled = false;
           if (this.saveBtn) this.saveBtn.disabled = false;
           if (this.saveIntegrationsBtn) this.saveIntegrationsBtn.disabled = false;
         }
@@ -2478,6 +2564,542 @@
     }
   }
 
+  // --- Workspace Switcher Component ---
+  class WorkspaceSwitcherComponent extends BaseComponent {
+    init() {
+      this.btns = document.querySelectorAll(".workspace-tab-btn");
+      this.agentView = document.getElementById("workspace-agent");
+      this.opsView = document.getElementById("workspace-ops");
+
+      this.btns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const target = btn.dataset.workspace;
+          this.btns.forEach((b) => b.classList.toggle("active", b === btn));
+          if (target === "ops") {
+            this.agentView?.classList.add("hidden");
+            this.opsView?.classList.remove("hidden");
+          } else {
+            this.agentView?.classList.remove("hidden");
+            this.opsView?.classList.add("hidden");
+          }
+        });
+      });
+    }
+  }
+
+  // --- DeepSeek Agent Hub Component ---
+  class AgentHubComponent extends BaseComponent {
+    init() {
+      this.sessionMount = document.getElementById("mount-agent-session");
+      this.sessionHidden = document.getElementById("agent-session-id");
+      this.personaMount = document.getElementById("mount-agent-persona");
+      this.personaHidden = document.getElementById("agent-persona");
+      this.modelMount = document.getElementById("mount-agent-model");
+      this.modelHidden = document.getElementById("agent-model");
+
+      this.newSessionBtn = document.getElementById("agent-new-session-btn");
+      this.deleteSessionBtn = document.getElementById("agent-delete-session-btn");
+      this.messagesEl = document.getElementById("agent-chat-messages");
+      this.emptyEl = document.getElementById("agent-empty-state");
+      this.form = document.getElementById("agent-chat-form");
+      this.input = document.getElementById("agent-chat-input");
+      this.sendBtn = document.getElementById("agent-send-btn");
+      this.statusEl = document.getElementById("agent-stream-status");
+
+      this.isStreaming = false;
+      this.initializedDefaults = false;
+
+      if (this.sessionMount) {
+        this.sessionSelect = new CustomSelect(this.sessionMount, {
+          options: [{ value: "", label: "新对话 (尚未开始)" }],
+          value: "",
+          onChange: (sid) => {
+            if (this.sessionHidden) this.sessionHidden.value = sid;
+            if (sid) {
+              this.loadHistory(sid);
+            } else {
+              this.clearMessagesUI();
+            }
+          },
+        });
+      }
+
+      if (this.personaMount) {
+        this.personaSelect = new CustomSelect(this.personaMount, {
+          options: [
+            { value: "grok", label: "Grok 锐评模式 (高密度犀利结论)" },
+            { value: "butler", label: "执更管家模式 (运维巡检与账单)" },
+            { value: "architect", label: "架构师模式 (系统设计与根因分析)" },
+          ],
+          value: "grok",
+          onChange: (val) => {
+            if (this.personaHidden) this.personaHidden.value = val;
+          },
+        });
+      }
+
+      if (this.modelMount) {
+        this.modelSelect = new CustomSelect(this.modelMount, {
+          options: [
+            { value: "deepseek-reasoner", label: "DeepSeek Reasoner (深度推理 R1)" },
+            { value: "deepseek-chat", label: "DeepSeek Chat (极速对话 V3)" },
+          ],
+          value: "deepseek-reasoner",
+          onChange: (val) => {
+            if (this.modelHidden) this.modelHidden.value = val;
+          },
+        });
+      }
+
+      this.newSessionBtn?.addEventListener("click", () => {
+        if (this.isStreaming) return;
+        if (this.sessionHidden) this.sessionHidden.value = "";
+        this.sessionSelect?.setValue("", false);
+        this.clearMessagesUI();
+        this.input?.focus();
+      });
+
+      this.deleteSessionBtn?.addEventListener("click", async () => {
+        if (this.isStreaming) return;
+        const sid = this.sessionHidden?.value || "";
+        if (!sid) {
+          this.clearMessagesUI();
+          return;
+        }
+        await this.store.deleteAgentSession(sid);
+        if (this.sessionHidden) this.sessionHidden.value = "";
+        this.clearMessagesUI();
+      });
+
+      document.querySelectorAll(".agent-prompt-pill").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (this.isStreaming) return;
+          const prompt = btn.dataset.prompt || "";
+          if (prompt && this.input) {
+            this.input.value = prompt;
+            this.sendMessage();
+          }
+        });
+      });
+
+      this.input?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          this.sendMessage();
+        }
+      });
+
+      this.form?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        this.sendMessage();
+      });
+
+      this.bus.on("data:loaded", (state) => {
+        const cfgs = state.configs || {};
+        if (!this.initializedDefaults) {
+          const defPersona = cfgs["active_persona"] || "grok";
+          const defModel = cfgs["ai_model"] || "deepseek-reasoner";
+          if (this.personaHidden) this.personaHidden.value = defPersona;
+          this.personaSelect?.setValue(defPersona, false);
+          if (this.modelHidden) this.modelHidden.value = defModel;
+          this.modelSelect?.setValue(defModel, false);
+          this.initializedDefaults = true;
+        }
+        this.syncSessionSelect(state.agentSessions || []);
+      });
+    }
+
+    syncSessionSelect(sessions) {
+      if (!this.sessionSelect) return;
+      const cur = this.sessionHidden?.value || "";
+      const opts = [{ value: "", label: "新对话 (点击直接提问)" }];
+      sessions.forEach((s) => {
+        opts.push({
+          value: s.id,
+          label: `${s.title || s.id} (${Utils.formatTime(s.updated_at)})`,
+        });
+      });
+      const validVal = opts.some((o) => o.value === cur) ? cur : "";
+      if (this.sessionHidden) this.sessionHidden.value = validVal;
+      this.sessionSelect.setOptions(opts, validVal);
+    }
+
+    clearMessagesUI() {
+      if (!this.messagesEl) return;
+      this.messagesEl.innerHTML = "";
+      if (this.emptyEl) {
+        this.emptyEl.classList.remove("hidden");
+        this.messagesEl.appendChild(this.emptyEl);
+      }
+    }
+
+    async loadHistory(sessionId) {
+      try {
+        const data = await this.store.loadAgentSession(sessionId);
+        const sess = data.session;
+        const msgs = data.messages || [];
+        if (sess) {
+          if (this.personaHidden) this.personaHidden.value = sess.persona || "grok";
+          this.personaSelect?.setValue(sess.persona || "grok", false);
+          if (this.modelHidden) this.modelHidden.value = sess.model || "deepseek-reasoner";
+          this.modelSelect?.setValue(sess.model || "deepseek-reasoner", false);
+        }
+
+        if (!this.messagesEl) return;
+        this.messagesEl.innerHTML = "";
+        if (!msgs.length) {
+          this.clearMessagesUI();
+          return;
+        }
+
+        msgs.forEach((m) => {
+          if (m.role === "user") {
+            this.appendUserBubble(m.content, m.created_at);
+          } else if (m.role === "assistant") {
+            let tcs = [];
+            try {
+              tcs = JSON.parse(m.tool_calls || "[]");
+            } catch {
+              tcs = [];
+            }
+            if (m.content || m.reasoning_content || tcs.length) {
+              const bubble = this.createAssistantBubble(sess?.persona || "grok", sess?.model || "deepseek-reasoner");
+              if (m.reasoning_content) {
+                bubble.setReasoning(m.reasoning_content);
+              }
+              tcs.forEach((tc) => {
+                bubble.addToolCall(tc.id || "tool", tc.function?.name || "tool", tc.function?.arguments || "{}");
+              });
+              if (m.content) {
+                bubble.setContent(m.content);
+              }
+            }
+          }
+        });
+        this.scrollToBottom();
+      } catch (err) {
+        this.bus.emit("toast", "加载会话历史失败: " + err.message);
+      }
+    }
+
+    appendUserBubble(text, timeStr) {
+      if (this.emptyEl && this.emptyEl.parentNode === this.messagesEl) {
+        this.emptyEl.remove();
+      }
+      const div = document.createElement("div");
+      div.className = "agent-msg agent-msg-user";
+      div.innerHTML = `
+        <div class="agent-msg-meta mono">
+          <span>管理员指令</span>
+          <span>${Utils.esc(timeStr ? Utils.formatTime(timeStr) : "刚刚")}</span>
+        </div>
+        <div class="agent-msg-content">${Utils.esc(text)}</div>
+      `;
+      this.messagesEl?.appendChild(div);
+      this.scrollToBottom();
+    }
+
+    createAssistantBubble(persona, model) {
+      if (this.emptyEl && this.emptyEl.parentNode === this.messagesEl) {
+        this.emptyEl.remove();
+      }
+      const personaLabel = persona === "butler" ? "长庚执更管家" : (persona === "architect" ? "系统架构师" : "Grok 锐评中枢");
+      const div = document.createElement("div");
+      div.className = "agent-msg agent-msg-assistant";
+      div.innerHTML = `
+        <div class="agent-msg-meta mono">
+          <span class="text-cyan">${Utils.esc(personaLabel)} · ${Utils.esc(model)}</span>
+          <span class="agent-msg-state">生成中...</span>
+        </div>
+        <details class="agent-reasoning-box hidden" open>
+          <summary class="mono">深度思考过程 (Reasoning Chain)</summary>
+          <div class="agent-reasoning-body mono"></div>
+        </details>
+        <div class="agent-tools-list"></div>
+        <div class="agent-msg-content"></div>
+      `;
+      this.messagesEl?.appendChild(div);
+
+      const stateSpan = div.querySelector(".agent-msg-state");
+      const reasonDetails = div.querySelector(".agent-reasoning-box");
+      const reasonBody = div.querySelector(".agent-reasoning-body");
+      const toolsList = div.querySelector(".agent-tools-list");
+      const contentBody = div.querySelector(".agent-msg-content");
+      const toolEls = new Map();
+
+      let reasonBuf = "";
+      let contentBuf = "";
+
+      return {
+        appendReasoning: (delta) => {
+          reasonBuf += delta;
+          reasonDetails?.classList.remove("hidden");
+          if (reasonBody) reasonBody.textContent = reasonBuf;
+          this.scrollToBottom();
+        },
+        setReasoning: (full) => {
+          reasonBuf = full;
+          reasonDetails?.classList.remove("hidden");
+          reasonDetails?.removeAttribute("open");
+          if (reasonBody) reasonBody.textContent = full;
+        },
+        addToolCall: (id, name, args) => {
+          const item = document.createElement("details");
+          item.className = "agent-tool-card mono";
+          item.innerHTML = `
+            <summary>
+              <span>调用工具: ${Utils.esc(name)}</span>
+              <span class="tool-status-tag">执行中</span>
+            </summary>
+            <div class="agent-tool-detail">参数: ${Utils.esc(args)}</div>
+          `;
+          toolsList?.appendChild(item);
+          toolEls.set(id, item);
+          this.scrollToBottom();
+        },
+        updateToolResult: (id, name, result) => {
+          const item = toolEls.get(id);
+          if (!item) return;
+          const statusTag = item.querySelector(".tool-status-tag");
+          if (statusTag) statusTag.textContent = "已完成";
+          const detail = item.querySelector(".agent-tool-detail");
+          if (detail) {
+            detail.textContent += `\n返回: ${result}`;
+          }
+        },
+        appendContent: (delta) => {
+          contentBuf += delta;
+          if (contentBody) contentBody.textContent = contentBuf;
+          this.scrollToBottom();
+        },
+        setContent: (full) => {
+          contentBuf = full;
+          if (contentBody) contentBody.textContent = full;
+          if (stateSpan) stateSpan.textContent = "已完成";
+        },
+        markDone: () => {
+          if (stateSpan) stateSpan.textContent = "已完成";
+          if (reasonBuf) {
+            reasonDetails?.removeAttribute("open");
+          }
+        },
+        markError: (errMsg) => {
+          if (stateSpan) {
+            stateSpan.textContent = "异常中断";
+            stateSpan.className = "agent-msg-state error-text";
+          }
+          if (!contentBuf && contentBody) {
+            contentBody.textContent = `[调用失败] ${errMsg}`;
+            contentBody.classList.add("error-text");
+          }
+        },
+      };
+    }
+
+    scrollToBottom() {
+      if (!this.messagesEl) return;
+      this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+    }
+
+    async sendMessage() {
+      if (this.isStreaming) return;
+      const msg = (this.input?.value || "").trim();
+      if (!msg) return;
+
+      const sessionId = this.sessionHidden?.value || "";
+      const persona = this.personaHidden?.value || "grok";
+      const model = this.modelHidden?.value || "deepseek-reasoner";
+
+      this.input.value = "";
+      this.isStreaming = true;
+      if (this.sendBtn) {
+        this.sendBtn.disabled = true;
+        this.sendBtn.textContent = "推理中...";
+      }
+      if (this.statusEl) this.statusEl.textContent = "正在连接 DeepSeek 流式通道...";
+
+      this.appendUserBubble(msg);
+      const assistantUI = this.createAssistantBubble(persona, model);
+
+      try {
+        const res = await fetch("/api/agent/chat", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            message: msg,
+            persona,
+            model,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+        let currentEvent = "message";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line) continue;
+            if (line.startsWith("event:")) {
+              currentEvent = line.slice(6).trim();
+            } else if (line.startsWith("data:")) {
+              const jsonStr = line.slice(5).trim();
+              let payload = {};
+              try {
+                payload = JSON.parse(jsonStr);
+              } catch {
+                continue;
+              }
+              this.handleSSEEvent(currentEvent, payload, assistantUI);
+            }
+          }
+        }
+        assistantUI.markDone();
+        if (this.statusEl) this.statusEl.textContent = "就绪";
+        await this.store.loadDashboard();
+      } catch (err) {
+        assistantUI.markError(err.message);
+        if (this.statusEl) this.statusEl.textContent = "发生错误";
+        this.bus.emit("toast", err.message);
+      } finally {
+        this.isStreaming = false;
+        if (this.sendBtn) {
+          this.sendBtn.disabled = false;
+          this.sendBtn.textContent = "发送指令";
+        }
+      }
+    }
+
+    handleSSEEvent(event, payload, assistantUI) {
+      if (event === "session") {
+        if (payload.session_id && this.sessionHidden) {
+          this.sessionHidden.value = payload.session_id;
+        }
+      } else if (event === "reasoning") {
+        if (this.statusEl) this.statusEl.textContent = "深度思考中 (Reasoner)...";
+        assistantUI.appendReasoning(payload.delta || "");
+      } else if (event === "tool_start") {
+        if (this.statusEl) this.statusEl.textContent = `执行工具: ${payload.name}...`;
+        assistantUI.addToolCall(payload.id, payload.name, payload.arguments);
+      } else if (event === "tool_result") {
+        assistantUI.updateToolResult(payload.id, payload.name, payload.result);
+      } else if (event === "content") {
+        if (this.statusEl) this.statusEl.textContent = "正在生成回复...";
+        assistantUI.appendContent(payload.delta || "");
+      } else if (event === "error") {
+        assistantUI.markError(payload.error || "未知流式错误");
+      } else if (event === "done") {
+        assistantUI.markDone();
+      }
+    }
+  }
+
+  // --- Long-Term Memories Modal Component ---
+  class AgentMemoriesModalComponent extends BaseComponent {
+    init() {
+      this.overlay = document.getElementById("memories-modal-overlay");
+      this.openBtn = document.getElementById("open-memories-btn");
+      this.closeBtn = document.getElementById("close-memories-modal-btn");
+      this.listEl = document.getElementById("memories-list");
+      this.form = document.getElementById("memory-add-form");
+      this.catMount = document.getElementById("mount-memory-category");
+      this.catHidden = document.getElementById("mem-category");
+      this.keyInput = document.getElementById("mem-fact-key");
+      this.contentInput = document.getElementById("mem-content");
+
+      if (this.catMount) {
+        this.catSelect = new CustomSelect(this.catMount, {
+          options: [
+            { value: "infra", label: "基础设施与节点 (infra)" },
+            { value: "preference", label: "用户偏好与交互习惯 (preference)" },
+            { value: "schedule", label: "日程与运维约定 (schedule)" },
+            { value: "general", label: "通用背景事实 (general)" },
+          ],
+          value: "infra",
+          onChange: (val) => {
+            if (this.catHidden) this.catHidden.value = val;
+          },
+        });
+      }
+
+      this.openBtn?.addEventListener("click", () => this.open());
+      this.closeBtn?.addEventListener("click", () => this.close());
+      this.overlay?.addEventListener("click", (e) => {
+        if (e.target === this.overlay) this.close();
+      });
+
+      this.form?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const category = (this.catHidden?.value || "infra").trim();
+        const fact_key = (this.keyInput?.value || "").trim();
+        const content = (this.contentInput?.value || "").trim();
+        if (!fact_key || !content) return;
+        await this.store.saveAgentMemory({ category, fact_key, content });
+        if (this.keyInput) this.keyInput.value = "";
+        if (this.contentInput) this.contentInput.value = "";
+      });
+
+      this.bus.on("data:loaded", (state) => {
+        this.render(state.agentMemories || []);
+      });
+    }
+
+    open() {
+      this.overlay?.classList.remove("hidden");
+    }
+
+    close() {
+      this.overlay?.classList.add("hidden");
+    }
+
+    render(memories) {
+      if (!this.listEl) return;
+      if (!memories || !memories.length) {
+        this.listEl.innerHTML = `<div class="empty-state">尚未写入长期记忆条目，可在上方手动添加或在对话中要求 Agent 记住关键事实</div>`;
+        return;
+      }
+
+      this.listEl.innerHTML = memories.map((m) => `
+        <article class="log-item">
+          <div class="log-top">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span class="cat-badge cat-compute mono">${Utils.esc(m.category)}</span>
+              <strong class="mono text-cyan">${Utils.esc(m.fact_key)}</strong>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="mono" style="font-size:11px; color:var(--text-muted);">${Utils.esc(Utils.formatTime(m.updated_at))}</span>
+              <button type="button" class="btn btn-danger btn-sm del-mem-btn" data-id="${Utils.esc(m.id)}">移除</button>
+            </div>
+          </div>
+          <div style="font-size:13px; color:var(--text-main); margin-top:4px;">${Utils.esc(m.content)}</div>
+        </article>
+      `).join("");
+
+      this.listEl.querySelectorAll(".del-mem-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.id;
+          if (!id) return;
+          await this.store.deleteAgentMemory(id);
+        });
+      });
+    }
+  }
+
   // ==========================================
   // 8. Application Bootstrap
   // ==========================================
@@ -2490,6 +3112,9 @@
       new AuthComponent("#login-view", store, bus),
       new TopbarComponent("header.topbar", store, bus),
       new MetricsComponent(".metrics-grid", store, bus),
+      new WorkspaceSwitcherComponent(".workspace-tabs", store, bus),
+      new AgentHubComponent("#workspace-agent", store, bus),
+      new AgentMemoriesModalComponent("#memories-modal-overlay", store, bus),
       new AssetsSectionComponent("#assets-grid", store, bus),
       new TasksSectionComponent("#tasks-grid", store, bus),
       new GlobalConfigComponent("#config-form", store, bus),

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YN1753/vesper/bothub/internal/agent"
 	"github.com/YN1753/vesper/bothub/internal/modules"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
@@ -37,6 +38,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	logs, _ := s.store.ListPushLogs(40)
 	assets, _ := s.store.ListAssets()
 	stats, _ := s.store.CountStats()
+	sessions, _ := s.store.ListAgentSessions(30)
+	memories, _ := s.store.ListAgentMemories("", 50)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":         s.version,
@@ -46,6 +49,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"tasks":           tasks,
 		"templates":       modules.BuiltinTemplates(),
 		"asset_templates": modules.BuiltinAssetTemplates(),
+		"personas":        agent.BuiltinPersonas(),
+		"agent_sessions":  sessions,
+		"agent_memories":  memories,
 		"configs":         cfgs,
 		"assets":          assets,
 		"push_logs":       logs,
@@ -63,15 +69,20 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allowedKeys := map[string]bool{
-		"push_channel":   true,
-		"pushplus_token": true,
-		"wecom_corpid":   true,
-		"wecom_agentid":  true,
-		"wecom_secret":   true,
-		"wecom_touser":   true,
-		"cf_api_token":   true,
-		"nezha_url":      true,
-		"bili_sessdata":  true,
+		"push_channel":      true,
+		"pushplus_token":    true,
+		"wecom_corpid":      true,
+		"wecom_agentid":     true,
+		"wecom_secret":      true,
+		"wecom_touser":      true,
+		"cf_api_token":      true,
+		"nezha_url":         true,
+		"nezha_db_path":     true,
+		"bili_sessdata":     true,
+		"deepseek_api_key":  true,
+		"deepseek_base_url": true,
+		"ai_model":          true,
+		"active_persona":    true,
 	}
 
 	for k, v := range updates {
@@ -114,11 +125,12 @@ func (s *Server) handleTestPush(w http.ResponseWriter, r *http.Request) {
 }
 
 type BackupData struct {
-	Version    string            `json:"version"`
-	ExportedAt string            `json:"exported_at"`
-	Configs    map[string]string `json:"configs"`
-	Assets     []store.Asset     `json:"assets"`
-	Tasks      []store.Task      `json:"tasks"`
+	Version       string              `json:"version"`
+	ExportedAt    string              `json:"exported_at"`
+	Configs       map[string]string   `json:"configs"`
+	Assets        []store.Asset       `json:"assets"`
+	Tasks         []store.Task        `json:"tasks"`
+	AgentMemories []store.AgentMemory `json:"agent_memories,omitempty"`
 }
 
 func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
@@ -132,16 +144,18 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "导出任务失败: "+err.Error())
 		return
 	}
+	memories, _ := s.store.ListAgentMemories("", 500)
 	cfgs, _ := s.store.GetAllConfigs()
 	delete(cfgs, store.KeyAdminPassHash)
 	delete(cfgs, store.KeySessionSecret)
 
 	backup := BackupData{
-		Version:    s.version,
-		ExportedAt: store.NowShanghai(),
-		Configs:    cfgs,
-		Assets:     assets,
-		Tasks:      tasks,
+		Version:       s.version,
+		ExportedAt:    store.NowShanghai(),
+		Configs:       cfgs,
+		Assets:        assets,
+		Tasks:         tasks,
+		AgentMemories: memories,
 	}
 
 	filename := fmt.Sprintf("bothub_backup_%s.json", time.Now().Format("20060102_150405"))
@@ -159,15 +173,20 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Restore Configs
 	allowedKeys := map[string]bool{
-		"push_channel":   true,
-		"pushplus_token": true,
-		"wecom_corpid":   true,
-		"wecom_agentid":  true,
-		"wecom_secret":   true,
-		"wecom_touser":   true,
-		"cf_api_token":   true,
-		"nezha_url":      true,
-		"bili_sessdata":  true,
+		"push_channel":      true,
+		"pushplus_token":    true,
+		"wecom_corpid":      true,
+		"wecom_agentid":     true,
+		"wecom_secret":      true,
+		"wecom_touser":      true,
+		"cf_api_token":      true,
+		"nezha_url":         true,
+		"nezha_db_path":     true,
+		"bili_sessdata":     true,
+		"deepseek_api_key":  true,
+		"deepseek_base_url": true,
+		"ai_model":          true,
+		"active_persona":    true,
 	}
 	for k, v := range backup.Configs {
 		if allowedKeys[k] {
@@ -195,6 +214,14 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		if err := s.store.SaveTask(t); err == nil {
 			tasksCount++
 		}
+	}
+
+	// 4. Restore Agent Memories
+	for _, m := range backup.AgentMemories {
+		if strings.TrimSpace(m.FactKey) == "" || strings.TrimSpace(m.Content) == "" {
+			continue
+		}
+		_ = s.store.SaveAgentMemory(m.Category, m.FactKey, m.Content)
 	}
 
 	// 4. Reload scheduler

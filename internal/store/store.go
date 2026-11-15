@@ -14,11 +14,15 @@ import (
 )
 
 const (
-	DefaultPushPlusToken = "f99b5ca6eee44e16ad94d1721bfc20f0"
-	DefaultWeComCorpID   = "wwda96f68ec84b1f74"
-	DefaultWeComAgentID  = "1000002"
-	DefaultWeComSecret   = "P8R70brpQMVWrmysZaGlWsiTqS6QV5GJOWfBHfWvjC4"
-	DefaultWeComToUser   = "@all"
+	DefaultPushPlusToken   = "f99b5ca6eee44e16ad94d1721bfc20f0"
+	DefaultWeComCorpID     = "wwda96f68ec84b1f74"
+	DefaultWeComAgentID    = "1000002"
+	DefaultWeComSecret     = "P8R70brpQMVWrmysZaGlWsiTqS6QV5GJOWfBHfWvjC4"
+	DefaultWeComToUser     = "@all"
+	DefaultDeepSeekBaseURL = "https://api.deepseek.com/v1"
+	DefaultAIModel         = "deepseek-chat"
+	DefaultActivePersona   = "grok"
+	DefaultNezhaDBPath     = "/opt/nezha/dashboard/data/sqlite.db"
 
 	KeyPushChannel         = "push_channel"
 	KeyWeComCorpID         = "wecom_corpid"
@@ -29,6 +33,7 @@ const (
 	KeyMorningCron         = "morning_cron"
 	KeyMorningCity         = "morning_city"
 	KeyNezhaURL            = "nezha_url"
+	KeyNezhaDBPath         = "nezha_db_path"
 	KeyRadarEnabled        = "radar_enabled"
 	KeyRadarCron           = "radar_cron"
 	KeyRadarHNMinScore     = "radar_hn_min_score"
@@ -38,6 +43,10 @@ const (
 	KeyCFAPIToken          = "cf_api_token"
 	KeyBiliSessdata        = "bili_sessdata"
 	KeyPushPlusToken       = "pushplus_token"
+	KeyDeepSeekAPIKey      = "deepseek_api_key"
+	KeyDeepSeekBaseURL     = "deepseek_base_url"
+	KeyAIModel             = "ai_model"
+	KeyActivePersona       = "active_persona"
 	KeyAdminPassHash       = "admin_pass_hash"
 	KeySessionSecret       = "session_secret"
 )
@@ -133,7 +142,38 @@ CREATE TABLE IF NOT EXISTS tasks (
 	params TEXT NOT NULL DEFAULT '{}',
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
-);`
+);
+
+CREATE TABLE IF NOT EXISTS agent_sessions (
+	id TEXT PRIMARY KEY,
+	title TEXT NOT NULL,
+	persona TEXT NOT NULL DEFAULT 'grok',
+	model TEXT NOT NULL DEFAULT 'deepseek-chat',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_messages (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	session_id TEXT NOT NULL,
+	role TEXT NOT NULL,
+	content TEXT NOT NULL DEFAULT '',
+	reasoning_content TEXT NOT NULL DEFAULT '',
+	tool_calls TEXT NOT NULL DEFAULT '',
+	tool_call_id TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_messages_session ON agent_messages(session_id, id ASC);
+
+CREATE TABLE IF NOT EXISTS agent_memories (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	category TEXT NOT NULL DEFAULT 'general',
+	fact_key TEXT NOT NULL UNIQUE,
+	content TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_memories_cat ON agent_memories(category, updated_at DESC);`
 	_, err := s.db.Exec(schema)
 	return err
 }
@@ -171,6 +211,24 @@ func (s *Store) seedDefaults() error {
 	secretBytes := make([]byte, 32)
 	_, _ = rand.Read(secretBytes)
 
+	deepseekKey := strings.TrimSpace(os.Getenv("BOTHUB_DEEPSEEK_API_KEY"))
+	deepseekBaseURL := strings.TrimSpace(os.Getenv("BOTHUB_DEEPSEEK_BASE_URL"))
+	if deepseekBaseURL == "" {
+		deepseekBaseURL = DefaultDeepSeekBaseURL
+	}
+	aiModel := strings.TrimSpace(os.Getenv("BOTHUB_AI_MODEL"))
+	if aiModel == "" {
+		aiModel = DefaultAIModel
+	}
+	activePersona := strings.TrimSpace(os.Getenv("BOTHUB_ACTIVE_PERSONA"))
+	if activePersona == "" {
+		activePersona = DefaultActivePersona
+	}
+	nezhaDBPath := strings.TrimSpace(os.Getenv("BOTHUB_NEZHA_DB_PATH"))
+	if nezhaDBPath == "" {
+		nezhaDBPath = DefaultNezhaDBPath
+	}
+
 	now := NowShanghai()
 	defaults := map[string]string{
 		KeyPushChannel:         pushChannel,
@@ -182,6 +240,7 @@ func (s *Store) seedDefaults() error {
 		KeyMorningCron:         "0 8 * * *",
 		KeyMorningCity:         "Shanghai",
 		KeyNezhaURL:            "https://dash.starryheavens.uk",
+		KeyNezhaDBPath:         nezhaDBPath,
 		KeyRadarEnabled:        "true",
 		KeyRadarCron:           "0 12,20 * * *",
 		KeyRadarHNMinScore:     "120",
@@ -191,6 +250,10 @@ func (s *Store) seedDefaults() error {
 		KeyCFAPIToken:          "",
 		KeyBiliSessdata:        "",
 		KeyPushPlusToken:       pushToken,
+		KeyDeepSeekAPIKey:      deepseekKey,
+		KeyDeepSeekBaseURL:     deepseekBaseURL,
+		KeyAIModel:             aiModel,
+		KeyActivePersona:       activePersona,
 		KeyAdminPassHash:       HashPassword(adminToken),
 		KeySessionSecret:       hex.EncodeToString(secretBytes),
 	}

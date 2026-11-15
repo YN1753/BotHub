@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/YN1753/vesper/bothub/internal/agent"
 	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/scheduler"
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -15,6 +16,7 @@ type Server struct {
 	store     *store.Store
 	scheduler *scheduler.Scheduler
 	push      *notifier.Client
+	agent     *agent.Engine
 	staticFS  fs.FS
 	startedAt time.Time
 	version   string
@@ -39,6 +41,7 @@ func New(
 		store:     st,
 		scheduler: sched,
 		push:      push,
+		agent:     agent.NewEngine(st, sched),
 		staticFS:  sub,
 		startedAt: time.Now(),
 		version:   version,
@@ -82,6 +85,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/assets", s.requireAuth(s.handleCreateAsset))
 	mux.HandleFunc("POST /api/assets/{id}", s.requireAuth(s.handleUpdateAsset))
 	mux.HandleFunc("DELETE /api/assets/{id}", s.requireAuth(s.handleDeleteAsset))
+
+	// DeepSeek Agent Hub (SSE Chat, Sessions, Memories)
+	mux.HandleFunc("POST /api/agent/chat", s.requireAuth(s.handleAgentChat))
+	mux.HandleFunc("GET /api/agent/sessions", s.requireAuth(s.handleListAgentSessions))
+	mux.HandleFunc("GET /api/agent/sessions/{id}", s.requireAuth(s.handleGetAgentSession))
+	mux.HandleFunc("DELETE /api/agent/sessions/{id}", s.requireAuth(s.handleDeleteAgentSession))
+	mux.HandleFunc("GET /api/agent/memories", s.requireAuth(s.handleListAgentMemories))
+	mux.HandleFunc("POST /api/agent/memories", s.requireAuth(s.handleSaveAgentMemory))
+	mux.HandleFunc("DELETE /api/agent/memories/{id}", s.requireAuth(s.handleDeleteAgentMemory))
 
 	// System Backup & Portability
 	mux.HandleFunc("GET /api/system/export", s.requireAuth(s.handleExportBackup))

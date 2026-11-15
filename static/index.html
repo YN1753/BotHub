@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BotHub · Vesper 自动化情报与推送中枢</title>
-  <link rel="stylesheet" href="/styles.css?v=v1.8.0" />
+  <title>BotHub · Vesper 智能情报与推送中枢</title>
+  <link rel="stylesheet" href="/styles.css?v=v2.0.0-s1" />
 </head>
 <body>
   <canvas id="starfield" aria-hidden="true"></canvas>
@@ -32,7 +32,8 @@
         <span class="topbar-sub mono">bot.starryheavens.uk</span>
       </div>
       <div class="topbar-actions">
-        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v1.8.0</span></span>
+        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v2.0.0</span></span>
+        <button id="open-memories-btn" class="btn btn-ghost" type="button">长期记忆</button>
         <button id="open-logs-btn" class="btn btn-ghost" type="button">推送流水</button>
         <button id="open-settings-btn" class="btn btn-ghost" type="button">系统设置</button>
         <button id="refresh-btn" class="btn btn-ghost" type="button">刷新</button>
@@ -57,10 +58,83 @@
       <article class="glass-card metric-card metric-card-clickable" id="card-stat-sent" title="点击查看历史推送流水">
         <span class="metric-label">累计推送成功流水</span>
         <strong class="metric-value mono" id="stat-sent">0</strong>
-        <span class="metric-sub-link mono">点击查看流水 ›</span>
+        <span class="metric-sub-link mono">点击查看流水</span>
       </article>
     </section>
 
+    <!-- Primary Workspace Switcher -->
+    <nav class="workspace-tabs glass-card" aria-label="主工作区切换">
+      <button type="button" class="workspace-tab-btn active" data-workspace="agent">
+        <span class="workspace-tab-title">DeepSeek 智能中枢</span>
+        <span class="workspace-tab-sub mono">SSE 流式推理 · 工具调用 · 长期记忆</span>
+      </button>
+      <button type="button" class="workspace-tab-btn" data-workspace="ops">
+        <span class="workspace-tab-title">资产守望与调度引擎</span>
+        <span class="workspace-tab-sub mono">VPS / 域名 / 订阅台账 · 定时任务</span>
+      </button>
+    </nav>
+
+    <!-- Workspace 1: DeepSeek Agent Hub -->
+    <section id="workspace-agent" class="section-block agent-workspace">
+      <div class="glass-card agent-shell">
+        <div class="agent-toolbar">
+          <div class="agent-toolbar-group">
+            <div class="agent-control-item agent-session-select-wrap">
+              <label class="mono">当前会话</label>
+              <div id="mount-agent-session" class="v-select-mount"></div>
+              <input type="hidden" id="agent-session-id" value="" />
+            </div>
+            <div class="agent-control-item">
+              <label class="mono">中枢人设</label>
+              <div id="mount-agent-persona" class="v-select-mount"></div>
+              <input type="hidden" id="agent-persona" value="grok" />
+            </div>
+            <div class="agent-control-item">
+              <label class="mono">推理模型</label>
+              <div id="mount-agent-model" class="v-select-mount"></div>
+              <input type="hidden" id="agent-model" value="deepseek-reasoner" />
+            </div>
+          </div>
+          <div class="agent-toolbar-actions">
+            <button type="button" class="btn btn-ghost btn-sm" id="agent-new-session-btn">+ 新对话</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="agent-delete-session-btn">清空当前会话</button>
+          </div>
+        </div>
+
+        <div class="agent-quick-bar" id="agent-quick-prompts">
+          <span class="quick-bar-label mono">快捷指令:</span>
+          <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请调用工具盘点我当前的全部数字资产与算力节点，并按到期风险给出锐评。">盘点全部资产与到期风险</button>
+          <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请调用 query_nezha_nodes 检查哪吒监控面板节点的在线状态与配置详情。">探查哪吒节点脉搏</button>
+          <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请查看当前所有自动化调度任务的运行状态，并告诉我下次触发时间。">检查调度任务状态</button>
+          <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请检索长期记忆库中已保存的偏好与基建事实，总结你对我当前系统的了解。">检视长期记忆库</button>
+        </div>
+
+        <div id="agent-chat-messages" class="agent-messages-viewport">
+          <div class="agent-empty-state" id="agent-empty-state">
+            <div class="brand-badge mono">DEEPSEEK AGENT ENGINE</div>
+            <h3 class="serif-title">长庚执更 · 智能决策与运维中枢</h3>
+            <p class="section-hint">支持 DeepSeek Reasoner 深度思考流、哪吒探针直连查询、资产与调度任务直接管控、网页正文抓取及跨会话 SQLite 长期记忆。</p>
+          </div>
+        </div>
+
+        <form id="agent-chat-form" class="agent-composer">
+          <textarea
+            id="agent-chat-input"
+            class="glass-input agent-textarea"
+            rows="2"
+            placeholder="输入指令或问题（支持 Enter 发送，Shift+Enter 换行）..."
+            required
+          ></textarea>
+          <div class="agent-composer-actions">
+            <span id="agent-stream-status" class="mono section-hint">就绪</span>
+            <button type="submit" class="btn btn-primary" id="agent-send-btn">发送指令</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Workspace 2: Asset Watcher & Tasks Engine -->
+    <div id="workspace-ops" class="hidden">
     <!-- Asset Watcher -->
     <section class="section-block">
       <div class="section-head">
@@ -89,6 +163,44 @@
       </div>
       <div id="tasks-grid" class="modules-grid"></div>
     </section>
+    </div>
+  </div>
+
+  <!-- Long-Term Memories Modal -->
+  <div id="memories-modal-overlay" class="modal-overlay hidden">
+    <div class="glass-card modal-card">
+      <div class="modal-header">
+        <div>
+          <h3 class="serif-title">Agent 长期记忆库 (SQLite Memory)</h3>
+          <span class="section-hint">跨会话持久化的用户偏好、主机架构约定与关键事实，每次推理自动注入上下文</span>
+        </div>
+        <button id="close-memories-modal-btn" class="btn btn-ghost btn-sm" type="button">关闭</button>
+      </div>
+      <div class="modal-body">
+        <form id="memory-add-form" class="memory-add-form">
+          <div class="form-grid">
+            <div class="form-field">
+              <label>记忆分类</label>
+              <div id="mount-memory-category" class="v-select-mount"></div>
+              <input type="hidden" id="mem-category" value="infra" />
+            </div>
+            <div class="form-field">
+              <label for="mem-fact-key">事实键名 (唯一标识)</label>
+              <input id="mem-fact-key" type="text" class="glass-input mono" placeholder="如 primary_vps / push_preference" required />
+            </div>
+            <div class="form-field full-width">
+              <label for="mem-content">记忆内容描述</label>
+              <div class="memory-input-row">
+                <input id="mem-content" type="text" class="glass-input" placeholder="如 主力生产节点位于 CloudCone LA DC2，部署 Vesper 与哪吒面板" required />
+                <button type="submit" class="btn btn-primary">写入记忆</button>
+              </div>
+            </div>
+          </div>
+        </form>
+        <div class="divider"></div>
+        <div id="memories-list" class="logs-list"></div>
+      </div>
+    </div>
   </div>
 
   <!-- System Settings Modal (Multi-Tab) -->
@@ -100,15 +212,45 @@
       </div>
 
       <div class="settings-tabs" role="tablist">
-        <button type="button" class="settings-tab-btn active" data-tab="push">消息推送通道</button>
+        <button type="button" class="settings-tab-btn active" data-tab="ai">AI 大脑设置</button>
+        <button type="button" class="settings-tab-btn" data-tab="push">消息推送通道</button>
         <button type="button" class="settings-tab-btn" data-tab="integrations">巡检与探针凭据</button>
         <button type="button" class="settings-tab-btn" data-tab="security">安全与数据灾备</button>
       </div>
 
       <div class="modal-body">
         <form id="config-form" class="config-form">
+          <!-- Tab 0: AI Brain Settings -->
+          <div class="settings-pane" id="tab-pane-ai">
+            <div class="form-grid">
+              <div class="form-field full-width">
+                <label for="cfg-deepseek-api-key">DeepSeek API Key</label>
+                <input id="cfg-deepseek-api-key" type="password" class="glass-input mono" placeholder="sk-..." />
+                <span class="field-hint">用于驱动智能中枢流式对话、深度思考 (R1) 与晨报/雷达 AI 锐评</span>
+              </div>
+              <div class="form-field full-width">
+                <label for="cfg-deepseek-base-url">API 接口地址 (Base URL)</label>
+                <input id="cfg-deepseek-base-url" type="text" class="glass-input mono" placeholder="https://api.deepseek.com" />
+                <span class="field-hint">兼容官方 DeepSeek API 或任意 OpenAI 规范代理网关</span>
+              </div>
+              <div class="form-field">
+                <label>默认推理模型</label>
+                <div id="mount-cfg-ai-model" class="v-select-mount"></div>
+                <input type="hidden" id="cfg-ai-model" value="deepseek-reasoner" />
+              </div>
+              <div class="form-field">
+                <label>默认中枢人设</label>
+                <div id="mount-cfg-active-persona" class="v-select-mount"></div>
+                <input type="hidden" id="cfg-active-persona" value="grok" />
+              </div>
+            </div>
+            <div class="panel-foot">
+              <button type="submit" class="btn btn-primary" id="save-ai-config-btn">保存 AI 大脑设置</button>
+            </div>
+          </div>
+
           <!-- Tab 1: Push Channel -->
-          <div class="settings-pane" id="tab-pane-push">
+          <div class="settings-pane hidden" id="tab-pane-push">
             <div class="form-grid">
               <div class="form-field full-width">
                 <label>主要推送通道</label>
@@ -160,6 +302,11 @@
                 <label for="cfg-nezha-url">哪吒监控面板地址</label>
                 <input id="cfg-nezha-url" type="text" class="glass-input mono" placeholder="https://dash.starryheavens.uk" />
                 <span class="field-hint">早报任务将自动探查该面板下的服务器节点脉搏与在线率</span>
+              </div>
+              <div class="form-field full-width">
+                <label for="cfg-nezha-db-path">哪吒 SQLite 数据库本机路径 (只读直连)</label>
+                <input id="cfg-nezha-db-path" type="text" class="glass-input mono" placeholder="/opt/nezha/dashboard/data/sqlite.db" />
+                <span class="field-hint">当 BotHub 与哪吒面板同机部署时，Agent 可通过只读模式直连查询实时节点库</span>
               </div>
               <div class="form-field full-width">
                 <label for="cfg-cf-api-token">Cloudflare API Token</label>
@@ -497,7 +644,7 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/starfield.js?v=v1.8.0"></script>
-  <script src="/app.js?v=v1.8.0"></script>
+  <script src="/starfield.js?v=v2.0.0-s1"></script>
+  <script src="/app.js?v=v2.0.0-s1"></script>
 </body>
 </html>

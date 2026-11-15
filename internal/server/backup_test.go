@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/YN1753/vesper/bothub/internal/agent"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
@@ -28,6 +29,7 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 
 	s := &Server{
 		store:   st,
+		agent:   agent.NewEngine(st, nil),
 		version: "v1.6.0",
 		commit:  "test-commit",
 	}
@@ -118,5 +120,32 @@ func TestBackupExportAndImport(t *testing.T) {
 	}
 	if importedAsset.Name != "Restored Domain" {
 		t.Errorf("unexpected name: %s", importedAsset.Name)
+	}
+}
+
+func TestAgentMemoryAndSessionHandlers(t *testing.T) {
+	s, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	body := []byte(`{"category":"infra","fact_key":"dns_provider","content":"Cloudflare Zero Trust"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/memories", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.handleSaveAgentMemory(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK saving memory, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	reqList := httptest.NewRequest(http.MethodGet, "/api/agent/memories?q=Cloudflare", nil)
+	recList := httptest.NewRecorder()
+	s.handleListAgentMemories(recList, reqList)
+	if recList.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK listing memories, got %d", recList.Code)
+	}
+
+	reqSess := httptest.NewRequest(http.MethodGet, "/api/agent/sessions", nil)
+	recSess := httptest.NewRecorder()
+	s.handleListAgentSessions(recSess, reqSess)
+	if recSess.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK listing sessions, got %d", recSess.Code)
 	}
 }
