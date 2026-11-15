@@ -1,13 +1,19 @@
 # Compiled binaries
-bothub
-bothub-linux-amd64
+/bothub
+/bothub-linux-amd64
 *.exe
 
 # Local SQLite database & runtime data
-data/
+/data/
 *.db
 *.db-wal
 *.db-shm
+
+# Android build artifacts
+android/.gradle/
+android/build/
+android/app/build/
+local.properties
 
 # OS / Editor
 .DS_Store
