@@ -54,7 +54,7 @@ jobs:
         run: |
           COMMIT=$(echo "${{ github.sha }}" | cut -c1-7)
           BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          VERSION="${{ github.ref_type == 'tag' && github.ref_name || format('v1.3.0-{0}', github.sha) }}"
+          VERSION="${{ github.ref_type == 'tag' && github.ref_name || format('v1.7.0-{0}', github.sha) }}"
           mkdir -p dist
           LDFLAGS="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X 'main.BuildTime=${BUILD_TIME}'"
           go build -trimpath -ldflags="${LDFLAGS}" -o "dist/${{ matrix.binary_name }}" .
@@ -100,6 +100,7 @@ jobs:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
           name: ${{ github.ref_type == 'tag' && format('BotHub {0}', github.ref_name) || 'BotHub Latest Build' }}
           prerelease: false
+          make_latest: true
           files: release_assets/*
           generate_release_notes: true
         env:
@@ -132,8 +133,9 @@ jobs:
           port: ${{ secrets.VPS_PORT || 22 }}
           script: |
             set -e
-            echo "[1/4] Fetching latest binary from GitHub Releases..."
-            curl -fsSL -o /tmp/bothub-new https://github.com/YN1753/BotHub/releases/latest/download/bothub-linux-amd64
+            TAG="${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}"
+            echo "[1/4] Fetching binary (tag: ${TAG}) from GitHub Releases..."
+            curl -fsSL -o /tmp/bothub-new "https://github.com/YN1753/BotHub/releases/download/${TAG}/bothub-linux-amd64"
             chmod +x /tmp/bothub-new
 
             echo "[2/4] Stopping bothub service..."
