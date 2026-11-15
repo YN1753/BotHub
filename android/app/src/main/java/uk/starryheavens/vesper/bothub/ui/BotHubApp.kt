@@ -1,6 +1,7 @@
 package uk.starryheavens.vesper.bothub.ui
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
@@ -497,6 +498,20 @@ fun BotHubApp(
                         .sizeIn(minHeight = 48.dp)
                 ) {
                     Text(if (connecting) "验证并同步中..." else "保存并验证连接")
+                }
+                OutlinedButton(
+                    onClick = {
+                        val apkIntent = Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk")
+                        )
+                        context.startActivity(apkIntent)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .sizeIn(minHeight = 48.dp)
+                ) {
+                    Text("拉取云端最新编译 APK 安装包")
                 }
                 Spacer(modifier = Modifier.height(24.dp))
             }

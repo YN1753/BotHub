@@ -280,3 +280,13 @@ func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 		"latest_id": s.store.LatestNotificationID(),
 	})
 }
+
+func (s *Server) handleV2AppVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":         true,
+		"version":    s.version,
+		"commit":     s.commit,
+		"build_time": s.buildTime,
+		"apk_url":    "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk",
+	})
+}
