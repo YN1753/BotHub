@@ -108,8 +108,13 @@ func (w *AssetWatcherModule) syncSingleAsset(ctx context.Context, asset *store.A
 
 	updated := false
 	if asset.Category == "domain" || strings.HasPrefix(asset.ID, "cf_") {
-		domain, _ := extra["domain"].(string)
-		if domain == "" { domain = asset.Name }
+		domain, _ := extra["domain_name"].(string)
+		if domain == "" {
+			domain, _ = extra["domain"].(string)
+		}
+		if domain == "" && strings.Contains(asset.Name, ".") {
+			domain = strings.TrimSpace(asset.Name)
+		}
 		accountID, _ := extra["account_id"].(string)
 		if accountID == "" { accountID = "0c248525a82b6da799e178614786b970" }
 		token, _ := extra["cf_api_token"].(string)
@@ -136,8 +141,14 @@ func (w *AssetWatcherModule) syncSingleAsset(ctx context.Context, asset *store.A
 				}
 			}
 		}
-	} else if asset.ID == "bilibili" {
+	} else if asset.ID == "bilibili" || extra["platform"] == "bilibili" {
 		sessdata, _ := extra["sessdata"].(string)
+		if sessdata == "" {
+			sessdata, _ = extra["credentials"].(string)
+		}
+		if sessdata == "" {
+			sessdata, _ = w.store.GetConfig(store.KeyBiliSessdata)
+		}
 		if sessdata != "" {
 			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.bilibili.com/x/web-interface/nav", nil)
 			req.Header.Set("User-Agent", "Mozilla/5.0")

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BotHub · Vesper 自动化情报与推送中枢</title>
-  <link rel="stylesheet" href="/styles.css?v=v1.5.0" />
+  <link rel="stylesheet" href="/styles.css?v=v1.8.0" />
 </head>
 <body>
   <canvas id="starfield" aria-hidden="true"></canvas>
@@ -32,9 +32,9 @@
         <span class="topbar-sub mono">bot.starryheavens.uk</span>
       </div>
       <div class="topbar-actions">
-        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v1.6.0</span></span>
-        <span class="stat-pill mono" id="uptime-label">UPTIME 0s</span>
-        <button id="test-push-btn" class="btn btn-ghost" type="button">测试推送</button>
+        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v1.8.0</span></span>
+        <button id="open-logs-btn" class="btn btn-ghost" type="button">推送流水</button>
+        <button id="open-settings-btn" class="btn btn-ghost" type="button">系统设置</button>
         <button id="refresh-btn" class="btn btn-ghost" type="button">刷新</button>
         <button id="logout-btn" class="btn btn-ghost" type="button">退出</button>
       </div>
@@ -54,9 +54,10 @@
         <span class="metric-label">常态活跃调度任务</span>
         <strong class="metric-value mono" id="stat-tasks">0</strong>
       </article>
-      <article class="glass-card metric-card">
+      <article class="glass-card metric-card metric-card-clickable" id="card-stat-sent" title="点击查看历史推送流水">
         <span class="metric-label">累计推送成功流水</span>
         <strong class="metric-value mono" id="stat-sent">0</strong>
+        <span class="metric-sub-link mono">点击查看流水 ›</span>
       </article>
     </section>
 
@@ -65,7 +66,7 @@
       <div class="section-head">
         <div>
           <h2 class="serif-title section-title">数字资产与会员守望 (Asset Watcher)</h2>
-          <span class="section-hint">真实到期自动嗅探 · 阶梯式防自动扣费强提醒 · 开放端点 <code>/api/v1/assets/overview</code></span>
+          <span class="section-hint">到期时间自动嗅探 · 阶梯式防自动扣费提醒</span>
         </div>
         <div class="section-actions">
           <button id="add-asset-btn" class="btn btn-ghost" type="button">+ 新增资产</button>
@@ -80,7 +81,7 @@
       <div class="section-head">
         <div>
           <h2 class="serif-title section-title">自动化情报与调度任务 (Tasks Engine)</h2>
-          <span class="section-hint">动态 Schema 驱动 · 支持面板自主创建、编辑、启停与销毁</span>
+          <span class="section-hint">定时早报、开源雷达与资产巡检一键管理</span>
         </div>
         <div class="section-actions">
           <button id="add-task-btn" class="btn btn-ghost" type="button">+ 创建任务</button>
@@ -88,93 +89,138 @@
       </div>
       <div id="tasks-grid" class="modules-grid"></div>
     </section>
+  </div>
 
-    <!-- Config & History (Two Columns) -->
-    <section class="section-block two-col">
-      <!-- Config -->
-      <article class="glass-card panel-card">
-        <div class="panel-header-simple">
-          <h2 class="serif-title panel-title">全局凭据与系统安全</h2>
-          <span class="section-hint">全局令牌与安全设置 · 任务定时请在上方独立管理</span>
-        </div>
+  <!-- System Settings Modal (Multi-Tab) -->
+  <div id="settings-modal-overlay" class="modal-overlay hidden">
+    <div class="glass-card modal-card">
+      <div class="modal-header">
+        <h3 class="serif-title">系统设置与全局凭据</h3>
+        <button id="close-settings-modal-btn" class="btn btn-ghost btn-sm" type="button">关闭</button>
+      </div>
+
+      <div class="settings-tabs" role="tablist">
+        <button type="button" class="settings-tab-btn active" data-tab="push">消息推送通道</button>
+        <button type="button" class="settings-tab-btn" data-tab="integrations">巡检与探针凭据</button>
+        <button type="button" class="settings-tab-btn" data-tab="security">安全与数据灾备</button>
+      </div>
+
+      <div class="modal-body">
         <form id="config-form" class="config-form">
-          <div class="form-grid">
-            <div class="form-field full-width">
-              <label>主要推送通道</label>
-              <div id="mount-push-channel" class="v-select-mount"></div>
-              <input type="hidden" id="cfg-push-channel" value="wecom" />
-              <span class="field-hint">选择全局通知首选下发链路，晨报、雷达与资产临期预警均由此派发</span>
+          <!-- Tab 1: Push Channel -->
+          <div class="settings-pane" id="tab-pane-push">
+            <div class="form-grid">
+              <div class="form-field full-width">
+                <label>主要推送通道</label>
+                <div id="mount-push-channel" class="v-select-mount"></div>
+                <input type="hidden" id="cfg-push-channel" value="wecom" />
+                <span class="field-hint">选择全局通知首选下发链路，仅展示当前选中通道所需的凭据项</span>
+              </div>
             </div>
 
-            <div class="form-field">
-              <label for="cfg-wecom-corpid">企业微信企业 ID (CorpID)</label>
-              <input id="cfg-wecom-corpid" type="text" class="glass-input mono" placeholder="wwda96f68ec84b1f74" />
-              <span class="field-hint">企业微信管理后台「我的企业」底部 CorpID</span>
-            </div>
-            <div class="form-field">
-              <label for="cfg-wecom-agentid">应用 AgentId</label>
-              <input id="cfg-wecom-agentid" type="text" class="glass-input mono" placeholder="1000002" />
-              <span class="field-hint">自建应用 AgentId (例如 长庚执更: 1000002)</span>
-            </div>
-            <div class="form-field full-width">
-              <label for="cfg-wecom-secret">自建应用 Secret</label>
-              <input id="cfg-wecom-secret" type="password" class="glass-input mono" placeholder="自建应用 Secret" />
-              <span class="field-hint">自建应用密钥，服务器凭此换取 access_token</span>
-            </div>
-            <div class="form-field full-width">
-              <label for="cfg-wecom-touser">接收人账号 (ToUser)</label>
-              <input id="cfg-wecom-touser" type="text" class="glass-input mono" placeholder="@all" />
-              <span class="field-hint">指定接收人的企业微信成员帐号，全员填 @all</span>
-            </div>
-
-            <div class="form-field full-width">
-              <label for="cfg-pushplus-token">PushPlus Token (备用微信推送令牌)</label>
-              <input id="cfg-pushplus-token" type="password" class="glass-input mono" placeholder="输入 PushPlus 个人推送 Token" />
-              <span class="field-hint">当通道设为 PushPlus 或企业微信发生故障时提供降级冗余保障</span>
+            <div id="wecom-fields-group" class="form-grid">
+              <div class="form-field">
+                <label for="cfg-wecom-corpid">企业微信企业 ID (CorpID)</label>
+                <input id="cfg-wecom-corpid" type="text" class="glass-input mono" placeholder="ww..." />
+              </div>
+              <div class="form-field">
+                <label for="cfg-wecom-agentid">应用 AgentId</label>
+                <input id="cfg-wecom-agentid" type="text" class="glass-input mono" placeholder="1000002" />
+              </div>
+              <div class="form-field full-width">
+                <label for="cfg-wecom-secret">自建应用 Secret</label>
+                <input id="cfg-wecom-secret" type="password" class="glass-input mono" placeholder="输入自建应用 Secret" />
+              </div>
+              <div class="form-field full-width">
+                <label>接收人账号 (ToUser)</label>
+                <div id="mount-wecom-touser" class="v-select-mount"></div>
+                <input type="hidden" id="cfg-wecom-touser" value="@all" />
+                <span class="field-hint">选择接收企业微信应用消息的成员范围</span>
+              </div>
             </div>
 
-            <div class="form-field full-width">
-              <label for="cfg-cf-api-token">Cloudflare API Token (全局域名嗅探凭据)</label>
-              <input id="cfg-cf-api-token" type="password" class="glass-input mono" placeholder="输入具备 Zone.Read 权限的 API Token" />
-              <span class="field-hint">用于资产守望任务自动轮询域名到期日与 DNS 解析健康度</span>
+            <div id="pushplus-fields-group" class="form-grid hidden">
+              <div class="form-field full-width">
+                <label for="cfg-pushplus-token">PushPlus Token</label>
+                <input id="cfg-pushplus-token" type="password" class="glass-input mono" placeholder="输入 PushPlus 个人推送 Token" />
+                <span class="field-hint">前往 pushplus.plus 获取一对一微信推送令牌</span>
+              </div>
+            </div>
+
+            <div class="panel-foot">
+              <button type="submit" class="btn btn-primary" id="save-config-btn">保存通道设置</button>
+              <button type="button" class="btn btn-ghost" id="cfg-test-push-btn">发送通道测试消息</button>
             </div>
           </div>
-          <div class="panel-foot">
-            <button type="submit" class="btn btn-primary" id="save-config-btn">保存系统凭据</button>
-            <button type="button" class="btn btn-ghost" id="cfg-test-push-btn">发送通道连通自检测试</button>
+
+          <!-- Tab 2: Integrations & Probes -->
+          <div class="settings-pane hidden" id="tab-pane-integrations">
+            <div class="form-grid">
+              <div class="form-field full-width">
+                <label for="cfg-nezha-url">哪吒监控面板地址</label>
+                <input id="cfg-nezha-url" type="text" class="glass-input mono" placeholder="https://dash.starryheavens.uk" />
+                <span class="field-hint">早报任务将自动探查该面板下的服务器节点脉搏与在线率</span>
+              </div>
+              <div class="form-field full-width">
+                <label for="cfg-cf-api-token">Cloudflare API Token</label>
+                <input id="cfg-cf-api-token" type="password" class="glass-input mono" placeholder="输入具备 Zone.Read 权限的 API Token" />
+                <span class="field-hint">用于自动嗅探核心域名资产的到期时间与续费状态</span>
+              </div>
+              <div class="form-field full-width">
+                <label for="cfg-bili-sessdata">哔哩哔哩 SESSDATA</label>
+                <input id="cfg-bili-sessdata" type="password" class="glass-input mono" placeholder="输入 B站网页版 Cookie 中的 SESSDATA" />
+                <span class="field-hint">用于【立即嗅探同步】时自动校准 B站大会员真实到期日</span>
+              </div>
+            </div>
+
+            <div class="panel-foot">
+              <button type="submit" class="btn btn-primary" id="save-integrations-btn">保存巡检凭据</button>
+            </div>
           </div>
         </form>
 
-        <div class="divider"></div>
-        <h3 class="serif-title panel-sub-title">修改控制台访问密钥</h3>
-        <form id="password-form" class="pw-form">
-          <input id="new-password" type="password" minlength="6" class="glass-input mono" placeholder="输入新密钥 (至少6位)" required />
-          <button type="submit" class="btn btn-ghost">更新密钥</button>
-        </form>
+        <!-- Tab 3: Security & Backup -->
+        <div class="settings-pane hidden" id="tab-pane-security">
+          <h4 class="serif-title panel-sub-title">修改控制台访问密钥</h4>
+          <form id="password-form" class="pw-form">
+            <input id="new-password" type="password" minlength="6" class="glass-input mono" placeholder="输入新密钥 (至少6位)" required />
+            <button type="submit" class="btn btn-ghost">更新密钥</button>
+          </form>
 
-        <div class="divider"></div>
-        <div class="panel-header-simple">
-          <h3 class="serif-title panel-sub-title">系统数据便携备份与灾备恢复</h3>
-          <span class="section-hint">全量资产、任务与配置一键离线备份</span>
+          <div class="divider"></div>
+          <div class="panel-header-simple">
+            <h4 class="serif-title panel-sub-title">系统数据便携备份与灾备恢复</h4>
+            <span class="section-hint">全量资产、任务与配置一键离线备份</span>
+          </div>
+          <div class="backup-actions-row">
+            <button type="button" class="btn btn-ghost" id="export-backup-btn">导出配置备份 (JSON)</button>
+            <label class="btn btn-ghost" style="cursor:pointer; display:inline-flex; align-items:center; margin-bottom:0;">
+              导入恢复备份
+              <input type="file" id="import-backup-file" accept=".json" style="display:none;" />
+            </label>
+          </div>
         </div>
-        <div class="backup-actions-row">
-          <button type="button" class="btn btn-ghost" id="export-backup-btn">导出配置备份 (JSON)</button>
-          <label class="btn btn-ghost" style="cursor:pointer; display:inline-flex; align-items:center; margin-bottom:0;">
-            导入恢复备份
-            <input type="file" id="import-backup-file" accept=".json" style="display:none;" />
-          </label>
-        </div>
-      </article>
+      </div>
+    </div>
+  </div>
 
-      <!-- Push History -->
-      <article class="glass-card panel-card">
-        <div class="panel-header-simple">
-          <h2 class="serif-title panel-title">系统消息推送流水</h2>
-          <span class="section-hint">最近 40 条 (点击展开详情)</span>
+  <!-- Push Logs Modal -->
+  <div id="logs-modal-overlay" class="modal-overlay hidden">
+    <div class="glass-card modal-card">
+      <div class="modal-header">
+        <div>
+          <h3 class="serif-title">系统消息推送流水</h3>
+          <span class="section-hint">最近 40 条推送记录 (点击单条展开详情)</span>
         </div>
+        <div class="section-actions">
+          <button id="test-push-btn" class="btn btn-ghost btn-sm" type="button">测试推送</button>
+          <button id="close-logs-modal-btn" class="btn btn-ghost btn-sm" type="button">关闭</button>
+        </div>
+      </div>
+      <div class="logs-modal-body">
         <div id="logs-list" class="logs-list"></div>
-      </article>
-    </section>
+      </div>
+    </div>
   </div>
 
   <!-- Asset Edit Modal -->
@@ -219,7 +265,7 @@
             <div id="mount-asset-category" class="v-select-mount"></div>
             <input type="hidden" id="edit-asset-category" value="compute" />
           </div>
-          <div class="form-field full-width">
+          <div class="form-field full-width" id="wrap-asset-spec" style="display:none;">
             <label for="edit-asset-spec">规格说明</label>
             <input id="edit-asset-spec" class="glass-input" placeholder="点击下方常用标签快速填入，或手动输入备注" />
             <div class="preset-pill-group spec-pill-group">
@@ -281,12 +327,12 @@
             <input type="hidden" id="edit-asset-due" />
           </div>
 
-          <div class="form-field">
+          <div class="form-field" id="wrap-asset-status" style="display:none;">
             <label>运行服务状态</label>
             <div id="mount-asset-status" class="v-select-mount"></div>
             <input type="hidden" id="edit-asset-status" value="运行中" />
           </div>
-          <div class="form-field">
+          <div class="form-field full-width">
             <label>自动续费模式</label>
             <div id="mount-asset-autorenew" class="v-select-mount"></div>
             <input type="hidden" id="edit-asset-autorenew" value="true" />
@@ -306,11 +352,11 @@
             <div id="asset-dynamic-fields" class="form-grid"></div>
           </div>
 
-          <!-- Advanced JSON Details -->
-          <details class="full-width advanced-accordion">
+          <!-- Advanced JSON Details (Hidden) -->
+          <details class="full-width advanced-accordion" style="display:none;">
             <summary class="mono">高级参数与原始 JSON (极客选项)</summary>
             <div class="advanced-box">
-              <textarea id="edit-asset-extra" rows="3" class="glass-input mono" placeholder='{"anchor_day":12}'></textarea>
+              <textarea id="edit-asset-extra" rows="3" class="glass-input mono" placeholder='{"provider":"BandwagonHost"}'></textarea>
               <span class="field-hint">与上方可视化参数实时双向联动</span>
             </div>
           </details>
@@ -366,7 +412,7 @@
             <div id="mount-task-type" class="v-select-mount"></div>
             <input type="hidden" id="edit-task-type" value="morning" />
           </div>
-          <div class="form-field">
+          <div class="form-field full-width">
             <label>任务调度状态</label>
             <div id="mount-task-enabled" class="v-select-mount"></div>
             <input type="hidden" id="edit-task-enabled" value="true" />
@@ -418,19 +464,19 @@
             <!-- Real Cron saved to backend -->
             <input type="hidden" id="edit-task-cron" value="0 8 * * *" />
           </div>
-          <div class="form-field full-width">
+          <div class="form-field full-width" id="wrap-task-desc" style="display:none;">
             <label for="edit-task-desc">任务描述说明</label>
             <input id="edit-task-desc" class="glass-input" placeholder="说明该任务的执行逻辑与推送目标..." />
           </div>
 
           <!-- Dynamic Task Schema Params Container -->
-          <div class="full-width dynamic-field-section">
+          <div class="full-width dynamic-field-section" id="wrap-task-dynamic-params">
             <div class="dynamic-field-title">模板业务参数配置</div>
             <div id="task-dynamic-params" class="form-grid"></div>
           </div>
 
-          <!-- Advanced JSON Details -->
-          <details class="full-width advanced-accordion">
+          <!-- Advanced JSON Details (Hidden) -->
+          <details class="full-width advanced-accordion" style="display:none;">
             <summary class="mono">高级参数与原始 JSON (极客选项)</summary>
             <div class="advanced-box">
               <textarea id="edit-task-params-json" rows="3" class="glass-input mono" placeholder='{"city":"Tokyo"}'></textarea>
@@ -451,7 +497,7 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/starfield.js?v=v1.6.0"></script>
-  <script src="/app.js?v=v1.6.0"></script>
+  <script src="/starfield.js?v=v1.8.0"></script>
+  <script src="/app.js?v=v1.8.0"></script>
 </body>
 </html>

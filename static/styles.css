@@ -672,6 +672,71 @@ button, input, select, textarea {
 .task-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 8px; flex-wrap: wrap; }
 .task-actions-right { display: flex; align-items: center; gap: 6px; }
 
+/* Settings Modal Tabs & Clickable Metric Card */
+.metric-card-clickable {
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.metric-card-clickable:hover {
+  transform: translateY(-2px);
+  border-color: rgba(94, 234, 212, 0.35);
+}
+.metric-sub-link {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.metric-card-clickable:hover .metric-sub-link {
+  color: var(--live-teal);
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  margin-top: 12px;
+  border-radius: 10px;
+  background: rgba(6, 9, 18, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+}
+.settings-tab-btn {
+  flex: 1 1 auto;
+  min-width: 110px;
+  padding: 7px 12px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-sub);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.settings-tab-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+.settings-tab-btn.active {
+  background: rgba(94, 234, 212, 0.14);
+  border-color: rgba(94, 234, 212, 0.4);
+  color: #ccfbf1;
+}
+.settings-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+.settings-pane.hidden {
+  display: none;
+}
+.logs-modal-body {
+  max-height: 62vh;
+  overflow-y: auto;
+  margin-top: 12px;
+}
+
 /* Toast */
 .toast {
   position: fixed;

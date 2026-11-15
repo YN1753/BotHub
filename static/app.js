@@ -27,6 +27,17 @@
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     },
 
+    formatDateOnly(str) {
+      if (!str || String(str).startsWith("2099")) return "长期有效";
+      const s = String(str).trim();
+      const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (m) return m[1];
+      const d = new Date(s);
+      if (isNaN(d.getTime())) return s;
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    },
+
     generateSlug(text, defaultPrefix = "item") {
       const clean = String(text || "")
         .trim()
@@ -666,8 +677,9 @@
       this.grid.innerHTML = assets.map((a) => {
         const catClass = a.category === "compute" ? "cat-compute" : (a.category === "domain" ? "cat-domain" : "cat-life");
         const catName = a.category === "compute" ? "算力基建" : (a.category === "domain" ? "核心域名" : "生活订阅");
-        const daysClass = a.days_left <= 3 ? "days-danger" : (a.days_left <= 7 ? "days-warn" : "days-safe");
-        const daysText = a.days_left < 0 ? `逾期 ${Math.abs(a.days_left)} 天` : `剩余 ${a.days_left} 天`;
+        const isPermanent = a.status === "长期有效" || String(a.due_date || "").startsWith("2099");
+        const daysClass = isPermanent ? "days-safe" : (a.days_left <= 3 ? "days-danger" : (a.days_left <= 7 ? "days-warn" : "days-safe"));
+        const daysText = isPermanent ? "长期有效" : (a.days_left < 0 ? `逾期 ${Math.abs(a.days_left)} 天` : `剩余 ${a.days_left} 天`);
         const isTrial = (a.price && a.price.includes("活动")) || (a.status && a.status.includes("活动")) || a.id === "qq_music";
 
         return `
@@ -685,8 +697,7 @@
             </div>
             <div class="asset-meta-grid mono">
               <div class="meta-box"><span>周期金额</span><strong>${Utils.esc(a.price || "--")}</strong></div>
-              <div class="meta-box"><span>状态</span><strong>${Utils.esc(a.status || "--")}</strong></div>
-              <div class="meta-box" style="grid-column: 1 / -1;"><span>到期时间</span><strong>${Utils.esc(Utils.formatTime(a.due_date))}</strong></div>
+              <div class="meta-box"><span>到期日期</span><strong>${Utils.esc(isPermanent ? "长期有效" : Utils.formatDateOnly(a.due_date))}</strong></div>
             </div>
             ${isTrial ? `<div class="trial-alert">[防免密扣款] 活动体验到期前请确认是否已取消自动扣款</div>` : ""}
             <div class="asset-foot">
@@ -754,7 +765,6 @@
               <div>
                 <span class="text-sub">调度策略</span><br>
                 <strong class="text-cyan">${Utils.esc(Utils.describeCron(t.cron_expr))}</strong>
-                <span class="text-muted" style="font-size:10px; display:block; margin-top:2px;">[${Utils.esc(t.cron_expr || "--")}]</span>
               </div>
               <div>
                 <span class="text-sub">下次触发 (CST)</span><br>
@@ -806,20 +816,57 @@
     }
   }
 
-  // --- Global Config Component ---
+  // --- Global Config & Settings Modal Component ---
   class GlobalConfigComponent extends BaseComponent {
     init() {
+      this.overlay = document.getElementById("settings-modal-overlay");
+      this.openBtn = document.getElementById("open-settings-btn");
+      this.closeBtn = document.getElementById("close-settings-modal-btn");
+
       this.form = document.getElementById("config-form");
       this.channelInput = document.getElementById("cfg-push-channel");
       this.channelMount = document.getElementById("mount-push-channel");
+      this.wecomGroup = document.getElementById("wecom-fields-group");
+      this.pushplusGroup = document.getElementById("pushplus-fields-group");
+
       this.wecomCorpInput = document.getElementById("cfg-wecom-corpid");
       this.wecomAgentInput = document.getElementById("cfg-wecom-agentid");
       this.wecomSecretInput = document.getElementById("cfg-wecom-secret");
       this.wecomToUserInput = document.getElementById("cfg-wecom-touser");
+      this.wecomToUserMount = document.getElementById("mount-wecom-touser");
       this.pushplusInput = document.getElementById("cfg-pushplus-token");
+
+      this.nezhaUrlInput = document.getElementById("cfg-nezha-url");
       this.cfInput = document.getElementById("cfg-cf-api-token");
+      this.biliSessdataInput = document.getElementById("cfg-bili-sessdata");
+
       this.saveBtn = document.getElementById("save-config-btn");
+      this.saveIntegrationsBtn = document.getElementById("save-integrations-btn");
       this.testBtn = document.getElementById("cfg-test-push-btn");
+
+      this.openBtn?.addEventListener("click", () => this.open());
+      this.closeBtn?.addEventListener("click", () => this.close());
+      this.overlay?.addEventListener("click", (e) => {
+        if (e.target === this.overlay) this.close();
+      });
+
+      // Tabs switching
+      this.tabBtns = document.querySelectorAll(".settings-tab-btn");
+      this.tabPanes = {
+        push: document.getElementById("tab-pane-push"),
+        integrations: document.getElementById("tab-pane-integrations"),
+        security: document.getElementById("tab-pane-security"),
+      };
+      this.tabBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const target = btn.dataset.tab;
+          this.tabBtns.forEach((b) => b.classList.toggle("active", b === btn));
+          Object.entries(this.tabPanes).forEach(([key, pane]) => {
+            if (!pane) return;
+            pane.classList.toggle("hidden", key !== target);
+          });
+        });
+      });
 
       if (this.channelMount) {
         this.channelSelect = new CustomSelect(this.channelMount, {
@@ -830,20 +877,50 @@
           value: "wecom",
           onChange: (val) => {
             if (this.channelInput) this.channelInput.value = val;
+            this.toggleChannelFields(val);
+          },
+        });
+      }
+
+      this.baseToUserOptions = [
+        { value: "@all", label: "全员推送 (@all - 默认)" },
+        { value: "Starry", label: "仅推送给管理员 (Starry)" },
+      ];
+      if (this.wecomToUserMount) {
+        this.toUserSelect = new CustomSelect(this.wecomToUserMount, {
+          options: this.baseToUserOptions,
+          value: "@all",
+          onChange: (val) => {
+            if (this.wecomToUserInput) this.wecomToUserInput.value = val;
           },
         });
       }
 
       this.bus.on("data:loaded", (state) => {
-        const chan = state.configs["push_channel"] || "wecom";
+        const cfgs = state.configs || {};
+        const chan = cfgs["push_channel"] || "wecom";
         if (this.channelInput) this.channelInput.value = chan;
         if (this.channelSelect) this.channelSelect.setValue(chan);
-        if (this.wecomCorpInput) this.wecomCorpInput.value = state.configs["wecom_corpid"] || "";
-        if (this.wecomAgentInput) this.wecomAgentInput.value = state.configs["wecom_agentid"] || "";
-        if (this.wecomSecretInput) this.wecomSecretInput.value = state.configs["wecom_secret"] || "";
-        if (this.wecomToUserInput) this.wecomToUserInput.value = state.configs["wecom_touser"] || "@all";
-        if (this.pushplusInput) this.pushplusInput.value = state.configs["pushplus_token"] || "";
-        if (this.cfInput) this.cfInput.value = state.configs["cf_api_token"] || "";
+        this.toggleChannelFields(chan);
+
+        if (this.wecomCorpInput) this.wecomCorpInput.value = cfgs["wecom_corpid"] || "";
+        if (this.wecomAgentInput) this.wecomAgentInput.value = cfgs["wecom_agentid"] || "";
+        if (this.wecomSecretInput) this.wecomSecretInput.value = cfgs["wecom_secret"] || "";
+
+        const toUser = cfgs["wecom_touser"] || "@all";
+        if (this.wecomToUserInput) this.wecomToUserInput.value = toUser;
+        if (this.toUserSelect) {
+          const exists = this.baseToUserOptions.some((o) => o.value === toUser);
+          const opts = exists
+            ? this.baseToUserOptions
+            : [...this.baseToUserOptions, { value: toUser, label: `指定账号 (${toUser})` }];
+          this.toUserSelect.setOptions(opts, toUser);
+        }
+
+        if (this.pushplusInput) this.pushplusInput.value = cfgs["pushplus_token"] || "";
+        if (this.nezhaUrlInput) this.nezhaUrlInput.value = cfgs["nezha_url"] || "https://dash.starryheavens.uk";
+        if (this.cfInput) this.cfInput.value = cfgs["cf_api_token"] || "";
+        if (this.biliSessdataInput) this.biliSessdataInput.value = cfgs["bili_sessdata"] || "";
       });
 
       this.form?.addEventListener("submit", async (e) => {
@@ -855,13 +932,17 @@
           wecom_secret: (this.wecomSecretInput?.value || "").trim(),
           wecom_touser: (this.wecomToUserInput?.value || "@all").trim(),
           pushplus_token: (this.pushplusInput?.value || "").trim(),
+          nezha_url: (this.nezhaUrlInput?.value || "").trim(),
           cf_api_token: (this.cfInput?.value || "").trim(),
+          bili_sessdata: (this.biliSessdataInput?.value || "").trim(),
         };
-        this.saveBtn.disabled = true;
+        if (this.saveBtn) this.saveBtn.disabled = true;
+        if (this.saveIntegrationsBtn) this.saveIntegrationsBtn.disabled = true;
         try {
           await this.store.saveConfig(payload);
         } finally {
-          this.saveBtn.disabled = false;
+          if (this.saveBtn) this.saveBtn.disabled = false;
+          if (this.saveIntegrationsBtn) this.saveIntegrationsBtn.disabled = false;
         }
       });
 
@@ -873,6 +954,20 @@
           this.testBtn.disabled = false;
         }
       });
+    }
+
+    toggleChannelFields(channel) {
+      const isPushPlus = channel === "pushplus";
+      this.wecomGroup?.classList.toggle("hidden", isPushPlus);
+      this.pushplusGroup?.classList.toggle("hidden", !isPushPlus);
+    }
+
+    open() {
+      this.overlay?.classList.remove("hidden");
+    }
+
+    close() {
+      this.overlay?.classList.add("hidden");
     }
   }
 
@@ -895,12 +990,32 @@
     }
   }
 
-  // --- Push Logs Component ---
+  // --- Push Logs Modal Component ---
   class PushLogsComponent extends BaseComponent {
     init() {
+      this.overlay = document.getElementById("logs-modal-overlay");
+      this.openBtn = document.getElementById("open-logs-btn");
+      this.cardTrigger = document.getElementById("card-stat-sent");
+      this.closeBtn = document.getElementById("close-logs-modal-btn");
       this.list = document.getElementById("logs-list");
       this.expandedLogIds = new Set();
+
+      this.openBtn?.addEventListener("click", () => this.open());
+      this.cardTrigger?.addEventListener("click", () => this.open());
+      this.closeBtn?.addEventListener("click", () => this.close());
+      this.overlay?.addEventListener("click", (e) => {
+        if (e.target === this.overlay) this.close();
+      });
+
       this.bus.on("data:loaded", (state) => this.render(state.pushLogs));
+    }
+
+    open() {
+      this.overlay?.classList.remove("hidden");
+    }
+
+    close() {
+      this.overlay?.classList.add("hidden");
     }
 
     render(logs) {
@@ -1165,19 +1280,19 @@
           addMonths: 12,
           autoRenew: "true",
           warnDays: "[7, 3, 1]",
-          extra: { provider: "BandwagonHost", anchor_day: 1, ip_address: "" },
+          extra: { provider: "BandwagonHost" },
         },
         cloudflare: {
-          name: "Cloudflare 核心域名",
+          name: "starryheavens.uk",
           cat: "domain",
-          spec: "COM 顶级域名 / 权威托管",
+          spec: "COM/UK 顶级域名 / 权威托管",
           curr: "USD",
           amt: "9.77",
           cycle: "/年",
           addMonths: 12,
           autoRenew: "true",
           warnDays: "[30, 7, 1]",
-          extra: { domain_name: "starryheavens.uk", registrar: "Cloudflare Registrar" },
+          extra: { registrar: "Cloudflare" },
         },
         bilibili: {
           name: "哔哩哔哩大会员",
@@ -1189,7 +1304,7 @@
           addMonths: 12,
           autoRenew: "true",
           warnDays: "[7, 3, 1]",
-          extra: { platform: "bilibili", billing_note: "微信免密扣款", credentials: "" },
+          extra: { platform: "bilibili", billing_note: "微信免密扣款" },
         },
         qqmusic: {
           name: "QQ音乐豪华绿钻",
@@ -1201,31 +1316,31 @@
           addMonths: 1,
           autoRenew: "false",
           warnDays: "[3, 1]",
-          extra: { platform: "qqmusic", billing_note: "活动体验到期防扣款", anchor_day: 12 },
+          extra: { platform: "qqmusic", billing_note: "微信免密扣款" },
         },
         chatgpt: {
           name: "ChatGPT Plus 订阅",
           cat: "life",
-          spec: "GPT-4o / Canvas / 高级语音",
+          spec: "OpenAI Plus 个人会员",
           curr: "USD",
           amt: "20.00",
           cycle: "/月",
           addMonths: 1,
           autoRenew: "true",
           warnDays: "[3, 1]",
-          extra: { platform: "openai", billing_note: "海外虚拟卡尾号8888" },
+          extra: { platform: "chatgpt", billing_note: "Visa外币信用卡" },
         },
         netflix: {
           name: "Netflix 奈飞高级车位",
           cat: "life",
-          spec: "Ultra HD 4K / 独立 PIN 码车位",
+          spec: "Ultra HD 4K / 独立车位",
           curr: "USD",
           amt: "19.99",
           cycle: "/月",
           addMonths: 1,
           autoRenew: "true",
           warnDays: "[3, 1]",
-          extra: { platform: "netflix", billing_note: "家庭组长期合租" },
+          extra: { platform: "netflix", billing_note: "Visa外币信用卡" },
         },
         spotify: {
           name: "Spotify 音乐家庭组",
@@ -1237,7 +1352,7 @@
           addMonths: 1,
           autoRenew: "true",
           warnDays: "[7, 3, 1]",
-          extra: { platform: "spotify", billing_note: "港区万事达卡" },
+          extra: { platform: "spotify", billing_note: "Visa外币信用卡" },
         },
       };
 
@@ -1301,14 +1416,35 @@
 
         this.syncInputsToJSON();
 
+        const cat = this.catHidden ? this.catHidden.value : "compute";
+        const extraObj = Utils.safeJSONParse(this.extraTextarea.value);
+        let derivedSpec = this.specInput.value.trim();
+        if (!derivedSpec) {
+          const catFallback = cat === "compute" ? "云主机算力" : (cat === "domain" ? "核心域名" : "数字订阅");
+          derivedSpec = extraObj.provider || extraObj.registrar || extraObj.platform || catFallback;
+        }
+
+        const dueStr = this.dueHidden ? this.dueHidden.value.trim() : "";
+        const cycleVal = this.cycleHidden ? this.cycleHidden.value : "/月";
+        let derivedStatus = "运行中";
+        if (dueStr.startsWith("2099") || cycleVal === "/终身" || cycleVal === "/免费") {
+          derivedStatus = "长期有效";
+        } else if (dueStr) {
+          const diffDays = Math.ceil((new Date(dueStr).getTime() - Date.now()) / 86400000);
+          if (!isNaN(diffDays) && diffDays <= 7) {
+            derivedStatus = "即将到期";
+          }
+        }
+        if (this.statusHidden) this.statusHidden.value = derivedStatus;
+
         const payload = {
           id: finalID,
           name: this.nameInput.value.trim(),
-          category: this.catHidden ? this.catHidden.value : "compute",
-          spec: this.specInput.value.trim(),
+          category: cat,
+          spec: derivedSpec,
           price: this.priceHidden ? this.priceHidden.value.trim() : "",
-          due_date: this.dueHidden ? this.dueHidden.value.trim() : "",
-          status: this.statusHidden ? this.statusHidden.value.trim() : "运行中",
+          due_date: dueStr,
+          status: derivedStatus,
           auto_renew: this.renewHidden ? this.renewHidden.value === "true" : true,
           warn_days: this.warnDaysInput.value.trim(),
           extra_config: this.extraTextarea.value.trim(),
@@ -1729,6 +1865,7 @@
 
       this.enabledHidden = document.getElementById("edit-task-enabled");
       this.descInput = document.getElementById("edit-task-desc");
+      this.wrapDynParams = document.getElementById("wrap-task-dynamic-params");
       this.dynParamsContainer = document.getElementById("task-dynamic-params");
       this.paramsTextarea = document.getElementById("edit-task-params-json");
       this.deleteBtn = document.getElementById("delete-task-btn");
@@ -1849,21 +1986,21 @@
           type: "morning",
           cron: "0 8 * * *",
           desc: "每日早08:00定时汇总上海天气预报、出行建议、每日格言、节点脉搏与临期资产",
-          params: { city: "Shanghai", nezha_url: "https://dash.starryheavens.uk" },
+          params: { city: "Shanghai" },
         },
         morning_bj: {
           name: "北京晨间早报",
           type: "morning",
           cron: "0 8 * * *",
           desc: "每日早08:00定时汇总北京天气预报、穿衣与空气质量建议及节点脉搏",
-          params: { city: "Beijing", nezha_url: "https://dash.starryheavens.uk" },
+          params: { city: "Beijing" },
         },
         radar_daily: {
           name: "全网开源技术风向标",
           type: "radar",
           cron: "0 20 * * *",
           desc: "每天晚20:00精选抓取 GitHub Trending 热门项目与 Hacker News 高分热榜",
-          params: { hn_min_score: 120, limit: 8 },
+          params: { hn_min_score: 150, limit: 8 },
         },
         asset_watcher: {
           name: "深夜资产临期巡检",
@@ -1934,13 +2071,17 @@
 
         this.syncInputsToJSON();
 
+        const taskType = this.typeHidden ? this.typeHidden.value : "morning";
+        const tpl = (this.store.state.templates || []).find((t) => t.type === taskType);
+        const derivedDesc = this.descInput.value.trim() || tpl?.description || "";
+
         const payload = {
           id: finalID,
           name: this.nameInput.value.trim(),
-          type: this.typeHidden ? this.typeHidden.value : "morning",
+          type: taskType,
           cron_expr: this.cronHidden?.value.trim() || "0 8 * * *",
           enabled: this.enabledHidden ? this.enabledHidden.value === "true" : true,
-          description: this.descInput.value.trim(),
+          description: derivedDesc,
           params: this.paramsTextarea.value.trim(),
         };
 
@@ -2179,7 +2320,7 @@
         if (this.enabledHidden) this.enabledHidden.value = "true";
         this.enabledSelect?.setValue("true", false);
         this.descInput.value = "汇总目标城市气象建议、每日格言、节点脉搏与临期资产";
-        const initialParams = { city: "Shanghai", nezha_url: "https://dash.starryheavens.uk" };
+        const initialParams = { city: "Shanghai" };
         this.paramsTextarea.value = JSON.stringify(initialParams, null, 2);
 
         this.renderDynamicParams("morning", initialParams);
@@ -2221,9 +2362,11 @@
 
       const tpl = (this.store.state.templates || []).find((t) => t.type === type);
       if (!tpl || !tpl.params_schema || !tpl.params_schema.length) {
-        this.dynParamsContainer.innerHTML = `<div class="empty-state" style="padding:6px; font-size:11px;">该模板无需额外业务参数</div>`;
+        if (this.wrapDynParams) this.wrapDynParams.style.display = "none";
+        this.dynParamsContainer.innerHTML = "";
         return;
       }
+      if (this.wrapDynParams) this.wrapDynParams.style.display = "";
 
       this.dynParamsContainer.innerHTML = tpl.params_schema.map((f) => {
         const val = paramsObj[f.key] !== undefined ? paramsObj[f.key] : (f.default_val || "");

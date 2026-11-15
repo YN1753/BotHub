@@ -70,6 +70,8 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		"wecom_secret":   true,
 		"wecom_touser":   true,
 		"cf_api_token":   true,
+		"nezha_url":      true,
+		"bili_sessdata":  true,
 	}
 
 	for k, v := range updates {
@@ -164,6 +166,8 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		"wecom_secret":   true,
 		"wecom_touser":   true,
 		"cf_api_token":   true,
+		"nezha_url":      true,
+		"bili_sessdata":  true,
 	}
 	for k, v := range backup.Configs {
 		if allowedKeys[k] {

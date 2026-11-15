@@ -36,6 +36,7 @@ const (
 	KeyAssetWatcherEnabled = "asset_watcher_enabled"
 	KeyAssetWatcherCron    = "asset_watcher_cron"
 	KeyCFAPIToken          = "cf_api_token"
+	KeyBiliSessdata        = "bili_sessdata"
 	KeyPushPlusToken       = "pushplus_token"
 	KeyAdminPassHash       = "admin_pass_hash"
 	KeySessionSecret       = "session_secret"
@@ -188,6 +189,7 @@ func (s *Store) seedDefaults() error {
 		KeyAssetWatcherEnabled: "true",
 		KeyAssetWatcherCron:    "0 3 * * *",
 		KeyCFAPIToken:          "",
+		KeyBiliSessdata:        "",
 		KeyPushPlusToken:       pushToken,
 		KeyAdminPassHash:       HashPassword(adminToken),
 		KeySessionSecret:       hex.EncodeToString(secretBytes),
