@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { describeCron, generateSlug } from '../utils/format'
+import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 
 const store = useAppStore()
@@ -198,108 +199,100 @@ async function handleDelete() {
 </script>
 
 <template>
-  <div
-    v-if="isOpen"
-    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-sm"
-    @click.self="closeModal"
+  <BaseModal
+    :open="isOpen"
+    :title="isNew ? '创建自动化例程任务' : '编辑例程任务'"
+    subtitle="绑定专属汇报 Bot 与可执行模板的定时调度规则"
+    max-width="2xl"
+    @close="closeModal"
   >
-    <div class="aero-glass w-full sm:max-w-2xl max-h-[90dvh] sm:max-h-[88vh] rounded-t-2xl rounded-b-none sm:rounded-2xl p-4 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-4 shadow-2xl">
-      <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto -mt-1 shrink-0" />
-      <div class="flex items-center justify-between gap-2">
-        <h3 class="text-lg font-semibold text-white">{{ isNew ? '创建自动化例程任务' : '编辑例程任务' }}</h3>
-        <button type="button" @click="closeModal" class="min-h-[40px] sm:min-h-[32px] px-3 py-1 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">
-          关闭
-        </button>
+    <form @submit.prevent="handleSubmit" class="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3.5">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>执行模板类型</span>
+          <CustomSelect v-model="type" :options="templateOptions" aria-label="执行模板类型" />
+        </div>
+        <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>归属汇报 Bot</span>
+          <CustomSelect v-model="botId" :options="botOptions" aria-label="归属汇报 Bot" />
+        </div>
+        <label class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>任务名称</span>
+          <input v-model="name" type="text" autofocus required placeholder="如：每日晨间简报" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+        </label>
+        <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>启用状态</span>
+          <CustomSelect v-model="enabled" :options="ENABLED_OPTIONS" aria-label="启用状态" />
+        </div>
+        <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>执行频率</span>
+          <CustomSelect v-model="freq" :options="FREQ_OPTIONS" aria-label="执行频率" />
+        </div>
+        <div v-if="freq === 'weekly'" class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>星期选择</span>
+          <CustomSelect v-model="subVal" :options="WEEK_OPTIONS" aria-label="星期选择" />
+        </div>
+        <div v-if="freq === 'monthly'" class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>日期选择</span>
+          <CustomSelect v-model="subVal" :options="MONTH_DAY_OPTIONS" aria-label="日期选择" />
+        </div>
+        <div v-if="freq !== 'custom'" class="grid grid-cols-2 gap-2">
+          <div v-if="freq !== 'hourly'" class="flex flex-col gap-1 text-xs text-slate-300">
+            <span>小时</span>
+            <CustomSelect v-model="hour" :options="HOUR_OPTIONS" aria-label="小时" />
+          </div>
+          <div class="flex flex-col gap-1 text-xs text-slate-300">
+            <span>分钟</span>
+            <CustomSelect v-model="minute" :options="MIN_OPTIONS" aria-label="分钟" />
+          </div>
+        </div>
+        <label v-if="freq === 'custom'" class="sm:col-span-2 flex flex-col gap-1 text-xs text-slate-300">
+          <span>Cron 表达式</span>
+          <input v-model="customCron" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+        </label>
+        <div class="sm:col-span-2 font-mono text-[11px] text-[#f2b880]">
+          调度预览: {{ describeCron(computedCron) }} ({{ computedCron }})
+        </div>
+
+        <template v-if="currentFields.length > 0">
+          <div class="sm:col-span-2 pt-2 border-t border-[#fff8ee]/10 text-xs font-semibold text-slate-200">
+            模板运行参数
+          </div>
+          <label
+            v-for="f in currentFields"
+            :key="f.key"
+            class="flex flex-col gap-1 text-xs text-slate-300"
+          >
+            <span>{{ f.label }}</span>
+            <input
+              v-model="paramsMap[f.key]"
+              type="text"
+              :placeholder="f.placeholder || f.default_value || ''"
+              class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none"
+            />
+          </label>
+        </template>
       </div>
 
-      <form @submit.prevent="handleSubmit" class="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3.5">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>执行模板类型</span>
-            <CustomSelect v-model="type" :options="templateOptions" />
-          </div>
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>归属汇报 Bot</span>
-            <CustomSelect v-model="botId" :options="botOptions" />
-          </div>
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>任务名称</span>
-            <input v-model="name" type="text" required placeholder="如：每日晨间简报" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-          </label>
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>启用状态</span>
-            <CustomSelect v-model="enabled" :options="ENABLED_OPTIONS" />
-          </div>
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>执行频率</span>
-            <CustomSelect v-model="freq" :options="FREQ_OPTIONS" />
-          </div>
-          <div v-if="freq === 'weekly'" class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>星期选择</span>
-            <CustomSelect v-model="subVal" :options="WEEK_OPTIONS" />
-          </div>
-          <div v-if="freq === 'monthly'" class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>日期选择</span>
-            <CustomSelect v-model="subVal" :options="MONTH_DAY_OPTIONS" />
-          </div>
-          <div v-if="freq !== 'custom'" class="grid grid-cols-2 gap-2">
-            <div v-if="freq !== 'hourly'" class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>小时</span>
-              <CustomSelect v-model="hour" :options="HOUR_OPTIONS" />
-            </div>
-            <div class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>分钟</span>
-              <CustomSelect v-model="minute" :options="MIN_OPTIONS" />
-            </div>
-          </div>
-          <label v-if="freq === 'custom'" class="sm:col-span-2 flex flex-col gap-1 text-xs text-slate-300">
-            <span>Cron 表达式</span>
-            <input v-model="customCron" type="text" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-          </label>
-          <div class="sm:col-span-2 font-mono text-[11px] text-[#f2b880]">
-            调度预览: {{ describeCron(computedCron) }} ({{ computedCron }})
-          </div>
-
-          <template v-if="currentFields.length > 0">
-            <div class="sm:col-span-2 pt-2 border-t border-[#fff8ee]/10 text-xs font-semibold text-slate-200">
-              模板运行参数
-            </div>
-            <label
-              v-for="f in currentFields"
-              :key="f.key"
-              class="flex flex-col gap-1 text-xs text-slate-300"
-            >
-              <span>{{ f.label }}</span>
-              <input
-                v-model="paramsMap[f.key]"
-                type="text"
-                :placeholder="f.placeholder || f.default_value || ''"
-                class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none"
-              />
-            </label>
-          </template>
-        </div>
-
-        <div class="flex items-center justify-between pt-3 border-t border-[#fff8ee]/10">
-          <button
-            v-if="!isNew"
-            type="button"
-            @click="handleDelete"
-            class="min-h-[40px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 cursor-pointer"
-          >
-            删除该任务
+      <div class="flex items-center justify-between pt-3 border-t border-[#fff8ee]/10">
+        <button
+          v-if="!isNew"
+          type="button"
+          @click="handleDelete"
+          class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 cursor-pointer"
+        >
+          删除该任务
+        </button>
+        <span v-else />
+        <div class="flex gap-2">
+          <button type="button" @click="closeModal" class="min-h-[44px] sm:min-h-[34px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">
+            取消
           </button>
-          <span v-else />
-          <div class="flex gap-2">
-            <button type="button" @click="closeModal" class="min-h-[40px] sm:min-h-[34px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">
-              取消
-            </button>
-            <button type="submit" :disabled="saving" class="min-h-[40px] sm:min-h-[34px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50 transition">
-              保存任务
-            </button>
-          </div>
+          <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[34px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50">
+            保存任务
+          </button>
         </div>
-      </form>
-    </div>
-  </div>
+      </div>
+    </form>
+  </BaseModal>
 </template>

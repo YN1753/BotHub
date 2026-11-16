@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { generateSlug } from '../utils/format'
+import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 
 const store = useAppStore()
@@ -104,7 +105,6 @@ watch(
     autoRenew.value = item.auto_renew ? 'true' : 'false'
     warnDays.value = item.warn_days || '[7, 3, 1]'
 
-    // Parse combined price like "$21.66 / 年"
     const pParts = String(item.price || '').split('/')
     amount.value = (pParts[0] || '').trim()
     billingCycle.value = pParts[1]?.trim() || (String(item.price || '').includes('月') ? '月' : '年')
@@ -192,115 +192,107 @@ async function handleDelete() {
 </script>
 
 <template>
-  <div
-    v-if="isOpen"
-    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-sm"
-    @click.self="closeModal"
+  <BaseModal
+    :open="isOpen"
+    :title="isNew ? '登记新数字资产' : '编辑数字资产配置'"
+    subtitle="追踪服务器、核心域名与日常订阅的续费周期和预警梯度"
+    max-width="2xl"
+    @close="closeModal"
   >
-    <div class="aero-glass w-full sm:max-w-2xl max-h-[90dvh] sm:max-h-[88vh] rounded-t-2xl rounded-b-none sm:rounded-2xl p-4 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-4 shadow-2xl">
-      <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto -mt-1 shrink-0" />
-      <div class="flex items-center justify-between gap-2">
-        <h3 class="text-lg font-semibold text-white">{{ isNew ? '登记新数字资产' : '编辑数字资产配置' }}</h3>
-        <button type="button" @click="closeModal" class="min-h-[40px] sm:min-h-[32px] px-3 py-1 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">
-          关闭
-        </button>
+    <form @submit.prevent="handleSubmit" class="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3.5">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>资产类别</span>
+          <CustomSelect v-model="category" :options="CATEGORY_OPTIONS" aria-label="资产类别" />
+        </div>
+        <label class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>资产名称</span>
+          <input v-model="name" type="text" autofocus required placeholder="如：CloudCone LA" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+        </label>
+        <label class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>配置规格 / 描述</span>
+          <input v-model="spec" type="text" placeholder="如：2C 2G · 110G SSD" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+        </label>
+        <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>当前状态</span>
+          <CustomSelect v-model="status" :options="STATUS_OPTIONS" aria-label="当前状态" />
+        </div>
+        <label class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>费用金额</span>
+          <input v-model="amount" type="text" placeholder="如：$21.66 或 148元" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+        </label>
+        <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>付款周期</span>
+          <CustomSelect v-model="billingCycle" :options="CYCLE_OPTIONS" aria-label="付款周期" />
+        </div>
+        <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>到期类型</span>
+          <CustomSelect v-model="dueMode" :options="DUE_MODE_OPTIONS" aria-label="到期类型" />
+        </div>
+        <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <span>续费方式</span>
+          <CustomSelect v-model="autoRenew" :options="RENEW_OPTIONS" aria-label="续费方式" />
+        </div>
+
+        <div v-if="dueMode === 'date'" class="sm:col-span-2 grid grid-cols-3 gap-2.5">
+          <div class="flex flex-col gap-1 text-xs text-slate-300">
+            <span>到期年份</span>
+            <CustomSelect v-model="dueYear" :options="YEAR_OPTIONS" aria-label="到期年份" />
+          </div>
+          <div class="flex flex-col gap-1 text-xs text-slate-300">
+            <span>到期月份</span>
+            <CustomSelect v-model="dueMonth" :options="MONTH_OPTIONS" aria-label="到期月份" />
+          </div>
+          <div class="flex flex-col gap-1 text-xs text-slate-300">
+            <span>到期日期</span>
+            <CustomSelect v-model="dueDay" :options="DAY_OPTIONS" aria-label="到期日期" />
+          </div>
+        </div>
+
+        <div class="sm:col-span-2 flex flex-col gap-1 text-xs text-slate-300">
+          <span>临期预警梯度</span>
+          <CustomSelect v-model="warnDays" :options="WARN_OPTIONS" aria-label="临期预警梯度" />
+        </div>
+
+        <template v-if="currentTemplateFields.length > 0">
+          <div class="sm:col-span-2 pt-2 border-t border-[#fff8ee]/10 text-xs font-semibold text-slate-200">
+            分类专有嗅探参数
+          </div>
+          <label
+            v-for="f in currentTemplateFields"
+            :key="f.key"
+            class="flex flex-col gap-1 text-xs text-slate-300"
+          >
+            <span>{{ f.label }}</span>
+            <input
+              v-model="extraValues[f.key]"
+              type="text"
+              :placeholder="f.placeholder || ''"
+              class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none"
+            />
+          </label>
+        </template>
       </div>
 
-      <form @submit.prevent="handleSubmit" class="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3.5">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>资产类别</span>
-            <CustomSelect v-model="category" :options="CATEGORY_OPTIONS" />
-          </div>
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>资产名称</span>
-            <input v-model="name" type="text" required placeholder="如：CloudCone LA" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-          </label>
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>配置规格 / 描述</span>
-            <input v-model="spec" type="text" placeholder="如：2C 2G · 110G SSD" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-          </label>
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>当前状态</span>
-            <CustomSelect v-model="status" :options="STATUS_OPTIONS" />
-          </div>
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>费用金额</span>
-            <input v-model="amount" type="text" placeholder="如：$21.66 或 148元" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-          </label>
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>付款周期</span>
-            <CustomSelect v-model="billingCycle" :options="CYCLE_OPTIONS" />
-          </div>
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>到期类型</span>
-            <CustomSelect v-model="dueMode" :options="DUE_MODE_OPTIONS" />
-          </div>
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>续费方式</span>
-            <CustomSelect v-model="autoRenew" :options="RENEW_OPTIONS" />
-          </div>
-
-          <div v-if="dueMode === 'date'" class="sm:col-span-2 grid grid-cols-3 gap-2.5">
-            <div class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>到期年份</span>
-              <CustomSelect v-model="dueYear" :options="YEAR_OPTIONS" />
-            </div>
-            <div class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>到期月份</span>
-              <CustomSelect v-model="dueMonth" :options="MONTH_OPTIONS" />
-            </div>
-            <div class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>到期日期</span>
-              <CustomSelect v-model="dueDay" :options="DAY_OPTIONS" />
-            </div>
-          </div>
-
-          <div class="sm:col-span-2 flex flex-col gap-1 text-xs text-slate-300">
-            <span>临期预警梯度</span>
-            <CustomSelect v-model="warnDays" :options="WARN_OPTIONS" />
-          </div>
-
-          <template v-if="currentTemplateFields.length > 0">
-            <div class="sm:col-span-2 pt-2 border-t border-[#fff8ee]/10 text-xs font-semibold text-slate-200">
-              分类专有嗅探参数
-            </div>
-            <label
-              v-for="f in currentTemplateFields"
-              :key="f.key"
-              class="flex flex-col gap-1 text-xs text-slate-300"
-            >
-              <span>{{ f.label }}</span>
-              <input
-                v-model="extraValues[f.key]"
-                type="text"
-                :placeholder="f.placeholder || ''"
-                class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none"
-              />
-            </label>
-          </template>
-        </div>
-
-        <div class="flex items-center justify-between pt-3 border-t border-[#fff8ee]/10">
-          <button
-            v-if="!isNew"
-            type="button"
-            @click="handleDelete"
-            class="min-h-[40px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 cursor-pointer"
-          >
-            下架并删除
+      <div class="flex items-center justify-between pt-3 border-t border-[#fff8ee]/10">
+        <button
+          v-if="!isNew"
+          type="button"
+          @click="handleDelete"
+          class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 cursor-pointer"
+        >
+          下架并删除
+        </button>
+        <span v-else />
+        <div class="flex gap-2">
+          <button type="button" @click="closeModal" class="min-h-[44px] sm:min-h-[34px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">
+            取消
           </button>
-          <span v-else />
-          <div class="flex gap-2">
-            <button type="button" @click="closeModal" class="min-h-[40px] sm:min-h-[34px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">
-              取消
-            </button>
-            <button type="submit" :disabled="saving" class="min-h-[40px] sm:min-h-[34px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50 transition">
-              保存资产
-            </button>
-          </div>
+          <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[34px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50">
+            保存资产
+          </button>
         </div>
-      </form>
-    </div>
-  </div>
+      </div>
+    </form>
+  </BaseModal>
 </template>

@@ -1,11 +1,15 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: dark;
+  accent-color: #f2b880;
   --bg-deep: #04060d;
-  --bg-surface: rgba(11, 15, 29, 0.78);
-  --bg-card: rgba(14, 18, 34, 0.82);
+  --bg-surface: rgba(11, 15, 29, 0.8);
+  --bg-card: rgba(14, 18, 34, 0.84);
+  --bg-elevated: rgba(18, 23, 42, 0.92);
   --border-glass: rgba(255, 248, 238, 0.11);
-  --border-highlight: rgba(255, 248, 238, 0.08);
+  --border-highlight: rgba(255, 248, 238, 0.09);
+  --border-gold: rgba(242, 184, 128, 0.42);
   --text-main: #f5f2eb;
   --text-sub: #cbd5e1;
   --text-muted: #94a3b8;
@@ -15,19 +19,71 @@
   --accent-amber: #fbbf24;
   --accent-emerald: #34d399;
   --accent-rose: #f87171;
+  --target-size: 32px;
 }
 
-html, body {
+@media (pointer: coarse) {
+  :root {
+    --target-size: 44px;
+  }
+}
+
+html,
+body {
   min-height: 100%;
-  background: radial-gradient(circle at 20% 15%, #130f2b 0%, #070a13 48%, #04060d 100%);
+  background:
+    radial-gradient(ellipse 80% 55% at 18% 10%, rgba(39, 28, 72, 0.48) 0%, transparent 60%),
+    radial-gradient(ellipse 65% 45% at 86% 88%, rgba(86, 46, 24, 0.22) 0%, transparent 58%),
+    linear-gradient(180deg, #070a13 0%, #04060d 100%);
   color: var(--text-main);
   font-family: -apple-system, BlinkMacSystemFont, "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  overflow-wrap: anywhere;
+  scrollbar-color: rgba(255, 248, 238, 0.24) transparent;
+  scrollbar-width: auto;
 }
 
-/* Custom Scrollbar */
+::selection {
+  background: rgba(242, 184, 128, 0.3);
+  color: #fbf7f0;
+}
+
+/* Typographic polish */
+h1, h2, h3 {
+  text-wrap: balance;
+}
+
+p, li {
+  text-wrap: pretty;
+}
+
+img, video {
+  max-inline-size: 100%;
+  block-size: auto;
+}
+
+/* Accessible focus indicator without visual noise on pointer click */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent-gold);
+  outline-offset: 2px;
+}
+
+/* Natural tactile feedback */
+:where(button, [role="button"]) {
+  transition-property: background-color, border-color, color, box-shadow, opacity, scale;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :where(button, [role="button"]):not(:disabled):active {
+    scale: 0.975;
+  }
+}
+
+/* Custom Scrollbar (keeping accessible thumb track width, auto scrollbar-width) */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -35,12 +91,16 @@ html, body {
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 248, 238, 0.16);
   border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(242, 184, 128, 0.45);
+  background: rgba(242, 184, 128, 0.5);
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
-/* Hide scrollbar for clean horizontal segmented bar */
+/* Hide scrollbar strictly for horizontally swipeable tab strips */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -49,14 +109,280 @@ html, body {
   scrollbar-width: none;
 }
 
+/* Smooth scrolling for message streams */
+.stream-scroller {
+  scrollbar-gutter: stable;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .stream-scroller {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Auto-sizing textarea using modern field-sizing with @supports guard */
+@supports (field-sizing: content) {
+  .auto-size-textarea {
+    field-sizing: content;
+    height: auto;
+    min-block-size: 1.65lh;
+    max-block-size: 160px;
+  }
+}
+
+/* Reveal message / card actions on hover, keyboard focus, and always on touch */
+.reveal-actions {
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+.reveal-host:hover .reveal-actions,
+.reveal-host:focus-within .reveal-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .reveal-actions {
+    opacity: 1;
+  }
+}
+
 /* Vesper Twilight Aero-Glass Surface */
 .aero-glass {
-  background: var(--bg-card);
+  background: linear-gradient(180deg, rgba(20, 25, 44, 0.88) 0%, rgba(12, 16, 30, 0.86) 100%);
   border: 1px solid var(--border-glass);
   box-shadow:
     inset 0 1px 0 var(--border-highlight),
-    0 18px 42px rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(18px);
+    0 20px 46px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(20px);
+}
+
+.vesper-card {
+  background: rgba(14, 18, 34, 0.78);
+  border: 1px solid var(--border-glass);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 238, 0.07),
+    0 12px 30px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(14px);
+}
+
+/* Container-query responsive surfaces */
+.cq-container {
+  container-type: inline-size;
+}
+
+.ops-asset-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.875rem;
+}
+@container (min-width: 560px) {
+  .ops-asset-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container (min-width: 920px) {
+  .ops-asset-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.ops-task-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.875rem;
+}
+@container (min-width: 660px) {
+  .ops-task-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.starter-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.625rem;
+  width: 100%;
+}
+@container (min-width: 520px) {
+  .starter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ============================================================================
+   Native <dialog> Modal & Mobile Bottom Sheet + Top-Layer Transitions
+   ============================================================================ */
+dialog.vesper-dialog {
+  color: var(--text-main);
+  background: linear-gradient(180deg, rgba(19, 24, 43, 0.96) 0%, rgba(10, 13, 26, 0.97) 100%);
+  border: 1px solid var(--border-glass);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 238, 0.1),
+    0 24px 64px rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(24px);
+  padding: 0;
+  opacity: 0;
+  max-width: min(100vw, 42rem);
+  width: 100%;
+  max-height: 90dvh;
+  margin: auto 0 0 0;
+  border-radius: 1.25rem 1.25rem 0 0;
+  overflow: hidden;
+  transition-property: opacity, transform, display, overlay;
+  transition-duration: 0.24s;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-behavior: allow-discrete;
+}
+
+dialog.vesper-dialog.vesper-dialog-sm {
+  max-width: min(100vw, 32rem);
+}
+dialog.vesper-dialog.vesper-dialog-2xl {
+  max-width: min(100vw, 44rem);
+}
+dialog.vesper-dialog.vesper-dialog-3xl {
+  max-width: min(100vw, 52rem);
+}
+
+@media (min-width: 640px) {
+  dialog.vesper-dialog {
+    width: calc(100% - 2rem);
+    max-height: 86dvh;
+    margin: auto;
+    border-radius: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog.vesper-dialog {
+    transform: translateY(18px);
+  }
+  @media (min-width: 640px) {
+    dialog.vesper-dialog {
+      transform: translateY(8px) scale(0.96);
+    }
+  }
+}
+
+dialog.vesper-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.vesper-dialog[open]:where(:not([data-closing])) {
+  display: flex;
+  flex-direction: column;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog.vesper-dialog[open]:where(:not([data-closing])) {
+    transform: translateY(0) scale(1);
+    @starting-style {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+  }
+  @media (min-width: 640px) {
+    dialog.vesper-dialog[open]:where(:not([data-closing])) {
+      @starting-style {
+        opacity: 0;
+        transform: translateY(8px) scale(0.96);
+      }
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.vesper-dialog[open]:where(:not([data-closing])) {
+    @starting-style {
+      opacity: 0;
+    }
+  }
+  dialog.vesper-dialog {
+    transition-duration: 0.1s;
+  }
+}
+
+dialog.vesper-dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background-color: rgba(2, 4, 10, 0);
+  backdrop-filter: blur(0px);
+  transition-property: background-color, backdrop-filter, display, overlay;
+  transition-duration: 0.24s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
+  background-color: rgba(2, 4, 10, 0.72);
+  backdrop-filter: blur(5px);
+  @starting-style {
+    background-color: rgba(2, 4, 10, 0);
+    backdrop-filter: blur(0px);
+  }
+}
+
+/* ============================================================================
+   Native Popover + CSS Anchor Positioning (Header More Menu)
+   ============================================================================ */
+[popover].vesper-popover {
+  margin: 0;
+  padding: 0.375rem;
+  border-radius: 0.875rem;
+  border: 1px solid var(--border-glass);
+  background: rgba(11, 15, 28, 0.96);
+  backdrop-filter: blur(20px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 238, 0.08),
+    0 18px 42px rgba(0, 0, 0, 0.58);
+  color: var(--text-main);
+  min-width: 11.5rem;
+  opacity: 0;
+  transform-origin: top right;
+  transition-property: opacity, transform, display, overlay;
+  transition-duration: 0.16s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+@supports (position-area: block-end) {
+  [popover].vesper-popover.anchored-end {
+    inset: auto;
+    margin: 0;
+    margin-block-start: 0.5rem;
+    position-area: block-end span-inline-start;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  }
+}
+
+@supports not (position-area: block-end) {
+  [popover].vesper-popover.anchored-end {
+    position: fixed;
+    margin: 0;
+  }
+}
+
+[popover].vesper-popover:is(:popover-open, .\:popover-open) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [popover].vesper-popover {
+    scale: 0.94;
+  }
+  [popover].vesper-popover:is(:popover-open, .\:popover-open) {
+    scale: 1;
+    animation: popover-spring 220ms linear(0, 0.5 16%, 1.06 42%, 0.98 68%, 1) both;
+  }
+}
+
+@keyframes popover-spring {
+  from {
+    opacity: 0;
+    scale: 0.92;
+  }
 }
 
 /* Procedural Bot SVG Animations */
@@ -85,6 +411,16 @@ html, body {
 
 .bot-avatar-blocked {
   animation: botAlertPulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bot-avatar-thinking .bot-ring,
+  .bot-avatar-working .bot-ring,
+  .bot-avatar-thinking .bot-eyes,
+  .bot-avatar-working .bot-eyes,
+  .bot-avatar-blocked {
+    animation: none;
+  }
 }
 
 @keyframes botSpin {
@@ -134,6 +470,9 @@ html, body {
   color: var(--accent-gold);
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+.md-body a:hover {
+  text-decoration-thickness: 2px;
 }
 .md-body code.md-inline-code {
   background: rgba(255, 248, 238, 0.08);

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, useId, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore, type ChatMessageUI } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { botStateLabel, describeCron, formatTime } from '../utils/format'
 import { renderSafeMarkdown } from '../utils/markdown'
+import { isImeComposingEnter } from '../utils/topLayer'
 import BotAvatar from './BotAvatar.vue'
 import CustomSelect from './CustomSelect.vue'
 
@@ -19,16 +20,24 @@ const emit = defineEmits<{
 const store = useAppStore()
 const bot = store.activeBot
 
+const moreMenuId = useId()
+const composerId = useId()
+
 const inputPrompt = ref('')
 const selectedModel = ref('deepseek-flash')
 const enableThinking = ref(true)
 const streamStatus = ref('就绪')
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const formRef = ref<HTMLFormElement | null>(null)
 const userScrolledUp = ref(false)
-const moreMenuOpen = ref(false)
-const moreMenuRef = ref<HTMLElement | null>(null)
 
+const moreBtnRef = ref<HTMLButtonElement | null>(null)
+const morePopoverRef = ref<HTMLElement | null>(null)
+const moreFallbackOpen = ref(false)
+const hasNativePopover = typeof HTMLElement !== 'undefined' && Object.hasOwn(HTMLElement.prototype, 'popover')
+
+let lastCompositionEndAt: number | null = null
 let abortCtrl: AbortController | null = null
 let lastPrompt = ''
 
@@ -63,6 +72,24 @@ const AVATAR_OPTIONS = [
   { value: 'amber', label: '炽焰琥珀 (Warm Amber)' },
   { value: 'emerald', label: '星野翠绿 (Emerald)' },
   { value: 'violet', label: '星云暮紫 (Nebula Violet)' },
+]
+
+const STARTER_CARDS = [
+  {
+    title: '盘点资产与风险',
+    desc: '检查全部服务器与域名到期梯度并输出锐评',
+    prompt: '请调用工具盘点我当前的全部数字资产与算力节点，并按到期风险给出锐评。',
+  },
+  {
+    title: '探查哪吒节点脉搏',
+    desc: '实时读取服务器在线状态、CPU 负载与流量健康度',
+    prompt: '请调用 query_nezha_nodes 检查哪吒监控面板节点的在线状态与配置详情。',
+  },
+  {
+    title: '核查调度任务队列',
+    desc: '汇总当前定时例程运行结果与下次自动触发窗口',
+    prompt: '请查看当前所有自动化调度任务的运行状态，并告诉我下次触发时间。',
+  },
 ]
 
 watch(
@@ -143,15 +170,31 @@ function scrollToBottom(force = false) {
   })
 }
 
+const supportsFieldSizing =
+  typeof window !== 'undefined' && Boolean(window.CSS?.supports?.('field-sizing', 'content'))
+
 function autoResizeTextarea() {
+  if (supportsFieldSizing) return
   const el = textareaRef.value
   if (!el) return
   el.style.height = 'auto'
   el.style.height = `${Math.min(el.scrollHeight, 160)}px`
 }
 
+function handleCompositionEnd(e: CompositionEvent) {
+  lastCompositionEndAt = e.timeStamp
+}
+
+function handleComposerKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    if (isImeComposingEnter(e, lastCompositionEndAt)) return
+    formRef.value?.requestSubmit()
+  }
+}
+
 watch(inputPrompt, (val) => {
-  if (!val) {
+  if (!val && !supportsFieldSizing) {
     nextTick(() => {
       if (textareaRef.value) textareaRef.value.style.height = ''
     })
@@ -171,20 +214,58 @@ watch(
   () => scrollToBottom(false)
 )
 
-function handleDocClick(e: MouseEvent) {
-  if (!moreMenuOpen.value) return
-  if (moreMenuRef.value && !moreMenuRef.value.contains(e.target as Node)) {
-    moreMenuOpen.value = false
+// Native popover fallback positioning when position-area isn't supported
+function positionFallbackPopover() {
+  const btn = moreBtnRef.value
+  const pop = morePopoverRef.value
+  if (!btn || !pop) return
+  if (window.CSS?.supports?.('position-area', 'block-end')) return
+  const rect = btn.getBoundingClientRect()
+  const panelWidth = Math.max(pop.offsetWidth, 184)
+  const left = Math.max(8, Math.min(rect.right - panelWidth, window.innerWidth - panelWidth - 8))
+  const spaceBelow = window.innerHeight - rect.bottom
+  const top = spaceBelow < 180 ? Math.max(8, rect.top - 160) : rect.bottom + 8
+  pop.style.top = `${top}px`
+  pop.style.left = `${left}px`
+}
+
+function onMoreBeforeToggle(e: Event) {
+  const toggleEvt = e as ToggleEvent
+  if (toggleEvt.newState === 'open') {
+    nextTick(() => positionFallbackPopover())
   }
 }
 
-onMounted(() => document.addEventListener('click', handleDocClick))
-onBeforeUnmount(() => document.removeEventListener('click', handleDocClick))
+function handleMoreButtonClick() {
+  if (!hasNativePopover) {
+    moreFallbackOpen.value = !moreFallbackOpen.value
+  }
+}
+
+function closeMoreMenu() {
+  if (hasNativePopover && morePopoverRef.value?.matches(':popover-open')) {
+    morePopoverRef.value.hidePopover()
+  }
+  moreFallbackOpen.value = false
+}
+
+function handleOutsideFallback(e: MouseEvent) {
+  if (hasNativePopover || !moreFallbackOpen.value) return
+  const t = e.target as Node
+  if (moreBtnRef.value?.contains(t) || morePopoverRef.value?.contains(t)) return
+  moreFallbackOpen.value = false
+}
+
+onMounted(() => document.addEventListener('click', handleOutsideFallback))
+onBeforeUnmount(() => document.removeEventListener('click', handleOutsideFallback))
 
 function appendMention(tag: string) {
   const prefix = inputPrompt.value && !inputPrompt.value.endsWith(' ') ? ' ' : ''
   inputPrompt.value = `${inputPrompt.value}${prefix}${tag}`
-  nextTick(() => autoResizeTextarea())
+  nextTick(() => {
+    autoResizeTextarea()
+    textareaRef.value?.focus()
+  })
 }
 
 function handleMarkdownClick(e: MouseEvent) {
@@ -468,25 +549,29 @@ function stateBadgeClass(state?: string): string {
 <template>
   <section class="flex-1 min-h-0 flex flex-col">
     <!-- Active Bot Top Header -->
-    <header class="px-3.5 sm:px-6 py-3 border-b border-[#fff8ee]/10 bg-[#080c18]/55 flex flex-wrap items-center justify-between gap-2.5">
+    <header class="px-3.5 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pb-3 border-b border-[#fff8ee]/10 bg-[#080c18]/58 backdrop-blur-md flex flex-wrap items-center justify-between gap-2.5">
       <div class="flex items-center gap-2.5 min-w-0">
         <button
           type="button"
           aria-label="打开菜单"
-          class="md:hidden min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer transition"
+          class="md:hidden min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
           @click="emit('openMobileMenu')"
         >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
         </button>
         <button
           v-if="desktopCollapsed"
           type="button"
           aria-label="展开侧边栏"
           title="展开侧边栏"
-          class="hidden md:inline-flex items-center justify-center w-9 h-9 rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer transition"
+          class="hidden md:inline-flex items-center justify-center w-9 h-9 rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
           @click="emit('toggleDesktopSidebar')"
         >
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" />
             <line x1="9" y1="3" x2="9" y2="21" />
             <polyline points="13 9 16 12 13 15" />
@@ -495,7 +580,7 @@ function stateBadgeClass(state?: string): string {
         <BotAvatar :avatar-style="bot?.avatar_style" :state="bot?.state" size="lg" />
         <div class="min-w-0">
           <div class="flex items-center gap-2">
-            <strong class="text-sm md:text-base font-semibold text-white truncate">{{ bot?.name || '长庚执更' }}</strong>
+            <h1 class="text-sm md:text-base font-semibold text-white truncate">{{ bot?.name || '长庚执更' }}</h1>
             <span :class="['font-mono text-[10.5px] px-2 py-0.5 rounded-full border leading-none shrink-0', stateBadgeClass(bot?.state)]">
               {{ botStateLabel(bot?.state) }}
             </span>
@@ -506,7 +591,7 @@ function stateBadgeClass(state?: string): string {
 
       <div class="flex items-center gap-2 max-w-full ml-auto">
         <!-- Segmented Control Capsule -->
-        <div class="inline-flex items-center p-1 rounded-full bg-[#060913]/90 border border-[#fff8ee]/11 overflow-x-auto no-scrollbar max-w-full">
+        <nav aria-label="Bot 子视图" class="inline-flex items-center p-1 rounded-full bg-[#060913]/92 border border-[#fff8ee]/11 overflow-x-auto no-scrollbar max-w-full">
           <button
             v-for="tab in [
               { id: 'stream', label: '对话流' },
@@ -516,9 +601,10 @@ function stateBadgeClass(state?: string): string {
             ]"
             :key="tab.id"
             type="button"
+            :aria-current="store.state.botView === tab.id ? 'page' : undefined"
             @click="store.state.botView = tab.id as any"
             :class="[
-              'min-h-[34px] px-3.5 rounded-full text-xs transition cursor-pointer whitespace-nowrap shrink-0',
+              'min-h-[38px] sm:min-h-[32px] px-3.5 rounded-full text-xs cursor-pointer whitespace-nowrap shrink-0',
               store.state.botView === tab.id
                 ? 'bg-[#f2b880] text-[#070a13] font-semibold shadow-sm'
                 : 'text-slate-300 hover:text-white'
@@ -526,63 +612,62 @@ function stateBadgeClass(state?: string): string {
           >
             {{ tab.label }}
           </button>
-        </div>
+        </nav>
 
-        <!-- Collapsed More Actions Dropdown -->
-        <div ref="moreMenuRef" class="relative shrink-0">
+        <!-- Native Top-Layer Popover + Anchor Positioned More Actions -->
+        <div class="relative shrink-0">
           <button
+            ref="moreBtnRef"
             type="button"
+            :popovertarget="hasNativePopover ? moreMenuId : undefined"
             aria-label="更多操作"
             title="更多操作"
-            @click.stop="moreMenuOpen = !moreMenuOpen"
-            class="min-h-[40px] min-w-[40px] sm:min-h-[36px] sm:min-w-[36px] inline-flex items-center justify-center rounded-full border border-[#fff8ee]/12 bg-[#060913]/80 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 transition cursor-pointer"
+            @click="handleMoreButtonClick"
+            class="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] inline-flex items-center justify-center rounded-full border border-[#fff8ee]/12 bg-[#060913]/85 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
               <circle cx="5" cy="12" r="1.75" />
               <circle cx="12" cy="12" r="1.75" />
               <circle cx="19" cy="12" r="1.75" />
             </svg>
           </button>
 
-          <Transition
-            enter-active-class="transition duration-150 ease-out"
-            enter-from-class="opacity-0 -translate-y-1 scale-95"
-            enter-to-class="opacity-100 translate-y-0 scale-100"
-            leave-active-class="transition duration-100 ease-in"
-            leave-from-class="opacity-100"
-            leave-to-class="opacity-0"
+          <div
+            ref="morePopoverRef"
+            :id="moreMenuId"
+            :popover="hasNativePopover ? 'auto' : undefined"
+            @beforetoggle="onMoreBeforeToggle"
+            :class="[
+              'vesper-popover anchored-end',
+              !hasNativePopover ? (moreFallbackOpen ? 'fixed right-4 top-16 flex flex-col gap-0.5 z-50' : 'hidden') : ''
+            ]"
           >
-            <div
-              v-if="moreMenuOpen"
-              class="absolute right-0 mt-2 w-44 rounded-xl border border-[#fff8ee]/12 bg-[#0a0f1f]/98 backdrop-blur-xl shadow-2xl p-1.5 z-50 flex flex-col gap-0.5"
+            <button
+              type="button"
+              @click="store.loadDashboard(false); closeMoreMenu()"
+              class="min-h-[44px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
             >
-              <button
-                type="button"
-                @click="store.loadDashboard(false); moreMenuOpen = false"
-                class="min-h-[40px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/12 hover:text-[#f2b880] transition cursor-pointer text-left"
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
-                <span>刷新状态</span>
-              </button>
-              <button
-                type="button"
-                @click="exportTimelineMarkdown(); moreMenuOpen = false"
-                class="min-h-[40px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/12 hover:text-[#f2b880] transition cursor-pointer text-left"
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                <span>导出 Markdown</span>
-              </button>
-              <div class="my-1 border-t border-[#fff8ee]/10" />
-              <button
-                type="button"
-                @click="clearTimeline(); moreMenuOpen = false"
-                class="min-h-[40px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-rose-300 hover:bg-rose-500/15 transition cursor-pointer text-left"
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                <span>清空对话流</span>
-              </button>
-            </div>
-          </Transition>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+              <span>刷新状态</span>
+            </button>
+            <button
+              type="button"
+              @click="exportTimelineMarkdown(); closeMoreMenu()"
+              class="min-h-[44px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+              <span>导出 Markdown</span>
+            </button>
+            <div class="my-1 border-t border-[#fff8ee]/10" />
+            <button
+              type="button"
+              @click="clearTimeline(); closeMoreMenu()"
+              class="min-h-[44px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-rose-300 hover:bg-rose-500/15 cursor-pointer text-left"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+              <span>清空对话流</span>
+            </button>
+          </div>
         </div>
       </div>
     </header>
@@ -594,41 +679,41 @@ function stateBadgeClass(state?: string): string {
           ref="scrollContainerRef"
           @scroll="onMessagesScroll"
           @click="handleMarkdownClick"
-          class="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 flex flex-col gap-5"
+          class="cq-container stream-scroller flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-5 flex flex-col gap-5"
         >
-          <!-- Empty State Hero -->
+          <!-- Empty State Hero + Container-Query Starter Cards -->
           <div
             v-if="store.state.timeline.length === 0"
-            class="m-auto max-w-xl text-center py-8 px-4 flex flex-col items-center gap-3"
+            class="m-auto max-w-[760px] w-full text-center py-6 px-2 flex flex-col items-center gap-3.5"
           >
-            <span class="px-2.5 py-1 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880] font-mono text-[11px]">
+            <span class="px-2.5 py-1 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880] font-mono text-[11px] tracking-wider">
               PERSISTENT GROKBOT
             </span>
-            <h2 class="text-2xl font-semibold text-white">{{ bot?.name }} 随时待命</h2>
-            <p class="text-xs sm:text-sm text-slate-400">
-              {{ bot?.role_title }} · 后台例程产出与告警均会主动投递至此时间线
+            <h2 class="text-xl sm:text-2xl font-semibold text-white">{{ bot?.name }} 随时待命</h2>
+            <p class="text-xs sm:text-sm text-slate-400 max-w-lg">
+              {{ bot?.role_title }} · 后台定时例程与监控告警均会主动汇报至此持久对话流
             </p>
-            <div class="flex flex-wrap justify-center gap-2 mt-2">
+
+            <div class="starter-grid mt-2 text-left">
               <button
+                v-for="card in STARTER_CARDS"
+                :key="card.title"
                 type="button"
-                @click="sendPrompt('请调用工具盘点我当前的全部数字资产与算力节点，并按到期风险给出锐评。')"
-                class="min-h-[40px] sm:min-h-[34px] px-3.5 py-1.5 rounded-full text-xs border border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer transition"
+                @click="sendPrompt(card.prompt)"
+                class="vesper-card rounded-2xl p-3.5 flex flex-col gap-1.5 hover:border-[#f2b880]/50 hover:bg-[#f2b880]/[0.06] cursor-pointer text-left group"
               >
-                盘点全部资产与到期风险
-              </button>
-              <button
-                type="button"
-                @click="sendPrompt('请调用 query_nezha_nodes 检查哪吒监控面板节点的在线状态与配置详情。')"
-                class="min-h-[40px] sm:min-h-[34px] px-3.5 py-1.5 rounded-full text-xs border border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer transition"
-              >
-                探查哪吒节点脉搏
-              </button>
-              <button
-                type="button"
-                @click="sendPrompt('请查看当前所有自动化调度任务的运行状态，并告诉我下次触发时间。')"
-                class="min-h-[40px] sm:min-h-[34px] px-3.5 py-1.5 rounded-full text-xs border border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer transition"
-              >
-                检查调度任务状态
+                <div class="flex items-center justify-between gap-2">
+                  <strong class="text-xs sm:text-sm font-semibold text-white group-hover:text-[#f2b880] transition-colors">
+                    {{ card.title }}
+                  </strong>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="text-slate-500 group-hover:text-[#f2b880] shrink-0">
+                    <line x1="7" y1="17" x2="17" y2="7" />
+                    <polyline points="7 7 17 7 17 17" />
+                  </svg>
+                </div>
+                <p class="text-[11.5px] text-slate-400 leading-relaxed">
+                  {{ card.desc }}
+                </p>
               </button>
             </div>
           </div>
@@ -639,19 +724,19 @@ function stateBadgeClass(state?: string): string {
             <div v-if="m.role === 'user'" class="max-w-[820px] w-full mx-auto flex justify-end">
               <div
                 :title="formatTime(m.createdAt)"
-                class="max-w-[82%] sm:max-w-[74%] rounded-2xl px-4 py-2.5 bg-[#f2b880]/14 border border-[#f2b880]/28 text-sm text-slate-100 leading-relaxed whitespace-pre-wrap"
+                class="max-w-[85%] sm:max-w-[74%] rounded-2xl rounded-tr-sm px-4 py-2.5 bg-[#f2b880]/14 border border-[#f2b880]/30 text-sm text-slate-100 leading-relaxed whitespace-pre-wrap shadow-sm"
               >
                 {{ m.content }}
               </div>
             </div>
 
             <!-- Bot Message (Chat or Proactive Routine Report) -->
-            <div v-else class="max-w-[820px] w-full mx-auto">
+            <article v-else class="reveal-host max-w-[820px] w-full mx-auto">
               <div
                 :class="[
                   'flex flex-col gap-2.5',
                   m.msgKind === 'routine'
-                    ? 'rounded-2xl border border-[#f2b880]/30 bg-[#0d1222]/80 p-4'
+                    ? 'vesper-card rounded-2xl border-[#f2b880]/30 p-4'
                     : 'py-1'
                 ]"
               >
@@ -691,7 +776,7 @@ function stateBadgeClass(state?: string): string {
                 >
                   <summary class="cursor-pointer flex items-center justify-between gap-2 text-slate-300 select-none">
                     <span class="inline-flex items-center gap-2 min-w-0">
-                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" class="text-[#f2b880] shrink-0">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" class="text-[#f2b880] shrink-0">
                         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                       </svg>
                       <span class="truncate">工具执行轨迹 · 共 {{ m.tools.length }} 步</span>
@@ -720,12 +805,12 @@ function stateBadgeClass(state?: string): string {
                 <div v-if="m.content" v-html="renderSafeMarkdown(m.content)" />
                 <div v-else-if="m.errorText" class="text-sm text-rose-400">[调用失败] {{ m.errorText }}</div>
 
-                <!-- Message Footer Actions -->
-                <div v-if="!m.streaming && m.content" class="flex items-center gap-2 pt-1.5 border-t border-[#fff8ee]/8">
+                <!-- Message Footer Actions (Visible on hover, keyboard focus, and always on touch) -->
+                <div v-if="!m.streaming && m.content" class="reveal-actions flex items-center gap-2 pt-1.5 border-t border-[#fff8ee]/8">
                   <button
                     type="button"
                     @click="copyMessageContent(m.content)"
-                    class="min-h-[36px] sm:min-h-[28px] px-2.5 py-1 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 transition cursor-pointer"
+                    class="min-h-[38px] sm:min-h-[28px] px-2.5 py-1 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
                   >
                     复制全文
                   </button>
@@ -733,13 +818,13 @@ function stateBadgeClass(state?: string): string {
                     v-if="lastPrompt"
                     type="button"
                     @click="sendPrompt(lastPrompt)"
-                    class="min-h-[36px] sm:min-h-[28px] px-2.5 py-1 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 transition cursor-pointer"
+                    class="min-h-[38px] sm:min-h-[28px] px-2.5 py-1 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
                   >
                     重新生成
                   </button>
                 </div>
               </div>
-            </div>
+            </article>
           </template>
         </div>
 
@@ -756,16 +841,18 @@ function stateBadgeClass(state?: string): string {
             v-if="userScrolledUp"
             type="button"
             @click="scrollToBottom(true)"
-            class="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 min-h-[36px] px-3.5 rounded-full border border-[#f2b880]/45 bg-[#0a0f1f]/95 text-xs font-medium text-[#f2b880] shadow-xl backdrop-blur-md hover:bg-[#f2b880]/15 transition cursor-pointer"
+            class="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 min-h-[40px] sm:min-h-[34px] px-4 rounded-full border border-[#f2b880]/45 bg-[#0a0f1f]/95 text-xs font-medium text-[#f2b880] shadow-xl backdrop-blur-md hover:bg-[#f2b880]/15 cursor-pointer"
           >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
             <span>回到底部</span>
           </button>
         </Transition>
       </div>
 
       <!-- Floating Composer Dock -->
-      <div class="px-3 sm:px-6 pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-5">
+      <div class="px-3 sm:px-6 pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] sm:pb-5">
         <div
           v-if="bot?.id === 'team_room'"
           class="max-w-[820px] w-full mx-auto mb-2 flex items-center gap-1.5 flex-wrap"
@@ -776,35 +863,41 @@ function stateBadgeClass(state?: string): string {
             :key="tag"
             type="button"
             @click="appendMention(tag)"
-            class="min-h-[34px] sm:min-h-[28px] px-2.5 py-1 rounded-full text-xs border border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer transition"
+            class="min-h-[36px] sm:min-h-[28px] px-2.5 py-1 rounded-full text-xs border border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer"
           >
             {{ tag.trim() }}
           </button>
         </div>
 
         <form
+          ref="formRef"
           @submit.prevent="sendPrompt()"
-          class="max-w-[820px] w-full mx-auto rounded-[22px] border border-[#fff8ee]/14 focus-within:border-[#f2b880]/55 bg-[#0b101e]/92 shadow-2xl px-3.5 sm:px-4 pt-3 pb-2.5 flex flex-col gap-2.5 transition-colors"
+          class="max-w-[820px] w-full mx-auto rounded-[22px] border border-[#fff8ee]/14 focus-within:border-[#f2b880]/55 bg-[#0b101e]/92 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,248,238,0.08),0_20px_46px_rgba(0,0,0,0.52)] px-3.5 sm:px-4 pt-3 pb-2.5 flex flex-col gap-2.5 transition-colors"
         >
+          <label :for="composerId" class="sr-only">向当前专属 Bot 下达指令</label>
           <textarea
+            :id="composerId"
             ref="textareaRef"
             v-model="inputPrompt"
             rows="1"
             placeholder="向当前专属 Bot 下达指令（Enter 发送，Shift+Enter 换行）..."
             @input="autoResizeTextarea"
-            @keydown.enter.exact.prevent="sendPrompt()"
-            class="w-full bg-transparent border-0 text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none min-h-[24px] max-h-[160px] overflow-y-auto leading-relaxed"
+            @compositionend="handleCompositionEnd"
+            @keydown="handleComposerKeydown"
+            class="auto-size-textarea w-full bg-transparent border-0 text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none min-h-[24px] max-h-[160px] overflow-y-auto leading-relaxed"
           />
+
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
               <div class="w-36 sm:w-44 shrink-0">
-                <CustomSelect v-model="selectedModel" :options="MODEL_OPTIONS" compact />
+                <CustomSelect v-model="selectedModel" :options="MODEL_OPTIONS" compact aria-label="选择推理模型" />
               </div>
               <button
                 type="button"
+                :aria-pressed="enableThinking"
                 @click="enableThinking = !enableThinking"
                 :class="[
-                  'min-h-[40px] sm:min-h-[32px] px-3 rounded-full text-xs border transition cursor-pointer whitespace-nowrap shrink-0',
+                  'min-h-[44px] sm:min-h-[32px] px-3 rounded-full text-xs border cursor-pointer whitespace-nowrap shrink-0',
                   enableThinking
                     ? 'border-[#f2b880]/50 bg-[#f2b880]/15 text-[#f2b880]'
                     : 'border-[#fff8ee]/14 text-slate-400 hover:text-white'
@@ -812,7 +905,14 @@ function stateBadgeClass(state?: string): string {
               >
                 深度思考: {{ enableThinking ? '开' : '关' }}
               </button>
-              <span class="hidden sm:inline font-mono text-[11px] text-slate-400 truncate">{{ streamStatus }}</span>
+              <span class="hidden sm:inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-400 truncate" aria-live="polite">
+                <span
+                  v-if="store.state.isStreaming"
+                  class="w-1.5 h-1.5 rounded-full bg-[#f2b880] animate-pulse shrink-0"
+                  aria-hidden="true"
+                />
+                <span class="truncate">{{ streamStatus }}</span>
+              </span>
             </div>
 
             <div class="flex items-center gap-2 shrink-0">
@@ -820,17 +920,21 @@ function stateBadgeClass(state?: string): string {
                 v-if="store.state.isStreaming"
                 type="button"
                 @click="stopStream"
-                class="min-h-[40px] sm:min-h-[34px] px-3.5 rounded-full text-xs bg-rose-500/20 border border-rose-400/45 text-rose-300 hover:bg-rose-500/30 cursor-pointer"
+                class="min-h-[44px] sm:min-h-[34px] px-3.5 rounded-full text-xs bg-rose-500/20 border border-rose-400/45 text-rose-300 hover:bg-rose-500/30 cursor-pointer"
               >
                 停止
               </button>
               <button
                 type="submit"
                 :disabled="store.state.isStreaming || !inputPrompt.trim()"
+                aria-label="发送指令"
                 title="发送 (Enter)"
-                class="w-10 h-10 rounded-full bg-[#f2b880] hover:bg-[#f7cba0] hover:scale-105 text-[#070a13] flex items-center justify-center transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                class="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-md"
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+                  <line x1="12" y1="19" x2="12" y2="5" />
+                  <polyline points="5 12 12 5 19 12" />
+                </svg>
               </button>
             </div>
           </div>
@@ -839,40 +943,40 @@ function stateBadgeClass(state?: string): string {
     </div>
 
     <!-- View 2: Bot Routines -->
-    <div v-show="store.state.botView === 'routines'" class="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
+    <div v-show="store.state.botView === 'routines'" class="cq-container flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
       <div class="max-w-4xl mx-auto flex flex-col gap-4">
         <div class="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h3 class="text-lg font-semibold text-white">该 Bot 专属定时例程 (Routines)</h3>
+            <h2 class="text-base sm:text-lg font-semibold text-white">该 Bot 专属定时例程 (Routines)</h2>
             <p class="text-xs text-slate-400">例程触发后将由当前 Bot 自主运行并将结果主动汇报进对话流</p>
           </div>
           <button
             type="button"
             @click="store.state.editingTask = { bot_id: bot?.id || 'butler' }"
-            class="min-h-[40px] sm:min-h-[34px] px-3.5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer transition"
+            class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer"
           >
             + 为该 Bot 添加例程
           </button>
         </div>
 
-        <div v-if="botRoutines.length === 0" class="aero-glass rounded-2xl p-8 text-center text-sm text-slate-400">
+        <div v-if="botRoutines.length === 0" class="vesper-card rounded-2xl p-8 text-center text-sm text-slate-400">
           当前 Bot 尚未绑定自动化例程，可点击右上角新增
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="ops-task-grid">
           <article
             v-for="t in botRoutines"
             :key="t.id"
-            class="aero-glass rounded-2xl p-4 flex flex-col gap-2.5"
+            class="vesper-card rounded-2xl p-4 flex flex-col gap-2.5"
           >
             <div class="flex items-start justify-between gap-2">
               <div>
-                <h4 class="font-semibold text-sm text-white">{{ t.name }}</h4>
+                <h3 class="font-semibold text-sm text-white">{{ t.name }}</h3>
                 <div class="font-mono text-[11px] text-slate-400 mt-0.5">{{ describeCron(t.cron_expr) }}</div>
               </div>
               <span
                 :class="[
-                  'font-mono text-[11px] px-2 py-0.5 rounded-full border',
+                  'font-mono text-[11px] px-2 py-0.5 rounded-full border shrink-0',
                   t.enabled ? 'border-emerald-400/35 bg-emerald-400/10 text-emerald-300' : 'border-[#fff8ee]/15 text-slate-400'
                 ]"
               >
@@ -880,19 +984,19 @@ function stateBadgeClass(state?: string): string {
               </span>
             </div>
             <p class="text-xs text-slate-300">{{ t.description }}</p>
-            <div class="font-mono text-[11px] text-slate-400">最近结果: {{ t.last_run?.summary || '等待首次执行' }}</div>
+            <div class="font-mono text-[11px] text-slate-400 truncate">最近结果: {{ t.last_run?.summary || '等待首次执行' }}</div>
             <div class="flex items-center gap-2 pt-1">
               <button
                 type="button"
                 @click="runRoutine(t.id)"
-                class="min-h-[40px] sm:min-h-[32px] px-3 py-1.5 rounded-lg bg-[#f2b880]/15 border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/25 text-xs cursor-pointer transition"
+                class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg bg-[#f2b880]/15 border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/25 text-xs cursor-pointer"
               >
                 立即执行一次
               </button>
               <button
                 type="button"
                 @click="store.state.editingTask = t"
-                class="min-h-[40px] sm:min-h-[32px] px-3 py-1.5 rounded-lg border border-[#fff8ee]/14 text-slate-300 hover:bg-white/5 text-xs cursor-pointer transition"
+                class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg border border-[#fff8ee]/14 text-slate-300 hover:bg-white/5 text-xs cursor-pointer"
               >
                 配置参数
               </button>
@@ -905,35 +1009,35 @@ function stateBadgeClass(state?: string): string {
     <!-- View 3: Bot Profile, Tools & Scoped Memories -->
     <div v-show="store.state.botView === 'config'" class="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
       <div class="max-w-4xl mx-auto flex flex-col gap-5">
-        <form @submit.prevent="saveBotProfile" class="aero-glass rounded-2xl p-5 flex flex-col gap-4">
+        <form @submit.prevent="saveBotProfile" class="vesper-card rounded-2xl p-5 flex flex-col gap-4">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label class="flex flex-col gap-1.5 text-xs text-slate-300">
               <span>Bot 名称</span>
-              <input v-model="cfgName" type="text" required class="rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+              <input v-model="cfgName" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
             </label>
             <label class="flex flex-col gap-1.5 text-xs text-slate-300">
               <span>职责定位</span>
-              <input v-model="cfgRole" type="text" required class="rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+              <input v-model="cfgRole" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
             </label>
             <div class="flex flex-col gap-1.5 text-xs text-slate-300">
               <span>默认推理模型</span>
-              <CustomSelect v-model="cfgModel" :options="MODEL_OPTIONS" />
+              <CustomSelect v-model="cfgModel" :options="MODEL_OPTIONS" aria-label="默认推理模型" />
             </div>
             <div class="flex flex-col gap-1.5 text-xs text-slate-300">
               <span>头像主题色</span>
-              <CustomSelect v-model="cfgAvatar" :options="AVATAR_OPTIONS" />
+              <CustomSelect v-model="cfgAvatar" :options="AVATAR_OPTIONS" aria-label="头像主题色" />
             </div>
             <label class="md:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
               <span>专属人设与行为约束 (System Prompt)</span>
-              <textarea v-model="cfgPrompt" rows="4" class="rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+              <textarea v-model="cfgPrompt" rows="4" class="auto-size-textarea rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none resize-y" />
             </label>
-            <div class="md:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
+            <div class="md:col-span-2 flex flex-col gap-2 text-xs text-slate-300">
               <span>绑定可用工具集 (最小权限白名单)</span>
-              <div class="flex flex-wrap gap-3 p-3 rounded-xl border border-[#fff8ee]/11 bg-[#060a16]/60">
+              <div class="flex flex-wrap gap-2">
                 <label
                   v-for="tool in TOOL_CATALOG"
                   :key="tool.id"
-                  class="inline-flex items-center gap-2 font-mono text-xs text-slate-300 cursor-pointer"
+                  class="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#fff8ee]/12 bg-[#060a16]/75 font-mono text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0]"
                 >
                   <input v-model="cfgTools" type="checkbox" :value="tool.id" class="accent-[#f2b880]" />
                   <span>{{ tool.label }}</span>
@@ -942,25 +1046,25 @@ function stateBadgeClass(state?: string): string {
             </div>
           </div>
 
-          <div class="flex items-center justify-between gap-3 flex-wrap pt-2 border-t border-[#fff8ee]/10">
+          <div class="flex items-center justify-between gap-3 flex-wrap pt-3 border-t border-[#fff8ee]/10">
             <button
               v-if="bot && !bot.is_builtin"
               type="button"
               @click="deleteCustomBot"
-              class="min-h-[40px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 text-xs cursor-pointer"
+              class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 text-xs cursor-pointer"
             >
               注销此自定义 Bot
             </button>
             <span v-else />
-            <div class="flex items-center gap-4">
-              <label class="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+            <div class="flex items-center gap-4 flex-wrap">
+              <label class="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
                 <input v-model="cfgThinking" type="checkbox" class="accent-[#f2b880]" />
                 <span>默认开启深度思考</span>
               </label>
               <button
                 type="submit"
                 :disabled="savingProfile"
-                class="min-h-[40px] sm:min-h-[34px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50 transition"
+                class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
               >
                 {{ savingProfile ? '保存中...' : '保存 Bot 人设与能力' }}
               </button>
@@ -968,8 +1072,8 @@ function stateBadgeClass(state?: string): string {
           </div>
         </form>
 
-        <div class="aero-glass rounded-2xl p-5">
-          <h4 class="font-semibold text-sm text-white mb-3">关联记忆背景 (全局 + 专属域)</h4>
+        <div class="vesper-card rounded-2xl p-5">
+          <h3 class="font-semibold text-sm text-white mb-3">关联记忆背景 (全局 + 专属域)</h3>
           <div v-if="scopedMemories.length === 0" class="text-xs text-slate-500">暂无关联长期记忆</div>
           <div class="flex flex-col gap-2">
             <article
@@ -977,7 +1081,7 @@ function stateBadgeClass(state?: string): string {
               :key="mem.id"
               class="rounded-xl border border-[#fff8ee]/11 bg-[#070a16]/75 px-3.5 py-2.5"
             >
-              <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
                 <strong class="font-mono text-xs text-[#f2b880]">{{ mem.fact_key }}</strong>
                 <span class="font-mono text-[11px] text-slate-500">{{ mem.scope || 'global' }} · {{ mem.category }}</span>
               </div>
@@ -991,16 +1095,16 @@ function stateBadgeClass(state?: string): string {
     <!-- View 4: Activity Pulse -->
     <div v-show="store.state.botView === 'activity'" class="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
       <div class="max-w-4xl mx-auto flex flex-col gap-3">
-        <h3 class="text-lg font-semibold text-white">运行脉搏与最近汇报摘要</h3>
-        <div v-if="activityEntries.length === 0" class="aero-glass rounded-2xl p-8 text-center text-sm text-slate-400">
+        <h2 class="text-base sm:text-lg font-semibold text-white">运行脉搏与最近汇报摘要</h2>
+        <div v-if="activityEntries.length === 0" class="vesper-card rounded-2xl p-8 text-center text-sm text-slate-400">
           暂无后台运行脉搏记录
         </div>
         <article
           v-for="(act, idx) in activityEntries"
           :key="idx"
-          class="aero-glass rounded-xl px-4 py-3"
+          class="vesper-card rounded-xl px-4 py-3"
         >
-          <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
             <strong class="text-sm text-white">{{ act.title }}</strong>
             <span class="font-mono text-[11px] text-slate-400">{{ act.time }}</span>
           </div>

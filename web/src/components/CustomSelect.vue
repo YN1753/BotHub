@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount, useId } from 'vue'
 import type { SelectOption } from '../types/bothub'
 
 const props = withDefaults(
@@ -8,6 +8,7 @@ const props = withDefaults(
     options: SelectOption[]
     placeholder?: string
     compact?: boolean
+    ariaLabel?: string
   }>(),
   {
     placeholder: '请选择...',
@@ -19,18 +20,92 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
+const listboxId = useId()
 const open = ref(false)
+const openAbove = ref(false)
+const highlightedIndex = ref(0)
 const rootEl = ref<HTMLElement | null>(null)
+const triggerEl = ref<HTMLButtonElement | null>(null)
 
 const currentLabel = computed(() => {
   const found = props.options.find((o) => o.value === props.modelValue)
   return found ? found.label : props.placeholder
 })
 
+function syncHighlightToValue() {
+  const idx = props.options.findIndex((o) => o.value === props.modelValue)
+  highlightedIndex.value = idx >= 0 ? idx : 0
+}
+
+function measureDirection() {
+  const rect = triggerEl.value?.getBoundingClientRect()
+  if (!rect) return
+  const spaceBelow = window.innerHeight - rect.bottom
+  const spaceAbove = rect.top
+  openAbove.value = spaceBelow < 240 && spaceAbove > spaceBelow
+}
+
+async function toggleOpen() {
+  if (open.value) {
+    open.value = false
+    return
+  }
+  syncHighlightToValue()
+  measureDirection()
+  open.value = true
+  await nextTick()
+}
+
 function selectOption(val: string) {
   emit('update:modelValue', val)
   open.value = false
+  triggerEl.value?.focus()
 }
+
+function handleTriggerKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && open.value) {
+    e.preventDefault()
+    e.stopPropagation()
+    open.value = false
+    return
+  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    if (!open.value) {
+      syncHighlightToValue()
+      measureDirection()
+      open.value = true
+      return
+    }
+    const len = props.options.length
+    if (!len) return
+    highlightedIndex.value =
+      e.key === 'ArrowDown'
+        ? (highlightedIndex.value + 1) % len
+        : (highlightedIndex.value - 1 + len) % len
+    return
+  }
+  if (e.key === 'Home' && open.value) {
+    e.preventDefault()
+    highlightedIndex.value = 0
+    return
+  }
+  if (e.key === 'End' && open.value) {
+    e.preventDefault()
+    highlightedIndex.value = Math.max(0, props.options.length - 1)
+    return
+  }
+  if ((e.key === 'Enter' || e.key === ' ') && open.value) {
+    e.preventDefault()
+    const opt = props.options[highlightedIndex.value]
+    if (opt) selectOption(opt.value)
+  }
+}
+
+watch(open, (val) => {
+  if (val) window.addEventListener('resize', measureDirection)
+  else window.removeEventListener('resize', measureDirection)
+})
 
 function handleOutside(e: MouseEvent) {
   if (rootEl.value && !rootEl.value.contains(e.target as Node)) {
@@ -39,18 +114,28 @@ function handleOutside(e: MouseEvent) {
 }
 
 onMounted(() => document.addEventListener('click', handleOutside))
-onBeforeUnmount(() => document.removeEventListener('click', handleOutside))
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleOutside)
+  window.removeEventListener('resize', measureDirection)
+})
 </script>
 
 <template>
   <div ref="rootEl" class="relative inline-block w-full">
     <button
+      ref="triggerEl"
       type="button"
-      @click="open = !open"
+      role="combobox"
+      :aria-expanded="open"
+      :aria-controls="listboxId"
+      aria-haspopup="listbox"
+      :aria-label="ariaLabel || currentLabel"
+      @click="toggleOpen"
+      @keydown="handleTriggerKeydown"
       :class="[
         'w-full flex items-center justify-between gap-2 rounded-xl border transition-colors text-left cursor-pointer',
-        'bg-[#080c19]/85 border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f2b880]/50',
-        compact ? 'px-3 py-1.5 text-xs min-h-[40px] sm:min-h-[34px]' : 'px-3.5 py-2 text-sm min-h-[42px]'
+        'bg-[#080c19]/85 border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-slate-100',
+        compact ? 'px-3 py-1.5 text-xs min-h-[44px] sm:min-h-[34px]' : 'px-3.5 py-2 text-sm min-h-[44px]'
       ]"
     >
       <span class="truncate">{{ currentLabel }}</span>
@@ -61,30 +146,63 @@ onBeforeUnmount(() => document.removeEventListener('click', handleOutside))
         fill="none"
         stroke="currentColor"
         stroke-width="2"
-        :class="['shrink-0 text-slate-400 transition-transform duration-150', open ? 'rotate-180' : '']"
+        aria-hidden="true"
+        :class="['shrink-0 text-slate-400 transition-transform duration-150', open ? 'rotate-180 text-[#f2b880]' : '']"
       >
-        <polyline points="6 9 12 15 18 9"></polyline>
+        <polyline points="6 9 12 15 18 9" />
       </svg>
     </button>
 
-    <div
-      v-if="open"
-      class="absolute z-50 mt-1.5 w-full min-w-[170px] max-h-60 overflow-y-auto rounded-xl border border-[#fff8ee]/15 bg-[#090d1b]/95 backdrop-blur-xl shadow-2xl p-1"
+    <Transition
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0 scale-95"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
     >
-      <button
-        v-for="opt in options"
-        :key="opt.value"
-        type="button"
-        @click="selectOption(opt.value)"
+      <div
+        v-if="open"
+        :id="listboxId"
+        role="listbox"
         :class="[
-          'w-full text-left px-3 min-h-[40px] sm:min-h-[34px] rounded-lg text-xs sm:text-sm transition-colors cursor-pointer flex items-center',
-          opt.value === modelValue
-            ? 'bg-[#f2b880]/20 text-[#f2b880] font-medium'
-            : 'text-slate-300 hover:bg-white/5 hover:text-white'
+          'absolute left-0 z-50 w-full min-w-[180px] max-h-60 overflow-y-auto rounded-xl border border-[#fff8ee]/14 bg-[#090d1b]/96 backdrop-blur-xl shadow-2xl p-1',
+          openAbove ? 'bottom-full mb-1.5 origin-bottom-left' : 'top-full mt-1.5 origin-top-left'
         ]"
       >
-        {{ opt.label }}
-      </button>
-    </div>
+        <button
+          v-for="(opt, idx) in options"
+          :key="opt.value"
+          type="button"
+          role="option"
+          :aria-selected="opt.value === modelValue"
+          @mouseenter="highlightedIndex = idx"
+          @click="selectOption(opt.value)"
+          :class="[
+            'w-full text-left px-3 min-h-[44px] sm:min-h-[34px] rounded-lg text-xs sm:text-sm transition-colors cursor-pointer flex items-center justify-between gap-2',
+            opt.value === modelValue
+              ? 'bg-[#f2b880]/20 text-[#f2b880] font-medium'
+              : idx === highlightedIndex
+                ? 'bg-white/8 text-white'
+                : 'text-slate-300 hover:bg-white/5 hover:text-white'
+          ]"
+        >
+          <span class="truncate">{{ opt.label }}</span>
+          <svg
+            v-if="opt.value === modelValue"
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.4"
+            aria-hidden="true"
+            class="shrink-0 text-[#f2b880]"
+          >
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </button>
+      </div>
+    </Transition>
   </div>
 </template>

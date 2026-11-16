@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, useId } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 
 const store = useAppStore()
+const passwordId = useId()
 const password = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
@@ -32,22 +33,25 @@ async function handleSubmit() {
       <p class="font-mono text-xs text-slate-400 mb-6">bot.starryheavens.uk · 请输入管理密钥</p>
 
       <form class="flex flex-col gap-3" @submit.prevent="handleSubmit">
+        <label :for="passwordId" class="sr-only">访问密钥</label>
         <input
+          :id="passwordId"
           v-model="password"
           type="password"
           placeholder="输入访问密钥..."
           autocomplete="current-password"
+          autofocus
           required
-          class="w-full min-h-[44px] rounded-xl border border-[#fff8ee]/12 bg-[#070a14]/85 px-3.5 py-2.5 font-mono text-sm text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none focus:ring-2 focus:ring-[#f2b880]/30"
+          class="w-full min-h-[44px] rounded-xl border border-[#fff8ee]/12 bg-[#070a14]/85 px-3.5 py-2.5 font-mono text-sm text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
         />
         <button
           type="submit"
           :disabled="loading"
-          class="w-full min-h-[44px] rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] active:scale-[0.99] text-[#070a13] font-semibold text-sm transition cursor-pointer disabled:opacity-50"
+          class="w-full min-h-[44px] rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-sm cursor-pointer disabled:opacity-50"
         >
           {{ loading ? '验证中...' : '解锁控制台' }}
         </button>
-        <p v-if="errorMsg" class="text-xs text-rose-400 mt-1">{{ errorMsg }}</p>
+        <p v-if="errorMsg" role="alert" class="text-xs text-rose-400 mt-1">{{ errorMsg }}</p>
       </form>
     </section>
   </main>

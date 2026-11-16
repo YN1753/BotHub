@@ -4,6 +4,7 @@ import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { formatTime } from '../utils/format'
 import { renderSafeMarkdown } from '../utils/markdown'
+import BaseModal from './BaseModal.vue'
 
 const store = useAppStore()
 const activeFilter = ref<'all' | 'morning' | 'radar' | 'asset' | 'alert'>('all')
@@ -24,6 +25,10 @@ const filtered = computed(() =>
     return true
   })
 )
+
+function closeModal() {
+  store.state.showInboxModal = false
+}
 
 async function markRead(id: number) {
   const item = store.state.notifications.find((n) => n.id === id)
@@ -64,95 +69,81 @@ async function toggleDesktopNotify() {
 </script>
 
 <template>
-  <div
-    v-if="store.state.showInboxModal"
-    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-sm"
-    @click.self="store.state.showInboxModal = false"
+  <BaseModal
+    :open="store.state.showInboxModal"
+    title="原生情报收件箱 (Inbox)"
+    subtitle="实时接收 AI 晨报、前沿雷达、资产到期提醒与哪吒探针告警"
+    max-width="3xl"
+    @close="closeModal"
   >
-    <div class="aero-glass w-full sm:max-w-3xl max-h-[90dvh] sm:max-h-[85vh] rounded-t-2xl rounded-b-none sm:rounded-2xl p-4 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-4 shadow-2xl">
-      <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto -mt-1 shrink-0" />
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 class="text-lg font-semibold text-white">原生情报收件箱 (Inbox)</h3>
-          <p class="text-xs text-slate-400">实时接收 AI 晨报、前沿雷达、资产到期提醒与哪吒探针告警</p>
-        </div>
-        <div class="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            @click="toggleDesktopNotify"
-            class="min-h-[40px] sm:min-h-[32px] px-2.5 py-1.5 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
-          >
-            桌面弹窗: {{ desktopNotify ? '开' : '关' }}
-          </button>
-          <button
-            type="button"
-            @click="markAllRead"
-            class="min-h-[40px] sm:min-h-[32px] px-2.5 py-1.5 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
-          >
-            全部已读
-          </button>
-          <button
-            type="button"
-            @click="store.state.showInboxModal = false"
-            class="min-h-[40px] sm:min-h-[32px] px-2.5 py-1.5 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
-          >
-            关闭
-          </button>
-        </div>
-      </div>
+    <template #header-actions>
+      <button
+        type="button"
+        @click="toggleDesktopNotify"
+        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+      >
+        桌面弹窗: {{ desktopNotify ? '开' : '关' }}
+      </button>
+      <button
+        type="button"
+        @click="markAllRead"
+        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 hover:bg-white/5 cursor-pointer"
+      >
+        全部已读
+      </button>
+    </template>
 
-      <div class="flex flex-wrap gap-1.5">
-        <button
-          v-for="f in [
-            { id: 'all', label: '全部' },
-            { id: 'morning', label: 'AI 晨报' },
-            { id: 'radar', label: '前沿雷达' },
-            { id: 'asset', label: '资产守望' },
-            { id: 'alert', label: '探针告警' },
-          ]"
-          :key="f.id"
-          type="button"
-          @click="activeFilter = f.id as any"
-          :class="[
-            'min-h-[40px] sm:min-h-[32px] px-3 py-1 rounded-full text-xs border transition cursor-pointer',
-            activeFilter === f.id
-              ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880] font-medium'
-              : 'border-[#fff8ee]/14 text-slate-300 hover:bg-white/5'
-          ]"
-        >
-          {{ f.label }}
-        </button>
-      </div>
-
-      <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
-        <div v-if="filtered.length === 0" class="py-10 text-center text-sm text-slate-500">
-          当前分类下暂无情报消息
-        </div>
-        <article
-          v-for="n in filtered"
-          :key="n.id"
-          :class="[
-            'rounded-xl border bg-[#070a16]/80 p-3.5',
-            !n.read_at ? 'border-l-4 border-l-[#f2b880] border-[#fff8ee]/14' : 'border-[#fff8ee]/11'
-          ]"
-        >
-          <div class="flex items-start justify-between gap-2 flex-wrap">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880]">
-                {{ n.source }}
-              </span>
-              <strong class="text-sm text-white">{{ n.title }}</strong>
-              <span v-if="!n.read_at" class="font-mono text-[11px] text-[#f2b880]">[未读]</span>
-            </div>
-            <span class="font-mono text-[11px] text-slate-400">{{ formatTime(n.created_at) }}</span>
-          </div>
-          <p class="text-xs text-slate-400 mt-1">{{ n.summary }}</p>
-          <details class="mt-2" @toggle="(e: any) => e.target?.open && markRead(n.id)">
-            <summary class="cursor-pointer font-mono text-[11px] text-[#f2b880] select-none">展开全文</summary>
-            <div class="mt-2 pt-2 border-t border-[#fff8ee]/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
-          </details>
-        </article>
-      </div>
+    <div class="flex gap-1.5 overflow-x-auto no-scrollbar shrink-0 pb-0.5">
+      <button
+        v-for="f in [
+          { id: 'all', label: '全部' },
+          { id: 'morning', label: 'AI 晨报' },
+          { id: 'radar', label: '前沿雷达' },
+          { id: 'asset', label: '资产守望' },
+          { id: 'alert', label: '探针告警' },
+        ]"
+        :key="f.id"
+        type="button"
+        @click="activeFilter = f.id as any"
+        :class="[
+          'min-h-[44px] sm:min-h-[32px] px-3.5 py-1 rounded-full text-xs border transition cursor-pointer whitespace-nowrap shrink-0',
+          activeFilter === f.id
+            ? 'border-[#f2b880]/55 bg-[#f2b880] text-[#070a13] font-semibold'
+            : 'border-[#fff8ee]/14 text-slate-300 hover:bg-white/5'
+        ]"
+      >
+        {{ f.label }}
+      </button>
     </div>
-  </div>
+
+    <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
+      <div v-if="filtered.length === 0" class="py-12 text-center text-sm text-slate-500">
+        当前分类下暂无情报消息
+      </div>
+      <article
+        v-for="n in filtered"
+        :key="n.id"
+        :class="[
+          'rounded-xl border bg-[#070a16]/80 p-3.5 transition-colors',
+          !n.read_at ? 'border-l-4 border-l-[#f2b880] border-[#fff8ee]/14' : 'border-[#fff8ee]/10'
+        ]"
+      >
+        <div class="flex items-start justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880]">
+              {{ n.source }}
+            </span>
+            <strong class="text-sm text-white">{{ n.title }}</strong>
+            <span v-if="!n.read_at" class="font-mono text-[11px] text-[#f2b880]">[未读]</span>
+          </div>
+          <span class="font-mono text-[11px] text-slate-400">{{ formatTime(n.created_at) }}</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">{{ n.summary }}</p>
+        <details class="mt-2" @toggle="(e: any) => e.target?.open && markRead(n.id)">
+          <summary class="cursor-pointer font-mono text-[11px] text-[#f2b880] select-none">展开全文</summary>
+          <div class="mt-2 pt-2 border-t border-[#fff8ee]/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
+        </details>
+      </article>
+    </div>
+  </BaseModal>
 </template>

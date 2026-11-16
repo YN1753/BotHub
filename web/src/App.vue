@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from './stores/useAppStore'
 import StarfieldBg from './components/StarfieldBg.vue'
 import LoginGate from './components/LoginGate.vue'
@@ -23,8 +23,19 @@ function toggleDesktopSidebar() {
   localStorage.setItem('bothub_sidebar_collapsed', desktopCollapsed.value ? '1' : '0')
 }
 
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && mobileSidebarOpen.value) {
+    mobileSidebarOpen.value = false
+  }
+}
+
 onMounted(() => {
   store.checkAuth()
+  window.addEventListener('keydown', handleGlobalKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown)
 })
 </script>
 
@@ -43,10 +54,10 @@ onMounted(() => {
     <!-- Auth Gate -->
     <LoginGate v-else-if="!store.state.authenticated" />
 
-    <!-- Main GrokBot Workspace -->
+    <!-- Main Persistent GrokBot Workspace -->
     <div
       v-else
-      class="relative z-10 h-dvh w-full flex overflow-hidden bg-[#050811]/70 backdrop-blur-lg"
+      class="relative z-10 h-dvh w-full flex overflow-hidden bg-[#050811]/68 backdrop-blur-lg"
     >
       <Sidebar
         :mobile-open="mobileSidebarOpen"
@@ -55,7 +66,10 @@ onMounted(() => {
         @toggle-desktop-collapse="toggleDesktopSidebar"
       />
 
-      <main class="flex-1 min-w-0 min-h-0 flex flex-col">
+      <main
+        :inert="mobileSidebarOpen || undefined"
+        class="flex-1 min-w-0 min-h-0 flex flex-col"
+      >
         <BotWorkspace
           v-if="store.state.workspace === 'bots'"
           :desktop-collapsed="desktopCollapsed"
@@ -71,7 +85,7 @@ onMounted(() => {
       </main>
     </div>
 
-    <!-- Modals -->
+    <!-- Native <dialog> Modals -->
     <CreateBotModal />
     <InboxModal />
     <MemoriesModal />
@@ -80,20 +94,34 @@ onMounted(() => {
     <AssetModal />
     <TaskModal />
 
-    <!-- Global Toast -->
+    <!-- Non-intrusive Top Toast Banner (never overlaps bottom composer or sheets) -->
     <Transition
       enter-active-class="transition duration-200 ease-out"
-      enter-from-class="opacity-0 translate-y-2"
-      enter-to-class="opacity-100 translate-y-0"
+      enter-from-class="opacity-0 -translate-y-2 scale-95"
+      enter-to-class="opacity-100 translate-y-0 scale-100"
       leave-active-class="transition duration-150 ease-in"
-      leave-from-class="opacity-100"
-      leave-to-class="opacity-0"
+      leave-from-class="opacity-100 translate-y-0"
+      leave-to-class="opacity-0 -translate-y-2"
     >
       <div
         v-if="store.state.toastMessage"
-        class="fixed bottom-5 right-5 z-[60] max-w-sm rounded-xl border border-[#f2b880]/40 bg-[#090d1a]/95 px-4 py-2.5 text-xs text-slate-100 shadow-2xl backdrop-blur-xl"
+        role="status"
+        aria-live="polite"
+        class="fixed top-[max(0.875rem,env(safe-area-inset-top,0.875rem))] left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-[60] max-w-[min(92vw,24rem)] flex items-center gap-2.5 rounded-xl border border-[#f2b880]/45 bg-[#0a0f1f]/96 px-3.5 py-2.5 text-xs text-slate-100 shadow-2xl backdrop-blur-xl"
       >
-        {{ store.state.toastMessage }}
+        <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880] shrink-0" aria-hidden="true" />
+        <span class="flex-1 leading-snug">{{ store.state.toastMessage }}</span>
+        <button
+          type="button"
+          aria-label="关闭提示"
+          @click="store.state.toastMessage = ''"
+          class="p-1 rounded-md text-slate-400 hover:text-white cursor-pointer shrink-0"
+        >
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
       </div>
     </Transition>
   </div>
