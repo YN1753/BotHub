@@ -1,0 +1,178 @@
+export type BotState = 'idle' | 'thinking' | 'working' | 'blocked' | 'done'
+
+export type AvatarStyle = 'cyan' | 'indigo' | 'amber' | 'emerald' | 'violet'
+
+export interface Bot {
+  id: string
+  name: string
+  role_title: string
+  avatar_style: AvatarStyle | string
+  system_prompt: string
+  model: string
+  enable_thinking: boolean
+  allowed_tools: string
+  state: BotState | string
+  unread_count: number
+  is_pinned: boolean
+  is_builtin: boolean
+  sort_order: number
+  last_summary: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ToolTrace {
+  id: string
+  name: string
+  arguments: string
+  result: string
+}
+
+export interface TokenUsage {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+}
+
+export interface AgentMessage {
+  id: number
+  session_id: string
+  bot_id?: string
+  sender_bot_id?: string
+  msg_kind?: 'chat' | 'routine' | string
+  role: 'user' | 'assistant' | 'tool' | string
+  content: string
+  reasoning_content?: string
+  tool_calls?: string
+  tool_call_id?: string
+  created_at: string
+}
+
+export interface AgentMemory {
+  id: number
+  scope?: string
+  category: string
+  fact_key: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Asset {
+  id: string
+  name: string
+  category: 'compute' | 'domain' | 'life' | string
+  spec: string
+  price: string
+  status: string
+  due_date: string
+  days_left: number
+  auto_renew: boolean
+  warn_days: string
+  last_checked_at?: string
+  extra_config: string
+}
+
+export interface ModuleRun {
+  id: number
+  module_id: string
+  module_name: string
+  trigger_type: string
+  status: string
+  summary: string
+  items_pushed: number
+  duration_ms: number
+  started_at: string
+  finished_at: string
+}
+
+export interface Task {
+  id: string
+  name: string
+  type: string
+  bot_id?: string
+  description: string
+  cron_expr: string
+  enabled: boolean
+  params: string
+  next_run_at?: string
+  is_running?: boolean
+  last_run?: ModuleRun
+  created_at?: string
+  updated_at?: string
+}
+
+export interface TaskTemplateField {
+  key: string
+  label: string
+  type: string
+  default_value?: string
+  placeholder?: string
+  hint?: string
+  options?: { value: string; label: string }[]
+}
+
+export interface TaskTemplate {
+  type: string
+  name: string
+  description: string
+  fields?: TaskTemplateField[]
+}
+
+export interface AssetTemplate {
+  category: string
+  label: string
+  fields?: TaskTemplateField[]
+}
+
+export interface NotificationItem {
+  id: number
+  source: string
+  title: string
+  summary: string
+  markdown: string
+  priority: 'high' | 'normal' | 'low' | string
+  created_at: string
+  read_at: string
+}
+
+export interface PushLog {
+  id: number
+  module_id: string
+  title: string
+  content: string
+  status: string
+  response_msg: string
+  created_at: string
+}
+
+export interface DashboardPayload {
+  version: string
+  commit: string
+  build_time: string
+  uptime_sec: number
+  server_now: string
+  tasks: Task[]
+  bots: Bot[]
+  templates: TaskTemplate[]
+  asset_templates: AssetTemplate[]
+  agent_memories: AgentMemory[]
+  notifications: NotificationItem[]
+  configs: Record<string, string>
+  assets: Asset[]
+  push_logs: PushLog[]
+  stats: {
+    total_assets: number
+    total_pushes: number
+    sent_pushes: number
+    seen_items: number
+    total_memories: number
+    total_notifications: number
+    unread_notifications: number
+  }
+}
+
+export interface SelectOption {
+  value: string
+  label: string
+}

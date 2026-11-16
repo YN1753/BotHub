@@ -46,6 +46,19 @@ jobs:
           check-latest: true
           cache: true
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build Vue 3 + Tailwind CSS Frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
       - name: Build Static Single Binary (Embedded Frontend)
         env:
           CGO_ENABLED: 0

@@ -1,0 +1,157 @@
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { useAppStore } from '../stores/useAppStore'
+import { BotHubApi } from '../api/client'
+import { formatTime } from '../utils/format'
+import { renderSafeMarkdown } from '../utils/markdown'
+
+const store = useAppStore()
+const activeFilter = ref<'all' | 'morning' | 'radar' | 'asset' | 'alert'>('all')
+const desktopNotify = ref(
+  localStorage.getItem('bothub_desktop_notify') === '1' &&
+    typeof Notification !== 'undefined' &&
+    Notification.permission === 'granted'
+)
+
+const filtered = computed(() =>
+  store.state.notifications.filter((n) => {
+    if (activeFilter.value === 'all') return true
+    const s = n.source.toLowerCase()
+    if (activeFilter.value === 'morning') return s.includes('morning')
+    if (activeFilter.value === 'radar') return s.includes('radar') || s.includes('bili')
+    if (activeFilter.value === 'asset') return s.includes('asset')
+    if (activeFilter.value === 'alert') return s.includes('nezha') || s.includes('alert') || s.includes('webhook')
+    return true
+  })
+)
+
+async function markRead(id: number) {
+  const item = store.state.notifications.find((n) => n.id === id)
+  if (!item || item.read_at) return
+  await BotHubApi.markNotificationRead(id).catch(() => {})
+  item.read_at = new Date().toISOString()
+}
+
+async function markAllRead() {
+  await BotHubApi.markAllNotificationsRead()
+  const now = new Date().toISOString()
+  store.state.notifications.forEach((n) => {
+    if (!n.read_at) n.read_at = now
+  })
+  store.notify('全部情报已标记为已读')
+}
+
+async function toggleDesktopNotify() {
+  if (typeof Notification === 'undefined') {
+    store.notify('当前浏览器不支持桌面通知 API')
+    return
+  }
+  if (desktopNotify.value) {
+    localStorage.setItem('bothub_desktop_notify', '0')
+    desktopNotify.value = false
+    store.notify('已关闭桌面告警弹窗')
+    return
+  }
+  const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
+  if (perm === 'granted') {
+    localStorage.setItem('bothub_desktop_notify', '1')
+    desktopNotify.value = true
+    store.notify('已开启后台高优告警桌面弹窗')
+  } else {
+    store.notify('浏览器未授予通知权限')
+  }
+}
+</script>
+
+<template>
+  <div
+    v-if="store.state.showInboxModal"
+    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm"
+    @click.self="store.state.showInboxModal = false"
+  >
+    <div class="aero-glass w-full max-w-3xl max-h-[85vh] rounded-2xl p-5 flex flex-col gap-4 shadow-2xl">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 class="text-lg font-semibold text-white">原生情报收件箱 (Inbox)</h3>
+          <p class="text-xs text-slate-400">实时接收 AI 晨报、前沿雷达、资产到期提醒与哪吒探针告警</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            @click="toggleDesktopNotify"
+            class="px-2.5 py-1.5 rounded-lg border border-slate-400/20 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+          >
+            桌面弹窗: {{ desktopNotify ? '开' : '关' }}
+          </button>
+          <button
+            type="button"
+            @click="markAllRead"
+            class="px-2.5 py-1.5 rounded-lg border border-slate-400/20 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+          >
+            全部已读
+          </button>
+          <button
+            type="button"
+            @click="store.state.showInboxModal = false"
+            class="px-2.5 py-1.5 rounded-lg border border-slate-400/20 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-1.5">
+        <button
+          v-for="f in [
+            { id: 'all', label: '全部' },
+            { id: 'morning', label: 'AI 晨报' },
+            { id: 'radar', label: '前沿雷达' },
+            { id: 'asset', label: '资产守望' },
+            { id: 'alert', label: '探针告警' },
+          ]"
+          :key="f.id"
+          type="button"
+          @click="activeFilter = f.id as any"
+          :class="[
+            'px-3 py-1 rounded-full text-xs border transition cursor-pointer',
+            activeFilter === f.id
+              ? 'border-sky-400/55 bg-sky-400/15 text-sky-300'
+              : 'border-slate-400/20 text-slate-300 hover:bg-white/5'
+          ]"
+        >
+          {{ f.label }}
+        </button>
+      </div>
+
+      <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
+        <div v-if="filtered.length === 0" class="py-10 text-center text-sm text-slate-500">
+          当前分类下暂无情报消息
+        </div>
+        <article
+          v-for="n in filtered"
+          :key="n.id"
+          :class="[
+            'rounded-xl border bg-[#080d1c]/80 p-3.5',
+            !n.read_at ? 'border-l-4 border-l-amber-400 border-slate-400/20' : 'border-slate-400/15'
+          ]"
+        >
+          <div class="flex items-start justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-sky-400/30 bg-sky-400/10 text-sky-300">
+                {{ n.source }}
+              </span>
+              <strong class="text-sm text-white">{{ n.title }}</strong>
+              <span v-if="!n.read_at" class="font-mono text-[11px] text-amber-300">[未读]</span>
+            </div>
+            <span class="font-mono text-[11px] text-slate-400">{{ formatTime(n.created_at) }}</span>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">{{ n.summary }}</p>
+          <details class="mt-2" @toggle="(e: any) => e.target?.open && markRead(n.id)">
+            <summary class="cursor-pointer font-mono text-[11px] text-sky-400 select-none">展开全文</summary>
+            <div class="mt-2 pt-2 border-t border-white/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
+          </details>
+        </article>
+      </div>
+    </div>
+  </div>
+</template>

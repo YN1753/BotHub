@@ -22,12 +22,12 @@ import (
 
 // Injected during build via -ldflags
 var (
-	Version   = "v2.3.0"
+	Version   = "v2.4.0"
 	Commit    = "dev"
 	BuildTime = "local"
 )
 
-//go:embed static/*
+//go:embed all:static
 var staticFiles embed.FS
 
 func main() {
