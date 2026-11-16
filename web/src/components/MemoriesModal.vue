@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { formatTime } from '../utils/format'
+import { applySiblingStaggerFallback } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 
 const store = useAppStore()
+const listRef = ref<HTMLElement | null>(null)
 const category = ref('infra')
 const factKey = ref('')
 const content = ref('')
@@ -48,6 +50,11 @@ async function handleDelete(id: number) {
   store.notify('记忆条目已移除')
   await store.loadDashboard(false)
 }
+
+watch(
+  () => [store.state.showMemoriesModal, store.state.memories.length],
+  () => nextTick(() => applySiblingStaggerFallback(listRef.value))
+)
 </script>
 
 <template>
@@ -92,14 +99,14 @@ async function handleDelete(id: number) {
       </div>
     </form>
 
-    <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
+    <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
       <div v-if="store.state.memories.length === 0" class="py-8 text-center text-sm text-slate-500">
         尚未写入长期记忆条目
       </div>
       <article
         v-for="m in store.state.memories"
         :key="m.id"
-        class="rounded-xl border border-[#fff8ee]/11 bg-[#070a16]/80 p-3"
+        class="stagger-item rounded-xl border border-[#fff8ee]/11 bg-[#070a16]/80 p-3"
       >
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-2">

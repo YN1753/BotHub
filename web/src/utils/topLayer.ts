@@ -54,3 +54,12 @@ export function isImeComposingEnter(event: KeyboardEvent, lastCompositionEndAt: 
   }
   return false
 }
+
+export function applySiblingStaggerFallback(container: HTMLElement | null): void {
+  if (!container || typeof window === 'undefined') return
+  if (window.CSS?.supports?.('animation-delay', 'calc(sibling-index() * 0.1s)')) return
+  const children = Array.from(container.children) as HTMLElement[]
+  children.forEach((el, idx) => {
+    el.style.setProperty('--sibling-index', String(idx))
+  })
+}

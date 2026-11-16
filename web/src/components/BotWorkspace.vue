@@ -4,9 +4,10 @@ import { useAppStore, type ChatMessageUI } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { botStateLabel, describeCron, formatTime } from '../utils/format'
 import { renderSafeMarkdown } from '../utils/markdown'
-import { isImeComposingEnter } from '../utils/topLayer'
+import { applySiblingStaggerFallback, isImeComposingEnter } from '../utils/topLayer'
 import BotAvatar from './BotAvatar.vue'
 import CustomSelect from './CustomSelect.vue'
+import SegmentedTabs from './SegmentedTabs.vue'
 
 defineProps<{
   desktopCollapsed?: boolean
@@ -28,6 +29,9 @@ const selectedModel = ref('deepseek-flash')
 const enableThinking = ref(true)
 const streamStatus = ref('就绪')
 const scrollContainerRef = ref<HTMLElement | null>(null)
+const starterGridRef = ref<HTMLElement | null>(null)
+const routinesGridRef = ref<HTMLElement | null>(null)
+const activityListRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const formRef = ref<HTMLFormElement | null>(null)
 const userScrolledUp = ref(false)
@@ -50,6 +54,13 @@ const cfgAvatar = ref('cyan')
 const cfgThinking = ref(true)
 const cfgTools = ref<string[]>([])
 const savingProfile = ref(false)
+
+const VIEW_TABS = [
+  { id: 'stream', label: '对话流' },
+  { id: 'routines', label: '例程' },
+  { id: 'config', label: '能力与记忆' },
+  { id: 'activity', label: '运行脉搏' },
+]
 
 const TOOL_CATALOG = [
   { id: 'read_url', label: 'read_url (网页抓取与摘要)' },
@@ -206,15 +217,28 @@ watch(
   () => {
     userScrolledUp.value = false
     scrollToBottom(true)
+    nextTick(() => applySiblingStaggerFallback(starterGridRef.value))
   }
 )
 
 watch(
   () => store.state.timeline.length,
-  () => scrollToBottom(false)
+  (len) => {
+    scrollToBottom(false)
+    if (len === 0) nextTick(() => applySiblingStaggerFallback(starterGridRef.value))
+  }
 )
 
-// Native popover fallback positioning when position-area isn't supported
+watch(
+  () => store.state.botView,
+  (v) => {
+    nextTick(() => {
+      if (v === 'routines') applySiblingStaggerFallback(routinesGridRef.value)
+      if (v === 'activity') applySiblingStaggerFallback(activityListRef.value)
+    })
+  }
+)
+
 function positionFallbackPopover() {
   const btn = moreBtnRef.value
   const pop = morePopoverRef.value
@@ -256,7 +280,10 @@ function handleOutsideFallback(e: MouseEvent) {
   moreFallbackOpen.value = false
 }
 
-onMounted(() => document.addEventListener('click', handleOutsideFallback))
+onMounted(() => {
+  document.addEventListener('click', handleOutsideFallback)
+  applySiblingStaggerFallback(starterGridRef.value)
+})
 onBeforeUnmount(() => document.removeEventListener('click', handleOutsideFallback))
 
 function appendMention(tag: string) {
@@ -275,8 +302,10 @@ function handleMarkdownClick(e: MouseEvent) {
   const code = btn.closest('.md-code-wrap')?.querySelector('pre code')?.textContent || ''
   navigator.clipboard?.writeText(code).then(() => {
     btn.textContent = '已复制'
+    btn.classList.add('text-emerald-300', 'border-emerald-400/45')
     window.setTimeout(() => {
       btn.textContent = '复制代码'
+      btn.classList.remove('text-emerald-300', 'border-emerald-400/45')
     }, 1500)
   })
 }
@@ -435,7 +464,7 @@ async function sendPrompt(overrideText?: string) {
             activeTurn.streaming = false
             activeTurn.statusText =
               payload.usage && payload.usage.total_tokens
-                ? `已完成 (${payload.usage.prompt_tokens}+${payload.usage.completion_tokens} Tokens)`
+                ? `${payload.usage.prompt_tokens}+${payload.usage.completion_tokens} Tokens`
                 : '已完成'
           }
         }
@@ -548,8 +577,8 @@ function stateBadgeClass(state?: string): string {
 
 <template>
   <section class="flex-1 min-h-0 flex flex-col">
-    <!-- Active Bot Top Header -->
-    <header class="px-3.5 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pb-3 border-b border-[#fff8ee]/10 bg-[#080c18]/58 backdrop-blur-md flex flex-wrap items-center justify-between gap-2.5">
+    <!-- Minimal Bot Top Header -->
+    <header class="px-3.5 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pb-3 border-b border-[#fff8ee]/8 bg-[#080c18]/50 backdrop-blur-md flex flex-wrap items-center justify-between gap-2.5">
       <div class="flex items-center gap-2.5 min-w-0">
         <button
           type="button"
@@ -577,42 +606,24 @@ function stateBadgeClass(state?: string): string {
             <polyline points="13 9 16 12 13 15" />
           </svg>
         </button>
-        <BotAvatar :avatar-style="bot?.avatar_style" :state="bot?.state" size="lg" />
+        <BotAvatar :avatar-style="bot?.avatar_style" :state="bot?.state" size="md" />
         <div class="min-w-0">
           <div class="flex items-center gap-2">
             <h1 class="text-sm md:text-base font-semibold text-white truncate">{{ bot?.name || '长庚执更' }}</h1>
-            <span :class="['font-mono text-[10.5px] px-2 py-0.5 rounded-full border leading-none shrink-0', stateBadgeClass(bot?.state)]">
+            <span
+              v-if="bot?.state && bot.state !== 'idle'"
+              :class="['font-mono text-[10px] px-2 py-0.5 rounded-full border leading-none shrink-0', stateBadgeClass(bot?.state)]"
+            >
               {{ botStateLabel(bot?.state) }}
             </span>
           </div>
-          <p class="text-xs text-slate-400 truncate">{{ bot?.role_title }}</p>
+          <p class="text-xs text-slate-400/90 truncate">{{ bot?.role_title }}</p>
         </div>
       </div>
 
       <div class="flex items-center gap-2 max-w-full ml-auto">
-        <!-- Segmented Control Capsule -->
-        <nav aria-label="Bot 子视图" class="inline-flex items-center p-1 rounded-full bg-[#060913]/92 border border-[#fff8ee]/11 overflow-x-auto no-scrollbar max-w-full">
-          <button
-            v-for="tab in [
-              { id: 'stream', label: '对话流' },
-              { id: 'routines', label: '例程' },
-              { id: 'config', label: '能力与记忆' },
-              { id: 'activity', label: '运行脉搏' },
-            ]"
-            :key="tab.id"
-            type="button"
-            :aria-current="store.state.botView === tab.id ? 'page' : undefined"
-            @click="store.state.botView = tab.id as any"
-            :class="[
-              'min-h-[38px] sm:min-h-[32px] px-3.5 rounded-full text-xs cursor-pointer whitespace-nowrap shrink-0',
-              store.state.botView === tab.id
-                ? 'bg-[#f2b880] text-[#070a13] font-semibold shadow-sm'
-                : 'text-slate-300 hover:text-white'
-            ]"
-          >
-            {{ tab.label }}
-          </button>
-        </nav>
+        <!-- Gliding Physics Segmented Control -->
+        <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="Bot 子视图" />
 
         <!-- Native Top-Layer Popover + Anchor Positioned More Actions -->
         <div class="relative shrink-0">
@@ -623,7 +634,7 @@ function stateBadgeClass(state?: string): string {
             aria-label="更多操作"
             title="更多操作"
             @click="handleMoreButtonClick"
-            class="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] inline-flex items-center justify-center rounded-full border border-[#fff8ee]/12 bg-[#060913]/85 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+            class="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] inline-flex items-center justify-center rounded-full border border-[#fff8ee]/10 bg-[#060913]/85 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
               <circle cx="5" cy="12" r="1.75" />
@@ -673,444 +684,485 @@ function stateBadgeClass(state?: string): string {
     </header>
 
     <!-- View 1: Persistent Stream -->
-    <div v-show="store.state.botView === 'stream'" class="flex-1 min-h-0 flex flex-col">
-      <div class="relative flex-1 min-h-0 flex flex-col">
-        <div
-          ref="scrollContainerRef"
-          @scroll="onMessagesScroll"
-          @click="handleMarkdownClick"
-          class="cq-container stream-scroller flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-5 flex flex-col gap-5"
-        >
-          <!-- Empty State Hero + Container-Query Starter Cards -->
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0 translate-y-1.5"
+      enter-to-class="opacity-100 translate-y-0"
+    >
+      <div v-show="store.state.botView === 'stream'" class="flex-1 min-h-0 flex flex-col">
+        <div class="relative flex-1 min-h-0 flex flex-col">
           <div
-            v-if="store.state.timeline.length === 0"
-            class="m-auto max-w-[760px] w-full text-center py-6 px-2 flex flex-col items-center gap-3.5"
+            ref="scrollContainerRef"
+            @scroll="onMessagesScroll"
+            @click="handleMarkdownClick"
+            class="cq-container stream-scroller flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-5 flex flex-col gap-5"
           >
-            <span class="px-2.5 py-1 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880] font-mono text-[11px] tracking-wider">
-              PERSISTENT GROKBOT
-            </span>
-            <h2 class="text-xl sm:text-2xl font-semibold text-white">{{ bot?.name }} 随时待命</h2>
-            <p class="text-xs sm:text-sm text-slate-400 max-w-lg">
-              {{ bot?.role_title }} · 后台定时例程与监控告警均会主动汇报至此持久对话流
-            </p>
+            <!-- Empty State Hero + Container-Query Staggered Starter Cards -->
+            <div
+              v-if="store.state.timeline.length === 0"
+              class="m-auto max-w-[760px] w-full text-center py-6 px-2 flex flex-col items-center gap-3"
+            >
+              <h2 class="text-xl sm:text-2xl font-semibold text-white tracking-tight">{{ bot?.name }} 随时待命</h2>
+              <p class="text-xs sm:text-sm text-slate-400 max-w-md">
+                {{ bot?.role_title }} · 后台定时例程与监控告警均会主动投递至此对话流
+              </p>
 
-            <div class="starter-grid mt-2 text-left">
-              <button
-                v-for="card in STARTER_CARDS"
-                :key="card.title"
-                type="button"
-                @click="sendPrompt(card.prompt)"
-                class="vesper-card rounded-2xl p-3.5 flex flex-col gap-1.5 hover:border-[#f2b880]/50 hover:bg-[#f2b880]/[0.06] cursor-pointer text-left group"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <strong class="text-xs sm:text-sm font-semibold text-white group-hover:text-[#f2b880] transition-colors">
-                    {{ card.title }}
-                  </strong>
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="text-slate-500 group-hover:text-[#f2b880] shrink-0">
-                    <line x1="7" y1="17" x2="17" y2="7" />
-                    <polyline points="7 7 17 7 17 17" />
-                  </svg>
-                </div>
-                <p class="text-[11.5px] text-slate-400 leading-relaxed">
-                  {{ card.desc }}
-                </p>
-              </button>
-            </div>
-          </div>
-
-          <!-- Messages -->
-          <template v-for="m in store.state.timeline" :key="m.localId">
-            <!-- User Message Pill -->
-            <div v-if="m.role === 'user'" class="max-w-[820px] w-full mx-auto flex justify-end">
-              <div
-                :title="formatTime(m.createdAt)"
-                class="max-w-[85%] sm:max-w-[74%] rounded-2xl rounded-tr-sm px-4 py-2.5 bg-[#f2b880]/14 border border-[#f2b880]/30 text-sm text-slate-100 leading-relaxed whitespace-pre-wrap shadow-sm"
-              >
-                {{ m.content }}
+              <div ref="starterGridRef" class="starter-grid stagger-list mt-3 text-left">
+                <button
+                  v-for="card in STARTER_CARDS"
+                  :key="card.title"
+                  type="button"
+                  @click="sendPrompt(card.prompt)"
+                  class="stagger-item vesper-card vesper-card-interactive rounded-2xl p-3.5 flex flex-col gap-1.5 hover:border-[#f2b880]/45 hover:bg-[#f2b880]/[0.05] cursor-pointer text-left group"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <strong class="text-xs sm:text-sm font-semibold text-white group-hover:text-[#f2b880] transition-colors">
+                      {{ card.title }}
+                    </strong>
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="text-slate-500 group-hover:text-[#f2b880] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform shrink-0">
+                      <line x1="7" y1="17" x2="17" y2="7" />
+                      <polyline points="7 7 17 7 17 17" />
+                    </svg>
+                  </div>
+                  <p class="text-[11.5px] text-slate-400/90 leading-relaxed">
+                    {{ card.desc }}
+                  </p>
+                </button>
               </div>
             </div>
 
-            <!-- Bot Message (Chat or Proactive Routine Report) -->
-            <article v-else class="reveal-host max-w-[820px] w-full mx-auto">
-              <div
-                :class="[
-                  'flex flex-col gap-2.5',
-                  m.msgKind === 'routine'
-                    ? 'vesper-card rounded-2xl border-[#f2b880]/30 p-4'
-                    : 'py-1'
-                ]"
-              >
-                <div class="flex items-center justify-between gap-2 font-mono text-[11px] text-slate-400">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <BotAvatar :avatar-style="m.avatarStyle" :state="m.streaming ? 'working' : (m.msgKind === 'routine' ? 'done' : 'idle')" size="sm" />
-                    <span class="text-[#f2b880] font-semibold">{{ m.senderName }}</span>
-                    <span>· {{ m.model }}</span>
-                    <span
-                      v-if="m.msgKind === 'routine'"
-                      class="px-2 py-0.5 rounded-md border border-[#f2b880]/35 bg-[#f2b880]/15 text-[#f2b880] text-[10px]"
-                    >
-                      例程主动汇报
-                    </span>
-                  </div>
-                  <span :class="m.errorText ? 'text-rose-400' : ''">{{ m.statusText }}</span>
+            <!-- Messages -->
+            <template v-for="m in store.state.timeline" :key="m.localId">
+              <!-- User Message Pill -->
+              <div v-if="m.role === 'user'" class="msg-enter max-w-[820px] w-full mx-auto flex justify-end">
+                <div
+                  :title="formatTime(m.createdAt)"
+                  class="max-w-[85%] sm:max-w-[74%] rounded-2xl rounded-tr-sm px-4 py-2.5 bg-[#f2b880]/14 border border-[#f2b880]/28 text-sm text-slate-100 leading-relaxed whitespace-pre-wrap"
+                >
+                  {{ m.content }}
                 </div>
+              </div>
 
-                <!-- Collapsible Reasoning -->
-                <details
-                  v-if="m.reasoning"
-                  :open="m.streaming && !m.content"
-                  class="rounded-xl border border-amber-400/25 bg-[#060a16]/75 px-3 py-2 text-xs text-slate-400"
+              <!-- Bot Message -->
+              <article v-else class="msg-enter reveal-host max-w-[820px] w-full mx-auto">
+                <div
+                  :class="[
+                    'flex flex-col gap-2.5',
+                    m.msgKind === 'routine'
+                      ? 'vesper-card rounded-2xl border-[#f2b880]/28 p-4'
+                      : 'py-1'
+                  ]"
                 >
-                  <summary class="cursor-pointer font-mono text-amber-300/90 select-none">
-                    深度思考过程 (Reasoning Chain)
-                  </summary>
-                  <div class="mt-2 font-mono whitespace-pre-wrap leading-relaxed text-slate-300/90">
-                    {{ m.reasoning }}
-                  </div>
-                </details>
-
-                <!-- Merged Tool Call Trajectory Summary Bar -->
-                <details
-                  v-if="m.tools.length"
-                  class="rounded-xl border border-[#fff8ee]/11 bg-[#070a16]/80 px-3 py-2 font-mono text-[11.5px]"
-                >
-                  <summary class="cursor-pointer flex items-center justify-between gap-2 text-slate-300 select-none">
-                    <span class="inline-flex items-center gap-2 min-w-0">
-                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" class="text-[#f2b880] shrink-0">
-                        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-                      </svg>
-                      <span class="truncate">工具执行轨迹 · 共 {{ m.tools.length }} 步</span>
-                    </span>
-                    <span :class="m.tools.some((t) => !t.done) ? 'text-[#f2b880] shrink-0' : 'text-emerald-400 shrink-0'">
-                      {{ m.tools.some((t) => !t.done) ? '执行中' : '全部完成' }}
-                    </span>
-                  </summary>
-                  <div class="mt-2 pt-2 border-t border-[#fff8ee]/10 flex flex-col gap-2">
-                    <div
-                      v-for="(tc, idx) in m.tools"
-                      :key="tc.id"
-                      class="rounded-lg border border-[#fff8ee]/8 bg-[#050811]/75 px-2.5 py-2"
-                    >
-                      <div class="flex items-center justify-between gap-2 text-[11px]">
-                        <span class="text-[#f2b880] font-semibold">#{{ idx + 1 }} {{ tc.name }}</span>
-                        <span :class="tc.done ? 'text-emerald-400' : 'text-amber-300'">{{ tc.done ? '已完成' : '执行中' }}</span>
-                      </div>
-                      <div v-if="tc.arguments" class="mt-1 text-slate-400 whitespace-pre-wrap break-all">入参: {{ tc.arguments }}</div>
-                      <div v-if="tc.result" class="mt-1 text-slate-300 whitespace-pre-wrap break-all">出参: {{ tc.result }}</div>
+                  <!-- Quiet editorial sender header -->
+                  <div class="flex items-center justify-between gap-2 text-xs text-slate-400">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <BotAvatar :avatar-style="m.avatarStyle" :state="m.streaming ? 'working' : (m.msgKind === 'routine' ? 'done' : 'idle')" size="sm" />
+                      <span class="text-[#f2b880] font-medium truncate">{{ m.senderName }}</span>
+                      <span v-if="m.msgKind === 'routine'" class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#f2b880]/12 text-[#f2b880] shrink-0">
+                        例程汇报
+                      </span>
                     </div>
+                    <span :class="['font-mono text-[11px] shrink-0', m.errorText ? 'text-rose-400' : 'text-slate-500']">
+                      {{ m.statusText }}
+                    </span>
                   </div>
-                </details>
 
-                <!-- Markdown Body -->
-                <div v-if="m.content" v-html="renderSafeMarkdown(m.content)" />
-                <div v-else-if="m.errorText" class="text-sm text-rose-400">[调用失败] {{ m.errorText }}</div>
+                  <!-- Calm Thinking Waveform (before first token arrives) -->
+                  <div
+                    v-if="m.streaming && !m.content && !m.reasoning && !m.tools.length"
+                    class="py-1.5 flex items-center gap-2.5 text-xs text-slate-400"
+                    aria-live="polite"
+                  >
+                    <span class="thinking-dots inline-flex items-center gap-1" aria-hidden="true">
+                      <span /><span /><span />
+                    </span>
+                    <span>思考中</span>
+                  </div>
 
-                <!-- Message Footer Actions (Visible on hover, keyboard focus, and always on touch) -->
-                <div v-if="!m.streaming && m.content" class="reveal-actions flex items-center gap-2 pt-1.5 border-t border-[#fff8ee]/8">
-                  <button
-                    type="button"
-                    @click="copyMessageContent(m.content)"
-                    class="min-h-[38px] sm:min-h-[28px] px-2.5 py-1 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                  <!-- Smooth Interpolate-Size Collapsible Reasoning -->
+                  <details
+                    v-if="m.reasoning"
+                    :open="m.streaming && !m.content"
+                    class="vesper-details rounded-xl border border-amber-400/20 bg-[#060a16]/65 px-3 py-2 text-xs text-slate-400"
                   >
-                    复制全文
-                  </button>
-                  <button
-                    v-if="lastPrompt"
-                    type="button"
-                    @click="sendPrompt(lastPrompt)"
-                    class="min-h-[38px] sm:min-h-[28px] px-2.5 py-1 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                    <summary class="cursor-pointer flex items-center gap-1.5 font-mono text-amber-300/90 select-none">
+                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron shrink-0">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                      <span>深度思考过程</span>
+                    </summary>
+                    <div class="mt-2 font-mono whitespace-pre-wrap leading-relaxed text-slate-300/90">
+                      {{ m.reasoning }}
+                    </div>
+                  </details>
+
+                  <!-- Smooth Collapsible Merged Tool Call Trajectory -->
+                  <details
+                    v-if="m.tools.length"
+                    class="vesper-details rounded-xl border border-[#fff8ee]/10 bg-[#070a16]/75 px-3 py-2 font-mono text-[11.5px]"
                   >
-                    重新生成
-                  </button>
+                    <summary class="cursor-pointer flex items-center justify-between gap-2 text-slate-300 select-none">
+                      <span class="inline-flex items-center gap-1.5 min-w-0">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron text-slate-400 shrink-0">
+                          <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                        <span class="truncate">工具执行轨迹 · 共 {{ m.tools.length }} 步</span>
+                      </span>
+                      <span :class="m.tools.some((t) => !t.done) ? 'text-[#f2b880] shrink-0' : 'text-emerald-400 shrink-0'">
+                        {{ m.tools.some((t) => !t.done) ? '执行中' : '全部完成' }}
+                      </span>
+                    </summary>
+                    <div class="mt-2 pt-2 border-t border-[#fff8ee]/8 flex flex-col gap-2">
+                      <div
+                        v-for="(tc, idx) in m.tools"
+                        :key="tc.id"
+                        class="rounded-lg border border-[#fff8ee]/8 bg-[#050811]/75 px-2.5 py-2"
+                      >
+                        <div class="flex items-center justify-between gap-2 text-[11px]">
+                          <span class="text-[#f2b880] font-semibold">#{{ idx + 1 }} {{ tc.name }}</span>
+                          <span :class="tc.done ? 'text-emerald-400' : 'text-amber-300'">{{ tc.done ? '已完成' : '执行中' }}</span>
+                        </div>
+                        <div v-if="tc.arguments" class="mt-1 text-slate-400 whitespace-pre-wrap break-all">入参: {{ tc.arguments }}</div>
+                        <div v-if="tc.result" class="mt-1 text-slate-300 whitespace-pre-wrap break-all">出参: {{ tc.result }}</div>
+                      </div>
+                    </div>
+                  </details>
+
+                  <!-- Markdown Body -->
+                  <div v-if="m.content" v-html="renderSafeMarkdown(m.content)" />
+                  <div v-else-if="m.errorText" class="text-sm text-rose-400">[调用失败] {{ m.errorText }}</div>
+
+                  <!-- Quiet Footer Actions (hover / keyboard / touch) -->
+                  <div v-if="!m.streaming && m.content" class="reveal-actions flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      @click="copyMessageContent(m.content)"
+                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                    >
+                      复制全文
+                    </button>
+                    <button
+                      v-if="lastPrompt"
+                      type="button"
+                      @click="sendPrompt(lastPrompt)"
+                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                    >
+                      重新生成
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </article>
-          </template>
-        </div>
-
-        <!-- Floating Scroll-to-Bottom Button -->
-        <Transition
-          enter-active-class="transition duration-150 ease-out"
-          enter-from-class="opacity-0 translate-y-2"
-          enter-to-class="opacity-100 translate-y-0"
-          leave-active-class="transition duration-150 ease-in"
-          leave-from-class="opacity-100"
-          leave-to-class="opacity-0 translate-y-2"
-        >
-          <button
-            v-if="userScrolledUp"
-            type="button"
-            @click="scrollToBottom(true)"
-            class="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 min-h-[40px] sm:min-h-[34px] px-4 rounded-full border border-[#f2b880]/45 bg-[#0a0f1f]/95 text-xs font-medium text-[#f2b880] shadow-xl backdrop-blur-md hover:bg-[#f2b880]/15 cursor-pointer"
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-            <span>回到底部</span>
-          </button>
-        </Transition>
-      </div>
-
-      <!-- Floating Composer Dock -->
-      <div class="px-3 sm:px-6 pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] sm:pb-5">
-        <div
-          v-if="bot?.id === 'team_room'"
-          class="max-w-[820px] w-full mx-auto mb-2 flex items-center gap-1.5 flex-wrap"
-        >
-          <span class="font-mono text-[11px] text-slate-400">@点名协同:</span>
-          <button
-            v-for="tag in ['@探针哨兵 ', '@长庚执更 ', '@开源雷达 ', '@Grok 锐评官 ']"
-            :key="tag"
-            type="button"
-            @click="appendMention(tag)"
-            class="min-h-[36px] sm:min-h-[28px] px-2.5 py-1 rounded-full text-xs border border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer"
-          >
-            {{ tag.trim() }}
-          </button>
-        </div>
-
-        <form
-          ref="formRef"
-          @submit.prevent="sendPrompt()"
-          class="max-w-[820px] w-full mx-auto rounded-[22px] border border-[#fff8ee]/14 focus-within:border-[#f2b880]/55 bg-[#0b101e]/92 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,248,238,0.08),0_20px_46px_rgba(0,0,0,0.52)] px-3.5 sm:px-4 pt-3 pb-2.5 flex flex-col gap-2.5 transition-colors"
-        >
-          <label :for="composerId" class="sr-only">向当前专属 Bot 下达指令</label>
-          <textarea
-            :id="composerId"
-            ref="textareaRef"
-            v-model="inputPrompt"
-            rows="1"
-            placeholder="向当前专属 Bot 下达指令（Enter 发送，Shift+Enter 换行）..."
-            @input="autoResizeTextarea"
-            @compositionend="handleCompositionEnd"
-            @keydown="handleComposerKeydown"
-            class="auto-size-textarea w-full bg-transparent border-0 text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none min-h-[24px] max-h-[160px] overflow-y-auto leading-relaxed"
-          />
-
-          <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
-              <div class="w-36 sm:w-44 shrink-0">
-                <CustomSelect v-model="selectedModel" :options="MODEL_OPTIONS" compact aria-label="选择推理模型" />
-              </div>
-              <button
-                type="button"
-                :aria-pressed="enableThinking"
-                @click="enableThinking = !enableThinking"
-                :class="[
-                  'min-h-[44px] sm:min-h-[32px] px-3 rounded-full text-xs border cursor-pointer whitespace-nowrap shrink-0',
-                  enableThinking
-                    ? 'border-[#f2b880]/50 bg-[#f2b880]/15 text-[#f2b880]'
-                    : 'border-[#fff8ee]/14 text-slate-400 hover:text-white'
-                ]"
-              >
-                深度思考: {{ enableThinking ? '开' : '关' }}
-              </button>
-              <span class="hidden sm:inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-400 truncate" aria-live="polite">
-                <span
-                  v-if="store.state.isStreaming"
-                  class="w-1.5 h-1.5 rounded-full bg-[#f2b880] animate-pulse shrink-0"
-                  aria-hidden="true"
-                />
-                <span class="truncate">{{ streamStatus }}</span>
-              </span>
-            </div>
-
-            <div class="flex items-center gap-2 shrink-0">
-              <button
-                v-if="store.state.isStreaming"
-                type="button"
-                @click="stopStream"
-                class="min-h-[44px] sm:min-h-[34px] px-3.5 rounded-full text-xs bg-rose-500/20 border border-rose-400/45 text-rose-300 hover:bg-rose-500/30 cursor-pointer"
-              >
-                停止
-              </button>
-              <button
-                type="submit"
-                :disabled="store.state.isStreaming || !inputPrompt.trim()"
-                aria-label="发送指令"
-                title="发送 (Enter)"
-                class="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] flex items-center justify-center cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-md"
-              >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
-                  <line x1="12" y1="19" x2="12" y2="5" />
-                  <polyline points="5 12 12 5 19 12" />
-                </svg>
-              </button>
-            </div>
+              </article>
+            </template>
           </div>
-        </form>
+
+          <!-- Spring Floating Scroll-to-Bottom Button -->
+          <Transition
+            enter-active-class="transition duration-250 ease-[var(--ease-spring)]"
+            enter-from-class="opacity-0 translate-y-3 scale-90"
+            enter-to-class="opacity-100 translate-y-0 scale-100"
+            leave-active-class="transition duration-150 ease-in"
+            leave-from-class="opacity-100 translate-y-0 scale-100"
+            leave-to-class="opacity-0 translate-y-2 scale-95"
+          >
+            <button
+              v-if="userScrolledUp"
+              type="button"
+              @click="scrollToBottom(true)"
+              class="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 min-h-[40px] sm:min-h-[34px] px-4 rounded-full border border-[#f2b880]/45 bg-[#0a0f1f]/95 text-xs font-medium text-[#f2b880] shadow-xl backdrop-blur-md hover:bg-[#f2b880]/15 cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+              <span>回到底部</span>
+            </button>
+          </Transition>
+        </div>
+
+        <!-- Floating Composer Dock -->
+        <div class="px-3 sm:px-6 pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] sm:pb-5">
+          <div
+            v-if="bot?.id === 'team_room'"
+            class="max-w-[820px] w-full mx-auto mb-2 flex items-center gap-1.5 flex-wrap"
+          >
+            <span class="font-mono text-[11px] text-slate-400">@点名协同:</span>
+            <button
+              v-for="tag in ['@探针哨兵 ', '@长庚执更 ', '@开源雷达 ', '@Grok 锐评官 ']"
+              :key="tag"
+              type="button"
+              @click="appendMention(tag)"
+              class="min-h-[36px] sm:min-h-[28px] px-2.5 py-1 rounded-full text-xs border border-[#fff8ee]/12 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer"
+            >
+              {{ tag.trim() }}
+            </button>
+          </div>
+
+          <form
+            ref="formRef"
+            @submit.prevent="sendPrompt()"
+            :class="[
+              'composer-dock max-w-[820px] w-full mx-auto rounded-[22px] border border-[#fff8ee]/14 focus-within:border-[#f2b880]/55 bg-[#0b101e]/92 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,248,238,0.08),0_20px_46px_rgba(0,0,0,0.52)] px-3.5 sm:px-4 pt-3 pb-2.5 flex flex-col gap-2.5',
+              store.state.isStreaming ? 'is-streaming' : ''
+            ]"
+          >
+            <label :for="composerId" class="sr-only">向当前专属 Bot 下达指令</label>
+            <textarea
+              :id="composerId"
+              ref="textareaRef"
+              v-model="inputPrompt"
+              rows="1"
+              placeholder="向当前专属 Bot 下达指令（Enter 发送，Shift+Enter 换行）..."
+              @input="autoResizeTextarea"
+              @compositionend="handleCompositionEnd"
+              @keydown="handleComposerKeydown"
+              class="auto-size-textarea w-full bg-transparent border-0 text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none min-h-[24px] max-h-[160px] overflow-y-auto leading-relaxed"
+            />
+
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
+                <div class="w-36 sm:w-44 shrink-0">
+                  <CustomSelect v-model="selectedModel" :options="MODEL_OPTIONS" compact aria-label="选择推理模型" />
+                </div>
+                <button
+                  type="button"
+                  :aria-pressed="enableThinking"
+                  @click="enableThinking = !enableThinking"
+                  :class="[
+                    'min-h-[44px] sm:min-h-[32px] px-3 rounded-full text-xs border cursor-pointer whitespace-nowrap shrink-0',
+                    enableThinking
+                      ? 'border-[#f2b880]/50 bg-[#f2b880]/15 text-[#f2b880]'
+                      : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+                  ]"
+                >
+                  深度思考: {{ enableThinking ? '开' : '关' }}
+                </button>
+                <span class="hidden sm:inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-400 truncate" aria-live="polite">
+                  <span
+                    v-if="store.state.isStreaming"
+                    class="w-1.5 h-1.5 rounded-full bg-[#f2b880] animate-pulse shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span class="truncate">{{ streamStatus }}</span>
+                </span>
+              </div>
+
+              <div class="flex items-center gap-2 shrink-0">
+                <button
+                  v-if="store.state.isStreaming"
+                  type="button"
+                  @click="stopStream"
+                  class="min-h-[44px] sm:min-h-[34px] px-3.5 rounded-full text-xs bg-rose-500/20 border border-rose-400/45 text-rose-300 hover:bg-rose-500/30 cursor-pointer"
+                >
+                  停止
+                </button>
+                <button
+                  type="submit"
+                  :disabled="store.state.isStreaming || !inputPrompt.trim()"
+                  aria-label="发送指令"
+                  title="发送 (Enter)"
+                  class="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-[#f2b880] hover:bg-[#f7cba0] hover:scale-105 text-[#070a13] flex items-center justify-center cursor-pointer disabled:opacity-35 disabled:hover:scale-100 disabled:cursor-not-allowed shadow-md"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+                    <line x1="12" y1="19" x2="12" y2="5" />
+                    <polyline points="5 12 12 5 19 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
+    </Transition>
 
     <!-- View 2: Bot Routines -->
-    <div v-show="store.state.botView === 'routines'" class="cq-container flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
-      <div class="max-w-4xl mx-auto flex flex-col gap-4">
-        <div class="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h2 class="text-base sm:text-lg font-semibold text-white">该 Bot 专属定时例程 (Routines)</h2>
-            <p class="text-xs text-slate-400">例程触发后将由当前 Bot 自主运行并将结果主动汇报进对话流</p>
-          </div>
-          <button
-            type="button"
-            @click="store.state.editingTask = { bot_id: bot?.id || 'butler' }"
-            class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer"
-          >
-            + 为该 Bot 添加例程
-          </button>
-        </div>
-
-        <div v-if="botRoutines.length === 0" class="vesper-card rounded-2xl p-8 text-center text-sm text-slate-400">
-          当前 Bot 尚未绑定自动化例程，可点击右上角新增
-        </div>
-
-        <div class="ops-task-grid">
-          <article
-            v-for="t in botRoutines"
-            :key="t.id"
-            class="vesper-card rounded-2xl p-4 flex flex-col gap-2.5"
-          >
-            <div class="flex items-start justify-between gap-2">
-              <div>
-                <h3 class="font-semibold text-sm text-white">{{ t.name }}</h3>
-                <div class="font-mono text-[11px] text-slate-400 mt-0.5">{{ describeCron(t.cron_expr) }}</div>
-              </div>
-              <span
-                :class="[
-                  'font-mono text-[11px] px-2 py-0.5 rounded-full border shrink-0',
-                  t.enabled ? 'border-emerald-400/35 bg-emerald-400/10 text-emerald-300' : 'border-[#fff8ee]/15 text-slate-400'
-                ]"
-              >
-                {{ t.enabled ? '运行中' : '已暂停' }}
-              </span>
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0 translate-y-1.5"
+      enter-to-class="opacity-100 translate-y-0"
+    >
+      <div v-show="store.state.botView === 'routines'" class="cq-container flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
+        <div class="max-w-4xl mx-auto flex flex-col gap-4">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 class="text-base sm:text-lg font-semibold text-white">专属定时例程</h2>
+              <p class="text-xs text-slate-400">触发后由当前 Bot 自主执行并将总结汇报至对话流</p>
             </div>
-            <p class="text-xs text-slate-300">{{ t.description }}</p>
-            <div class="font-mono text-[11px] text-slate-400 truncate">最近结果: {{ t.last_run?.summary || '等待首次执行' }}</div>
-            <div class="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                @click="runRoutine(t.id)"
-                class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg bg-[#f2b880]/15 border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/25 text-xs cursor-pointer"
-              >
-                立即执行一次
-              </button>
-              <button
-                type="button"
-                @click="store.state.editingTask = t"
-                class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg border border-[#fff8ee]/14 text-slate-300 hover:bg-white/5 text-xs cursor-pointer"
-              >
-                配置参数
-              </button>
-            </div>
-          </article>
-        </div>
-      </div>
-    </div>
-
-    <!-- View 3: Bot Profile, Tools & Scoped Memories -->
-    <div v-show="store.state.botView === 'config'" class="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
-      <div class="max-w-4xl mx-auto flex flex-col gap-5">
-        <form @submit.prevent="saveBotProfile" class="vesper-card rounded-2xl p-5 flex flex-col gap-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label class="flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>Bot 名称</span>
-              <input v-model="cfgName" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-            </label>
-            <label class="flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>职责定位</span>
-              <input v-model="cfgRole" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-            </label>
-            <div class="flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>默认推理模型</span>
-              <CustomSelect v-model="cfgModel" :options="MODEL_OPTIONS" aria-label="默认推理模型" />
-            </div>
-            <div class="flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>头像主题色</span>
-              <CustomSelect v-model="cfgAvatar" :options="AVATAR_OPTIONS" aria-label="头像主题色" />
-            </div>
-            <label class="md:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>专属人设与行为约束 (System Prompt)</span>
-              <textarea v-model="cfgPrompt" rows="4" class="auto-size-textarea rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none resize-y" />
-            </label>
-            <div class="md:col-span-2 flex flex-col gap-2 text-xs text-slate-300">
-              <span>绑定可用工具集 (最小权限白名单)</span>
-              <div class="flex flex-wrap gap-2">
-                <label
-                  v-for="tool in TOOL_CATALOG"
-                  :key="tool.id"
-                  class="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#fff8ee]/12 bg-[#060a16]/75 font-mono text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0]"
-                >
-                  <input v-model="cfgTools" type="checkbox" :value="tool.id" class="accent-[#f2b880]" />
-                  <span>{{ tool.label }}</span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex items-center justify-between gap-3 flex-wrap pt-3 border-t border-[#fff8ee]/10">
             <button
-              v-if="bot && !bot.is_builtin"
               type="button"
-              @click="deleteCustomBot"
-              class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 text-xs cursor-pointer"
+              @click="store.state.editingTask = { bot_id: bot?.id || 'butler' }"
+              class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer"
             >
-              注销此自定义 Bot
+              + 添加例程
             </button>
-            <span v-else />
-            <div class="flex items-center gap-4 flex-wrap">
-              <label class="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                <input v-model="cfgThinking" type="checkbox" class="accent-[#f2b880]" />
-                <span>默认开启深度思考</span>
-              </label>
-              <button
-                type="submit"
-                :disabled="savingProfile"
-                class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
-              >
-                {{ savingProfile ? '保存中...' : '保存 Bot 人设与能力' }}
-              </button>
-            </div>
           </div>
-        </form>
 
-        <div class="vesper-card rounded-2xl p-5">
-          <h3 class="font-semibold text-sm text-white mb-3">关联记忆背景 (全局 + 专属域)</h3>
-          <div v-if="scopedMemories.length === 0" class="text-xs text-slate-500">暂无关联长期记忆</div>
-          <div class="flex flex-col gap-2">
+          <div v-if="botRoutines.length === 0" class="vesper-card rounded-2xl p-8 text-center text-sm text-slate-400">
+            当前 Bot 尚未绑定自动化例程，可点击右上角新增
+          </div>
+
+          <div ref="routinesGridRef" class="ops-task-grid stagger-list">
             <article
-              v-for="mem in scopedMemories"
-              :key="mem.id"
-              class="rounded-xl border border-[#fff8ee]/11 bg-[#070a16]/75 px-3.5 py-2.5"
+              v-for="t in botRoutines"
+              :key="t.id"
+              class="stagger-item vesper-card vesper-card-interactive rounded-2xl p-4 flex flex-col gap-2.5"
             >
-              <div class="flex items-center justify-between gap-2 flex-wrap">
-                <strong class="font-mono text-xs text-[#f2b880]">{{ mem.fact_key }}</strong>
-                <span class="font-mono text-[11px] text-slate-500">{{ mem.scope || 'global' }} · {{ mem.category }}</span>
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <h3 class="font-semibold text-sm text-white">{{ t.name }}</h3>
+                  <div class="font-mono text-[11px] text-slate-400 mt-0.5">{{ describeCron(t.cron_expr) }}</div>
+                </div>
+                <span
+                  :class="[
+                    'inline-flex items-center gap-1.5 font-mono text-[11px] shrink-0',
+                    t.enabled ? 'text-emerald-300' : 'text-slate-500'
+                  ]"
+                >
+                  <span :class="['w-1.5 h-1.5 rounded-full', t.enabled ? 'bg-emerald-400' : 'bg-slate-600']" aria-hidden="true" />
+                  {{ t.enabled ? '运行中' : '已暂停' }}
+                </span>
               </div>
-              <p class="text-xs text-slate-200 mt-1">{{ mem.content }}</p>
+              <p class="text-xs text-slate-300">{{ t.description }}</p>
+              <div class="font-mono text-[11px] text-slate-400 truncate">最近结果: {{ t.last_run?.summary || '等待首次执行' }}</div>
+              <div class="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  @click="runRoutine(t.id)"
+                  class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg bg-[#f2b880]/15 border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/25 text-xs cursor-pointer"
+                >
+                  立即执行
+                </button>
+                <button
+                  type="button"
+                  @click="store.state.editingTask = t"
+                  class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg border border-[#fff8ee]/12 text-slate-300 hover:bg-white/5 text-xs cursor-pointer"
+                >
+                  配置参数
+                </button>
+              </div>
             </article>
           </div>
         </div>
       </div>
-    </div>
+    </Transition>
+
+    <!-- View 3: Bot Profile, Tools & Scoped Memories -->
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0 translate-y-1.5"
+      enter-to-class="opacity-100 translate-y-0"
+    >
+      <div v-show="store.state.botView === 'config'" class="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
+        <div class="max-w-4xl mx-auto flex flex-col gap-5">
+          <form @submit.prevent="saveBotProfile" class="vesper-card rounded-2xl p-5 flex flex-col gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label class="flex flex-col gap-1.5 text-xs text-slate-300">
+                <span>Bot 名称</span>
+                <input v-model="cfgName" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+              </label>
+              <label class="flex flex-col gap-1.5 text-xs text-slate-300">
+                <span>职责定位</span>
+                <input v-model="cfgRole" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+              </label>
+              <div class="flex flex-col gap-1.5 text-xs text-slate-300">
+                <span>默认推理模型</span>
+                <CustomSelect v-model="cfgModel" :options="MODEL_OPTIONS" aria-label="默认推理模型" />
+              </div>
+              <div class="flex flex-col gap-1.5 text-xs text-slate-300">
+                <span>头像主题色</span>
+                <CustomSelect v-model="cfgAvatar" :options="AVATAR_OPTIONS" aria-label="头像主题色" />
+              </div>
+              <label class="md:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
+                <span>专属人设与行为约束 (System Prompt)</span>
+                <textarea v-model="cfgPrompt" rows="4" class="auto-size-textarea rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none resize-y" />
+              </label>
+              <div class="md:col-span-2 flex flex-col gap-2 text-xs text-slate-300">
+                <span>绑定可用工具集 (最小权限白名单)</span>
+                <div class="flex flex-wrap gap-2">
+                  <label
+                    v-for="tool in TOOL_CATALOG"
+                    :key="tool.id"
+                    class="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#fff8ee]/12 bg-[#060a16]/75 font-mono text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0] transition-colors"
+                  >
+                    <input v-model="cfgTools" type="checkbox" :value="tool.id" class="accent-[#f2b880]" />
+                    <span>{{ tool.label }}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 flex-wrap pt-3 border-t border-[#fff8ee]/10">
+              <button
+                v-if="bot && !bot.is_builtin"
+                type="button"
+                @click="deleteCustomBot"
+                class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 text-xs cursor-pointer"
+              >
+                注销此自定义 Bot
+              </button>
+              <span v-else />
+              <div class="flex items-center gap-4 flex-wrap">
+                <label class="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                  <input v-model="cfgThinking" type="checkbox" class="accent-[#f2b880]" />
+                  <span>默认开启深度思考</span>
+                </label>
+                <button
+                  type="submit"
+                  :disabled="savingProfile"
+                  class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+                >
+                  {{ savingProfile ? '保存中...' : '保存配置' }}
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <div class="vesper-card rounded-2xl p-5">
+            <h3 class="font-semibold text-sm text-white mb-3">关联记忆背景 (全局 + 专属域)</h3>
+            <div v-if="scopedMemories.length === 0" class="text-xs text-slate-500">暂无关联长期记忆</div>
+            <div class="flex flex-col gap-2">
+              <article
+                v-for="mem in scopedMemories"
+                :key="mem.id"
+                class="rounded-xl border border-[#fff8ee]/10 bg-[#070a16]/75 px-3.5 py-2.5"
+              >
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <strong class="font-mono text-xs text-[#f2b880]">{{ mem.fact_key }}</strong>
+                  <span class="font-mono text-[11px] text-slate-500">{{ mem.scope || 'global' }} · {{ mem.category }}</span>
+                </div>
+                <p class="text-xs text-slate-200 mt-1">{{ mem.content }}</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- View 4: Activity Pulse -->
-    <div v-show="store.state.botView === 'activity'" class="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
-      <div class="max-w-4xl mx-auto flex flex-col gap-3">
-        <h2 class="text-base sm:text-lg font-semibold text-white">运行脉搏与最近汇报摘要</h2>
-        <div v-if="activityEntries.length === 0" class="vesper-card rounded-2xl p-8 text-center text-sm text-slate-400">
-          暂无后台运行脉搏记录
-        </div>
-        <article
-          v-for="(act, idx) in activityEntries"
-          :key="idx"
-          class="vesper-card rounded-xl px-4 py-3"
-        >
-          <div class="flex items-center justify-between gap-2 flex-wrap">
-            <strong class="text-sm text-white">{{ act.title }}</strong>
-            <span class="font-mono text-[11px] text-slate-400">{{ act.time }}</span>
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0 translate-y-1.5"
+      enter-to-class="opacity-100 translate-y-0"
+    >
+      <div v-show="store.state.botView === 'activity'" class="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
+        <div class="max-w-4xl mx-auto flex flex-col gap-3">
+          <h2 class="text-base sm:text-lg font-semibold text-white">运行脉搏与最近汇报摘要</h2>
+          <div v-if="activityEntries.length === 0" class="vesper-card rounded-2xl p-8 text-center text-sm text-slate-400">
+            暂无后台运行脉搏记录
           </div>
-          <p class="text-xs text-slate-300 mt-1">{{ act.detail }}</p>
-        </article>
+          <div ref="activityListRef" class="stagger-list flex flex-col gap-2.5">
+            <article
+              v-for="(act, idx) in activityEntries"
+              :key="idx"
+              class="stagger-item vesper-card rounded-xl px-4 py-3"
+            >
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <strong class="text-sm text-white">{{ act.title }}</strong>
+                <span class="font-mono text-[11px] text-slate-400">{{ act.time }}</span>
+              </div>
+              <p class="text-xs text-slate-300 mt-1">{{ act.detail }}</p>
+            </article>
+          </div>
+        </div>
       </div>
-    </div>
+    </Transition>
   </section>
 </template>

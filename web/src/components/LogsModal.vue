@@ -1,9 +1,17 @@
 <script setup lang="ts">
+import { ref, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { formatTime } from '../utils/format'
+import { applySiblingStaggerFallback } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
 
 const store = useAppStore()
+const listRef = ref<HTMLElement | null>(null)
+
+watch(
+  () => [store.state.showLogsModal, store.state.pushLogs.length],
+  () => nextTick(() => applySiblingStaggerFallback(listRef.value))
+)
 </script>
 
 <template>
@@ -14,14 +22,14 @@ const store = useAppStore()
     max-width="2xl"
     @close="store.state.showLogsModal = false"
   >
-    <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
+    <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
       <div v-if="store.state.pushLogs.length === 0" class="py-12 text-center text-sm text-slate-500">
         暂无推送流水记录
       </div>
       <article
         v-for="log in store.state.pushLogs"
         :key="log.id"
-        class="rounded-xl border border-[#fff8ee]/11 bg-[#070a16]/80 p-3.5"
+        class="stagger-item rounded-xl border border-[#fff8ee]/11 bg-[#070a16]/80 p-3.5"
       >
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-2">

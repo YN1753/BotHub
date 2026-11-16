@@ -1,13 +1,24 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { formatTime } from '../utils/format'
 import { renderSafeMarkdown } from '../utils/markdown'
+import { applySiblingStaggerFallback } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
+import SegmentedTabs from './SegmentedTabs.vue'
 
 const store = useAppStore()
 const activeFilter = ref<'all' | 'morning' | 'radar' | 'asset' | 'alert'>('all')
+const listRef = ref<HTMLElement | null>(null)
+
+const FILTER_TABS = [
+  { id: 'all', label: '全部' },
+  { id: 'morning', label: 'AI 晨报' },
+  { id: 'radar', label: '前沿雷达' },
+  { id: 'asset', label: '资产守望' },
+  { id: 'alert', label: '探针告警' },
+]
 const desktopNotify = ref(
   localStorage.getItem('bothub_desktop_notify') === '1' &&
     typeof Notification !== 'undefined' &&
@@ -66,6 +77,11 @@ async function toggleDesktopNotify() {
     store.notify('浏览器未授予通知权限')
   }
 }
+
+watch(
+  () => [store.state.showInboxModal, filtered.value.length],
+  () => nextTick(() => applySiblingStaggerFallback(listRef.value))
+)
 </script>
 
 <template>
@@ -93,30 +109,11 @@ async function toggleDesktopNotify() {
       </button>
     </template>
 
-    <div class="flex gap-1.5 overflow-x-auto no-scrollbar shrink-0 pb-0.5">
-      <button
-        v-for="f in [
-          { id: 'all', label: '全部' },
-          { id: 'morning', label: 'AI 晨报' },
-          { id: 'radar', label: '前沿雷达' },
-          { id: 'asset', label: '资产守望' },
-          { id: 'alert', label: '探针告警' },
-        ]"
-        :key="f.id"
-        type="button"
-        @click="activeFilter = f.id as any"
-        :class="[
-          'min-h-[44px] sm:min-h-[32px] px-3.5 py-1 rounded-full text-xs border transition cursor-pointer whitespace-nowrap shrink-0',
-          activeFilter === f.id
-            ? 'border-[#f2b880]/55 bg-[#f2b880] text-[#070a13] font-semibold'
-            : 'border-[#fff8ee]/14 text-slate-300 hover:bg-white/5'
-        ]"
-      >
-        {{ f.label }}
-      </button>
+    <div class="shrink-0">
+      <SegmentedTabs v-model="activeFilter" :items="FILTER_TABS" variant="subtle" aria-label="情报分类筛选" />
     </div>
 
-    <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
+    <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
       <div v-if="filtered.length === 0" class="py-12 text-center text-sm text-slate-500">
         当前分类下暂无情报消息
       </div>
@@ -124,7 +121,7 @@ async function toggleDesktopNotify() {
         v-for="n in filtered"
         :key="n.id"
         :class="[
-          'rounded-xl border bg-[#070a16]/80 p-3.5 transition-colors',
+          'stagger-item rounded-xl border bg-[#070a16]/80 p-3.5 transition-colors',
           !n.read_at ? 'border-l-4 border-l-[#f2b880] border-[#fff8ee]/14' : 'border-[#fff8ee]/10'
         ]"
       >
@@ -139,8 +136,13 @@ async function toggleDesktopNotify() {
           <span class="font-mono text-[11px] text-slate-400">{{ formatTime(n.created_at) }}</span>
         </div>
         <p class="text-xs text-slate-400 mt-1">{{ n.summary }}</p>
-        <details class="mt-2" @toggle="(e: any) => e.target?.open && markRead(n.id)">
-          <summary class="cursor-pointer font-mono text-[11px] text-[#f2b880] select-none">展开全文</summary>
+        <details class="vesper-details mt-2" @toggle="(e: any) => e.target?.open && markRead(n.id)">
+          <summary class="cursor-pointer inline-flex items-center gap-1 font-mono text-[11px] text-[#f2b880] select-none">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron shrink-0">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span>展开全文</span>
+          </summary>
           <div class="mt-2 pt-2 border-t border-[#fff8ee]/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
         </details>
       </article>

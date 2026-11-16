@@ -3,12 +3,14 @@
 :root {
   color-scheme: dark;
   accent-color: #f2b880;
+  interpolate-size: allow-keywords;
+
   --bg-deep: #04060d;
-  --bg-surface: rgba(11, 15, 29, 0.8);
-  --bg-card: rgba(14, 18, 34, 0.84);
+  --bg-surface: rgba(11, 15, 29, 0.78);
+  --bg-card: rgba(15, 19, 36, 0.76);
   --bg-elevated: rgba(18, 23, 42, 0.92);
-  --border-glass: rgba(255, 248, 238, 0.11);
-  --border-highlight: rgba(255, 248, 238, 0.09);
+  --border-glass: rgba(255, 248, 238, 0.1);
+  --border-highlight: rgba(255, 248, 238, 0.08);
   --border-gold: rgba(242, 184, 128, 0.42);
   --text-main: #f5f2eb;
   --text-sub: #cbd5e1;
@@ -20,6 +22,14 @@
   --accent-emerald: #34d399;
   --accent-rose: #f87171;
   --target-size: 32px;
+
+  /* Easing primitives (cubic-bezier fallback + physics linear() spring) */
+  --ease-snappy: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: linear(
+    0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%, 0.938 16.7%,
+    1.017, 1.077, 1.102, 1.105 25%, 1.09 28.4%, 1.014 38.5%,
+    0.994 44.3%, 0.99 49.5%, 1.001 66.2%, 1
+  );
 }
 
 @media (pointer: coarse) {
@@ -32,8 +42,8 @@ html,
 body {
   min-height: 100%;
   background:
-    radial-gradient(ellipse 80% 55% at 18% 10%, rgba(39, 28, 72, 0.48) 0%, transparent 60%),
-    radial-gradient(ellipse 65% 45% at 86% 88%, rgba(86, 46, 24, 0.22) 0%, transparent 58%),
+    radial-gradient(ellipse 80% 55% at 18% 10%, rgba(39, 28, 72, 0.46) 0%, transparent 60%),
+    radial-gradient(ellipse 65% 45% at 86% 88%, rgba(86, 46, 24, 0.2) 0%, transparent 58%),
     linear-gradient(180deg, #070a13 0%, #04060d 100%);
   color: var(--text-main);
   font-family: -apple-system, BlinkMacSystemFont, "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -47,7 +57,7 @@ body {
   color: #fbf7f0;
 }
 
-/* Typographic polish */
+/* Typographic clarity */
 h1, h2, h3 {
   text-wrap: balance;
 }
@@ -67,20 +77,20 @@ img, video {
   outline-offset: 2px;
 }
 
-/* Natural tactile feedback */
+/* Crisp interactive tactile motion */
 :where(button, [role="button"]) {
-  transition-property: background-color, border-color, color, box-shadow, opacity, scale;
-  transition-duration: 150ms;
-  transition-timing-function: ease-out;
+  transition-property: background-color, border-color, color, box-shadow, opacity, transform, scale;
+  transition-duration: 170ms;
+  transition-timing-function: var(--ease-snappy);
 }
 
 @media (prefers-reduced-motion: no-preference) {
   :where(button, [role="button"]):not(:disabled):active {
-    scale: 0.975;
+    scale: 0.965;
   }
 }
 
-/* Custom Scrollbar (keeping accessible thumb track width, auto scrollbar-width) */
+/* Accessible Scrollbar (preserves comfortable thumb track target size) */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -100,7 +110,7 @@ img, video {
   background-clip: content-box;
 }
 
-/* Hide scrollbar strictly for horizontally swipeable tab strips */
+/* Hide scrollbar strictly for horizontally swipeable segmented rails */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -109,7 +119,7 @@ img, video {
   scrollbar-width: none;
 }
 
-/* Smooth scrolling for message streams */
+/* Stream scrolling */
 .stream-scroller {
   scrollbar-gutter: stable;
 }
@@ -129,38 +139,199 @@ img, video {
   }
 }
 
-/* Reveal message / card actions on hover, keyboard focus, and always on touch */
+/* Reveal message actions cleanly on hover, keyboard focus, and always on touch */
 .reveal-actions {
   opacity: 0;
-  transition: opacity 150ms ease-out;
+  transform: translateY(2px);
+  transition: opacity 180ms ease-out, transform 180ms var(--ease-snappy);
 }
 .reveal-host:hover .reveal-actions,
 .reveal-host:focus-within .reveal-actions {
   opacity: 1;
+  transform: translateY(0);
 }
 @media (hover: none) {
   .reveal-actions {
     opacity: 1;
+    transform: none;
   }
 }
 
-/* Vesper Twilight Aero-Glass Surface */
+/* ============================================================================
+   Surfaces & Interactive Card Lift
+   ============================================================================ */
 .aero-glass {
-  background: linear-gradient(180deg, rgba(20, 25, 44, 0.88) 0%, rgba(12, 16, 30, 0.86) 100%);
+  background: linear-gradient(180deg, rgba(20, 25, 44, 0.86) 0%, rgba(12, 16, 30, 0.84) 100%);
   border: 1px solid var(--border-glass);
   box-shadow:
     inset 0 1px 0 var(--border-highlight),
-    0 20px 46px rgba(0, 0, 0, 0.48);
+    0 20px 46px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(20px);
 }
 
 .vesper-card {
-  background: rgba(14, 18, 34, 0.78);
+  background: rgba(14, 18, 34, 0.72);
   border: 1px solid var(--border-glass);
   box-shadow:
-    inset 0 1px 0 rgba(255, 248, 238, 0.07),
-    0 12px 30px rgba(0, 0, 0, 0.34);
+    inset 0 1px 0 rgba(255, 248, 238, 0.06),
+    0 8px 24px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(14px);
+}
+
+.vesper-card-interactive {
+  transition:
+    transform 220ms var(--ease-snappy),
+    border-color 180ms ease-out,
+    background-color 180ms ease-out,
+    box-shadow 220ms ease-out;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .vesper-card-interactive:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 248, 238, 0.1),
+      0 14px 32px rgba(0, 0, 0, 0.44);
+  }
+}
+
+/* Animated streaming glow around the floating composer */
+.composer-dock {
+  transition:
+    border-color 220ms ease-out,
+    box-shadow 280ms ease-out;
+}
+.composer-dock.is-streaming {
+  border-color: rgba(242, 184, 128, 0.48);
+  box-shadow:
+    inset 0 1px 0 rgba(242, 184, 128, 0.18),
+    0 0 0 1px rgba(242, 184, 128, 0.12),
+    0 18px 46px rgba(0, 0, 0, 0.54);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .composer-dock.is-streaming {
+    animation: composerBreath 2.4s ease-in-out infinite;
+  }
+}
+@keyframes composerBreath {
+  0%, 100% {
+    box-shadow:
+      inset 0 1px 0 rgba(242, 184, 128, 0.16),
+      0 0 0 1px rgba(242, 184, 128, 0.1),
+      0 18px 46px rgba(0, 0, 0, 0.54);
+  }
+  50% {
+    box-shadow:
+      inset 0 1px 0 rgba(242, 184, 128, 0.26),
+      0 0 24px rgba(242, 184, 128, 0.14),
+      0 18px 46px rgba(0, 0, 0, 0.54);
+  }
+}
+
+/* Smooth <details> Accordion using interpolate-size & ::details-content */
+details.vesper-details > summary {
+  list-style: none;
+}
+details.vesper-details > summary::-webkit-details-marker {
+  display: none;
+}
+details.vesper-details .details-chevron {
+  transition: transform 240ms var(--ease-snappy);
+}
+details.vesper-details[open] .details-chevron {
+  transform: rotate(90deg);
+}
+
+@supports (interpolate-size: allow-keywords) {
+  details.vesper-details::details-content {
+    block-size: 0;
+    opacity: 0;
+    overflow: clip;
+    transition:
+      block-size 280ms var(--ease-snappy),
+      opacity 220ms ease-out,
+      content-visibility 280ms allow-discrete;
+  }
+  details.vesper-details[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+  }
+}
+
+/* Staggered list/grid entrance using CSS sibling-index() with JS custom-prop fallback */
+@keyframes vesperCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes msgEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .stagger-list > .stagger-item {
+    --stagger-step: 36ms;
+    animation: vesperCardIn 360ms var(--ease-snappy) backwards;
+    animation-delay: calc(min(var(--sibling-index, 0), 10) * var(--stagger-step));
+    animation-delay: calc(min(sibling-index() - 1, 10) * var(--stagger-step));
+  }
+
+  .msg-enter {
+    animation: msgEnter 260ms var(--ease-snappy) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stagger-list > .stagger-item,
+  .msg-enter {
+    animation: none !important;
+  }
+  details.vesper-details::details-content {
+    transition: none !important;
+  }
+}
+
+/* Thinking waveform dots while assistant prepares first token */
+.thinking-dots span {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent-gold);
+  opacity: 0.45;
+  animation: dotPulse 1.2s ease-in-out infinite;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.18s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes dotPulse {
+  0%, 80%, 100% {
+    opacity: 0.3;
+    transform: scale(0.82);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-dots span {
+    animation: none;
+    opacity: 0.8;
+  }
 }
 
 /* Container-query responsive surfaces */
@@ -227,8 +398,9 @@ dialog.vesper-dialog {
   border-radius: 1.25rem 1.25rem 0 0;
   overflow: hidden;
   transition-property: opacity, transform, display, overlay;
-  transition-duration: 0.24s;
-  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-duration: 0.28s;
+  transition-timing-function: ease-out;
+  transition-timing-function: var(--ease-snappy);
   transition-behavior: allow-discrete;
 }
 
@@ -253,11 +425,11 @@ dialog.vesper-dialog.vesper-dialog-3xl {
 
 @media (prefers-reduced-motion: no-preference) {
   dialog.vesper-dialog {
-    transform: translateY(18px);
+    transform: translateY(22px);
   }
   @media (min-width: 640px) {
     dialog.vesper-dialog {
-      transform: translateY(8px) scale(0.96);
+      transform: translateY(10px) scale(0.955);
     }
   }
 }
@@ -277,14 +449,17 @@ dialog.vesper-dialog[open]:where(:not([data-closing])) {
     transform: translateY(0) scale(1);
     @starting-style {
       opacity: 0;
-      transform: translateY(18px);
+      transform: translateY(22px);
     }
   }
   @media (min-width: 640px) {
     dialog.vesper-dialog[open]:where(:not([data-closing])) {
+      transition-duration: 0.32s;
+      transition-timing-function: ease-out;
+      transition-timing-function: var(--ease-spring);
       @starting-style {
         opacity: 0;
-        transform: translateY(8px) scale(0.96);
+        transform: translateY(10px) scale(0.955);
       }
     }
   }
@@ -339,7 +514,7 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
   opacity: 0;
   transform-origin: top right;
   transition-property: opacity, transform, display, overlay;
-  transition-duration: 0.16s;
+  transition-duration: 0.18s;
   transition-timing-function: ease-out;
   transition-behavior: allow-discrete;
 }
@@ -370,18 +545,19 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
 
 @media (prefers-reduced-motion: no-preference) {
   [popover].vesper-popover {
-    scale: 0.94;
+    scale: 0.92;
   }
   [popover].vesper-popover:is(:popover-open, .\:popover-open) {
     scale: 1;
-    animation: popover-spring 220ms linear(0, 0.5 16%, 1.06 42%, 0.98 68%, 1) both;
+    animation: popover-spring 280ms ease-out both;
+    animation-timing-function: var(--ease-spring);
   }
 }
 
 @keyframes popover-spring {
   from {
     opacity: 0;
-    scale: 0.92;
+    scale: 0.9;
   }
 }
 

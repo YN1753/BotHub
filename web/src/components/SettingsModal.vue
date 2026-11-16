@@ -4,9 +4,17 @@ import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
+import SegmentedTabs from './SegmentedTabs.vue'
 
 const store = useAppStore()
 const activeTab = ref<'ai' | 'push' | 'integrations' | 'security'>('ai')
+
+const SETTINGS_TABS = [
+  { id: 'ai', label: 'AI 大脑设置' },
+  { id: 'push', label: '消息推送通道' },
+  { id: 'integrations', label: '巡检与探针凭据' },
+  { id: 'security', label: '安全与数据灾备' },
+]
 
 // Config fields
 const deepseekKey = ref('')
@@ -188,31 +196,22 @@ async function handleImportBackup(e: Event) {
     max-width="2xl"
     @close="closeModal"
   >
-    <div class="flex gap-1.5 border-b border-[#fff8ee]/10 pb-2.5 overflow-x-auto no-scrollbar shrink-0">
-      <button
-        v-for="tab in [
-          { id: 'ai', label: 'AI 大脑设置' },
-          { id: 'push', label: '消息推送通道' },
-          { id: 'integrations', label: '巡检与探针凭据' },
-          { id: 'security', label: '安全与数据灾备' },
-        ]"
-        :key="tab.id"
-        type="button"
-        @click="activeTab = tab.id as any"
-        :class="[
-          'min-h-[44px] sm:min-h-[34px] px-3.5 py-1.5 rounded-full text-xs border transition cursor-pointer whitespace-nowrap shrink-0',
-          activeTab === tab.id
-            ? 'border-[#f2b880]/55 bg-[#f2b880] text-[#070a13] font-semibold'
-            : 'border-[#fff8ee]/14 text-slate-300 hover:bg-white/5'
-        ]"
-      >
-        {{ tab.label }}
-      </button>
+    <div class="border-b border-[#fff8ee]/10 pb-3 shrink-0">
+      <SegmentedTabs v-model="activeTab" :items="SETTINGS_TABS" aria-label="系统设置分类" />
     </div>
 
     <div class="flex-1 min-h-0 overflow-y-auto pr-1">
-      <!-- Tab: AI -->
-      <form v-if="activeTab === 'ai'" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
+      <Transition
+        mode="out-in"
+        enter-active-class="transition duration-180 ease-out"
+        enter-from-class="opacity-0 translate-y-1"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition duration-100 ease-in"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <!-- Tab: AI -->
+        <form v-if="activeTab === 'ai'" key="ai" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
         <label class="flex flex-col gap-1 text-xs text-slate-300">
           <span>DeepSeek API Key</span>
           <input v-model="deepseekKey" type="password" placeholder="sk-..." class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
@@ -258,8 +257,8 @@ async function handleImportBackup(e: Event) {
         </div>
       </form>
 
-      <!-- Tab: Push -->
-      <form v-if="activeTab === 'push'" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
+        <!-- Tab: Push -->
+        <form v-else-if="activeTab === 'push'" key="push" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
         <div class="flex flex-col gap-1 text-xs text-slate-300">
           <span>主消息推送通道</span>
           <CustomSelect v-model="pushChannel" :options="CHANNEL_OPTIONS" aria-label="主消息推送通道" />
@@ -301,8 +300,8 @@ async function handleImportBackup(e: Event) {
         </div>
       </form>
 
-      <!-- Tab: Integrations -->
-      <form v-if="activeTab === 'integrations'" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
+        <!-- Tab: Integrations -->
+        <form v-else-if="activeTab === 'integrations'" key="integrations" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
         <label class="flex flex-col gap-1 text-xs text-slate-300">
           <span>哪吒监控面板地址</span>
           <input v-model="nezhaUrl" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
@@ -330,8 +329,8 @@ async function handleImportBackup(e: Event) {
         </div>
       </form>
 
-      <!-- Tab: Security & Backup -->
-      <div v-if="activeTab === 'security'" class="flex flex-col gap-5">
+        <!-- Tab: Security & Backup -->
+        <div v-else key="security" class="flex flex-col gap-5">
         <form @submit.prevent="handleUpdatePassword" class="flex flex-col gap-2">
           <h4 class="text-sm font-semibold text-white">修改控制台访问密钥</h4>
           <div class="flex flex-col sm:flex-row gap-2">
@@ -371,7 +370,8 @@ async function handleImportBackup(e: Event) {
             退出登录
           </button>
         </div>
-      </div>
+        </div>
+      </Transition>
     </div>
   </BaseModal>
 </template>

@@ -46,9 +46,12 @@ onBeforeUnmount(() => {
     <!-- Initial Loading Gate -->
     <div
       v-if="!store.state.authChecked"
-      class="relative z-10 min-h-dvh flex items-center justify-center text-xs font-mono text-slate-400"
+      class="relative z-10 min-h-dvh flex items-center justify-center gap-3 text-xs font-mono text-slate-400"
     >
-      正在连接 Vesper BotHub 中枢...
+      <span class="thinking-dots inline-flex items-center gap-1" aria-hidden="true">
+        <span /><span /><span />
+      </span>
+      <span>正在连接 Vesper BotHub 中枢...</span>
     </div>
 
     <!-- Auth Gate -->
@@ -57,7 +60,7 @@ onBeforeUnmount(() => {
     <!-- Main Persistent GrokBot Workspace -->
     <div
       v-else
-      class="relative z-10 h-dvh w-full flex overflow-hidden bg-[#050811]/68 backdrop-blur-lg"
+      class="relative z-10 h-dvh w-full flex overflow-hidden bg-[#050811]/66 backdrop-blur-lg"
     >
       <Sidebar
         :mobile-open="mobileSidebarOpen"
@@ -70,18 +73,28 @@ onBeforeUnmount(() => {
         :inert="mobileSidebarOpen || undefined"
         class="flex-1 min-w-0 min-h-0 flex flex-col"
       >
-        <BotWorkspace
-          v-if="store.state.workspace === 'bots'"
-          :desktop-collapsed="desktopCollapsed"
-          @open-mobile-menu="mobileSidebarOpen = true"
-          @toggle-desktop-sidebar="toggleDesktopSidebar"
-        />
-        <OpsWorkspace
-          v-else
-          :desktop-collapsed="desktopCollapsed"
-          @open-mobile-menu="mobileSidebarOpen = true"
-          @toggle-desktop-sidebar="toggleDesktopSidebar"
-        />
+        <Transition
+          mode="out-in"
+          enter-active-class="transition duration-200 ease-out"
+          enter-from-class="opacity-0 translate-y-1.5"
+          enter-to-class="opacity-100 translate-y-0"
+          leave-active-class="transition duration-120 ease-in"
+          leave-from-class="opacity-100"
+          leave-to-class="opacity-0"
+        >
+          <BotWorkspace
+            v-if="store.state.workspace === 'bots'"
+            :desktop-collapsed="desktopCollapsed"
+            @open-mobile-menu="mobileSidebarOpen = true"
+            @toggle-desktop-sidebar="toggleDesktopSidebar"
+          />
+          <OpsWorkspace
+            v-else
+            :desktop-collapsed="desktopCollapsed"
+            @open-mobile-menu="mobileSidebarOpen = true"
+            @toggle-desktop-sidebar="toggleDesktopSidebar"
+          />
+        </Transition>
       </main>
     </div>
 
@@ -94,14 +107,14 @@ onBeforeUnmount(() => {
     <AssetModal />
     <TaskModal />
 
-    <!-- Non-intrusive Top Toast Banner (never overlaps bottom composer or sheets) -->
+    <!-- Non-intrusive Top Toast Banner -->
     <Transition
-      enter-active-class="transition duration-200 ease-out"
-      enter-from-class="opacity-0 -translate-y-2 scale-95"
+      enter-active-class="transition duration-250 ease-[var(--ease-spring)]"
+      enter-from-class="opacity-0 -translate-y-3 scale-95"
       enter-to-class="opacity-100 translate-y-0 scale-100"
       leave-active-class="transition duration-150 ease-in"
       leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 -translate-y-2"
+      leave-to-class="opacity-0 -translate-y-2 scale-95"
     >
       <div
         v-if="store.state.toastMessage"
