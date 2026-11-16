@@ -243,9 +243,6 @@ func TestGrokBotRosterAndTimelineLifecycle(t *testing.T) {
 	if len(listResp.Bots) != 0 {
 		t.Fatalf("expected clean DB with 0 hardcoded bots, got %d", len(listResp.Bots))
 	}
-	if len(store.BuiltinBotTemplates()) < 3 || len(store.ModelProviderTemplates()) < 4 {
-		t.Fatalf("expected creation templates available dynamically")
-	}
 
 	// 2. Create custom bot, update it, verify messages & unread clear
 	createBody := `{"name":"财务复盘专员","role_title":"月度账单核查","avatar_style":"emerald","system_prompt":"负责预算核对"}`

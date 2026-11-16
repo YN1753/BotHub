@@ -67,4 +67,14 @@ func TestAssetShouldWarn(t *testing.T) {
 	if !w.shouldWarn(asset2) {
 		t.Errorf("expected warn at critical 2 days left")
 	}
+
+	// Case 3: Normalized legacy asset statuses map cleanly to unified lifecycle states
+	for _, legacy := range []string{"运行中", "会员有效", "活动体验中", "active", ""} {
+		if got := store.NormalizeAssetStatus(legacy); got != "生效中" {
+			t.Errorf("NormalizeAssetStatus(%q) = %q, want 生效中", legacy, got)
+		}
+	}
+	if got := store.NormalizeAssetStatus("已停用"); got != "已停用" {
+		t.Errorf("expected 已停用 preserved, got %q", got)
+	}
 }

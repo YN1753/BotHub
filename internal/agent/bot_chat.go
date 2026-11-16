@@ -77,7 +77,7 @@ func (e *Engine) resolveMentionedBots(userMsg string, allBots []store.Bot) []sto
 	matched := make([]store.Bot, 0)
 	seen := make(map[string]bool)
 	for _, b := range allBots {
-		if b.IsGroup || b.ID == "team_room" || seen[b.ID] {
+		if b.IsGroup || seen[b.ID] {
 			continue
 		}
 		if strings.Contains(userMsg, "@"+b.Name) || strings.Contains(lower, "@"+strings.ToLower(b.ID)) {
@@ -91,7 +91,7 @@ func (e *Engine) resolveMentionedBots(userMsg string, allBots []store.Bot) []sto
 func resolveGroupMemberBots(groupBot *store.Bot, allBots []store.Bot) []store.Bot {
 	botMap := make(map[string]store.Bot, len(allBots))
 	for _, b := range allBots {
-		if !b.IsGroup && b.ID != "team_room" {
+		if !b.IsGroup {
 			botMap[b.ID] = b
 		}
 	}
@@ -223,7 +223,7 @@ func (e *Engine) chatStreamForBot(
 	mentioned := e.resolveMentionedBots(userMsg, allBots)
 
 	// Multi-bot group chat (@mention targets including outside temporary guests, or collaboration mode routing)
-	if bot.IsGroup || bot.ID == "team_room" {
+	if bot.IsGroup {
 		members := resolveGroupMemberBots(bot, allBots)
 		memberSet := make(map[string]bool, len(members))
 		for _, m := range members {

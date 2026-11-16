@@ -20,7 +20,7 @@ const targets = computed(() =>
 const specialistMap = computed(() => {
   const m = new Map<string, Bot>()
   store.state.bots.forEach((b) => {
-    if (!b.is_group && b.id !== 'team_room') m.set(b.id, b)
+    if (!b.is_group) m.set(b.id, b)
   })
   return m
 })
@@ -111,7 +111,7 @@ async function submitForward(jumpAfter: boolean) {
             ]"
           >
             <BotGroupAvatar
-              v-if="b.is_group || b.id === 'team_room'"
+              v-if="b.is_group"
               :members="resolveGroupMembers(b)"
               :fallback-style="b.avatar_style"
               :state="b.state"

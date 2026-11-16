@@ -1,5 +1,5 @@
 [Unit]
-Description=Vesper BotHub - Automation & WeChat Push Hub (bot.starryheavens.uk)
+Description=Vesper BotHub - Intelligent Automation & Multi-Bot Hub
 After=network-online.target
 Wants=network-online.target
 
@@ -9,9 +9,8 @@ User=root
 WorkingDirectory=/opt/bothub
 ExecStart=/opt/bothub/bothub -addr :8080 -db /opt/bothub/data/bothub.db
 Environment=TZ=Asia/Shanghai
-# Optional: override default admin token & PushPlus token via environment
+# Optional: override admin token via environment
 # Environment=BOTHUB_ADMIN_TOKEN=change-me-strong-token
-# Environment=BOTHUB_PUSHPLUS_TOKEN=f99b5ca6eee44e16ad94d1721bfc20f0
 Restart=always
 RestartSec=3
 LimitNOFILE=65535

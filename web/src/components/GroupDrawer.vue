@@ -12,10 +12,10 @@ import ToggleSwitch from './ToggleSwitch.vue'
 const store = useAppStore()
 const bot = store.activeBot
 
-const isGroup = computed(() => Boolean(bot.value?.is_group || bot.value?.id === 'team_room'))
+const isGroup = computed(() => Boolean(bot.value?.is_group))
 
 const specialistBots = computed(() =>
-  store.state.bots.filter((b) => !b.is_group && b.id !== 'team_room')
+  store.state.bots.filter((b) => !b.is_group)
 )
 
 const currentMemberIds = computed<string[]>(() => {

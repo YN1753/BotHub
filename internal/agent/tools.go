@@ -132,7 +132,7 @@ func BuiltinTools() []ToolDefinition {
 						},
 						"category": map[string]any{
 							"type":        "string",
-							"description": "可选：按分类过滤或设置分类（compute / domain / subscription / telecom）",
+							"description": "可选：按分类过滤或设置分类（例如 compute / domain / life / other 或自定义分类）",
 						},
 						"within_days": map[string]any{
 							"type":        "integer",
@@ -152,11 +152,11 @@ func BuiltinTools() []ToolDefinition {
 						},
 						"price": map[string]any{
 							"type":        "string",
-							"description": "价格与周期描述，如 $15.00/Yr（upsert 时使用）",
+							"description": "费用与周期描述，如 $15.00 / 年、¥99 / 月（upsert 时使用）",
 						},
 						"status": map[string]any{
 							"type":        "string",
-							"description": "状态：active / warning / offline / pending（upsert 时使用）",
+							"description": "生命周期状态：生效中 | 已到期 | 已停用（upsert 时使用）",
 						},
 						"due_date": map[string]any{
 							"type":        "string",
@@ -194,7 +194,7 @@ func BuiltinTools() []ToolDefinition {
 						},
 						"type": map[string]any{
 							"type":        "string",
-							"description": "任务引擎模板类型：asset_sync / asset_warn / bili_new / bili_hot / tech_brief / weather / epic_free / ssl_check / http_ping / reminder",
+							"description": "已注册的任务执行器类型，当前支持：morning / radar / asset_watcher",
 						},
 						"cron_expr": map[string]any{
 							"type":        "string",
@@ -728,25 +728,16 @@ func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string,
 		if err != nil {
 			return "", err
 		}
-		now := time.Now().In(modules.ShanghaiLocation())
-		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, modules.ShanghaiLocation())
-
-		type expiringAsset struct {
-			store.Asset
-			DaysLeft int `json:"days_left"`
-		}
-		expiring := make([]expiringAsset, 0)
+		expiring := make([]store.Asset, 0)
 		for _, a := range assets {
-			if a.DueDate == "" || a.DueDate == "2099-12-31" {
+			if store.NormalizeAssetStatus(a.Status) == "已停用" {
 				continue
 			}
-			due, err := time.ParseInLocation("2006-01-02", a.DueDate, modules.ShanghaiLocation())
-			if err != nil {
+			if a.DueDate == "" || strings.HasPrefix(a.DueDate, "2099") {
 				continue
 			}
-			days := int(due.Sub(today).Hours() / 24)
-			if days <= within {
-				expiring = append(expiring, expiringAsset{Asset: a, DaysLeft: days})
+			if a.DaysLeft <= within {
+				expiring = append(expiring, a)
 			}
 		}
 		out, _ := json.Marshal(map[string]any{
@@ -769,7 +760,7 @@ func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string,
 			asset = store.Asset{
 				ID:          id,
 				Category:    "compute",
-				Status:      "active",
+				Status:      "生效中",
 				WarnDays:    "[7, 3, 1]",
 				ExtraConfig: "{}",
 			}
@@ -790,7 +781,7 @@ func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string,
 			asset.Price = notifier.StripEmoji(strings.TrimSpace(args.Price))
 		}
 		if strings.TrimSpace(args.Status) != "" {
-			asset.Status = strings.TrimSpace(args.Status)
+			asset.Status = store.NormalizeAssetStatus(args.Status)
 		}
 		if strings.TrimSpace(args.DueDate) != "" {
 			asset.DueDate = strings.TrimSpace(args.DueDate)
@@ -820,20 +811,32 @@ func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string,
 		return string(out), nil
 
 	case "sync":
-		if e.scheduler == nil {
-			return "", fmt.Errorf("调度器未初始化")
+		tasks, _ := e.store.ListTasks()
+		var watcherTaskID string
+		for _, t := range tasks {
+			if t.Type == "asset_watcher" {
+				watcherTaskID = t.ID
+				break
+			}
 		}
-		taskID := "asset_watcher"
-		if t, _ := e.store.GetTask("sys_asset_sync"); t != nil {
-			taskID = "sys_asset_sync"
+		if watcherTaskID != "" && e.scheduler != nil {
+			res, err := e.scheduler.RunNow(ctx, watcherTaskID)
+			if err != nil {
+				return "", err
+			}
+			out, _ := json.Marshal(map[string]any{
+				"ok":      true,
+				"task_id": watcherTaskID,
+				"summary": res.Summary,
+			})
+			return string(out), nil
 		}
-		res, err := e.scheduler.RunNow(ctx, taskID)
+		res, err := modules.NewAssetWatcherModule(e.store, notifier.NewClient(e.store)).Run(ctx)
 		if err != nil {
 			return "", err
 		}
 		out, _ := json.Marshal(map[string]any{
 			"ok":      true,
-			"task_id": taskID,
 			"summary": res.Summary,
 		})
 		return string(out), nil
@@ -914,7 +917,7 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		} else {
 			task = store.Task{
 				ID:       id,
-				Type:     "reminder",
+				Type:     "asset_watcher",
 				CronExpr: "0 9 * * *",
 				Enabled:  true,
 				Params:   "{}",

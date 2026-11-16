@@ -81,21 +81,25 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		modelHealth = s.agent.GetModelHealth()
 	}
 
+	var templates any
+	if s.scheduler != nil {
+		templates = s.scheduler.TaskTemplates()
+	} else {
+		templates = modules.BuiltinTemplates()
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"version":                  s.version,
-		"commit":                   s.commit,
-		"build_time":               s.buildTime,
-		"modules":                  tasks, // 兼容前端历史模块字段
-		"tasks":                    tasks,
-		"bots":                     bots,
-		"bot_templates":            store.BuiltinBotTemplates(),
-		"model_pool":               modelPool,
-		"model_provider_templates": store.ModelProviderTemplates(),
-		"model_health":             modelHealth,
-		"available_tools":          agent.AvailableToolsPayload(),
-		"templates":                modules.BuiltinTemplates(),
-		"asset_templates":          modules.BuiltinAssetTemplates(),
-		"personas":                 agent.BuiltinPersonas(),
+		"version":         s.version,
+		"commit":          s.commit,
+		"build_time":      s.buildTime,
+		"modules":         tasks, // 兼容前端历史模块字段
+		"tasks":           tasks,
+		"bots":            bots,
+		"model_pool":      modelPool,
+		"model_health":    modelHealth,
+		"available_tools": agent.AvailableToolsPayload(),
+		"templates":       templates,
+		"personas":        agent.BuiltinPersonas(),
 		"agent_sessions":  sessions,
 		"agent_memories":  memories,
 		"notifications":   notifications,

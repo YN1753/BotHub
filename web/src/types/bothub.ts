@@ -113,23 +113,26 @@ export interface TaskTemplateField {
   key: string
   label: string
   type: string
+  default_val?: string
   default_value?: string
   placeholder?: string
   hint?: string
-  options?: { value: string; label: string }[]
+  options?: Array<string | { value: string; label: string }>
 }
 
 export interface TaskTemplate {
   type: string
   name: string
   description: string
+  default_cron?: string
+  params_schema?: TaskTemplateField[]
   fields?: TaskTemplateField[]
 }
 
-export interface AssetTemplate {
-  category: string
-  label: string
-  fields?: TaskTemplateField[]
+export interface Persona {
+  id: string
+  name: string
+  description: string
 }
 
 export interface NotificationItem {
@@ -151,24 +154,6 @@ export interface PushLog {
   status: string
   response_msg: string
   created_at: string
-}
-
-export interface BotTemplate {
-  id: string
-  name: string
-  role_title: string
-  avatar_style: string
-  system_prompt: string
-  enable_thinking: boolean
-  allowed_tools: string[]
-}
-
-export interface ModelProviderTemplate {
-  id: string
-  name: string
-  provider: string
-  base_url: string
-  docs_hint: string
 }
 
 export interface AvailableToolMeta {
@@ -212,13 +197,11 @@ export interface DashboardPayload {
   server_now: string
   tasks: Task[]
   bots: Bot[]
-  bot_templates?: BotTemplate[]
   model_pool?: ModelPoolEntry[]
-  model_provider_templates?: ModelProviderTemplate[]
   available_tools?: AvailableToolMeta[]
+  personas?: Persona[]
   model_health?: Record<string, ModelHealthStats>
   templates: TaskTemplate[]
-  asset_templates: AssetTemplate[]
   agent_memories: AgentMemory[]
   notifications: NotificationItem[]
   configs: Record<string, string>

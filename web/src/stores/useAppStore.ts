@@ -4,14 +4,12 @@ import type {
   AgentMemory,
   AgentMessage,
   Asset,
-  AssetTemplate,
   AvailableToolMeta,
   Bot,
-  BotTemplate,
   ModelHealthStats,
   ModelPoolEntry,
-  ModelProviderTemplate,
   NotificationItem,
+  Persona,
   PushLog,
   SelectOption,
   Task,
@@ -47,7 +45,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.11.0',
+  version: 'v2.12.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -62,15 +60,13 @@ const state = reactive({
     unread_notifications: 0,
   },
   bots: [] as Bot[],
-  botTemplates: [] as BotTemplate[],
   modelPool: [] as ModelPoolEntry[],
-  modelProviderTemplates: [] as ModelProviderTemplate[],
   availableTools: [] as AvailableToolMeta[],
+  personas: [] as Persona[],
   modelHealth: {} as Record<string, ModelHealthStats>,
   assets: [] as Asset[],
   tasks: [] as Task[],
   templates: [] as TaskTemplate[],
-  assetTemplates: [] as AssetTemplate[],
   memories: [] as AgentMemory[],
   notifications: [] as NotificationItem[],
   pushLogs: [] as PushLog[],
@@ -264,15 +260,13 @@ export function useAppStore() {
       state.serverNow = data.server_now || '--'
       state.stats = data.stats || state.stats
       state.bots = data.bots || []
-      state.botTemplates = data.bot_templates || []
       state.modelPool = data.model_pool || []
-      state.modelProviderTemplates = data.model_provider_templates || []
       state.availableTools = data.available_tools || []
+      state.personas = data.personas || []
       state.modelHealth = data.model_health || {}
       state.assets = data.assets || []
       state.tasks = data.tasks || []
       state.templates = data.templates || []
-      state.assetTemplates = data.asset_templates || []
       state.memories = data.agent_memories || []
       state.notifications = data.notifications || []
       state.pushLogs = data.push_logs || []

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import type { ModelPoolEntry, UpstreamModelCheck } from '../types/bothub'
@@ -44,7 +44,6 @@ const fetchedModelMeta = ref<
     }
   >
 >({})
-const showTemplatePicker = ref(false)
 
 const lightBaseUrl = ref('')
 const lightApiKey = ref('')
@@ -60,11 +59,11 @@ const newPassword = ref('')
 const saving = ref(false)
 const testingPush = ref(false)
 
-const PERSONA_OPTIONS = [
-  { value: 'grok', label: 'Grok 锐评官' },
-  { value: 'butler', label: '长庚执更管家' },
-  { value: 'architect', label: '系统架构师' },
-]
+const personaOptions = computed(() =>
+  store.state.personas.length > 0
+    ? store.state.personas.map((p) => ({ value: p.id, label: p.name }))
+    : [{ value: 'grok', label: '默认智能模式' }]
+)
 
 watch(
   () => store.state.showSettingsModal,
@@ -74,13 +73,12 @@ watch(
     deepseekKey.value = c['deepseek_api_key'] || ''
     deepseekBaseUrl.value = c['deepseek_base_url'] || 'https://api.deepseek.com/v1'
     aiModel.value = c['ai_model'] || ''
-    activePersona.value = c['active_persona'] || 'grok'
+    activePersona.value = c['active_persona'] || store.state.personas[0]?.id || 'grok'
     poolForLight.value = c['pool_for_light'] !== 'false'
     poolFallback.value = c['pool_fallback'] !== 'false'
     poolEntries.value = (store.state.modelPool || []).map((x) => ({ ...x }))
     probeResults.value = {}
     fetchedModelMeta.value = {}
-    showTemplatePicker.value = false
     expandedPoolId.value = poolEntries.value[0]?.id || ''
 
     lightBaseUrl.value = c['light_base_url'] || ''
@@ -252,23 +250,21 @@ function filteredUsableChecks(targetId: string): UpstreamModelCheck[] {
   return meta.usable.filter((c) => c.id.toLowerCase().includes(q))
 }
 
-function addPoolNodeFromTemplate(tplId?: string) {
-  const tpl = store.state.modelProviderTemplates.find((t) => t.id === tplId)
+function addEmptyPoolNode() {
   const suffix = Date.now().toString(36).slice(-4)
-  const id = tpl ? `${tpl.id}_${suffix}` : `node_${suffix}`
+  const id = `node_${suffix}`
   poolEntries.value.push({
     id,
-    name: tpl ? tpl.name : '自定义 OpenAI 节点',
-    provider: tpl ? tpl.provider : 'custom',
-    base_url: tpl ? tpl.base_url : '',
+    name: `模型节点 #${poolEntries.value.length + 1}`,
+    provider: 'openai',
+    base_url: '',
     api_key: '',
     model: '',
     enabled: true,
     priority: (poolEntries.value.length + 1) * 10,
-    note: tpl ? tpl.docs_hint : '填入 Base URL 与 API Key 后点击「拉取模型」实时选择',
+    note: '',
   })
   expandedPoolId.value = id
-  showTemplatePicker.value = false
 }
 
 function movePoolNode(index: number, delta: number) {
@@ -532,7 +528,7 @@ async function handleImportBackup(e: Event) {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div class="flex flex-col gap-1 text-xs text-slate-300">
                 <span>默认人设</span>
-                <CustomSelect v-model="activePersona" :options="PERSONA_OPTIONS" aria-label="默认人设" />
+                <CustomSelect v-model="activePersona" :options="personaOptions" aria-label="默认人设" />
               </div>
               <div class="flex flex-col gap-1 text-xs text-slate-300">
                 <span>额外轻量 Key (可选覆盖)</span>
@@ -545,8 +541,8 @@ async function handleImportBackup(e: Event) {
           <div class="modal-section flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2 flex-wrap">
               <div>
-                <div class="text-xs font-semibold text-emerald-300">免费 AI 模型池 (默认空白 · 按模板创建并实时拉取模型)</div>
-                <p class="text-[11px] text-slate-400 mt-0.5">不预填写死列表，创建时可选用模板，并用 API Key 实时拉取可用模型</p>
+                <div class="text-xs font-semibold text-emerald-300">免费 / 扩展 AI 模型池 (自主添加 · 实时探测可用模型)</div>
+                <p class="text-[11px] text-slate-400 mt-0.5">支持接入任意 OpenAI 兼容或 Gemini 接口，自动过滤不可用模型并按优先级故障切换</p>
               </div>
               <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
                 <button
@@ -560,38 +556,10 @@ async function handleImportBackup(e: Event) {
                 </button>
                 <button
                   type="button"
-                  @click="showTemplatePicker = !showTemplatePicker"
+                  @click="addEmptyPoolNode"
                   class="min-h-[30px] px-2.5 rounded-lg border border-emerald-400/35 bg-emerald-400/10 hover:bg-emerald-400/18 text-[11px] text-emerald-300 cursor-pointer shrink-0"
                 >
-                  {{ showTemplatePicker ? '收起模板' : '+ 从模板添加模型源' }}
-                </button>
-              </div>
-            </div>
-
-            <div
-              v-if="showTemplatePicker"
-              class="rounded-xl border border-emerald-400/25 bg-[#050811]/90 p-3 flex flex-col gap-2"
-            >
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-[11px] font-medium text-emerald-300">选择创建模板 (仅填充接入地址，模型由你实时拉取):</span>
-                <button
-                  type="button"
-                  @click="addPoolNodeFromTemplate()"
-                  class="text-[11px] text-slate-300 hover:text-white underline cursor-pointer"
-                >
-                  空白自定义
-                </button>
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                <button
-                  v-for="tpl in store.state.modelProviderTemplates"
-                  :key="tpl.id"
-                  type="button"
-                  @click="addPoolNodeFromTemplate(tpl.id)"
-                  class="text-left rounded-lg border border-[#fff8ee]/10 bg-[#070b18] hover:border-emerald-400/45 px-2.5 py-2 transition cursor-pointer"
-                >
-                  <div class="text-xs font-medium text-white">{{ tpl.name }}</div>
-                  <div class="text-[10.5px] text-slate-400 mt-0.5 truncate">{{ tpl.base_url || tpl.docs_hint }}</div>
+                  + 添加模型节点
                 </button>
               </div>
             </div>
@@ -618,8 +586,8 @@ async function handleImportBackup(e: Event) {
               v-if="poolEntries.length === 0"
               class="rounded-xl border border-dashed border-[#fff8ee]/12 bg-[#050811]/55 px-4 py-6 text-center flex flex-col items-center gap-2"
             >
-              <p class="text-xs text-slate-300">当前模型池为空，无任何写死节点。</p>
-              <p class="text-[11px] text-slate-500">点击上方「+ 从模板添加模型源」选择 Google AI Studio、硅基流动等模板并填入 Key 后实时拉取模型。</p>
+              <p class="text-xs text-slate-300">当前模型池为空。</p>
+              <p class="text-[11px] text-slate-500">点击右上角「+ 添加模型节点」，填写 Base URL 与 API Key 即可自动探测并挑选可用模型。</p>
             </div>
 
             <div v-else class="flex flex-col gap-2">

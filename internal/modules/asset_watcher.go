@@ -14,24 +14,48 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
+// AssetSyncAdapter defines an extensible synchronization plugin for external asset providers.
+type AssetSyncAdapter interface {
+	ID() string
+	Matches(asset store.Asset, extra map[string]any) bool
+	Sync(ctx context.Context, st *store.Store, client *http.Client, asset *store.Asset, extra map[string]any) bool
+}
+
 type AssetWatcherModule struct {
-	store *store.Store
-	push  *notifier.Client
-	http  *http.Client
+	store    *store.Store
+	push     *notifier.Client
+	http     *http.Client
+	adapters []AssetSyncAdapter
 }
 
 func NewAssetWatcherModule(st *store.Store, push *notifier.Client) *AssetWatcherModule {
-	return &AssetWatcherModule{store: st, push: push, http: NewHTTPClient(15 * time.Second)}
+	return &AssetWatcherModule{
+		store: st,
+		push:  push,
+		http:  NewHTTPClient(15 * time.Second),
+		adapters: []AssetSyncAdapter{
+			&cloudflareDomainAdapter{},
+			&bilibiliVIPAdapter{},
+			&anchorDayAdapter{},
+		},
+	}
+}
+
+// RegisterAdapter allows registering additional custom asset sync adapters cleanly without modifying core watcher logic.
+func (w *AssetWatcherModule) RegisterAdapter(adapter AssetSyncAdapter) {
+	if adapter != nil {
+		w.adapters = append(w.adapters, adapter)
+	}
 }
 
 func (w *AssetWatcherModule) ID() string          { return "asset_watcher" }
-func (w *AssetWatcherModule) Name() string        { return "数字资产与会员守望" }
-func (w *AssetWatcherModule) Description() string { return "嗅探域名、B站/QQ音乐会员与VPS周期，触发临期与防扣款微信预警" }
+func (w *AssetWatcherModule) Name() string        { return "数字资产守望" }
+func (w *AssetWatcherModule) Description() string { return "巡检资产台账周期与扩展适配器状态，触发临期与续费提醒" }
 
 func (w *AssetWatcherModule) Run(ctx context.Context) (RunResult, error) {
 	return w.RunWithTask(ctx, store.Task{
 		ID:   "asset_watcher",
-		Name: "数字资产与会员守望",
+		Name: "数字资产守望",
 		Type: "asset_watcher",
 	})
 }
@@ -42,7 +66,6 @@ func (w *AssetWatcherModule) RunWithTask(ctx context.Context, task store.Task) (
 		return RunResult{Summary: "读取资产失败: " + err.Error()}, err
 	}
 
-	globalCFToken, _ := w.store.GetConfig(store.KeyCFAPIToken)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var noticeAssets []store.Asset
@@ -53,12 +76,11 @@ func (w *AssetWatcherModule) RunWithTask(ctx context.Context, task store.Task) (
 		wg.Add(1)
 		go func(asset store.Asset) {
 			defer wg.Done()
-			updated := w.syncSingleAsset(ctx, &asset, globalCFToken)
+			updated := w.syncSingleAsset(ctx, &asset)
 			mu.Lock()
 			if updated {
 				syncedCount++
 			}
-			// Check expiration threshold against personalized warn_days or critical window
 			if w.shouldWarn(asset) {
 				itemKey := fmt.Sprintf("%s:%s:%d", asset.ID, nowDateStr, asset.DaysLeft)
 				seen, _ := w.store.IsSeen("asset_warn", itemKey)
@@ -98,7 +120,7 @@ func (w *AssetWatcherModule) RunWithTask(ctx context.Context, task store.Task) (
 	}, nil
 }
 
-func (w *AssetWatcherModule) syncSingleAsset(ctx context.Context, asset *store.Asset, globalCFToken string) bool {
+func (w *AssetWatcherModule) syncSingleAsset(ctx context.Context, asset *store.Asset) bool {
 	nowStr := store.NowShanghai()
 	var extra map[string]any
 	_ = json.Unmarshal([]byte(asset.ExtraConfig), &extra)
@@ -107,142 +129,195 @@ func (w *AssetWatcherModule) syncSingleAsset(ctx context.Context, asset *store.A
 	}
 
 	updated := false
-	if asset.Category == "domain" || strings.HasPrefix(asset.ID, "cf_") {
-		domain, _ := extra["domain_name"].(string)
-		if domain == "" {
-			domain, _ = extra["domain"].(string)
-		}
-		if domain == "" && strings.Contains(asset.Name, ".") {
-			domain = strings.TrimSpace(asset.Name)
-		}
-		accountID, _ := extra["account_id"].(string)
-		if accountID == "" { accountID = "0c248525a82b6da799e178614786b970" }
-		token, _ := extra["cf_api_token"].(string)
-		if token == "" { token = globalCFToken }
-
-		if token != "" && domain != "" && accountID != "" {
-			url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/registrar/domains/%s", accountID, domain)
-			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-			req.Header.Set("Authorization", "Bearer "+token)
-			if resp, err := w.http.Do(req); err == nil {
-				defer resp.Body.Close()
-				var res struct {
-					Success bool `json:"success"`
-					Result  struct {
-						ExpiresAt string `json:"expires_at"`
-						AutoRenew bool   `json:"auto_renew"`
-					} `json:"result"`
-				}
-				if json.NewDecoder(resp.Body).Decode(&res) == nil && res.Success && res.Result.ExpiresAt != "" {
-					asset.DueDate = res.Result.ExpiresAt
-					asset.AutoRenew = res.Result.AutoRenew
-					asset.Status = "运行中"
-					updated = true
-				}
+	for _, adapter := range w.adapters {
+		if adapter.Matches(*asset, extra) {
+			if adapter.Sync(ctx, w.store, w.http, asset, extra) {
+				updated = true
 			}
-		}
-	} else if asset.ID == "bilibili" || extra["platform"] == "bilibili" {
-		sessdata, _ := extra["sessdata"].(string)
-		if sessdata == "" {
-			sessdata, _ = extra["credentials"].(string)
-		}
-		if sessdata == "" {
-			sessdata, _ = w.store.GetConfig(store.KeyBiliSessdata)
-		}
-		if sessdata != "" {
-			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.bilibili.com/x/web-interface/nav", nil)
-			req.Header.Set("User-Agent", "Mozilla/5.0")
-			req.Header.Set("Cookie", "SESSDATA="+strings.TrimSpace(sessdata))
-			if resp, err := w.http.Do(req); err == nil {
-				defer resp.Body.Close()
-				var res struct {
-					Code int `json:"code"`
-					Data struct {
-						Vip struct {
-							Status  int   `json:"status"`
-							DueDate int64 `json:"due_date"`
-						} `json:"vip"`
-					} `json:"data"`
-				}
-				if json.NewDecoder(resp.Body).Decode(&res) == nil && res.Code == 0 && res.Data.Vip.DueDate > 0 {
-					asset.DueDate = time.UnixMilli(res.Data.Vip.DueDate).In(ShanghaiLocation()).Format(time.RFC3339)
-					if res.Data.Vip.Status == 1 {
-						asset.Status = "会员有效"
-					} else {
-						asset.Status = "已到期"
-					}
-					updated = true
-				}
-			}
-		}
-	} else if anchorVal, ok := extra["anchor_day"]; ok {
-		var anchorDay int
-		switch v := anchorVal.(type) {
-		case float64: anchorDay = int(v)
-		case int:     anchorDay = v
-		case string:  anchorDay, _ = strconv.Atoi(v)
-		}
-		if anchorDay >= 1 && anchorDay <= 31 {
-			next := calcNextAnchorDate(anchorDay, ShanghaiLocation())
-			asset.DueDate = next.Format(time.RFC3339)
-			asset.Status = "运行中"
-			asset.AutoRenew = true
-			updated = true
-		}
-	} else if asset.ID == "qq_music" {
-		uin, _ := extra["uin"].(string)
-		qmKeyst, _ := extra["qm_keyst"].(string)
-		if strings.TrimSpace(uin) == "" || strings.TrimSpace(qmKeyst) == "" {
-			// 未配置 Cookie 时保持静态推算或标记
-			if asset.DueDate == "" {
-				asset.DueDate = "2026-11-20T23:59:59+08:00"
-			}
+			break
 		}
 	}
 
+	asset.Status = store.NormalizeAssetStatus(asset.Status)
 	asset.DaysLeft, _ = store.CalculateDaysLeft(asset.DueDate)
-	asset.WarnFlag = (asset.DaysLeft >= 0 && asset.DaysLeft <= 7) || strings.Contains(asset.Status, "到期")
+	if asset.Status == "生效中" && asset.DaysLeft < 0 && !strings.HasPrefix(asset.DueDate, "2099") {
+		asset.Status = "已到期"
+	}
+	asset.WarnFlag = (asset.Status == "生效中" && asset.DaysLeft >= 0 && asset.DaysLeft <= 7) || asset.Status == "已到期"
 	if updated {
 		_ = w.store.UpdateAssetSyncResult(asset.ID, asset.DueDate, asset.Status, asset.AutoRenew, nowStr)
 	}
 	return updated
 }
 
+type cloudflareDomainAdapter struct{}
+
+func (a *cloudflareDomainAdapter) ID() string { return "cloudflare_domain" }
+func (a *cloudflareDomainAdapter) Matches(asset store.Asset, extra map[string]any) bool {
+	adapter, _ := extra["sync_adapter"].(string)
+	accountID, _ := extra["account_id"].(string)
+	if strings.TrimSpace(accountID) == "" {
+		accountID, _ = extra["cf_account_id"].(string)
+	}
+	return adapter == "cloudflare_domain" || (asset.Category == "domain" && strings.TrimSpace(accountID) != "")
+}
+func (a *cloudflareDomainAdapter) Sync(ctx context.Context, st *store.Store, client *http.Client, asset *store.Asset, extra map[string]any) bool {
+	domain, _ := extra["domain_name"].(string)
+	if domain == "" {
+		domain, _ = extra["domain"].(string)
+	}
+	if domain == "" && strings.Contains(asset.Name, ".") {
+		domain = strings.TrimSpace(asset.Name)
+	}
+	accountID, _ := extra["account_id"].(string)
+	if strings.TrimSpace(accountID) == "" {
+		accountID, _ = extra["cf_account_id"].(string)
+	}
+	token, _ := extra["cf_api_token"].(string)
+	if strings.TrimSpace(token) == "" {
+		token, _ = st.GetConfig(store.KeyCFAPIToken)
+	}
+	if strings.TrimSpace(token) == "" || strings.TrimSpace(domain) == "" || strings.TrimSpace(accountID) == "" {
+		return false
+	}
+	url := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/registrar/domains/%s", strings.TrimSpace(accountID), strings.TrimSpace(domain))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	var res struct {
+		Success bool `json:"success"`
+		Result  struct {
+			ExpiresAt string `json:"expires_at"`
+			AutoRenew bool   `json:"auto_renew"`
+		} `json:"result"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&res) == nil && res.Success && res.Result.ExpiresAt != "" {
+		asset.DueDate = res.Result.ExpiresAt
+		asset.AutoRenew = res.Result.AutoRenew
+		asset.Status = "生效中"
+		return true
+	}
+	return false
+}
+
+type bilibiliVIPAdapter struct{}
+
+func (b *bilibiliVIPAdapter) ID() string { return "bilibili_vip" }
+func (b *bilibiliVIPAdapter) Matches(_ store.Asset, extra map[string]any) bool {
+	adapter, _ := extra["sync_adapter"].(string)
+	platform, _ := extra["platform"].(string)
+	return adapter == "bilibili_vip" || strings.EqualFold(platform, "bilibili")
+}
+func (b *bilibiliVIPAdapter) Sync(ctx context.Context, st *store.Store, client *http.Client, asset *store.Asset, extra map[string]any) bool {
+	sessdata, _ := extra["sessdata"].(string)
+	if sessdata == "" {
+		sessdata, _ = extra["credentials"].(string)
+	}
+	if sessdata == "" {
+		sessdata, _ = st.GetConfig(store.KeyBiliSessdata)
+	}
+	if strings.TrimSpace(sessdata) == "" {
+		return false
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.bilibili.com/x/web-interface/nav", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	req.Header.Set("Cookie", "SESSDATA="+strings.TrimSpace(sessdata))
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	var res struct {
+		Code int `json:"code"`
+		Data struct {
+			Vip struct {
+				Status  int   `json:"status"`
+				DueDate int64 `json:"due_date"`
+			} `json:"vip"`
+		} `json:"data"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&res) == nil && res.Code == 0 && res.Data.Vip.DueDate > 0 {
+		asset.DueDate = time.UnixMilli(res.Data.Vip.DueDate).In(ShanghaiLocation()).Format(time.RFC3339)
+		if res.Data.Vip.Status == 1 {
+			asset.Status = "生效中"
+		} else {
+			asset.Status = "已到期"
+		}
+		return true
+	}
+	return false
+}
+
+type anchorDayAdapter struct{}
+
+func (a *anchorDayAdapter) ID() string { return "monthly_anchor" }
+func (a *anchorDayAdapter) Matches(_ store.Asset, extra map[string]any) bool {
+	_, ok := extra["anchor_day"]
+	return ok
+}
+func (a *anchorDayAdapter) Sync(_ context.Context, _ *store.Store, _ *http.Client, asset *store.Asset, extra map[string]any) bool {
+	anchorVal, ok := extra["anchor_day"]
+	if !ok {
+		return false
+	}
+	var anchorDay int
+	switch v := anchorVal.(type) {
+	case float64:
+		anchorDay = int(v)
+	case int:
+		anchorDay = v
+	case string:
+		anchorDay, _ = strconv.Atoi(v)
+	}
+	if anchorDay >= 1 && anchorDay <= 31 {
+		next := calcNextAnchorDate(anchorDay, ShanghaiLocation())
+		asset.DueDate = next.Format(time.RFC3339)
+		asset.Status = "生效中"
+		asset.AutoRenew = true
+		return true
+	}
+	return false
+}
+
 func (w *AssetWatcherModule) dispatchNotice(ctx context.Context, taskID string, items []store.Asset, dateStr string) error {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### Vesper 数字资产与会员临期预警 · %s\n\n", dateStr))
-	sb.WriteString("守望哨兵检测到以下关键资产临近到期或扣费日：\n\n")
+	sb.WriteString(fmt.Sprintf("### Vesper 数字资产临期预警 · %s\n\n", dateStr))
+	sb.WriteString("守望哨兵检测到以下资产临近到期或自动扣款日：\n\n")
 
 	for i, a := range items {
 		autoStr := "否"
-		if a.AutoRenew { autoStr = "是" }
+		if a.AutoRenew {
+			autoStr = "是"
+		}
 
 		sb.WriteString(fmt.Sprintf("%d. **%s（%s）**\n", i+1, a.Name, a.Spec))
 		sb.WriteString(fmt.Sprintf("   - **到期时间**：%s\n", a.DueDate))
 		sb.WriteString(fmt.Sprintf("   - **剩余时间**：**剩余 %d 天** · 自动续费：%s\n", a.DaysLeft, autoStr))
 
-		if strings.Contains(a.Price, "活动") || strings.Contains(a.Status, "活动") || strings.Contains(a.Name, "QQ") {
-			sb.WriteString("   - **[防自动扣款提醒]** 您的活动免费体验即将到期，请及时前往微信/支付宝确认是否已关闭免密续费授权！\n")
+		if a.AutoRenew {
+			sb.WriteString("   - **[自动续费提醒]** 该项目已启用自动续费，如不再使用请及时关闭免密/自动扣款授权。\n")
 		}
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("---\n*来自 Vesper BotHub 守望哨兵 · bot.starryheavens.uk*")
+	sb.WriteString("---\n*来自 Vesper BotHub 自动化汇报*")
 	title := fmt.Sprintf("[资产临期预警] %d 项资产即将到期（最快剩余 %d 天）", len(items), items[0].DaysLeft)
 	return w.push.SendMarkdown(ctx, taskID, title, sb.String())
 }
 
-// shouldWarn determines if an asset should trigger an alert based on its personalized
-// WarnDays gradient, critical countdown (<=3 days), or active trial status.
+// shouldWarn determines if an asset should trigger an alert based on its active status,
+// personalized WarnDays gradient, or critical countdown window.
 func (w *AssetWatcherModule) shouldWarn(asset store.Asset) bool {
-	if asset.DaysLeft < 0 {
+	if store.NormalizeAssetStatus(asset.Status) != "生效中" || asset.DaysLeft < 0 || strings.HasPrefix(asset.DueDate, "2099") {
 		return false
 	}
-	// Critical window (last 3 days) always triggers alert
 	if asset.DaysLeft <= 3 {
 		return true
 	}
-	// Check personalized gradient
 	warnDays := store.ParseWarnDays(asset.WarnDays)
 	for _, wd := range warnDays {
 		if asset.DaysLeft == wd {

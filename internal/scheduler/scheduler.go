@@ -280,3 +280,19 @@ func (s *Scheduler) Status() ([]TaskStatus, error) {
 	}
 	return out, nil
 }
+
+// TaskTemplates exposes registered task runner capability schemas via the Scheduler registry.
+func (s *Scheduler) TaskTemplates() []modules.TaskTemplate {
+	if s == nil || s.registry == nil {
+		return nil
+	}
+	return s.registry.TaskTemplates()
+}
+
+// TaskTypes exposes registered runnable task type slugs dynamically.
+func (s *Scheduler) TaskTypes() []string {
+	if s == nil || s.registry == nil {
+		return nil
+	}
+	return s.registry.RegisteredTaskTypes()
+}

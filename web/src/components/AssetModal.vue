@@ -14,41 +14,78 @@ const isNew = computed(() => store.state.editingAsset === null)
 const id = ref('')
 const name = ref('')
 const category = ref('compute')
+const customCategory = ref('')
 const spec = ref('')
-const amount = ref('')
-const billingCycle = ref('年')
-const status = ref('运行中')
+
+// Structured pricing: Currency type + numeric amount + cycle
+const currency = ref<'CNY' | 'USD' | 'EUR' | 'HKD' | 'JPY' | 'GBP' | 'FREE'>('CNY')
+const amountNum = ref('')
+const billingCycle = ref<'年' | '月' | '季' | '一次性'>('年')
+
+const status = ref<'生效中' | '已到期' | '已停用'>('生效中')
 const dueMode = ref<'date' | 'permanent'>('date')
 const dueYear = ref('2027')
 const dueMonth = ref('01')
 const dueDay = ref('01')
 const autoRenew = ref(false)
 const warnDays = ref('[7, 3, 1]')
-const extraValues = ref<Record<string, string>>({})
+const extraRows = ref<Array<{ key: string; value: string }>>([])
 const saving = ref(false)
 
-const CATEGORY_OPTIONS = [
-  { value: 'compute', label: '算力节点 / VPS' },
-  { value: 'domain', label: '核心域名资产' },
-  { value: 'life', label: '生活会员订阅' },
+const BASE_CATEGORIES = [
+  { value: 'compute', label: '算力 / 云主机' },
+  { value: 'domain', label: '域名 / DNS' },
+  { value: 'life', label: '订阅 / 软件服务' },
+  { value: 'other', label: '其他数字资产' },
 ]
+
+const categoryOptions = computed(() => {
+  const known = new Set(BASE_CATEGORIES.map((c) => c.value))
+  const extraOpts = store.state.assets
+    .map((a) => String(a.category || '').trim())
+    .filter((c) => c && !known.has(c))
+  const uniqueExtra = Array.from(new Set(extraOpts)).map((c) => ({ value: c, label: c }))
+  return [...BASE_CATEGORIES, ...uniqueExtra, { value: '__custom__', label: '+ 自定义分类...' }]
+})
+
+const CURRENCY_OPTIONS = [
+  { value: 'CNY', label: '人民币 (CNY ¥)' },
+  { value: 'USD', label: '美元 (USD $)' },
+  { value: 'EUR', label: '欧元 (EUR €)' },
+  { value: 'HKD', label: '港元 (HKD HK$)' },
+  { value: 'JPY', label: '日元 (JPY ¥)' },
+  { value: 'GBP', label: '英镑 (GBP £)' },
+  { value: 'FREE', label: '免费 / 赠金' },
+]
+
+const CURRENCY_PREFIX: Record<string, string> = {
+  CNY: '¥',
+  USD: '$',
+  EUR: '€',
+  HKD: 'HK$',
+  JPY: 'JPY ',
+  GBP: '£',
+  FREE: '免费',
+}
+
 const CYCLE_OPTIONS = [
   { value: '年', label: '年付 (/年)' },
   { value: '月', label: '月付 (/月)' },
   { value: '季', label: '季付 (/季)' },
-  { value: '一次性', label: '永久 / 一次性' },
+  { value: '一次性', label: '一次性 / 买断' },
 ]
+
 const STATUS_OPTIONS = [
-  { value: '运行中', label: '运行中' },
-  { value: '会员有效', label: '会员有效' },
-  { value: '活动体验中', label: '活动体验中' },
-  { value: '待购入', label: '待购入' },
+  { value: '生效中', label: '生效中' },
+  { value: '已到期', label: '已到期' },
   { value: '已停用', label: '已停用' },
 ]
+
 const DUE_MODE_OPTIONS = [
   { value: 'date', label: '指定具体到期日' },
   { value: 'permanent', label: '长期有效 / 免续费' },
 ]
+
 const WARN_OPTIONS = [
   { value: '[7, 3, 1]', label: '到期前 7天 / 3天 / 1天' },
   { value: '[14, 7, 3, 1]', label: '到期前 14天 / 7天 / 3天 / 1天' },
@@ -68,10 +105,61 @@ const DAY_OPTIONS = Array.from({ length: 31 }, (_, i) => {
   return { value: d, label: `${d} 日` }
 })
 
-const currentTemplateFields = computed(() => {
-  const tpl = store.state.assetTemplates.find((t) => t.category === category.value)
-  return tpl?.fields || []
-})
+function normalizeStatus(raw?: string): '生效中' | '已到期' | '已停用' {
+  const s = String(raw || '').trim()
+  if (s === '已到期' || s.toLowerCase() === 'expired') return '已到期'
+  if (s === '已停用' || s === '待购入' || s.toLowerCase() === 'paused' || s.toLowerCase() === 'offline') return '已停用'
+  return '生效中'
+}
+
+function parseStructuredPrice(raw?: string) {
+  const txt = String(raw || '').trim()
+  let cycle: '年' | '月' | '季' | '一次性' = '年'
+  if (txt.includes('月')) cycle = '月'
+  else if (txt.includes('季')) cycle = '季'
+  else if (txt.includes('一次') || txt.includes('永久')) cycle = '一次性'
+
+  const moneyPart = txt.split('/')[0].trim()
+  if (!moneyPart || moneyPart.includes('免费') || moneyPart.includes('0元') || /^free$/i.test(moneyPart)) {
+    return {
+      cur: moneyPart.includes('免费') || /^free$/i.test(moneyPart) ? ('FREE' as const) : ('CNY' as const),
+      num: '',
+      cycle,
+    }
+  }
+
+  let cur: 'CNY' | 'USD' | 'EUR' | 'HKD' | 'JPY' | 'GBP' = 'CNY'
+  const upper = moneyPart.toUpperCase()
+  if (upper.includes('HK$') || upper.includes('HKD')) cur = 'HKD'
+  else if (upper.includes('JPY')) cur = 'JPY'
+  else if (upper.includes('GBP') || moneyPart.includes('£')) cur = 'GBP'
+  else if (upper.includes('EUR') || moneyPart.includes('€')) cur = 'EUR'
+  else if (upper.includes('USD') || moneyPart.includes('$')) cur = 'USD'
+  else if (upper.includes('CNY') || moneyPart.includes('¥') || moneyPart.includes('￥') || moneyPart.includes('元')) cur = 'CNY'
+
+  const numMatch = moneyPart.match(/\d+(?:\.\d+)?/)
+  return {
+    cur,
+    num: numMatch ? numMatch[0] : '',
+    cycle,
+  }
+}
+
+function formatStructuredPrice(): string {
+  if (currency.value === 'FREE') {
+    return billingCycle.value === '一次性' ? '免费 (一次性)' : `免费 / ${billingCycle.value}`
+  }
+  const cleanNum = String(amountNum.value ?? '').trim()
+  if (!cleanNum) {
+    return billingCycle.value
+  }
+  const prefix = CURRENCY_PREFIX[currency.value] || '¥'
+  const numText = `${prefix}${cleanNum}`
+  if (billingCycle.value === '一次性') {
+    return `${numText} (一次性)`
+  }
+  return `${numText} / ${billingCycle.value}`
+}
 
 watch(
   () => store.state.editingAsset,
@@ -81,30 +169,35 @@ watch(
       id.value = ''
       name.value = ''
       category.value = 'compute'
+      customCategory.value = ''
       spec.value = ''
-      amount.value = ''
+      currency.value = 'CNY'
+      amountNum.value = ''
       billingCycle.value = '年'
-      status.value = '运行中'
+      status.value = '生效中'
       dueMode.value = 'date'
-      dueYear.value = '2027'
+      dueYear.value = String(new Date().getFullYear() + 1)
       dueMonth.value = '01'
       dueDay.value = '01'
       autoRenew.value = false
       warnDays.value = '[7, 3, 1]'
-      extraValues.value = {}
+      extraRows.value = []
       return
     }
     id.value = item.id
     name.value = item.name
-    category.value = item.category || 'compute'
+    const cat = String(item.category || 'compute').trim()
+    category.value = cat
+    customCategory.value = ''
     spec.value = item.spec || ''
-    status.value = item.status || '运行中'
+    status.value = normalizeStatus(item.status)
     autoRenew.value = Boolean(item.auto_renew)
     warnDays.value = item.warn_days || '[7, 3, 1]'
 
-    const pParts = String(item.price || '').split('/')
-    amount.value = (pParts[0] || '').trim()
-    billingCycle.value = pParts[1]?.trim() || (String(item.price || '').includes('月') ? '月' : '年')
+    const parsed = parseStructuredPrice(item.price)
+    currency.value = parsed.cur
+    amountNum.value = parsed.num
+    billingCycle.value = parsed.cycle
 
     if (!item.due_date || item.due_date.startsWith('2099')) {
       dueMode.value = 'permanent'
@@ -118,20 +211,26 @@ watch(
       }
     }
     try {
-      const parsed = JSON.parse(item.extra_config || '{}')
-      const map: Record<string, string> = {}
-      Object.entries(parsed).forEach(([k, v]) => {
-        map[k] = String(v ?? '')
-      })
-      extraValues.value = map
+      const obj = JSON.parse(item.extra_config || '{}')
+      extraRows.value = Object.entries(obj)
+        .filter(([k]) => k.trim() !== '')
+        .map(([k, v]) => ({ key: k, value: String(v ?? '') }))
     } catch {
-      extraValues.value = {}
+      extraRows.value = []
     }
   }
 )
 
 function closeModal() {
   store.state.editingAsset = undefined
+}
+
+function addExtraRow(presetKey = '', presetVal = '') {
+  extraRows.value.push({ key: presetKey, value: presetVal })
+}
+
+function removeExtraRow(idx: number) {
+  extraRows.value.splice(idx, 1)
 }
 
 function extendDueDate(months: number) {
@@ -148,29 +247,35 @@ async function handleSubmit() {
   if (!name.value.trim() || saving.value) return
   saving.value = true
   try {
-    const finalID = isNew.value ? id.value.trim() || generateSlug(name.value, category.value) : id.value
-    const formattedPrice =
-      amount.value.trim() === ''
-        ? billingCycle.value
-        : billingCycle.value === '一次性'
-          ? `${amount.value.trim()} (一次性)`
-          : `${amount.value.trim()} / ${billingCycle.value}`
+    const finalCat =
+      category.value === '__custom__'
+        ? customCategory.value.trim() || 'other'
+        : category.value || 'compute'
+    const finalID = isNew.value ? id.value.trim() || generateSlug(name.value, finalCat) : id.value
     const dueDate =
       dueMode.value === 'permanent'
         ? '2099-12-31T23:59:59+08:00'
         : `${dueYear.value}-${dueMonth.value}-${dueDay.value}T23:59:59+08:00`
 
+    const extraObj: Record<string, string> = {}
+    for (const row of extraRows.value) {
+      const k = row.key.trim()
+      if (k) {
+        extraObj[k] = row.value.trim()
+      }
+    }
+
     const payload = {
       id: finalID,
       name: name.value.trim(),
-      category: category.value,
+      category: finalCat,
       spec: spec.value.trim(),
-      price: formattedPrice,
+      price: formatStructuredPrice(),
       status: status.value,
       due_date: dueDate,
       auto_renew: autoRenew.value,
       warn_days: warnDays.value,
-      extra_config: JSON.stringify(extraValues.value),
+      extra_config: JSON.stringify(extraObj),
     }
     if (isNew.value) {
       await BotHubApi.createAsset(payload)
@@ -190,9 +295,9 @@ async function handleSubmit() {
 
 async function handleDelete() {
   if (isNew.value || !id.value) return
-  if (!window.confirm(`确定下架并删除资产 [${name.value}] 吗？`)) return
+  if (!window.confirm(`确定删除资产 [${name.value}] 吗？`)) return
   await BotHubApi.deleteAsset(id.value)
-  store.notify('资产已下架删除')
+  store.notify('资产已删除')
   closeModal()
   await store.loadDashboard(false)
 }
@@ -201,46 +306,71 @@ async function handleDelete() {
 <template>
   <BaseModal
     :open="isOpen"
-    :title="isNew ? '登记新数字资产' : '编辑数字资产配置'"
-    subtitle="维护算力节点、核心域名与订阅周期的续费及预警策略"
+    :title="isNew ? '登记数字资产' : '编辑数字资产'"
+    subtitle="结构化管理资产周期、币种成本、状态与可扩展属性"
     max-width="2xl"
     @close="closeModal"
   >
     <form @submit.prevent="handleSubmit" class="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3.5">
-      <!-- Section 1: Basic Info & Billing -->
+      <!-- Section 1: Basic Info & Structured Billing -->
       <div class="modal-section flex flex-col gap-3">
-        <div class="text-xs font-semibold text-[#f2b880]">基础台账与费用周期</div>
+        <div class="text-xs font-semibold text-[#f2b880]">基础信息与结构化费用</div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div class="flex flex-col gap-1 text-xs text-slate-300">
             <span>资产类别</span>
-            <CustomSelect v-model="category" :options="CATEGORY_OPTIONS" aria-label="资产类别" />
+            <CustomSelect v-model="category" :options="categoryOptions" aria-label="资产类别" />
           </div>
+          <label v-if="category === '__custom__'" class="flex flex-col gap-1 text-xs text-slate-300">
+            <span>自定义分类名称</span>
+            <input
+              v-model="customCategory"
+              type="text"
+              required
+              placeholder="如：license / telecom / storage"
+              class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
+            />
+          </label>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>资产名称</span>
-            <input v-model="name" type="text" required placeholder="如：CloudCone LA" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
+            <input v-model="name" type="text" required placeholder="如：Tokyo VPS / example.com" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
           </label>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>配置规格 / 描述</span>
-            <input v-model="spec" type="text" placeholder="如：2C 2G · 110G SSD" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
+            <span>规格与备注描述</span>
+            <input v-model="spec" type="text" placeholder="如：2C 2G · 40G NVMe" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
           </label>
           <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>当前状态</span>
-            <CustomSelect v-model="status" :options="STATUS_OPTIONS" aria-label="当前状态" />
+            <span>生命周期状态</span>
+            <CustomSelect v-model="status" :options="STATUS_OPTIONS" aria-label="生命周期状态" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          <div class="flex flex-col gap-1 text-xs text-slate-300">
+            <span>币种 / 费用类型</span>
+            <CustomSelect v-model="currency" :options="CURRENCY_OPTIONS" aria-label="币种类型" />
           </div>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>费用金额</span>
-            <input v-model="amount" type="text" placeholder="如：$21.66 或 148元" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
+            <span>金额数值 ({{ currency === 'FREE' ? '免填' : '纯数字' }})</span>
+            <input
+              v-model="amountNum"
+              type="number"
+              min="0"
+              step="0.01"
+              :disabled="currency === 'FREE'"
+              :placeholder="currency === 'FREE' ? '0 (免费)' : '如 21.66'"
+              class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 disabled:opacity-45"
+            />
           </label>
           <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>付款周期</span>
-            <CustomSelect v-model="billingCycle" :options="CYCLE_OPTIONS" aria-label="付款周期" />
+            <span>计费周期</span>
+            <CustomSelect v-model="billingCycle" :options="CYCLE_OPTIONS" aria-label="计费周期" />
           </div>
         </div>
       </div>
 
       <!-- Section 2: Due Date & Alert Rules -->
       <div class="modal-section flex flex-col gap-3">
-        <div class="text-xs font-semibold text-[#f2b880]">到期守望与续费方式</div>
+        <div class="text-xs font-semibold text-[#f2b880]">到期守望与续费规则</div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div class="flex flex-col gap-1 text-xs text-slate-300">
             <span>到期类型</span>
@@ -277,30 +407,60 @@ async function handleDelete() {
           <div class="sm:col-span-2">
             <ToggleSwitch
               v-model="autoRenew"
-              label="已启用自动续费扣款"
-              hint="开启后临期提醒将附带自动扣款核对提示"
+              label="已开启自动续费扣款"
+              hint="开启后临期预警将提示核对自动扣款授权"
             />
           </div>
         </div>
       </div>
 
-      <!-- Section 3: Template Specific Probe Extra -->
-      <div v-if="currentTemplateFields.length > 0" class="modal-section flex flex-col gap-3">
-        <div class="text-xs font-semibold text-[#f2b880]">分类专有嗅探参数</div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label
-            v-for="f in currentTemplateFields"
-            :key="f.key"
-            class="flex flex-col gap-1 text-xs text-slate-300"
+      <!-- Section 3: Extensible Custom Key-Value Properties -->
+      <div class="modal-section flex flex-col gap-3">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <div class="text-xs font-semibold text-[#f2b880]">可扩展自定义属性 (Key / Value)</div>
+            <p class="text-[11px] text-slate-400 mt-0.5">按需记录任意元信息（如 registrar、region、account_id、anchor_day、sync_adapter）</p>
+          </div>
+          <button
+            type="button"
+            @click="addExtraRow()"
+            class="min-h-[30px] px-2.5 rounded-lg border border-[#f2b880]/35 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-[11px] text-[#f2b880] cursor-pointer"
           >
-            <span>{{ f.label }}</span>
+            + 添加属性
+          </button>
+        </div>
+
+        <div v-if="extraRows.length === 0" class="text-[11px] text-slate-500 py-1">
+          暂无扩展属性，点击右上角「+ 添加属性」即可自由挂载扩展键值。
+        </div>
+
+        <div v-else class="flex flex-col gap-2">
+          <div
+            v-for="(row, idx) in extraRows"
+            :key="idx"
+            class="grid grid-cols-[1fr_1.3fr_auto] gap-2 items-center"
+          >
             <input
-              v-model="extraValues[f.key]"
+              v-model="row.key"
               type="text"
-              :placeholder="f.placeholder || ''"
-              class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60"
+              placeholder="键名 (如 region)"
+              class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60"
             />
-          </label>
+            <input
+              v-model="row.value"
+              type="text"
+              placeholder="属性值"
+              class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60"
+            />
+            <button
+              type="button"
+              @click="removeExtraRow(idx)"
+              aria-label="移除该属性"
+              class="w-8 h-8 rounded-lg border border-rose-400/25 text-xs text-rose-300 hover:bg-rose-500/15 cursor-pointer"
+            >
+              删
+            </button>
+          </div>
         </div>
       </div>
 
@@ -311,7 +471,7 @@ async function handleDelete() {
           @click="handleDelete"
           class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer"
         >
-          下架并删除
+          删除资产
         </button>
         <span v-else />
         <div class="flex gap-2">

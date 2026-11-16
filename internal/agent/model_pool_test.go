@@ -36,20 +36,6 @@ func TestFreeModelPoolRoutingFailoverAndLiveFetchModels(t *testing.T) {
 	if initial := st.GetModelPool(); len(initial) != 0 {
 		t.Fatalf("expected initial free_model_pool empty, got %d items", len(initial))
 	}
-	// Creation templates must still include Google AI Studio & SiliconFlow
-	tpls := store.ModelProviderTemplates()
-	var hasGoogleTpl, hasSFTpl bool
-	for _, tpl := range tpls {
-		if tpl.ID == "google_ai_studio" {
-			hasGoogleTpl = true
-		}
-		if tpl.ID == "siliconflow" {
-			hasSFTpl = true
-		}
-	}
-	if !hasGoogleTpl || !hasSFTpl {
-		t.Fatalf("expected model provider creation templates for Google & SiliconFlow, got %+v", tpls)
-	}
 
 	// Create user bot explicitly
 	_ = st.SaveBot(store.Bot{

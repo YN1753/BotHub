@@ -11,18 +11,16 @@ import (
 // Registry acts as the central registry for task runners and template definitions.
 // High-cohesion & loose-coupling: modules register themselves without coupling with scheduler.
 type Registry struct {
-	mu             sync.RWMutex
-	runners        map[string]TaskRunner
-	taskTemplates  []TaskTemplate
-	assetTemplates []AssetTemplate
+	mu            sync.RWMutex
+	runners       map[string]TaskRunner
+	taskTemplates []TaskTemplate
 }
 
 // NewRegistry initializes an empty Registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		runners:        make(map[string]TaskRunner),
-		taskTemplates:  make([]TaskTemplate, 0),
-		assetTemplates: make([]AssetTemplate, 0),
+		runners:       make(map[string]TaskRunner),
+		taskTemplates: make([]TaskTemplate, 0),
 	}
 }
 
@@ -33,6 +31,26 @@ func (r *Registry) RegisterTaskRunner(taskType string, runner TaskRunner) {
 	r.runners[taskType] = runner
 }
 
+// RegisteredTaskTypes returns all registered runner type slugs in insertion/sorted order.
+func (r *Registry) RegisteredTaskTypes() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.taskTemplates))
+	seen := make(map[string]bool)
+	for _, tpl := range r.taskTemplates {
+		if _, ok := r.runners[tpl.Type]; ok && !seen[tpl.Type] {
+			seen[tpl.Type] = true
+			out = append(out, tpl.Type)
+		}
+	}
+	for k := range r.runners {
+		if !seen[k] {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
 // GetTaskRunner retrieves the TaskRunner for a task type.
 func (r *Registry) GetTaskRunner(taskType string) (TaskRunner, bool) {
 	r.mu.RLock()
@@ -41,14 +59,14 @@ func (r *Registry) GetTaskRunner(taskType string) (TaskRunner, bool) {
 	return runner, ok
 }
 
-// RegisterTaskTemplate adds a task template definition.
+// RegisterTaskTemplate adds a task engine capability definition.
 func (r *Registry) RegisterTaskTemplate(tpl TaskTemplate) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.taskTemplates = append(r.taskTemplates, tpl)
 }
 
-// TaskTemplates returns a copy of all registered task templates.
+// TaskTemplates returns a copy of all registered task definitions.
 func (r *Registry) TaskTemplates() []TaskTemplate {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -57,27 +75,10 @@ func (r *Registry) TaskTemplates() []TaskTemplate {
 	return out
 }
 
-// RegisterAssetTemplate adds an asset template definition.
-func (r *Registry) RegisterAssetTemplate(tpl AssetTemplate) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.assetTemplates = append(r.assetTemplates, tpl)
-}
-
-// AssetTemplates returns a copy of all registered asset templates.
-func (r *Registry) AssetTemplates() []AssetTemplate {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]AssetTemplate, len(r.assetTemplates))
-	copy(out, r.assetTemplates)
-	return out
-}
-
-// NewDefaultRegistry instantiates and registers all built-in modules and schemas.
+// NewDefaultRegistry instantiates and registers all built-in module runners cleanly.
 func NewDefaultRegistry(st *store.Store, push *notifier.Client) *Registry {
 	reg := NewRegistry()
 
-	// 1. Register Task Runners
 	morning := NewMorningModule(st, push)
 	reg.RegisterTaskRunner("morning", morning)
 
@@ -87,14 +88,8 @@ func NewDefaultRegistry(st *store.Store, push *notifier.Client) *Registry {
 	watcher := NewAssetWatcherModule(st, push)
 	reg.RegisterTaskRunner("asset_watcher", watcher)
 
-	// 2. Register Builtin Task Templates
 	for _, tpl := range BuiltinTemplates() {
 		reg.RegisterTaskTemplate(tpl)
-	}
-
-	// 3. Register Builtin Asset Templates
-	for _, atpl := range BuiltinAssetTemplates() {
-		reg.RegisterAssetTemplate(atpl)
 	}
 
 	return reg

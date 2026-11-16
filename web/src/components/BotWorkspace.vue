@@ -165,55 +165,24 @@ const VIEW_TABS = [
 ]
 
 const availableTools = computed(() => store.state.availableTools || [])
-const creatingQuickBotId = ref('')
 
-async function quickCreateBotFromTemplate(tplId: string) {
-  const tpl = store.state.botTemplates.find((t) => t.id === tplId)
-  if (!tpl || creatingQuickBotId.value) return
-  creatingQuickBotId.value = tplId
+const botToolBadges = computed(() => {
+  if (!bot.value) return []
+  let allowed: string[] = []
   try {
-    const res = await BotHubApi.createBot({
-      name: tpl.name,
-      role_title: tpl.role_title,
-      avatar_style: tpl.avatar_style,
-      model: store.modelOptions.value[0]?.value || 'primary',
-      system_prompt: tpl.system_prompt,
-      enable_thinking: tpl.enable_thinking,
-      allowed_tools: JSON.stringify(tpl.allowed_tools || []),
-    })
-    store.notify(`已从模板创建「${res.bot.name}」`)
-    await store.loadDashboard(false)
-    await store.selectBot(res.bot.id)
-  } catch (err: any) {
-    store.notify(err.message || '创建失败')
-  } finally {
-    creatingQuickBotId.value = ''
+    const parsed = JSON.parse(bot.value.allowed_tools || '[]')
+    if (Array.isArray(parsed)) allowed = parsed
+  } catch {
+    allowed = []
   }
-}
-
-const STARTER_CARDS = [
-  {
-    icon: 'assets',
-    tag: '资产审计',
-    title: '盘点资产与风险',
-    desc: '检查服务器与域名到期梯度并输出锐评',
-    prompt: '请调用工具盘点我当前的全部数字资产与算力节点，并按到期风险给出锐评。',
-  },
-  {
-    icon: 'pulse',
-    tag: '探针巡检',
-    title: '探查哪吒节点脉搏',
-    desc: '实时读取服务器在线状态、负载与流量健康度',
-    prompt: '请调用 query_nezha_nodes 检查哪吒监控面板节点的在线状态与配置详情。',
-  },
-  {
-    icon: 'cron',
-    tag: '调度例程',
-    title: '核查调度任务队列',
-    desc: '汇总定时例程执行状态与下次自动触发窗口',
-    prompt: '请查看当前所有自动化调度任务的运行状态，并告诉我下次触发时间。',
-  },
-]
+  return allowed.map((id) => {
+    const found = availableTools.value.find((t) => t.id === id)
+    return {
+      id,
+      desc: found?.description || id,
+    }
+  })
+})
 
 watch(
   bot,
@@ -261,10 +230,10 @@ watch(
   { immediate: true }
 )
 
-const isGroupBot = computed(() => Boolean(bot.value?.is_group || bot.value?.id === 'team_room'))
+const isGroupBot = computed(() => Boolean(bot.value?.is_group))
 
 const availableSpecialistBots = computed(() =>
-  store.state.bots.filter((b) => !b.is_group && b.id !== 'team_room')
+  store.state.bots.filter((b) => !b.is_group)
 )
 
 const groupMembers = computed(() => {
@@ -1237,13 +1206,13 @@ function stateBadgeClass(state?: string): string {
 
     <!-- Empty Team Onboarding View when 0 Bots exist -->
     <div v-if="!bot" class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-10 flex items-center justify-center">
-      <div class="max-w-2xl w-full flex flex-col gap-5">
-        <div class="luxury-card rounded-2xl p-6 sm:p-7 flex flex-col gap-4 text-center items-center">
+      <div class="max-w-lg w-full">
+        <div class="luxury-card rounded-2xl p-6 sm:p-8 flex flex-col gap-4 text-center items-center">
           <BotAvatar avatar-style="butler:gold" state="idle" size="lg" />
           <div>
-            <h2 class="text-lg font-semibold text-white">欢迎来到纯净的 Vesper BotHub</h2>
-            <p class="text-xs text-slate-400 mt-1.5 leading-relaxed max-w-lg mx-auto">
-              系统启动时不包含任何写死的模型池、资产台账、定时任务或强制内置角色。你可以按需接入模型 Key 实时拉取模型列表，并自由创建自己的 Bot 团队。
+            <h2 class="text-lg font-semibold text-white">工作台准备就绪</h2>
+            <p class="text-xs text-slate-400 mt-1.5 leading-relaxed max-w-md mx-auto">
+              当前尚未添加 Bot 或协同群聊。你可以先在设置中配置模型并实时探测可用性，再按需创建专属 Bot。
             </p>
           </div>
           <div class="flex flex-wrap items-center justify-center gap-2.5 pt-1">
@@ -1252,42 +1221,14 @@ function stateBadgeClass(state?: string): string {
               @click="store.state.createModalMode = 'bot'; store.state.showCreateBotModal = true"
               class="min-h-[42px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer"
             >
-              + 创建专属 Bot
+              + 新建 Bot
             </button>
             <button
               type="button"
               @click="store.state.showSettingsModal = true"
               class="min-h-[42px] px-4 py-2 rounded-xl border border-[#f2b880]/35 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-xs font-medium text-[#f2b880] cursor-pointer"
             >
-              配置模型 Key 与实时拉取模型
-            </button>
-          </div>
-        </div>
-
-        <div v-if="store.state.botTemplates.length > 0" class="flex flex-col gap-2.5">
-          <div class="flex items-center justify-between px-1">
-            <span class="text-xs font-medium text-slate-300">从推荐角色模板一键新建</span>
-            <span class="font-mono text-[10.5px] text-slate-500">创建后均可随时修改或删除</span>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <button
-              v-for="tpl in store.state.botTemplates"
-              :key="tpl.id"
-              type="button"
-              :disabled="creatingQuickBotId === tpl.id"
-              @click="quickCreateBotFromTemplate(tpl.id)"
-              class="vesper-card vesper-card-interactive rounded-xl p-3.5 text-left flex items-center gap-3 cursor-pointer disabled:opacity-50"
-            >
-              <BotAvatar :avatar-style="tpl.avatar_style" state="idle" size="md" :interactive="false" />
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center justify-between gap-2">
-                  <strong class="text-xs font-semibold text-white truncate">{{ tpl.name }}</strong>
-                  <span class="font-mono text-[10px] text-[#f2b880] shrink-0">
-                    {{ creatingQuickBotId === tpl.id ? '创建中...' : '+ 新建' }}
-                  </span>
-                </div>
-                <p class="text-[11px] text-slate-400 truncate mt-0.5">{{ tpl.role_title }}</p>
-              </div>
+              配置模型 Key
             </button>
           </div>
         </div>
@@ -1414,56 +1355,26 @@ function stateBadgeClass(state?: string): string {
                 />
               </div>
               <div class="flex flex-col items-center gap-1.5">
-                <h2 class="text-xl sm:text-2xl font-semibold text-white tracking-tight">{{ bot?.name }} 随时待命</h2>
+                <h2 class="text-xl sm:text-2xl font-semibold text-white tracking-tight">{{ bot?.name }}</h2>
                 <p class="text-xs sm:text-sm text-slate-400 max-w-md">
-                  {{ bot?.role_title }} · 定时产出与探针告警将实时投递至此持久时间线
+                  {{ bot?.role_title }} · 输入消息开始对话，键入 <code class="font-mono text-[#f2b880]">@</code> 协同成员或 <code class="font-mono text-[#f2b880]">/</code> 触发指令
                 </p>
               </div>
 
-              <div ref="starterGridRef" class="starter-grid stagger-list mt-3 text-left">
-                <button
-                  v-for="card in STARTER_CARDS"
-                  :key="card.title"
-                  type="button"
-                  @pointermove="trackSpotlight"
-                  @click="sendPrompt(card.prompt)"
-                  class="group stagger-item luxury-card vesper-card-interactive rounded-2xl p-4 flex flex-col gap-3 cursor-pointer text-left"
+              <div
+                v-if="botToolBadges.length > 0"
+                ref="starterGridRef"
+                class="stagger-list mt-2 flex flex-wrap items-center justify-center gap-2 max-w-2xl"
+              >
+                <span
+                  v-for="tool in botToolBadges"
+                  :key="tool.id"
+                  :title="tool.desc"
+                  class="stagger-item inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#fff8ee]/10 bg-[#070b18]/80 font-mono text-[11px] text-slate-300"
                 >
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="w-8 h-8 rounded-xl border border-[#f2b880]/25 bg-[#f2b880]/10 text-[#f2b880] inline-flex items-center justify-center shrink-0">
-                      <svg v-if="card.icon === 'assets'" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                        <rect x="2" y="3" width="20" height="8" rx="2" />
-                        <rect x="2" y="13" width="20" height="8" rx="2" />
-                        <line x1="6" y1="7" x2="6.01" y2="7" />
-                        <line x1="6" y1="17" x2="6.01" y2="17" />
-                      </svg>
-                      <svg v-else-if="card.icon === 'pulse'" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                      </svg>
-                      <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                        <circle cx="12" cy="12" r="9" />
-                        <polyline points="12 7 12 12 15 14" />
-                      </svg>
-                    </span>
-                    <span class="font-mono text-[10px] tracking-wider uppercase text-slate-500 group-hover:text-[#f2b880]/80 transition-colors">
-                      {{ card.tag }}
-                    </span>
-                  </div>
-                  <div class="flex-1">
-                    <div class="flex items-center justify-between gap-2">
-                      <strong class="text-sm font-semibold text-white group-hover:text-[#f7cba0] transition-colors">
-                        {{ card.title }}
-                      </strong>
-                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="text-slate-600 group-hover:text-[#f2b880] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform shrink-0">
-                        <line x1="7" y1="17" x2="17" y2="7" />
-                        <polyline points="7 7 17 7 17 17" />
-                      </svg>
-                    </div>
-                    <p class="text-[11.5px] text-slate-400/90 leading-relaxed mt-1">
-                      {{ card.desc }}
-                    </p>
-                  </div>
-                </button>
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880]/75" aria-hidden="true" />
+                  <span>{{ tool.id }}</span>
+                </span>
               </div>
             </div>
 

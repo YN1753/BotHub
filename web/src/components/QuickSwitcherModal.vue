@@ -15,7 +15,7 @@ const inputRef = ref<HTMLInputElement | null>(null)
 const specialistMap = computed(() => {
   const m = new Map<string, Bot>()
   store.state.bots.forEach((b) => {
-    if (!b.is_group && b.id !== 'team_room') m.set(b.id, b)
+    if (!b.is_group) m.set(b.id, b)
   })
   return m
 })
@@ -51,7 +51,7 @@ const entries = computed<SearchEntry[]>(() => {
       key: `bot_${b.id}`,
       category: '会话',
       title: b.name,
-      subtitle: `${b.is_group || b.id === 'team_room' ? '多 Bot 群聊 · ' : ''}${b.role_title}`,
+      subtitle: `${b.is_group ? '多 Bot 群聊 · ' : ''}${b.role_title}`,
       bot: b,
       run: () => store.jumpToBot(b.id),
     })
@@ -260,7 +260,7 @@ function handleKeydown(e: KeyboardEvent) {
           <div class="flex items-center gap-2.5 min-w-0 flex-1">
             <template v-if="item.bot">
               <BotGroupAvatar
-                v-if="item.bot.is_group || item.bot.id === 'team_room'"
+                v-if="item.bot.is_group"
                 :members="resolveGroupMembers(item.bot)"
                 :fallback-style="item.bot.avatar_style"
                 :state="item.bot.state"

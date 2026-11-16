@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/YN1753/vesper/bothub/internal/modules"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
@@ -40,7 +39,7 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListAssetTemplates(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"templates": modules.BuiltinAssetTemplates()})
+	writeJSON(w, http.StatusOK, map[string]any{"templates": []any{}})
 }
 
 func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {

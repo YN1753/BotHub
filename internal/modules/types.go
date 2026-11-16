@@ -42,197 +42,54 @@ type TaskTemplate struct {
 	ParamsSchema []ParamField `json:"params_schema"`
 }
 
-type AssetTemplate struct {
-	Category    string       `json:"category"`
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	Fields      []ParamField `json:"fields"`
-}
-
 func BuiltinTemplates() []TaskTemplate {
 	return []TaskTemplate{
 		{
 			Type:        "morning",
-			Name:        "每日早报小秘书",
+			Name:        "每日早报简报",
 			Description: "汇总目标城市气象预报、出行建议、每日格言、节点脉搏与临期资产",
 			DefaultCron: "0 8 * * *",
 			ParamsSchema: []ParamField{
 				{
 					Key:         "city",
 					Label:       "目标监测城市",
-					Type:        "select",
+					Type:        "text",
 					DefaultVal:  "Shanghai",
-					Placeholder: "选择常驻城市",
-					Options: []string{
-						"Shanghai|上海 (Shanghai)",
-						"Beijing|北京 (Beijing)",
-						"Shenzhen|深圳 (Shenzhen)",
-						"Guangzhou|广州 (Guangzhou)",
-						"Hangzhou|杭州 (Hangzhou)",
-						"Chengdu|成都 (Chengdu)",
-						"Wuhan|武汉 (Wuhan)",
-						"Nanjing|南京 (Nanjing)",
-						"Chongqing|重庆 (Chongqing)",
-						"Hong Kong|香港 (Hong Kong)",
-						"Tokyo|东京 (Tokyo)",
-						"Singapore|新加坡 (Singapore)",
-						"London|伦敦 (London)",
-						"New York|纽约 (New York)",
-					},
-					Hint: "早报将自动抓取该城市实时气温、降雨概率与穿衣出行建议",
+					Placeholder: "输入城市英文或中文名（如 Shanghai / Tokyo / London）",
+					Hint:        "支持任意全球城市实时气温、降水概率与出行建议抓取",
 				},
 			},
 		},
 		{
 			Type:        "radar",
-			Name:        "全网开源技术雷达",
-			Description: "抓取 GitHub Trending 热门仓库与 Hacker News 高分热帖，自动排版去重推送",
+			Name:        "开源技术雷达",
+			Description: "抓取 GitHub Trending 热门仓库与 Hacker News 高分热帖，去重精选推送",
 			DefaultCron: "0 12,20 * * *",
 			ParamsSchema: []ParamField{
 				{
 					Key:         "hn_min_score",
-					Label:       "Hacker News 热度过滤阈值",
-					Type:        "select",
+					Label:       "Hacker News 最低分数阈值",
+					Type:        "number",
 					DefaultVal:  "150",
-					Placeholder: "选择热度分数",
-					Options: []string{
-						"100|100 分 (覆盖广泛，不错过前沿动态)",
-						"150|150 分 (优质爆款，推荐精选)",
-						"200|200 分 (极高热度，顶级热帖)",
-						"300|300 分 (现象级超级爆款)",
-					},
-					Hint: "过滤低分杂讯，建议 150 分，兼顾资讯广度与优质内容深度",
+					Placeholder: "150",
+					Hint:        "过滤低于该热度的帖子（建议 100~300）",
 				},
 				{
 					Key:         "limit",
-					Label:       "单次推送精选条数上限",
-					Type:        "select",
+					Label:       "单次推送条目上限",
+					Type:        "number",
 					DefaultVal:  "8",
-					Placeholder: "选择推送条数",
-					Options: []string{
-						"5|5 条 (极简摘要，快速浏览)",
-						"8|8 条 (标准精选，微信排版推荐)",
-						"10|10 条 (深度汇总)",
-						"15|15 条 (全量长文)",
-					},
-					Hint: "建议选择 8 条，保证微信卡片排版美观且避免阅读疲劳",
+					Placeholder: "8",
+					Hint:        "单次抓取推送的最多条目数量（建议 5~15）",
 				},
 			},
 		},
 		{
 			Type:        "asset_watcher",
-			Name:        "数字资产与会员守望",
-			Description: "自动巡检所有资产到期时间，触发个性化临期预警与防扣费强提醒",
+			Name:        "数字资产守望",
+			Description: "定期巡检数字资产台账到期日，自动触发自定义适配同步与临期预警推送",
 			DefaultCron: "0 3 * * *",
 			ParamsSchema: []ParamField{},
-		},
-	}
-}
-
-func BuiltinAssetTemplates() []AssetTemplate {
-	return []AssetTemplate{
-		{
-			Category:    "compute",
-			Name:        "算力与云主机 (VPS / Cloud)",
-			Description: "云服务器、边缘算力、轻量主机及 NAT 机器",
-			Fields: []ParamField{
-				{
-					Key:         "provider",
-					Label:       "云服务提供商",
-					Type:        "select",
-					DefaultVal:  "BandwagonHost",
-					Placeholder: "选择主机提供商",
-					Options: []string{
-						"BandwagonHost|BandwagonHost (搬瓦工 VPS)",
-						"RackNerd|RackNerd (便宜实用年付机)",
-						"AlibabaCloud|阿里云 (Alibaba Cloud)",
-						"TencentCloud|腾讯云 (Tencent Cloud)",
-						"HuaweiCloud|华为云 (Huawei Cloud)",
-						"Cloudflare|Cloudflare (边缘算力/Workers)",
-						"OracleCloud|Oracle Cloud (甲骨文云)",
-						"DigitalOcean|DigitalOcean",
-						"AWS|AWS (亚马逊云)",
-						"SelfHosted|自建独立物理机 / 局域网主机",
-						"Other|其他云主机平台",
-					},
-					Hint: "服务商平台名称，便于到期时快速对账充值",
-				},
-			},
-		},
-		{
-			Category:    "domain",
-			Name:        "核心域名资产 (Domain)",
-			Description: "顶级域名、二级业务域名与权威 DNS 资产",
-			Fields: []ParamField{
-				{
-					Key:         "registrar",
-					Label:       "注册局与托管机构",
-					Type:        "select",
-					DefaultVal:  "Cloudflare",
-					Placeholder: "选择注册托管商",
-					Options: []string{
-						"Cloudflare|Cloudflare Registrar (权威托管)",
-						"Spaceship|Spaceship (新锐低价注册商)",
-						"NameSilo|NameSilo (老牌免隐私费)",
-						"Porkbun|Porkbun (猪肉包)",
-						"GoDaddy|GoDaddy",
-						"Namecheap|Namecheap",
-						"Wanwang|阿里云 (万网)",
-						"DNSPod|腾讯云 (DNSPod)",
-						"Other|其他域名托管机构",
-					},
-					Hint: "购买并管理此域名的注册局或托管商，域名主体直接取自资产名称",
-				},
-			},
-		},
-		{
-			Category:    "life",
-			Name:        "数字会员与生活订阅 (Subscription)",
-			Description: "流媒体、AI 工具、云盘与各类软件定期扣款服务",
-			Fields: []ParamField{
-				{
-					Key:         "platform",
-					Label:       "订阅服务平台",
-					Type:        "select",
-					DefaultVal:  "bilibili",
-					Placeholder: "选择订阅所属平台",
-					Options: []string{
-						"bilibili|哔哩哔哩大会员 (B站)",
-						"qqmusic|QQ音乐 (豪华绿钻)",
-						"netease_music|网易云音乐 (黑胶 VIP)",
-						"chatgpt|ChatGPT Plus (OpenAI)",
-						"claude|Claude Pro (Anthropic)",
-						"netflix|Netflix (奈飞 4K 车位)",
-						"spotify|Spotify (声田音乐家庭组)",
-						"youtube_premium|YouTube Premium",
-						"disney_plus|Disney+ 影视",
-						"apple_one|Apple One / iCloud+",
-						"github_copilot|GitHub Copilot",
-						"google_one|Google One 会员",
-						"other|其他生活数字订阅",
-					},
-					Hint: "订阅服务所属的官方产品或 App 平台",
-				},
-				{
-					Key:         "billing_note",
-					Label:       "扣费渠道与绑卡支付方式",
-					Type:        "select",
-					DefaultVal:  "微信免密扣款",
-					Placeholder: "选择自动扣费渠道",
-					Options: []string{
-						"微信免密扣款|微信免密扣款",
-						"支付宝自动续费|支付宝自动续费",
-						"国内银联信用卡|国内银联信用卡",
-						"Visa外币信用卡|Visa / MasterCard 外币卡",
-						"PayPal账户扣款|PayPal 账户扣款",
-						"ApplePay自动扣费|Apple Pay / App Store 订阅",
-						"GooglePlay自动扣费|Google Play 自动扣款",
-						"人工手动充值|无自动扣款 (人工手动充值)",
-						"其他支付方式|其他支付渠道",
-					},
-					Hint: "记录绑定的扣款卡号或扣费方式，便于换卡或退订时维护",
-				},
-			},
 		},
 	}
 }

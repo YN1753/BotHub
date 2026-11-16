@@ -66,7 +66,7 @@ const botOptions = computed(() => [
 ])
 const currentFields = computed(() => {
   const tpl = store.state.templates.find((t) => t.type === type.value)
-  return tpl?.fields || []
+  return tpl?.params_schema || tpl?.fields || []
 })
 
 const computedCron = computed(() => {
@@ -276,7 +276,7 @@ async function handleDelete() {
 
       <!-- Section 3: Module Params -->
       <div v-if="currentFields.length > 0" class="modal-section flex flex-col gap-3">
-        <div class="text-xs font-semibold text-[#f2b880]">模板运行参数</div>
+        <div class="text-xs font-semibold text-[#f2b880]">执行引擎参数</div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label
             v-for="f in currentFields"
@@ -286,10 +286,11 @@ async function handleDelete() {
             <span>{{ f.label }}</span>
             <input
               v-model="paramsMap[f.key]"
-              type="text"
-              :placeholder="f.placeholder || f.default_value || ''"
+              :type="f.type === 'number' ? 'number' : 'text'"
+              :placeholder="f.placeholder || f.default_val || f.default_value || ''"
               class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60"
             />
+            <span v-if="f.hint" class="text-[10.5px] text-slate-500">{{ f.hint }}</span>
           </label>
         </div>
       </div>

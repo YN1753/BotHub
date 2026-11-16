@@ -35,7 +35,7 @@ const filteredBots = computed(() => {
 const specialistMap = computed(() => {
   const m = new Map<string, Bot>()
   store.state.bots.forEach((b) => {
-    if (!b.is_group && b.id !== 'team_room') m.set(b.id, b)
+    if (!b.is_group) m.set(b.id, b)
   })
   return m
 })
@@ -54,7 +54,7 @@ function resolveGroupMembers(b: Bot): Bot[] {
 }
 
 function isGroup(b: Bot): boolean {
-  return Boolean(b.is_group || b.id === 'team_room')
+  return Boolean(b.is_group)
 }
 
 function stateDotClass(state: string): string {

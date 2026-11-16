@@ -2,10 +2,8 @@
 import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import type { BotTemplate } from '../types/bothub'
 import { trackSpotlight } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
-import BotAvatar from './BotAvatar.vue'
 import BotAvatarPicker from './BotAvatarPicker.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -42,19 +40,10 @@ const groupMode = ref<'smart' | 'sequential' | 'mention_only'>('smart')
 const groupAnnouncement = ref('')
 const saving = ref(false)
 
-function applyBotTemplate(tpl: BotTemplate) {
-  name.value = tpl.name
-  roleTitle.value = tpl.role_title
-  avatarStyle.value = tpl.avatar_style
-  enableThinking.value = tpl.enable_thinking
-  allowedTools.value = [...(tpl.allowed_tools || [])]
-  systemPrompt.value = tpl.system_prompt
-}
-
 const availableTools = computed(() => store.state.availableTools || [])
 
 const availableSpecialistBots = computed(() =>
-  store.state.bots.filter((b) => !b.is_group && b.id !== 'team_room')
+  store.state.bots.filter((b) => !b.is_group)
 )
 
 watch(
@@ -185,31 +174,6 @@ async function handleSubmit() {
       >
         <!-- Mode 1: Single Specialist Bot -->
         <div v-if="mode === 'bot'" key="bot" class="flex flex-col gap-3.5">
-          <!-- One-Click Persona Presets Gallery -->
-          <div class="modal-section flex flex-col gap-2">
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-xs font-medium text-slate-200">一键人设模板</span>
-              <span class="font-mono text-[10.5px] text-slate-500">点击自动填充形象与提示词</span>
-            </div>
-            <div class="flex flex-wrap gap-1.5">
-              <button
-                v-for="tpl in store.state.botTemplates"
-                :key="tpl.id"
-                type="button"
-                @click="applyBotTemplate(tpl)"
-                :class="[
-                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs cursor-pointer transition-colors',
-                  name === tpl.name
-                    ? 'border-[#f2b880]/60 bg-[#f2b880]/15 text-[#f7cba0]'
-                    : 'border-[#fff8ee]/12 bg-[#050811]/70 text-slate-300 hover:border-[#f2b880]/40 hover:text-white'
-                ]"
-              >
-                <BotAvatar :avatar-style="tpl.avatar_style" state="idle" size="xs" :interactive="false" />
-                <span>{{ tpl.name }}</span>
-              </button>
-            </div>
-          </div>
-
           <BotAvatarPicker v-model="avatarStyle" :preview-name="name || '新专属 Bot'" />
 
           <div class="modal-section grid grid-cols-1 sm:grid-cols-2 gap-3">

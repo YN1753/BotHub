@@ -50,67 +50,6 @@ func (b Bot) MemberIDList() []string {
 	return list
 }
 
-// BotTemplate is served strictly as an optional creation preset (never auto-seeded into the bots table).
-type BotTemplate struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	RoleTitle      string   `json:"role_title"`
-	AvatarStyle    string   `json:"avatar_style"`
-	SystemPrompt   string   `json:"system_prompt"`
-	EnableThinking bool     `json:"enable_thinking"`
-	AllowedTools   []string `json:"allowed_tools"`
-}
-
-func BuiltinBotTemplates() []BotTemplate {
-	return []BotTemplate{
-		{
-			ID:             "butler_tpl",
-			Name:           "资产与晨报管家",
-			RoleTitle:      "资产守望与晨间简报管家",
-			AvatarStyle:    "butler:gold",
-			SystemPrompt:   "你是用户的数字资产与日常简报管家，擅长追踪服务器、域名与会员订阅到期提醒、制定续费策略与日常日程编排，语气沉稳条理清晰，严禁使用 Emoji。",
-			EnableThinking: true,
-			AllowedTools:   []string{"manage_assets", "manage_tasks", "remember_fact", "recall_memory", "read_url"},
-		},
-		{
-			ID:             "sentinel_tpl",
-			Name:           "探针巡检哨兵",
-			RoleTitle:      "哪吒节点巡检与故障排查",
-			AvatarStyle:    "sentinel:amber",
-			SystemPrompt:   "你是运维探针哨兵，专注直连查询节点在线状态、负载、流量健康度与故障根因分析，遇到异常直接给出可落地的排查指令，严禁使用 Emoji。",
-			EnableThinking: true,
-			AllowedTools:   []string{"query_nezha_nodes", "read_url", "recall_memory", "remember_fact"},
-		},
-		{
-			ID:             "radar_tpl",
-			Name:           "开源技术雷达",
-			RoleTitle:      "前沿技术检索与趋势精读",
-			AvatarStyle:    "radar:emerald",
-			SystemPrompt:   "你是开源技术雷达助手，专注 GitHub 热门项目、工程技术趋势检索与长文章摘要提炼，输出高信息密度结论，严禁使用 Emoji。",
-			EnableThinking: false,
-			AllowedTools:   []string{"web_search", "read_url", "remember_fact", "recall_memory"},
-		},
-		{
-			ID:             "architect_tpl",
-			Name:           "架构锐评顾问",
-			RoleTitle:      "高密度深度思考与代码评审",
-			AvatarStyle:    "critic:violet",
-			SystemPrompt:   "你是系统架构评审顾问，直击问题本质、拒绝空话，擅长第一性原理系统设计与并发/安全隐患剖析。优先查证工具数据后再下结论，严禁使用 Emoji。",
-			EnableThinking: true,
-			AllowedTools:   []string{"read_url", "web_search", "query_nezha_nodes", "manage_assets", "manage_tasks", "remember_fact", "recall_memory"},
-		},
-		{
-			ID:             "translator_tpl",
-			Name:           "技术文档编译官",
-			RoleTitle:      "外文资料与 RFC 精炼编译",
-			AvatarStyle:    "visor:indigo",
-			SystemPrompt:   "你是技术文档编译官，擅长把英文博客、RFC 与 Release Notes 提炼为结构化中文重点与可执行迁移清单，严禁使用 Emoji。",
-			EnableThinking: false,
-			AllowedTools:   []string{"read_url", "web_search", "remember_fact"},
-		},
-	}
-}
-
 func (s *Store) ListBots() ([]Bot, error) {
 	rows, err := s.db.Query(`SELECT id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, COALESCE(group_mode,'smart'), COALESCE(announcement,''), sort_order, last_summary, created_at, updated_at
 		FROM bots ORDER BY is_pinned DESC, sort_order ASC, updated_at DESC`)
@@ -119,7 +58,7 @@ func (s *Store) ListBots() ([]Bot, error) {
 	}
 	defer rows.Close()
 
-	var list []Bot
+	list := make([]Bot, 0)
 	for rows.Next() {
 		var b Bot
 		var et, pin, builtin, isGroup int
@@ -127,7 +66,7 @@ func (s *Store) ListBots() ([]Bot, error) {
 			b.EnableThinking = et == 1
 			b.IsPinned = pin == 1
 			b.IsBuiltin = false
-			b.IsGroup = isGroup == 1 || b.ID == "team_room"
+			b.IsGroup = isGroup == 1
 			if strings.TrimSpace(b.GroupMode) == "" {
 				b.GroupMode = "smart"
 			}
@@ -152,7 +91,7 @@ func (s *Store) GetBot(id string) (*Bot, error) {
 	b.EnableThinking = et == 1
 	b.IsPinned = pin == 1
 	b.IsBuiltin = false
-	b.IsGroup = isGroup == 1 || b.ID == "team_room"
+	b.IsGroup = isGroup == 1
 	if strings.TrimSpace(b.GroupMode) == "" {
 		b.GroupMode = "smart"
 	}

@@ -38,6 +38,20 @@ type PublicAsset struct {
 	WarnFlag  bool   `json:"warn_flag"`
 }
 
+// NormalizeAssetStatus consolidates legacy granular statuses into orthogonal lifecycle states.
+func NormalizeAssetStatus(raw string) string {
+	switch strings.TrimSpace(raw) {
+	case "", "生效中", "运行中", "会员有效", "活动体验中", "active", "Active":
+		return "生效中"
+	case "已到期", "expired", "Expired":
+		return "已到期"
+	case "已停用", "待购入", "paused", "offline", "inactive":
+		return "已停用"
+	default:
+		return strings.TrimSpace(raw)
+	}
+}
+
 func (s *Store) ListAssets() ([]Asset, error) {
 	rows, err := s.db.Query(`
 SELECT id, name, category, spec, price, status, due_date, auto_renew, warn_days, last_checked_at, extra_config
@@ -47,14 +61,18 @@ FROM assets ORDER BY CASE category WHEN 'compute' THEN 1 WHEN 'domain' THEN 2 WH
 	}
 	defer rows.Close()
 
-	var list []Asset
+	list := make([]Asset, 0)
 	for rows.Next() {
 		var a Asset
 		var autoRenewInt int
 		if err := rows.Scan(&a.ID, &a.Name, &a.Category, &a.Spec, &a.Price, &a.Status, &a.DueDate, &autoRenewInt, &a.WarnDays, &a.LastCheckedAt, &a.ExtraConfig); err == nil {
 			a.AutoRenew = (autoRenewInt == 1)
+			a.Status = NormalizeAssetStatus(a.Status)
 			a.DaysLeft, _ = CalculateDaysLeft(a.DueDate)
-			a.WarnFlag = (a.DaysLeft >= 0 && a.DaysLeft <= 7) || strings.Contains(a.Status, "到期")
+			if a.Status == "生效中" && a.DaysLeft < 0 && !strings.HasPrefix(a.DueDate, "2099") {
+				a.Status = "已到期"
+			}
+			a.WarnFlag = (a.Status == "生效中" && a.DaysLeft >= 0 && a.DaysLeft <= 7) || a.Status == "已到期"
 			list = append(list, a)
 		}
 	}
@@ -73,8 +91,12 @@ func (s *Store) GetAsset(id string) (*Asset, error) {
 		return nil, err
 	}
 	a.AutoRenew = (autoRenewInt == 1)
+	a.Status = NormalizeAssetStatus(a.Status)
 	a.DaysLeft, _ = CalculateDaysLeft(a.DueDate)
-	a.WarnFlag = (a.DaysLeft >= 0 && a.DaysLeft <= 7) || strings.Contains(a.Status, "到期")
+	if a.Status == "生效中" && a.DaysLeft < 0 && !strings.HasPrefix(a.DueDate, "2099") {
+		a.Status = "已到期"
+	}
+	a.WarnFlag = (a.Status == "生效中" && a.DaysLeft >= 0 && a.DaysLeft <= 7) || a.Status == "已到期"
 	return &a, nil
 }
 
@@ -83,6 +105,7 @@ func (s *Store) SaveAsset(a Asset) error {
 	if a.AutoRenew {
 		autoInt = 1
 	}
+	a.Status = NormalizeAssetStatus(a.Status)
 	if a.WarnDays == "" {
 		a.WarnDays = "[7, 3, 1]"
 	}

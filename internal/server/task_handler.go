@@ -13,6 +13,10 @@ import (
 )
 
 func (s *Server) handleListTaskTemplates(w http.ResponseWriter, r *http.Request) {
+	if s.scheduler != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"templates": s.scheduler.TaskTemplates()})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"templates": modules.BuiltinTemplates()})
 }
 

@@ -25,16 +25,34 @@ const syncing = ref(false)
 const assetGridRef = ref<HTMLElement | null>(null)
 const taskGridRef = ref<HTMLElement | null>(null)
 
-const CAT_TABS = [
-  { id: 'all', label: '全部' },
-  { id: 'compute', label: '算力基建' },
-  { id: 'domain', label: '核心域名' },
-  { id: 'life', label: '生活订阅' },
-]
+const CATEGORY_LABELS: Record<string, string> = {
+  compute: '算力基建',
+  domain: '域名资产',
+  life: '订阅服务',
+  other: '其他资产',
+}
+
+const categoryTabs = computed(() => {
+  const seen = new Set<string>(['all'])
+  const tabs: Array<{ id: string; label: string }> = [{ id: 'all', label: '全部' }]
+  for (const a of store.state.assets) {
+    const c = String(a.category || '').trim()
+    if (!c || seen.has(c)) continue
+    seen.add(c)
+    tabs.push({ id: c, label: CATEGORY_LABELS[c] || c })
+  }
+  return tabs
+})
 
 function isExpiringSoon(a: Asset): boolean {
-  if (a.status === '长期有效' || String(a.due_date || '').startsWith('2099')) return false
+  if (a.status === '已停用' || String(a.due_date || '').startsWith('2099')) return false
   return a.days_left <= 7
+}
+
+function assetStatusBadgeClass(status?: string): string {
+  if (status === '已到期') return 'border-rose-400/35 bg-rose-500/12 text-rose-300'
+  if (status === '已停用') return 'border-slate-500/30 bg-slate-500/10 text-slate-400'
+  return 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
 }
 
 const filteredAssets = computed(() =>
@@ -301,7 +319,7 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
               @keydown.escape="searchQuery = ''"
               class="w-full sm:w-64 min-h-[44px] sm:min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#070a16]/85 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
             />
-            <SegmentedTabs v-model="activeCat" :items="CAT_TABS" variant="subtle" aria-label="资产类别筛选" />
+            <SegmentedTabs v-model="activeCat" :items="categoryTabs" variant="subtle" aria-label="资产类别筛选" />
           </div>
 
           <div v-if="filteredAssets.length === 0" class="vesper-card rounded-2xl p-8 text-center flex flex-col items-center gap-2.5 text-sm text-slate-400">
@@ -348,7 +366,12 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                     </svg>
                   </span>
                   <div class="min-w-0">
-                    <strong class="block text-sm font-semibold text-white group-hover:text-[#f7cba0] transition-colors truncate">{{ a.name }}</strong>
+                    <div class="flex items-center gap-1.5 min-w-0">
+                      <strong class="block text-sm font-semibold text-white group-hover:text-[#f7cba0] transition-colors truncate">{{ a.name }}</strong>
+                      <span :class="['font-mono text-[9.5px] px-1.5 py-0.5 rounded border leading-none shrink-0', assetStatusBadgeClass(a.status)]">
+                        {{ a.status || '生效中' }}
+                      </span>
+                    </div>
                     <span class="block text-[11.5px] text-slate-400 truncate">{{ a.spec }}</span>
                   </div>
                 </div>

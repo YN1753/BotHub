@@ -123,7 +123,7 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 		sb.WriteString("\n\n")
 	}
 
-	sb.WriteString("---\n*来自 Vesper BotHub · bot.starryheavens.uk*")
+	sb.WriteString("---\n*来自 Vesper BotHub 自动化汇报*")
 
 	title := fmt.Sprintf("%s · %s %s", taskName, dateStr, city)
 	if wErr == nil {

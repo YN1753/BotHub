@@ -29,7 +29,7 @@ const CAT_OPTIONS = [
 const scopeOptions = computed(() => [
   { value: 'global', label: '全局共享记忆 (所有 Bot 可见)' },
   ...store.state.bots
-    .filter((b) => !b.is_group && b.id !== 'team_room')
+    .filter((b) => !b.is_group)
     .map((b) => ({ value: `bot:${b.id}`, label: `仅限专属 Bot: ${b.name}` })),
 ])
 
@@ -128,7 +128,7 @@ watch(
         <input
           v-model="content"
           type="text"
-          placeholder="如 主力生产节点位于 CloudCone LA DC2，部署 Vesper 与哪吒面板"
+          placeholder="如 主力生产节点部署于东京，使用哪吒监控"
           aria-label="记忆内容"
           required
           class="flex-1 min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"

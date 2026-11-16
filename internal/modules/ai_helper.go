@@ -147,7 +147,7 @@ func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, u
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 		if c.provider == "openrouter" {
-			req.Header.Set("HTTP-Referer", "https://bot.starryheavens.uk")
+			req.Header.Set("HTTP-Referer", "https://github.com/YN1753/BotHub")
 			req.Header.Set("X-Title", "Vesper BotHub")
 		}
 

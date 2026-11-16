@@ -166,7 +166,7 @@ func (r *RadarModule) RunWithTask(ctx context.Context, task store.Task) (RunResu
 		sb.WriteString("\n\n")
 	}
 
-	sb.WriteString("---\n*来自 Vesper BotHub · bot.starryheavens.uk*")
+	sb.WriteString("---\n*来自 Vesper BotHub 自动化汇报*")
 	title := fmt.Sprintf("%s · 新增 %d 条精选（GH %d / HN %d）", taskName, totalNew, len(freshGH), len(freshHN))
 
 	if err := r.push.SendMarkdown(ctx, task.ID, title, sb.String()); err != nil {

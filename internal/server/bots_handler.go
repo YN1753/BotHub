@@ -201,10 +201,10 @@ func (s *Server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "更新 Bot 失败: "+err.Error())
 		return
 	}
-	if (existing.IsGroup || existing.ID == "team_room") && prevName != existing.Name {
+	if existing.IsGroup && prevName != existing.Name {
 		_ = s.appendGroupSystemNotice(existing.ID, fmt.Sprintf("群聊名称已修改为「%s」", existing.Name))
 	}
-	if (existing.IsGroup || existing.ID == "team_room") && announcementChanged {
+	if existing.IsGroup && announcementChanged {
 		_ = s.appendGroupSystemNotice(existing.ID, "群公告已更新："+existing.Announcement)
 	}
 	updated, _ := s.store.GetBot(id)
@@ -221,7 +221,7 @@ func (s *Server) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "群聊不存在")
 		return
 	}
-	if !groupBot.IsGroup && groupBot.ID != "team_room" {
+	if !groupBot.IsGroup {
 		writeError(w, http.StatusBadRequest, "仅支持管理群聊成员，单聊请使用「临时拉人建群」")
 		return
 	}
@@ -238,7 +238,7 @@ func (s *Server) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request
 	allBots, _ := s.store.ListBots()
 	botMap := make(map[string]store.Bot, len(allBots))
 	for _, b := range allBots {
-		if !b.IsGroup && b.ID != "team_room" {
+		if !b.IsGroup {
 			botMap[b.ID] = b
 		}
 	}
@@ -353,7 +353,7 @@ func (s *Server) handleCreateAdhocGroup(w http.ResponseWriter, r *http.Request) 
 	allBots, _ := s.store.ListBots()
 	botMap := make(map[string]store.Bot, len(allBots))
 	for _, b := range allBots {
-		if !b.IsGroup && b.ID != "team_room" {
+		if !b.IsGroup {
 			botMap[b.ID] = b
 		}
 	}
