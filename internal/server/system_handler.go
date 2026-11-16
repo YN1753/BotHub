@@ -61,6 +61,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	cfgs, _ := s.store.GetAllConfigs()
 	delete(cfgs, store.KeyAdminPassHash)
 	delete(cfgs, store.KeySessionSecret)
+	delete(cfgs, store.KeyFreeModelPool)
 	for k := range sensitiveConfigKeys {
 		if raw, ok := cfgs[k]; ok && strings.TrimSpace(raw) != "" {
 			cfgs[k] = maskSecret(raw)
@@ -74,6 +75,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	memories, _ := s.store.ListAgentMemories("", 50)
 	notifications, _ := s.store.ListNotifications(0, 40, false)
 	bots, _ := s.store.ListBots()
+	modelPool := store.MaskModelPool(s.store.GetModelPool())
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":         s.version,
@@ -82,6 +84,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"modules":         tasks, // 兼容前端历史模块字段
 		"tasks":           tasks,
 		"bots":            bots,
+		"model_pool":      modelPool,
 		"templates":       modules.BuiltinTemplates(),
 		"asset_templates": modules.BuiltinAssetTemplates(),
 		"personas":        agent.BuiltinPersonas(),
@@ -117,6 +120,8 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		"light_api_key":       true,
 		"light_base_url":      true,
 		"light_model":         true,
+		"pool_for_light":      true,
+		"pool_fallback":       true,
 		"app_bearer_token":    true,
 	}
 
@@ -219,6 +224,9 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		"light_api_key":       true,
 		"light_base_url":      true,
 		"light_model":         true,
+		"free_model_pool":     true,
+		"pool_for_light":      true,
+		"pool_fallback":       true,
 		"app_bearer_token":    true,
 	}
 	_ = s.store.SetConfig(store.KeyPushChannel, "native")
@@ -280,6 +288,68 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		"assets_restored": assetsCount,
 		"tasks_restored":  tasksCount,
 		"bots_restored":   botsCount,
+	})
+}
+
+func (s *Server) handleSaveModelPool(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Entries []store.ModelPoolEntry `json:"entries"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效模型池请求体")
+		return
+	}
+	if err := s.store.SaveModelPool(req.Entries); err != nil {
+		writeError(w, http.StatusInternalServerError, "保存免费模型池失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":         true,
+		"model_pool": store.MaskModelPool(s.store.GetModelPool()),
+	})
+}
+
+func (s *Server) handleTestModelTarget(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TargetID string `json:"target_id"`
+		Provider string `json:"provider"`
+		BaseURL  string `json:"base_url"`
+		APIKey   string `json:"api_key"`
+		Model    string `json:"model"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效测试请求")
+		return
+	}
+
+	apiKey := strings.TrimSpace(req.APIKey)
+	if strings.Contains(apiKey, "****") || apiKey == "" {
+		if req.TargetID == "primary" {
+			stored, _ := s.store.GetConfig(store.KeyDeepSeekAPIKey)
+			apiKey = strings.TrimSpace(stored)
+		} else {
+			for _, item := range s.store.GetModelPool() {
+				if item.ID == req.TargetID {
+					apiKey = strings.TrimSpace(item.APIKey)
+					break
+				}
+			}
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 22*time.Second)
+	defer cancel()
+
+	latencyMs, preview, err := s.agent.ProbeModelTarget(ctx, req.BaseURL, apiKey, req.Model, req.Provider)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":         true,
+		"latency_ms": latencyMs,
+		"reply":      preview,
+		"message":    fmt.Sprintf("连接成功 (%dms)", latencyMs),
 	})
 }
 

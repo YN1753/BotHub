@@ -54,7 +54,7 @@ const BOT_PRESETS = [
     name: '架构审计官',
     roleTitle: '高密度代码评审与系统架构顾问',
     avatarStyle: 'critic:violet',
-    model: 'deepseek-v4-pro',
+    model: 'deepseek-flash',
     enableThinking: true,
     tools: ['read_url', 'web_search', 'remember_fact', 'recall_memory'],
     systemPrompt: '你是架构审计官，擅长一针见血指出代码隐患、并发竞态、性能瓶颈与过度设计，输出可执行重构方案，严禁使用 Emoji。',
@@ -72,7 +72,7 @@ const BOT_PRESETS = [
     name: '安全巡检猎手',
     roleTitle: '漏洞情报与节点防线哨兵',
     avatarStyle: 'sentinel:amber',
-    model: 'deepseek-v4-pro',
+    model: 'deepseek-flash',
     enableThinking: true,
     tools: ['query_nezha_nodes', 'read_url', 'web_search', 'recall_memory'],
     systemPrompt: '你是安全巡检猎手，聚焦端口暴露、异常负载、CVE 漏洞核查与零信任加固建议，回复直接给出可验证命令，严禁使用 Emoji。',
@@ -81,7 +81,7 @@ const BOT_PRESETS = [
     name: '技术编译官',
     roleTitle: '英文文档与论文结构化精读',
     avatarStyle: 'visor:indigo',
-    model: 'deepseek-flash',
+    model: 'free-pool',
     enableThinking: false,
     tools: ['read_url', 'web_search', 'remember_fact'],
     systemPrompt: '你是技术编译官，擅长把长篇英文技术博客、RFC 或 GitHub Release 提炼为高信息密度中文要点卡片，严禁使用 Emoji。',
@@ -106,11 +106,6 @@ const TOOL_CATALOG = [
   { id: 'manage_tasks', label: '定时调度' },
   { id: 'remember_fact', label: '写入记忆' },
   { id: 'recall_memory', label: '检索记忆' },
-]
-
-const MODEL_OPTIONS = [
-  { value: 'deepseek-flash', label: 'DeepSeek Flash (主力)' },
-  { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro (深度)' },
 ]
 
 const availableSpecialistBots = computed(() =>
@@ -289,7 +284,7 @@ async function handleSubmit() {
             </label>
             <div class="flex flex-col gap-1.5 text-xs text-slate-300">
               <span>默认推理模型</span>
-              <CustomSelect v-model="model" :options="MODEL_OPTIONS" aria-label="默认推理模型" />
+              <CustomSelect v-model="model" :options="store.modelOptions.value" aria-label="默认推理模型" />
             </div>
             <div class="flex flex-col justify-end">
               <ToggleSwitch v-model="enableThinking" label="默认开启深度思考" />

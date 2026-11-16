@@ -433,23 +433,23 @@ func (e *Engine) runSingleBotTurn(
 	userMsg, baseURL, apiKey string,
 	emit func(event string, data any),
 ) (*ChatResponse, error) {
-	model := strings.TrimSpace(req.Model)
-	if model == "" {
-		model = actingBot.Model
+	rawModel := strings.TrimSpace(req.Model)
+	if rawModel == "" {
+		rawModel = actingBot.Model
 	}
-	model = NormalizeModelID(model)
+	targets, err := e.ResolveChatTargets(rawModel)
+	if err != nil {
+		e.emitBotState(actingBot.ID, store.BotStateBlocked, err.Error())
+		return nil, err
+	}
+	activeTarget := targets[0]
 
-	useThinking := actingBot.EnableThinking
+	var thinkFlag *bool
 	if req.EnableThinking != nil {
-		useThinking = *req.EnableThinking
-	}
-	var thinkingCfg *thinkingConfig
-	if strings.Contains(strings.ToLower(model), "flash") {
-		if useThinking {
-			thinkingCfg = &thinkingConfig{Type: "enabled"}
-		} else {
-			thinkingCfg = &thinkingConfig{Type: "disabled"}
-		}
+		thinkFlag = req.EnableThinking
+	} else {
+		v := actingBot.EnableThinking
+		thinkFlag = &v
 	}
 
 	e.emitBotState(actingBot.ID, store.BotStateThinking, "正在思考处理...")
@@ -510,7 +510,7 @@ func (e *Engine) runSingleBotTurn(
 
 	const maxRounds = 5
 	for round := 0; round < maxRounds; round++ {
-		roundReasoning, roundContent, toolCalls, roundUsage, err := e.streamSingleRound(ctx, baseURL, apiKey, model, messages, tools, thinkingCfg, func(deltaReasoning, deltaContent string) {
+		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(ctx, targets, messages, tools, thinkFlag, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
 				clean := notifier.StripEmoji(deltaReasoning)
 				totalReasoning.WriteString(clean)
@@ -530,6 +530,7 @@ func (e *Engine) runSingleBotTurn(
 			e.emitBotState(actingBot.ID, store.BotStateBlocked, err.Error())
 			return nil, err
 		}
+		activeTarget = usedTarget
 		if roundUsage != nil {
 			hasUsage = true
 			totalUsage.PromptTokens += roundUsage.PromptTokens
@@ -627,7 +628,7 @@ func (e *Engine) runSingleBotTurn(
 		SenderBotID:      actingBot.ID,
 		SessionID:        "bot:" + timelineBotID,
 		Persona:          actingBot.ID,
-		Model:            model,
+		Model:            activeTarget.Model,
 		ReasoningContent: totalReasoning.String(),
 		Content:          finalContent.String(),
 		ToolTraces:       traces,

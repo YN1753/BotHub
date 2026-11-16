@@ -6,8 +6,10 @@ import type {
   Asset,
   AssetTemplate,
   Bot,
+  ModelPoolEntry,
   NotificationItem,
   PushLog,
+  SelectOption,
   Task,
   TaskTemplate,
 } from '../types/bothub'
@@ -41,7 +43,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.7.0',
+  version: 'v2.8.0',
   uptimeSec: 0,
   serverNow: '--',
   stats: {
@@ -54,6 +56,7 @@ const state = reactive({
     unread_notifications: 0,
   },
   bots: [] as Bot[],
+  modelPool: [] as ModelPoolEntry[],
   assets: [] as Asset[],
   tasks: [] as Task[],
   templates: [] as TaskTemplate[],
@@ -167,6 +170,25 @@ export function useAppStore() {
     }).length
   )
 
+  const modelOptions = computed<SelectOption[]>(() => {
+    const enabledNodes = state.modelPool.filter((m) => m.enabled)
+    const readyCount = enabledNodes.filter((m) => Boolean(m.api_key)).length
+    const baseOpts: SelectOption[] = [
+      { value: 'deepseek-flash', label: 'DeepSeek Flash (主力 / 支持中转站)' },
+      {
+        value: 'free-pool',
+        label: readyCount > 0 ? `免费模型池 (自动容灾 · ${readyCount} 已就绪)` : '免费模型池 (自动轮询 · 待配 Key)',
+      },
+    ]
+    for (const node of enabledNodes) {
+      baseOpts.push({
+        value: `pool:${node.id}`,
+        label: `${node.name} [${node.api_key ? '免费可用' : '待填Key'}]`,
+      })
+    }
+    return baseOpts
+  })
+
   async function checkAuth() {
     try {
       const res = await BotHubApi.authStatus()
@@ -203,6 +225,7 @@ export function useAppStore() {
       state.serverNow = data.server_now || '--'
       state.stats = data.stats || state.stats
       state.bots = data.bots || []
+      state.modelPool = data.model_pool || []
       state.assets = data.assets || []
       state.tasks = data.tasks || []
       state.templates = data.templates || []
@@ -415,6 +438,7 @@ export function useAppStore() {
   return {
     state,
     activeBot,
+    modelOptions,
     unreadInboxCount,
     expiringAssetCount,
     notify,

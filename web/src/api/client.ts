@@ -4,6 +4,7 @@ import type {
   Asset,
   Bot,
   DashboardPayload,
+  ModelPoolEntry,
   Task,
 } from '../types/bothub'
 
@@ -33,6 +34,22 @@ export const BotHubApi = {
   dashboard: () => apiRequest<DashboardPayload>('/api/dashboard'),
   saveConfig: (payload: Record<string, string>) =>
     apiRequest('/api/config', { method: 'POST', body: JSON.stringify(payload) }),
+  saveModelPool: (entries: ModelPoolEntry[]) =>
+    apiRequest<{ ok: boolean; model_pool: ModelPoolEntry[] }>('/api/v2/model-pool', {
+      method: 'POST',
+      body: JSON.stringify({ entries }),
+    }),
+  testModelTarget: (payload: {
+    target_id: string
+    provider: string
+    base_url: string
+    api_key: string
+    model: string
+  }) =>
+    apiRequest<{ ok: boolean; latency_ms: number; reply: string; message: string }>(
+      '/api/v2/model-pool/test',
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
   testPush: () => apiRequest<{ ok: boolean; message: string }>('/api/test-push', { method: 'POST' }),
   rotateAppToken: () =>
     apiRequest<{ ok: boolean; token: string; message: string }>('/api/v2/auth/token/rotate', {

@@ -40,6 +40,9 @@ const (
 	KeyLightAPIKey         = "light_api_key"
 	KeyLightBaseURL        = "light_base_url"
 	KeyLightModel          = "light_model"
+	KeyFreeModelPool       = "free_model_pool"
+	KeyPoolForLight        = "pool_for_light"
+	KeyPoolFallback        = "pool_fallback"
 	KeyAppBearerToken      = "app_bearer_token"
 	KeyNezhaWebhookToken   = "nezha_webhook_token"
 	KeyAdminPassHash       = "admin_pass_hash"
@@ -296,6 +299,9 @@ func (s *Store) seedDefaults() error {
 		KeyLightAPIKey:         lightKey,
 		KeyLightBaseURL:        lightBaseURL,
 		KeyLightModel:          lightModel,
+		KeyFreeModelPool:       DefaultModelPoolJSON(),
+		KeyPoolForLight:        "true",
+		KeyPoolFallback:        "true",
 		KeyAppBearerToken:      appToken,
 		KeyNezhaWebhookToken:   "",
 		KeyAdminPassHash:       HashPassword(adminToken),
@@ -308,11 +314,10 @@ func (s *Store) seedDefaults() error {
 		}
 	}
 
-	// Automatically upgrade retired model IDs (deepseek-chat / deepseek-reasoner) in existing databases
-	_, _ = s.db.Exec(`UPDATE configs SET value = 'deepseek-flash', updated_at = ? WHERE key = 'ai_model' AND value = 'deepseek-chat'`, now)
-	_, _ = s.db.Exec(`UPDATE configs SET value = 'deepseek-v4-pro', updated_at = ? WHERE key = 'ai_model' AND value = 'deepseek-reasoner'`, now)
-	_, _ = s.db.Exec(`UPDATE agent_sessions SET model = 'deepseek-flash' WHERE model = 'deepseek-chat'`)
-	_, _ = s.db.Exec(`UPDATE agent_sessions SET model = 'deepseek-v4-pro' WHERE model = 'deepseek-reasoner'`)
+	// Automatically upgrade retired model IDs (deepseek-chat / deepseek-reasoner / deepseek-v4-pro) in existing databases
+	_, _ = s.db.Exec(`UPDATE configs SET value = 'deepseek-flash', updated_at = ? WHERE key = 'ai_model' AND value IN ('deepseek-chat','deepseek-reasoner','deepseek-v4-pro')`, now)
+	_, _ = s.db.Exec(`UPDATE bots SET model = 'deepseek-flash', updated_at = ? WHERE model IN ('deepseek-chat','deepseek-reasoner','deepseek-v4-pro')`, now)
+	_, _ = s.db.Exec(`UPDATE agent_sessions SET model = 'deepseek-flash' WHERE model IN ('deepseek-chat','deepseek-reasoner','deepseek-v4-pro')`)
 	if envPass := strings.TrimSpace(os.Getenv("BOTHUB_ADMIN_TOKEN")); envPass != "" {
 		_ = s.SetConfig(KeyAdminPassHash, HashPassword(envPass))
 	}

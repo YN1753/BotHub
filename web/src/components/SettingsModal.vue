@@ -2,9 +2,11 @@
 import { ref, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
+import type { ModelPoolEntry } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
+import ToggleSwitch from './ToggleSwitch.vue'
 
 const store = useAppStore()
 const activeTab = ref<'ai' | 'push' | 'integrations' | 'security'>('ai')
@@ -21,6 +23,13 @@ const deepseekKey = ref('')
 const deepseekBaseUrl = ref('https://api.deepseek.com/v1')
 const aiModel = ref('deepseek-flash')
 const activePersona = ref('grok')
+const poolForLight = ref(true)
+const poolFallback = ref(true)
+const poolEntries = ref<ModelPoolEntry[]>([])
+const expandedPoolId = ref('')
+const probingId = ref('')
+const probeResults = ref<Record<string, { ok: boolean; msg: string }>>({})
+
 const lightBaseUrl = ref('')
 const lightApiKey = ref('')
 const lightModel = ref('')
@@ -35,10 +44,6 @@ const newPassword = ref('')
 const saving = ref(false)
 const testingPush = ref(false)
 
-const AI_MODEL_OPTIONS = [
-  { value: 'deepseek-flash', label: 'DeepSeek Flash (默认主力)' },
-  { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro (深度主力)' },
-]
 const PERSONA_OPTIONS = [
   { value: 'grok', label: 'Grok 锐评官' },
   { value: 'butler', label: '长庚执更管家' },
@@ -52,8 +57,18 @@ watch(
     const c = store.state.configs || {}
     deepseekKey.value = c['deepseek_api_key'] || ''
     deepseekBaseUrl.value = c['deepseek_base_url'] || 'https://api.deepseek.com/v1'
-    aiModel.value = c['ai_model'] || 'deepseek-flash'
+    const rawModel = c['ai_model'] || 'deepseek-flash'
+    aiModel.value =
+      rawModel === 'deepseek-chat' || rawModel === 'deepseek-reasoner' || rawModel === 'deepseek-v4-pro'
+        ? 'deepseek-flash'
+        : rawModel
     activePersona.value = c['active_persona'] || 'grok'
+    poolForLight.value = c['pool_for_light'] !== 'false'
+    poolFallback.value = c['pool_fallback'] !== 'false'
+    poolEntries.value = (store.state.modelPool || []).map((x) => ({ ...x }))
+    probeResults.value = {}
+    expandedPoolId.value = poolEntries.value[0]?.id || ''
+
     lightBaseUrl.value = c['light_base_url'] || ''
     lightApiKey.value = c['light_api_key'] || ''
     lightModel.value = c['light_model'] || ''
@@ -76,8 +91,10 @@ async function saveAllConfig() {
     await BotHubApi.saveConfig({
       deepseek_api_key: deepseekKey.value.trim(),
       deepseek_base_url: deepseekBaseUrl.value.trim() || 'https://api.deepseek.com/v1',
-      ai_model: aiModel.value,
+      ai_model: aiModel.value.trim() || 'deepseek-flash',
       active_persona: activePersona.value,
+      pool_for_light: poolForLight.value ? 'true' : 'false',
+      pool_fallback: poolFallback.value ? 'true' : 'false',
       light_base_url: lightBaseUrl.value.trim(),
       light_api_key: lightApiKey.value.trim(),
       light_model: lightModel.value.trim(),
@@ -87,12 +104,79 @@ async function saveAllConfig() {
       cf_api_token: cfApiToken.value.trim(),
       bili_sessdata: biliSessdata.value.trim(),
     })
-    store.notify('全局系统凭据已安全保存')
+    if (poolEntries.value.length > 0) {
+      const normalized = poolEntries.value.map((e, i) => ({
+        ...e,
+        priority: (i + 1) * 10,
+      }))
+      await BotHubApi.saveModelPool(normalized)
+    }
+    store.notify('AI 引擎、免费模型池与凭据已安全保存')
     await store.loadDashboard(false)
   } catch (err: any) {
     store.notify(err.message)
   } finally {
     saving.value = false
+  }
+}
+
+async function probeTarget(targetId: string, provider: string, baseUrl: string, apiKey: string, modelId: string) {
+  if (probingId.value) return
+  probingId.value = targetId
+  delete probeResults.value[targetId]
+  try {
+    const res = await BotHubApi.testModelTarget({
+      target_id: targetId,
+      provider,
+      base_url: baseUrl.trim(),
+      api_key: apiKey.trim(),
+      model: modelId.trim() || 'deepseek-flash',
+    })
+    probeResults.value[targetId] = { ok: true, msg: res.message || `${res.latency_ms}ms OK` }
+  } catch (err: any) {
+    probeResults.value[targetId] = { ok: false, msg: err.message || '连接失败' }
+  } finally {
+    probingId.value = ''
+  }
+}
+
+function addCustomPoolNode() {
+  const id = `custom_${Date.now().toString(36).slice(-4)}`
+  poolEntries.value.push({
+    id,
+    name: '自定义中转 / 免费模型节点',
+    provider: 'custom',
+    base_url: 'https://api.siliconflow.cn/v1',
+    api_key: '',
+    model: 'Qwen/Qwen2.5-7B-Instruct',
+    enabled: true,
+    priority: (poolEntries.value.length + 1) * 10,
+    note: '任意 OpenAI 兼容免费或公益中转接口',
+  })
+  expandedPoolId.value = id
+}
+
+function movePoolNode(index: number, delta: number) {
+  const next = index + delta
+  if (next < 0 || next >= poolEntries.value.length) return
+  const arr = [...poolEntries.value]
+  const [item] = arr.splice(index, 1)
+  arr.splice(next, 0, item)
+  poolEntries.value = arr
+}
+
+function removePoolNode(id: string) {
+  poolEntries.value = poolEntries.value.filter((x) => x.id !== id)
+}
+
+function useOfficialFlashPreset() {
+  deepseekBaseUrl.value = 'https://api.deepseek.com/v1'
+  aiModel.value = 'deepseek-flash'
+}
+
+function useRelayPreset() {
+  if (!deepseekBaseUrl.value || deepseekBaseUrl.value.includes('api.deepseek.com')) {
+    deepseekBaseUrl.value = 'https://your-relay.example.com/v1'
   }
 }
 
@@ -208,54 +292,226 @@ async function handleImportBackup(e: Event) {
         leave-from-class="opacity-100"
         leave-to-class="opacity-0"
       >
-        <!-- Tab: AI -->
+        <!-- Tab: AI & Free Model Pool -->
         <form v-if="activeTab === 'ai'" key="ai" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
+          <!-- Primary: DeepSeek Flash + Relay Station Support -->
           <div class="modal-section flex flex-col gap-3">
-            <div class="text-xs font-semibold text-[#f2b880]">主推理大脑 (Primary Engine)</div>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <div class="text-xs font-semibold text-[#f2b880]">主力引擎 (DeepSeek Flash / 中转站)</div>
+                <p class="text-[11px] text-slate-400 mt-0.5">主力固定采用轻量高性价比 DeepSeek Flash；支持填入任何 OpenAI 兼容中转站地址与模型别名</p>
+              </div>
+              <button
+                type="button"
+                :disabled="probingId === 'primary'"
+                @click="probeTarget('primary', 'deepseek', deepseekBaseUrl, deepseekKey, aiModel)"
+                class="min-h-[32px] px-3 rounded-lg border border-[#f2b880]/40 bg-[#f2b880]/12 hover:bg-[#f2b880]/20 text-[11px] font-medium text-[#f2b880] cursor-pointer disabled:opacity-45 shrink-0"
+              >
+                {{ probingId === 'primary' ? '测速中...' : '测试主力连通' }}
+              </button>
+            </div>
+
+            <div
+              v-if="probeResults.primary"
+              :class="[
+                'text-[11px] font-mono px-2.5 py-1.5 rounded-lg border',
+                probeResults.primary.ok
+                  ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                  : 'border-rose-400/35 bg-rose-500/10 text-rose-300'
+              ]"
+            >
+              {{ probeResults.primary.msg }}
+            </div>
+
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-[11px] text-slate-400">接口快速预设:</span>
+              <button
+                type="button"
+                @click="useOfficialFlashPreset"
+                class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+              >
+                DeepSeek 官方 (Flash)
+              </button>
+              <button
+                type="button"
+                @click="useRelayPreset"
+                class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+              >
+                中转站 /v1 地址
+              </button>
+            </div>
+
             <label class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>DeepSeek API Key</span>
-              <input v-model="deepseekKey" type="password" placeholder="sk-..." class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
-            </label>
-            <label class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>API 接口地址 (Base URL)</span>
-              <input v-model="deepseekBaseUrl" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              <span>主力 API Key (官方或中转站令牌)</span>
+              <input v-model="deepseekKey" type="password" placeholder="sk-..." class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
             </label>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>默认主力模型</span>
-                <CustomSelect v-model="aiModel" :options="AI_MODEL_OPTIONS" aria-label="默认主力模型" />
-              </div>
+              <label class="flex flex-col gap-1 text-xs text-slate-300">
+                <span>API 地址 (支持中转站 Base URL)</span>
+                <input v-model="deepseekBaseUrl" type="text" placeholder="https://api.deepseek.com/v1" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+              </label>
+              <label class="flex flex-col gap-1 text-xs text-slate-300">
+                <span>主力模型 ID (默认 Flash / 可填中转别名)</span>
+                <input v-model="aiModel" type="text" placeholder="deepseek-flash" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+              </label>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div class="flex flex-col gap-1 text-xs text-slate-300">
                 <span>默认人设</span>
                 <CustomSelect v-model="activePersona" :options="PERSONA_OPTIONS" aria-label="默认人设" />
               </div>
+              <div class="flex flex-col gap-1 text-xs text-slate-300">
+                <span>额外轻量 Key (可选覆盖)</span>
+                <input v-model="lightApiKey" type="password" placeholder="留空自动走下方免费池" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+              </div>
             </div>
           </div>
 
+          <!-- Free AI Model Pool -->
           <div class="modal-section flex flex-col gap-3">
-            <div>
-              <div class="text-xs font-semibold text-[#f2b880]">第二套轻量省钱模型 (可选)</div>
-              <p class="text-[11px] text-slate-400 mt-0.5">用于网页摘要、记忆提炼及晨报批处理；留空自动回退主模型</p>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <div class="text-xs font-semibold text-emerald-300">免费 AI 模型池 (Google AI Studio / 硅基流动 / 智谱等)</div>
+                <p class="text-[11px] text-slate-400 mt-0.5">按优先级自动轮询容灾：遇到限流或主力未填 Key 时无缝切换下一个可用免费节点</p>
+              </div>
+              <button
+                type="button"
+                @click="addCustomPoolNode"
+                class="min-h-[30px] px-2.5 rounded-lg border border-emerald-400/35 bg-emerald-400/10 hover:bg-emerald-400/18 text-[11px] text-emerald-300 cursor-pointer shrink-0"
+              >
+                + 自定义节点
+              </button>
             </div>
-            <label class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>轻量模型 Base URL</span>
-              <input v-model="lightBaseUrl" type="text" placeholder="如 https://api.siliconflow.cn/v1" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
-            </label>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>轻量模型 API Key</span>
-                <input v-model="lightApiKey" type="password" placeholder="留空则回退主 Key" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
-              </label>
-              <label class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>轻量模型 ID</span>
-                <input v-model="lightModel" type="text" placeholder="如 deepseek-flash" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
-              </label>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <ToggleSwitch
+                v-model="poolForLight"
+                label="后台摘要优先用免费池"
+                description="晨报/雷达/网页精简先走免费节点"
+              />
+              <ToggleSwitch
+                v-model="poolFallback"
+                label="主力缺 Key/故障自动回退"
+                description="主力异常时自动顺延调用免费池"
+              />
+            </div>
+
+            <div class="flex flex-col gap-2">
+              <div
+                v-for="(entry, idx) in poolEntries"
+                :key="entry.id"
+                class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/85 p-3 flex flex-col gap-2"
+              >
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    @click="expandedPoolId = expandedPoolId === entry.id ? '' : entry.id"
+                    class="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer"
+                  >
+                    <span
+                      :class="[
+                        'w-2 h-2 rounded-full shrink-0',
+                        !entry.enabled
+                          ? 'bg-slate-600'
+                          : entry.api_key
+                            ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
+                            : 'bg-amber-400/75'
+                      ]"
+                    />
+                    <span class="text-xs font-semibold text-white truncate">{{ entry.name }}</span>
+                    <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#fff8ee]/[0.05] text-slate-400 shrink-0">
+                      {{ entry.model }}
+                    </span>
+                  </button>
+
+                  <div class="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      :disabled="idx === 0"
+                      @click="movePoolNode(idx, -1)"
+                      title="提高优先级"
+                      class="w-6 h-6 rounded border border-[#fff8ee]/10 text-[10px] text-slate-400 hover:text-[#f2b880] disabled:opacity-25 cursor-pointer"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      :disabled="idx === poolEntries.length - 1"
+                      @click="movePoolNode(idx, 1)"
+                      title="降低优先级"
+                      class="w-6 h-6 rounded border border-[#fff8ee]/10 text-[10px] text-slate-400 hover:text-[#f2b880] disabled:opacity-25 cursor-pointer"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      :disabled="probingId === entry.id"
+                      @click="probeTarget(entry.id, entry.provider, entry.base_url, entry.api_key, entry.model)"
+                      class="px-2 py-0.5 rounded border border-[#f2b880]/35 text-[10.5px] text-[#f2b880] hover:bg-[#f2b880]/15 cursor-pointer disabled:opacity-40"
+                    >
+                      {{ probingId === entry.id ? '测速中' : '测速' }}
+                    </button>
+                    <button
+                      type="button"
+                      @click="entry.enabled = !entry.enabled"
+                      :class="[
+                        'px-2 py-0.5 rounded border text-[10.5px] cursor-pointer',
+                        entry.enabled
+                          ? 'border-emerald-400/35 bg-emerald-400/10 text-emerald-300'
+                          : 'border-[#fff8ee]/12 text-slate-500'
+                      ]"
+                    >
+                      {{ entry.enabled ? '启用' : '停用' }}
+                    </button>
+                    <button
+                      v-if="entry.provider === 'custom'"
+                      type="button"
+                      @click="removePoolNode(entry.id)"
+                      class="px-1.5 py-0.5 rounded border border-rose-400/30 text-[10.5px] text-rose-300 hover:bg-rose-500/15 cursor-pointer"
+                    >
+                      删
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  v-if="probeResults[entry.id]"
+                  :class="[
+                    'text-[10.5px] font-mono px-2 py-1 rounded border',
+                    probeResults[entry.id].ok
+                      ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300'
+                      : 'border-rose-400/30 bg-rose-500/10 text-rose-300'
+                  ]"
+                >
+                  {{ probeResults[entry.id].msg }}
+                </div>
+
+                <div v-if="expandedPoolId === entry.id" class="pt-2 border-t border-[#fff8ee]/8 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  <label class="sm:col-span-2 flex flex-col gap-1 text-slate-400">
+                    <span>API Key ({{ entry.api_key ? '已配置，留着 **** 不变或覆盖输入新 Key' : '待填入免费 Key' }})</span>
+                    <input v-model="entry.api_key" type="password" placeholder="粘贴对应平台的免费 API Key..." class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                  </label>
+                  <label class="flex flex-col gap-1 text-slate-400">
+                    <span>显示名称</span>
+                    <input v-model="entry.name" type="text" class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 text-xs text-white focus:border-[#f2b880]/60" />
+                  </label>
+                  <label class="flex flex-col gap-1 text-slate-400">
+                    <span>上游模型 ID</span>
+                    <input v-model="entry.model" type="text" class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                  </label>
+                  <label class="sm:col-span-2 flex flex-col gap-1 text-slate-400">
+                    <span>OpenAI 兼容 Base URL</span>
+                    <input v-model="entry.base_url" type="text" class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                  </label>
+                  <p v-if="entry.note" class="sm:col-span-2 text-slate-500">{{ entry.note }}</p>
+                </div>
+              </div>
             </div>
           </div>
 
           <div class="flex justify-end pt-1">
             <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
-              保存 AI 大脑设置
+              {{ saving ? '保存中...' : '保存 AI 引擎与免费模型池' }}
             </button>
           </div>
         </form>

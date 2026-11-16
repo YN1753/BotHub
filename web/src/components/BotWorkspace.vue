@@ -174,11 +174,6 @@ const TOOL_CATALOG = [
   { id: 'recall_memory', label: 'recall_memory (检索长期记忆)' },
 ]
 
-const MODEL_OPTIONS = [
-  { value: 'deepseek-flash', label: 'DeepSeek Flash (主力)' },
-  { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro (深度)' },
-]
-
 const STARTER_CARDS = [
   {
     icon: 'assets',
@@ -1821,13 +1816,14 @@ function stateBadgeClass(state?: string): string {
 
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
-                <div class="w-36 sm:w-44 shrink-0">
-                  <CustomSelect v-model="selectedModel" :options="MODEL_OPTIONS" compact aria-label="选择推理模型" />
+                <div class="w-44 sm:w-56 shrink-0">
+                  <CustomSelect v-model="selectedModel" :options="store.modelOptions.value" compact aria-label="选择推理模型" />
                 </div>
                 <button
                   type="button"
                   :aria-pressed="enableThinking"
                   @click="enableThinking = !enableThinking"
+                  :title="selectedModel.startsWith('pool:') || selectedModel === 'free-pool' ? '深度思考开关主要作用于 DeepSeek Flash / 支持 thinking 的中转站' : '开启或关闭 Flash 深度推理'"
                   :class="[
                     'min-h-[44px] sm:min-h-[32px] px-3 rounded-full text-xs border cursor-pointer whitespace-nowrap shrink-0',
                     enableThinking
@@ -1979,7 +1975,7 @@ function stateBadgeClass(state?: string): string {
               </label>
               <div class="flex flex-col gap-1.5 text-xs text-slate-300">
                 <span>默认推理模型</span>
-                <CustomSelect v-model="cfgModel" :options="MODEL_OPTIONS" aria-label="默认推理模型" />
+                <CustomSelect v-model="cfgModel" :options="store.modelOptions.value" aria-label="默认推理模型" />
               </div>
               <div class="flex flex-col justify-end">
                 <ToggleSwitch v-model="cfgThinking" label="默认开启深度思考" />

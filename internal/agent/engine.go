@@ -151,94 +151,123 @@ func truncateTitle(msg string) string {
 func NormalizeModelID(model string) string {
 	m := strings.TrimSpace(model)
 	switch m {
-	case "", "deepseek-chat":
-		return store.DefaultAIModel // "deepseek-flash"
-	case "deepseek-reasoner":
-		return "deepseek-v4-pro"
+	case "", "deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro":
+		return store.DefaultAIModel // "deepseek-flash" (DeepSeek Flash only)
 	default:
 		return m
 	}
 }
 
-// CallLightModel executes a non-streaming completion using the secondary lightweight model config
-// (light_base_url / light_api_key / light_model), falling back to the primary DeepSeek config if unset.
+// CallLightModel executes a non-streaming completion preferring explicit light model config,
+// then active Free Model Pool providers (when pool_for_light is enabled), then primary DeepSeek Flash / relay.
 func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
-	baseURL, _ := e.store.GetConfig(store.KeyLightBaseURL)
-	apiKey, _ := e.store.GetConfig(store.KeyLightAPIKey)
-	model, _ := e.store.GetConfig(store.KeyLightModel)
+	var candidates []ModelTarget
 
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	apiKey = strings.TrimSpace(apiKey)
-	model = strings.TrimSpace(model)
+	lightKey, _ := e.store.GetConfig(store.KeyLightAPIKey)
+	lightBase, _ := e.store.GetConfig(store.KeyLightBaseURL)
+	lightModel, _ := e.store.GetConfig(store.KeyLightModel)
+	lightKey = strings.TrimSpace(lightKey)
+	lightBase = strings.TrimRight(strings.TrimSpace(lightBase), "/")
+	lightModel = strings.TrimSpace(lightModel)
 
-	if apiKey == "" {
-		apiKey, _ = e.store.GetConfig(store.KeyDeepSeekAPIKey)
-		apiKey = strings.TrimSpace(apiKey)
-	}
-	if apiKey == "" {
-		return "", fmt.Errorf("未配置轻量模型或主模型 API Key")
-	}
-	if baseURL == "" {
-		baseURL, _ = e.store.GetConfig(store.KeyDeepSeekBaseURL)
-		baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-		if baseURL == "" {
-			baseURL = store.DefaultDeepSeekBaseURL
+	if lightKey != "" {
+		b := lightBase
+		if b == "" {
+			b = primaryDeepSeekTarget(e.store).BaseURL
 		}
-	}
-	if model == "" {
-		model = store.DefaultAIModel
-	} else {
-		model = NormalizeModelID(model)
-	}
-
-	reqCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-	defer cancel()
-
-	bodyMap := map[string]any{
-		"model":  model,
-		"stream": false,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": userPrompt},
-		},
-	}
-	payload, err := json.Marshal(bodyMap)
-	if err != nil {
-		return "", err
+		m := NormalizeModelID(lightModel)
+		candidates = append(candidates, ModelTarget{
+			ID:       "light",
+			Label:    "轻量模型 · " + m,
+			Provider: "custom",
+			BaseURL:  b,
+			APIKey:   lightKey,
+			Model:    m,
+		})
 	}
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(payload))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		errBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return "", fmt.Errorf("light model HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(errBytes)))
+	if isConfigTrue(e.store, store.KeyPoolForLight, true) {
+		candidates = append(candidates, activeFreePoolTargets(e.store)...)
 	}
 
-	var parsed struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
+	primary := primaryDeepSeekTarget(e.store)
+	if primary.APIKey != "" {
+		candidates = append(candidates, primary)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil || len(parsed.Choices) == 0 {
-		return "", fmt.Errorf("解析轻量模型响应失败")
+
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("未配置轻量模型、免费模型池或主力 API Key")
 	}
-	return notifier.StripEmoji(strings.TrimSpace(parsed.Choices[0].Message.Content)), nil
+
+	var lastErr error
+	for _, target := range candidates {
+		reqCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+		bodyMap := map[string]any{
+			"model":  target.Model,
+			"stream": false,
+			"messages": []map[string]string{
+				{"role": "system", "content": systemPrompt},
+				{"role": "user", "content": userPrompt},
+			},
+		}
+		if target.AllowThinking {
+			bodyMap["thinking"] = map[string]string{"type": "disabled"}
+		}
+		payload, err := json.Marshal(bodyMap)
+		if err != nil {
+			cancel()
+			return "", err
+		}
+
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, BuildChatCompletionsURL(target.BaseURL), bytes.NewReader(payload))
+		if err != nil {
+			cancel()
+			lastErr = err
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+target.APIKey)
+		if target.Provider == "openrouter" {
+			req.Header.Set("HTTP-Referer", "https://bot.starryheavens.uk")
+			req.Header.Set("X-Title", "Vesper BotHub")
+		}
+
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			cancel()
+			lastErr = err
+			continue
+		}
+		rawBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 128*1024))
+		_ = resp.Body.Close()
+		cancel()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			lastErr = fmt.Errorf("%s HTTP %d: %s", target.Label, resp.StatusCode, strings.TrimSpace(string(rawBytes)))
+			continue
+		}
+
+		var parsed struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(rawBytes, &parsed); err != nil || len(parsed.Choices) == 0 {
+			lastErr = fmt.Errorf("%s 解析响应失败", target.Label)
+			continue
+		}
+		return notifier.StripEmoji(strings.TrimSpace(parsed.Choices[0].Message.Content)), nil
+	}
+
+	if lastErr != nil {
+		return "", lastErr
+	}
+	return "", fmt.Errorf("所有轻量及免费模型节点均调用失败")
 }
 
-// ChatStream executes a multi-round streaming conversation with DeepSeek and invokes emit for SSE events.
+// ChatStream executes a multi-round streaming conversation and invokes emit for SSE events.
 // Event types: "session", "reasoning", "tool_start", "tool_result", "content", "done", "error".
 func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(event string, data any)) (*ChatResponse, error) {
 	userMsg := notifier.StripEmoji(strings.TrimSpace(req.Message))
@@ -246,27 +275,17 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 		return nil, fmt.Errorf("消息内容不能为空")
 	}
 
-	apiKey, _ := e.store.GetConfig(store.KeyDeepSeekAPIKey)
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return nil, fmt.Errorf("尚未配置 DeepSeek API Key，请先在控制台「设置 -> AI 大脑设置」中填入密钥")
-	}
-
-	baseURL, _ := e.store.GetConfig(store.KeyDeepSeekBaseURL)
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if baseURL == "" {
-		baseURL = store.DefaultDeepSeekBaseURL
+	targets, err := e.ResolveChatTargets(req.Model)
+	if err != nil {
+		return nil, err
 	}
 
 	if strings.TrimSpace(req.BotID) != "" {
-		return e.chatStreamForBot(ctx, req, baseURL, apiKey, emit)
+		return e.chatStreamForBot(ctx, req, targets[0].BaseURL, targets[0].APIKey, emit)
 	}
 
-	model := strings.TrimSpace(req.Model)
-	if model == "" {
-		model, _ = e.store.GetConfig(store.KeyAIModel)
-	}
-	model = NormalizeModelID(model)
+	activeTarget := targets[0]
+	model := activeTarget.Model
 
 	personaID := strings.TrimSpace(req.Persona)
 	if personaID == "" {
@@ -370,15 +389,6 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 		Content: userMsg,
 	})
 
-	var thinkingCfg *thinkingConfig
-	if req.EnableThinking != nil && strings.Contains(strings.ToLower(model), "flash") {
-		if *req.EnableThinking {
-			thinkingCfg = &thinkingConfig{Type: "enabled"}
-		} else {
-			thinkingCfg = &thinkingConfig{Type: "disabled"}
-		}
-	}
-
 	tools := BuiltinTools()
 	var totalReasoning strings.Builder
 	var finalContent strings.Builder
@@ -388,7 +398,7 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 
 	const maxRounds = 5
 	for round := 0; round < maxRounds; round++ {
-		roundReasoning, roundContent, toolCalls, roundUsage, err := e.streamSingleRound(ctx, baseURL, apiKey, model, messages, tools, thinkingCfg, func(deltaReasoning, deltaContent string) {
+		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(ctx, targets, messages, tools, req.EnableThinking, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
 				clean := notifier.StripEmoji(deltaReasoning)
 				totalReasoning.WriteString(clean)
@@ -407,6 +417,7 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 		if err != nil {
 			return nil, err
 		}
+		model = usedTarget.Model
 		if roundUsage != nil {
 			hasUsage = true
 			totalUsage.PromptTokens += roundUsage.PromptTokens
@@ -559,9 +570,70 @@ func (e *Engine) distillMemoryAsync(userMsg, assistantReply string) {
 	}
 }
 
+func (e *Engine) streamRoundWithFailover(
+	ctx context.Context,
+	targets []ModelTarget,
+	messages []apiMessage,
+	tools []ToolDefinition,
+	enableThinking *bool,
+	onDelta func(deltaReasoning, deltaContent string),
+) (string, string, []apiToolCall, *TokenUsage, ModelTarget, error) {
+	var lastErr error
+	for _, target := range targets {
+		var thinkingCfg *thinkingConfig
+		if target.AllowThinking {
+			enabled := true
+			if enableThinking != nil {
+				enabled = *enableThinking
+			}
+			if enabled {
+				thinkingCfg = &thinkingConfig{Type: "enabled"}
+			} else {
+				thinkingCfg = &thinkingConfig{Type: "disabled"}
+			}
+		}
+
+		emittedAny := false
+		rReasoning, rContent, tcs, usage, err := e.streamSingleRoundWithProvider(
+			ctx, target.Provider, target.BaseURL, target.APIKey, target.Model,
+			messages, tools, thinkingCfg,
+			func(dR, dC string) {
+				if dR != "" || dC != "" {
+					emittedAny = true
+				}
+				if onDelta != nil {
+					onDelta(dR, dC)
+				}
+			},
+		)
+		if err == nil {
+			return rReasoning, rContent, tcs, usage, target, nil
+		}
+		lastErr = err
+		if emittedAny || ctx.Err() != nil {
+			return "", "", nil, nil, target, err
+		}
+	}
+	if lastErr != nil {
+		return "", "", nil, nil, ModelTarget{}, lastErr
+	}
+	return "", "", nil, nil, ModelTarget{}, fmt.Errorf("无可用模型节点")
+}
+
 func (e *Engine) streamSingleRound(
 	ctx context.Context,
 	baseURL, apiKey, model string,
+	messages []apiMessage,
+	tools []ToolDefinition,
+	thinking *thinkingConfig,
+	onDelta func(deltaReasoning, deltaContent string),
+) (string, string, []apiToolCall, *TokenUsage, error) {
+	return e.streamSingleRoundWithProvider(ctx, "deepseek", baseURL, apiKey, model, messages, tools, thinking, onDelta)
+}
+
+func (e *Engine) streamSingleRoundWithProvider(
+	ctx context.Context,
+	provider, baseURL, apiKey, model string,
 	messages []apiMessage,
 	tools []ToolDefinition,
 	thinking *thinkingConfig,
@@ -580,7 +652,7 @@ func (e *Engine) streamSingleRound(
 		return "", "", nil, nil, err
 	}
 
-	endpoint := baseURL + "/chat/completions"
+	endpoint := BuildChatCompletionsURL(baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return "", "", nil, nil, err
@@ -588,6 +660,10 @@ func (e *Engine) streamSingleRound(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if provider == "openrouter" {
+		req.Header.Set("HTTP-Referer", "https://bot.starryheavens.uk")
+		req.Header.Set("X-Title", "Vesper BotHub")
+	}
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {

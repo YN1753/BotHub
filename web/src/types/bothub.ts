@@ -152,6 +152,18 @@ export interface PushLog {
   created_at: string
 }
 
+export interface ModelPoolEntry {
+  id: string
+  name: string
+  provider: string
+  base_url: string
+  api_key: string
+  model: string
+  enabled: boolean
+  priority: number
+  note: string
+}
+
 export interface DashboardPayload {
   version: string
   commit: string
@@ -160,6 +172,7 @@ export interface DashboardPayload {
   server_now: string
   tasks: Task[]
   bots: Bot[]
+  model_pool?: ModelPoolEntry[]
   templates: TaskTemplate[]
   asset_templates: AssetTemplate[]
   agent_memories: AgentMemory[]
