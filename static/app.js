@@ -3336,7 +3336,6 @@
       this.abortController = new AbortController();
       if (this.sendBtn) {
         this.sendBtn.disabled = true;
-        this.sendBtn.textContent = "推理中...";
       }
       this.stopBtn?.classList.remove("hidden");
       if (this.statusEl) this.statusEl.textContent = "正在连接 DeepSeek 流式通道...";
@@ -3413,7 +3412,6 @@
         this.stopBtn?.classList.add("hidden");
         if (this.sendBtn) {
           this.sendBtn.disabled = false;
-          this.sendBtn.textContent = "发送指令";
         }
       }
     }
@@ -3685,9 +3683,9 @@
     const components = [
       new ToastComponent("#toast", store, bus),
       new AuthComponent("#login-view", store, bus),
-      new TopbarComponent(".qq-rail", store, bus),
+      new TopbarComponent(".grok-sidebar", store, bus),
       new MetricsComponent(".metrics-grid", store, bus),
-      new WorkspaceSwitcherComponent(".qq-rail", store, bus),
+      new WorkspaceSwitcherComponent(".grok-sidebar", store, bus),
       new AgentHubComponent("#workspace-agent", store, bus),
       new AgentMemoriesModalComponent("#memories-modal-overlay", store, bus),
       new InboxModalComponent("#inbox-modal-overlay", store, bus),

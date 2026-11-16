@@ -24,137 +24,124 @@
     </section>
   </main>
 
-  <!-- Main App Shell (WeChat / QQ Desktop 3-Column Window) -->
-  <div id="dashboard-view" class="app-shell qq-window glass-card hidden">
-    <!-- Column 1: Far-Left Narrow Icon Rail -->
-    <aside class="qq-rail" aria-label="主导航栏">
-      <div class="qq-rail-top">
-        <div class="qq-rail-avatar" title="Vesper BotHub">
-          <span>V</span>
-          <span class="qq-rail-dot"></span>
+  <!-- Main App Shell (Grok-Style 2-Column Minimalist AI Console) -->
+  <div id="dashboard-view" class="app-shell grok-shell hidden">
+    <!-- Left Sidebar -->
+    <aside class="grok-sidebar" aria-label="侧边导航栏">
+      <div class="grok-sidebar-top">
+        <div class="grok-brand">
+          <div class="grok-brand-left">
+            <span class="dot dot-live"></span>
+            <strong class="serif-title">Vesper BotHub</strong>
+          </div>
+          <span id="version-label" class="mono grok-ver">v2.2.3</span>
         </div>
 
-        <button type="button" class="qq-rail-btn workspace-tab-btn active" data-workspace="agent" title="智能对话">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-          <span>对话</span>
+        <button type="button" class="grok-new-chat-btn" id="agent-new-session-btn">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <span>开启新对话</span>
         </button>
 
-        <button type="button" class="qq-rail-btn workspace-tab-btn" data-workspace="ops" title="资产与调度">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="8" rx="2"></rect><rect x="2" y="13" width="20" height="8" rx="2"></rect><line x1="6" y1="7" x2="6.01" y2="7"></line><line x1="6" y1="17" x2="6.01" y2="17"></line></svg>
-          <span>资产</span>
-        </button>
+        <nav class="grok-nav-group" aria-label="主工作区切换">
+          <button type="button" class="grok-nav-item workspace-tab-btn active" data-workspace="agent">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            <span>智能对话</span>
+          </button>
+          <button type="button" class="grok-nav-item workspace-tab-btn" data-workspace="ops">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="8" rx="2"></rect><rect x="2" y="13" width="20" height="8" rx="2"></rect><line x1="6" y1="7" x2="6.01" y2="7"></line><line x1="6" y1="17" x2="6.01" y2="17"></line></svg>
+            <span>资产与调度</span>
+          </button>
+          <button id="open-inbox-btn" type="button" class="grok-nav-item">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            <span>情报收件箱</span>
+            <span id="inbox-unread-badge" class="unread-badge hidden">0</span>
+          </button>
+          <button id="open-memories-btn" type="button" class="grok-nav-item">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+            <span>长期记忆</span>
+          </button>
+        </nav>
 
-        <button id="open-inbox-btn" type="button" class="qq-rail-btn" title="情报收件箱">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
-          <span>收件</span>
-          <span id="inbox-unread-badge" class="unread-badge qq-rail-badge hidden">0</span>
-        </button>
-
-        <button id="open-memories-btn" type="button" class="qq-rail-btn" title="长期记忆库">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
-          <span>记忆</span>
-        </button>
+        <div class="grok-history-head">
+          <span class="mono">最近对话</span>
+          <input id="agent-session-search" type="search" class="grok-search-input" placeholder="筛选..." />
+        </div>
       </div>
 
-      <div class="qq-rail-bottom">
-        <button id="open-logs-btn" type="button" class="qq-rail-btn" title="推送流水">
-          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-          <span>流水</span>
-        </button>
+      <div id="agent-session-list" class="grok-session-list"></div>
+      <input type="hidden" id="agent-session-id" value="" />
 
-        <button id="refresh-btn" type="button" class="qq-rail-btn" title="刷新数据">
-          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-          <span>刷新</span>
-        </button>
-
-        <button id="open-settings-btn" type="button" class="qq-rail-btn" title="系统设置">
-          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-          <span>设置</span>
-        </button>
-
-        <button id="logout-btn" type="button" class="qq-rail-btn" title="退出登录">
-          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-          <span>退出</span>
-        </button>
-
-        <span id="version-label" class="qq-rail-ver mono">v2.2.1</span>
+      <div class="grok-sidebar-foot">
+        <button id="open-logs-btn" type="button" class="grok-foot-btn" title="推送流水">流水</button>
+        <button id="refresh-btn" type="button" class="grok-foot-btn" title="刷新数据">刷新</button>
+        <button id="open-settings-btn" type="button" class="grok-foot-btn" title="系统设置">设置</button>
+        <button id="logout-btn" type="button" class="grok-foot-btn" title="退出">退出</button>
       </div>
     </aside>
 
-    <!-- Workspace 1: Column 2 (Session List) + Column 3 (Chat Stage) -->
-    <section id="workspace-agent" class="agent-workspace">
-      <div class="agent-shell im-shell">
-        <!-- Column 2: Conversation List -->
-        <aside class="im-sidebar">
-          <div class="im-sidebar-head">
-            <input id="agent-session-search" type="search" class="glass-input im-search-input" placeholder="搜索" />
-            <button type="button" class="btn btn-primary btn-sm qq-new-btn" id="agent-new-session-btn" title="发起新对话">+</button>
+    <!-- Right Main Stage -->
+    <main class="grok-main">
+      <!-- Workspace 1: Grok-Style Centered Chat Stage -->
+      <section id="workspace-agent" class="grok-chat-stage">
+        <header class="grok-chat-topbar">
+          <div class="grok-chat-topbar-left">
+            <div class="im-compact-select">
+              <div id="mount-agent-persona" class="v-select-mount"></div>
+              <input type="hidden" id="agent-persona" value="grok" />
+            </div>
+            <div class="im-compact-select">
+              <div id="mount-agent-model" class="v-select-mount"></div>
+              <input type="hidden" id="agent-model" value="deepseek-flash" />
+            </div>
+            <span id="agent-active-title" class="grok-session-label">新对话</span>
           </div>
-          <div id="agent-session-list" class="im-session-list"></div>
-          <input type="hidden" id="agent-session-id" value="" />
-        </aside>
-
-        <!-- Column 3: Main Chat Stage -->
-        <div class="im-chat-main">
-          <div class="im-chat-header">
-            <div class="im-chat-title-wrap">
-              <strong id="agent-active-title" class="im-chat-title">新对话</strong>
-              <span id="agent-active-sub" class="mono im-chat-sub">长庚执更 · DeepSeek 智能中枢</span>
-            </div>
-            <div class="im-chat-controls">
-              <div class="im-compact-select">
-                <div id="mount-agent-persona" class="v-select-mount"></div>
-                <input type="hidden" id="agent-persona" value="grok" />
-              </div>
-              <div class="im-compact-select">
-                <div id="mount-agent-model" class="v-select-mount"></div>
-                <input type="hidden" id="agent-model" value="deepseek-flash" />
-              </div>
-              <button type="button" class="btn btn-ghost btn-sm" id="agent-export-session-btn">导出</button>
-              <button type="button" class="btn btn-ghost btn-sm" id="agent-delete-session-btn">清空</button>
-            </div>
+          <div class="grok-chat-topbar-right">
+            <button type="button" class="btn btn-ghost btn-sm" id="agent-export-session-btn">导出</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="agent-delete-session-btn">清空</button>
           </div>
+        </header>
 
-          <div id="agent-chat-messages" class="agent-messages-viewport">
-            <div class="agent-empty-state" id="agent-empty-state">
-              <div class="brand-badge mono">VESPER BOTHUB</div>
-              <h3 class="serif-title">长庚执更 · 智能决策与运维中枢</h3>
-              <p class="section-hint">在左侧选择历史会话，或直接在下方输入消息开始对话。</p>
+        <div id="agent-chat-messages" class="grok-messages-scroll">
+          <div class="grok-empty-hero" id="agent-empty-state">
+            <div class="brand-badge mono">GROK ENGINE · VESPER</div>
+            <h2 class="serif-title grok-hero-title">今天想排查或了解什么？</h2>
+            <p class="section-hint">直连哪吒探针与数字资产台账，支持深度思考推理、网页正文提取与跨会话长期记忆。</p>
+            <div class="grok-hero-pills" id="agent-quick-prompts">
+              <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请调用工具盘点我当前的全部数字资产与算力节点，并按到期风险给出锐评。">盘点全部资产与到期风险</button>
+              <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请调用 query_nezha_nodes 检查哪吒监控面板节点的在线状态与配置详情。">探查哪吒节点脉搏</button>
+              <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请查看当前所有自动化调度任务的运行状态，并告诉我下次触发时间。">检查调度任务状态</button>
+              <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请检索长期记忆库中已保存的偏好与基建事实，总结你对我当前系统的了解。">检视长期记忆摘要</button>
             </div>
-          </div>
-
-          <div class="im-composer-wrap">
-            <div class="im-composer-tools">
-              <div class="im-composer-tools-left">
-                <button type="button" class="pill-btn thinking-toggle-pill active" id="agent-thinking-toggle" title="DeepSeek Flash 思考模式开关">深度思考: 开</button>
-                <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请调用工具盘点我当前的全部数字资产与算力节点，并按到期风险给出锐评。">盘点资产</button>
-                <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请调用 query_nezha_nodes 检查哪吒监控面板节点的在线状态与配置详情。">哪吒节点</button>
-                <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请查看当前所有自动化调度任务的运行状态，并告诉我下次触发时间。">调度任务</button>
-                <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请检索长期记忆库中已保存的偏好与基建事实，总结你对我当前系统的了解。">长期记忆</button>
-              </div>
-              <span id="agent-stream-status" class="mono section-hint">就绪</span>
-            </div>
-
-            <form id="agent-chat-form" class="agent-composer">
-              <textarea
-                id="agent-chat-input"
-                class="im-textarea"
-                rows="3"
-                placeholder="输入消息，按 Enter 发送，Shift+Enter 换行..."
-                required
-              ></textarea>
-              <div class="im-composer-send-row">
-                <button type="button" class="btn btn-danger btn-sm hidden" id="agent-stop-btn">停止生成</button>
-                <button type="submit" class="btn btn-primary btn-sm" id="agent-send-btn">发送 (Enter)</button>
-              </div>
-            </form>
           </div>
         </div>
-      </div>
-    </section>
 
-    <!-- Workspace 2: Asset Watcher & Tasks Engine -->
-    <div id="workspace-ops" class="qq-ops-pane hidden">
+        <div class="grok-composer-dock">
+          <form id="agent-chat-form" class="grok-composer-pill">
+            <textarea
+              id="agent-chat-input"
+              class="grok-textarea"
+              rows="2"
+              placeholder="向 BotHub 提问，或粘贴网页链接让我总结..."
+              required
+            ></textarea>
+            <div class="grok-composer-bar">
+              <div class="grok-composer-bar-left">
+                <button type="button" class="pill-btn thinking-toggle-pill active" id="agent-thinking-toggle" title="DeepSeek Flash 思考模式开关">深度思考: 开</button>
+                <span id="agent-stream-status" class="mono section-hint">就绪</span>
+              </div>
+              <div class="grok-composer-bar-right">
+                <button type="button" class="btn btn-danger btn-sm hidden" id="agent-stop-btn">停止</button>
+                <button type="submit" class="grok-send-btn" id="agent-send-btn" title="发送 (Enter)">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Workspace 2: Asset Watcher & Tasks Engine -->
+      <div id="workspace-ops" class="qq-ops-pane hidden">
     <!-- Metrics Bar -->
     <section class="metrics-grid">
       <article class="glass-card metric-card">
@@ -213,6 +200,7 @@
       <div id="tasks-grid" class="modules-grid"></div>
     </section>
     </div>
+    </main>
   </div>
 
   <!-- Long-Term Memories Modal -->
