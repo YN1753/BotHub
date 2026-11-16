@@ -213,7 +213,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
           @click="handlePickBot(b.id)"
           :aria-current="store.state.activeBotId === b.id && store.state.workspace === 'bots' ? 'true' : undefined"
           :class="[
-            'stagger-item relative w-full min-h-[52px] flex items-center gap-2.5 px-2.5 py-2 rounded-xl border text-left cursor-pointer',
+            'group stagger-item relative w-full min-h-[52px] flex items-center gap-2.5 px-2.5 py-2 rounded-xl border text-left cursor-pointer',
             store.state.activeBotId === b.id && store.state.workspace === 'bots'
               ? 'bg-[#f2b880]/12 border-[#f2b880]/25 border-l-[3px] border-l-[#f2b880]'
               : 'border-transparent hover:bg-white/[0.04]'

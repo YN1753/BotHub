@@ -63,3 +63,12 @@ export function applySiblingStaggerFallback(container: HTMLElement | null): void
     el.style.setProperty('--sibling-index', String(idx))
   })
 }
+
+export function trackSpotlight(e: PointerEvent): void {
+  if (e.pointerType !== 'mouse') return
+  const el = e.currentTarget as HTMLElement | null
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  el.style.setProperty('--mx', `${e.clientX - rect.left}px`)
+  el.style.setProperty('--my', `${e.clientY - rect.top}px`)
+}

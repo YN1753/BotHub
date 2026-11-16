@@ -4,7 +4,7 @@ import { useAppStore, type ChatMessageUI } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { botStateLabel, describeCron, formatTime } from '../utils/format'
 import { renderSafeMarkdown } from '../utils/markdown'
-import { applySiblingStaggerFallback, isImeComposingEnter } from '../utils/topLayer'
+import { applySiblingStaggerFallback, isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
 import BotAvatar from './BotAvatar.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -87,18 +87,24 @@ const AVATAR_OPTIONS = [
 
 const STARTER_CARDS = [
   {
+    icon: 'assets',
+    tag: '资产审计',
     title: '盘点资产与风险',
-    desc: '检查全部服务器与域名到期梯度并输出锐评',
+    desc: '检查服务器与域名到期梯度并输出锐评',
     prompt: '请调用工具盘点我当前的全部数字资产与算力节点，并按到期风险给出锐评。',
   },
   {
+    icon: 'pulse',
+    tag: '探针巡检',
     title: '探查哪吒节点脉搏',
-    desc: '实时读取服务器在线状态、CPU 负载与流量健康度',
+    desc: '实时读取服务器在线状态、负载与流量健康度',
     prompt: '请调用 query_nezha_nodes 检查哪吒监控面板节点的在线状态与配置详情。',
   },
   {
+    icon: 'cron',
+    tag: '调度例程',
     title: '核查调度任务队列',
-    desc: '汇总当前定时例程运行结果与下次自动触发窗口',
+    desc: '汇总定时例程执行状态与下次自动触发窗口',
     prompt: '请查看当前所有自动化调度任务的运行状态，并告诉我下次触发时间。',
   },
 ]
@@ -697,36 +703,68 @@ function stateBadgeClass(state?: string): string {
             @click="handleMarkdownClick"
             class="cq-container stream-scroller flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-5 flex flex-col gap-5"
           >
-            <!-- Empty State Hero + Container-Query Staggered Starter Cards -->
+            <!-- Empty State Hero + Living Companion Avatar + Spotlight Bento Starter Cards -->
             <div
               v-if="store.state.timeline.length === 0"
-              class="m-auto max-w-[760px] w-full text-center py-6 px-2 flex flex-col items-center gap-3"
+              class="m-auto max-w-[780px] w-full text-center py-6 px-2 flex flex-col items-center gap-3.5"
             >
-              <h2 class="text-xl sm:text-2xl font-semibold text-white tracking-tight">{{ bot?.name }} 随时待命</h2>
-              <p class="text-xs sm:text-sm text-slate-400 max-w-md">
-                {{ bot?.role_title }} · 后台定时例程与监控告警均会主动投递至此对话流
-              </p>
+              <div class="relative inline-flex items-center justify-center mb-1">
+                <BotAvatar
+                  :avatar-style="bot?.avatar_style"
+                  :state="bot?.state || 'idle'"
+                  size="xl"
+                />
+              </div>
+              <div class="flex flex-col items-center gap-1.5">
+                <h2 class="text-xl sm:text-2xl font-semibold text-white tracking-tight">{{ bot?.name }} 随时待命</h2>
+                <p class="text-xs sm:text-sm text-slate-400 max-w-md">
+                  {{ bot?.role_title }} · 定时产出与探针告警将实时投递至此持久时间线
+                </p>
+              </div>
 
               <div ref="starterGridRef" class="starter-grid stagger-list mt-3 text-left">
                 <button
                   v-for="card in STARTER_CARDS"
                   :key="card.title"
                   type="button"
+                  @pointermove="trackSpotlight"
                   @click="sendPrompt(card.prompt)"
-                  class="stagger-item vesper-card vesper-card-interactive rounded-2xl p-3.5 flex flex-col gap-1.5 hover:border-[#f2b880]/45 hover:bg-[#f2b880]/[0.05] cursor-pointer text-left group"
+                  class="group stagger-item luxury-card vesper-card-interactive rounded-2xl p-4 flex flex-col gap-3 cursor-pointer text-left"
                 >
                   <div class="flex items-center justify-between gap-2">
-                    <strong class="text-xs sm:text-sm font-semibold text-white group-hover:text-[#f2b880] transition-colors">
-                      {{ card.title }}
-                    </strong>
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="text-slate-500 group-hover:text-[#f2b880] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform shrink-0">
-                      <line x1="7" y1="17" x2="17" y2="7" />
-                      <polyline points="7 7 17 7 17 17" />
-                    </svg>
+                    <span class="w-8 h-8 rounded-xl border border-[#f2b880]/25 bg-[#f2b880]/10 text-[#f2b880] inline-flex items-center justify-center shrink-0">
+                      <svg v-if="card.icon === 'assets'" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                        <rect x="2" y="3" width="20" height="8" rx="2" />
+                        <rect x="2" y="13" width="20" height="8" rx="2" />
+                        <line x1="6" y1="7" x2="6.01" y2="7" />
+                        <line x1="6" y1="17" x2="6.01" y2="17" />
+                      </svg>
+                      <svg v-else-if="card.icon === 'pulse'" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                      </svg>
+                      <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" />
+                        <polyline points="12 7 12 12 15 14" />
+                      </svg>
+                    </span>
+                    <span class="font-mono text-[10px] tracking-wider uppercase text-slate-500 group-hover:text-[#f2b880]/80 transition-colors">
+                      {{ card.tag }}
+                    </span>
                   </div>
-                  <p class="text-[11.5px] text-slate-400/90 leading-relaxed">
-                    {{ card.desc }}
-                  </p>
+                  <div class="flex-1">
+                    <div class="flex items-center justify-between gap-2">
+                      <strong class="text-sm font-semibold text-white group-hover:text-[#f7cba0] transition-colors">
+                        {{ card.title }}
+                      </strong>
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="text-slate-600 group-hover:text-[#f2b880] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform shrink-0">
+                        <line x1="7" y1="17" x2="17" y2="7" />
+                        <polyline points="7 7 17 7 17 17" />
+                      </svg>
+                    </div>
+                    <p class="text-[11.5px] text-slate-400/90 leading-relaxed mt-1">
+                      {{ card.desc }}
+                    </p>
+                  </div>
                 </button>
               </div>
             </div>
@@ -1003,25 +1041,36 @@ function stateBadgeClass(state?: string): string {
             <article
               v-for="t in botRoutines"
               :key="t.id"
-              class="stagger-item vesper-card vesper-card-interactive rounded-2xl p-4 flex flex-col gap-2.5"
+              @pointermove="trackSpotlight"
+              class="stagger-item luxury-card vesper-card-interactive rounded-2xl p-4 flex flex-col gap-3"
             >
-              <div class="flex items-start justify-between gap-2">
-                <div>
-                  <h3 class="font-semibold text-sm text-white">{{ t.name }}</h3>
-                  <div class="font-mono text-[11px] text-slate-400 mt-0.5">{{ describeCron(t.cron_expr) }}</div>
+              <div class="flex items-start justify-between gap-2.5">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-8 h-8 rounded-xl border border-[#f2b880]/22 bg-[#f2b880]/10 text-[#f2b880] inline-flex items-center justify-center shrink-0">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" />
+                      <polyline points="12 7 12 12 15 14" />
+                    </svg>
+                  </span>
+                  <div class="min-w-0">
+                    <h3 class="font-semibold text-sm text-white truncate">{{ t.name }}</h3>
+                    <div class="font-mono text-[11px] text-slate-400 mt-0.5 truncate">{{ describeCron(t.cron_expr) }}</div>
+                  </div>
                 </div>
                 <span
                   :class="[
-                    'inline-flex items-center gap-1.5 font-mono text-[11px] shrink-0',
-                    t.enabled ? 'text-emerald-300' : 'text-slate-500'
+                    'inline-flex items-center gap-1.5 font-mono text-[11px] shrink-0 px-2 py-0.5 rounded-full border',
+                    t.enabled ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' : 'border-[#fff8ee]/10 text-slate-500'
                   ]"
                 >
-                  <span :class="['w-1.5 h-1.5 rounded-full', t.enabled ? 'bg-emerald-400' : 'bg-slate-600']" aria-hidden="true" />
+                  <span :class="['w-1.5 h-1.5 rounded-full', t.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600']" aria-hidden="true" />
                   {{ t.enabled ? '运行中' : '已暂停' }}
                 </span>
               </div>
-              <p class="text-xs text-slate-300">{{ t.description }}</p>
-              <div class="font-mono text-[11px] text-slate-400 truncate">最近结果: {{ t.last_run?.summary || '等待首次执行' }}</div>
+              <p class="text-xs text-slate-300/90 leading-relaxed">{{ t.description }}</p>
+              <div class="font-mono text-[11px] text-slate-400 truncate rounded-lg bg-[#050811]/60 border border-[#fff8ee]/6 px-2.5 py-1.5">
+                最近结果: {{ t.last_run?.summary || '等待首次执行' }}
+              </div>
               <div class="flex items-center gap-2 pt-1">
                 <button
                   type="button"

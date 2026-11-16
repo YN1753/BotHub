@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { describeCron, formatDateOnly } from '../utils/format'
-import { applySiblingStaggerFallback } from '../utils/topLayer'
+import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import type { Asset } from '../types/bothub'
 import SegmentedTabs from './SegmentedTabs.vue'
 
@@ -273,28 +273,52 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
             </button>
           </div>
 
-          <!-- Minimal 2-band Asset Cards with Hover Lift & Stagger -->
+          <!-- Flagship Luxury Bento Asset Cards -->
           <div ref="assetGridRef" class="ops-asset-grid stagger-list">
             <button
               v-for="a in filteredAssets"
               :key="a.id"
               type="button"
+              @pointermove="trackSpotlight"
               @click="store.state.editingAsset = a"
               :class="[
-                'stagger-item vesper-card vesper-card-interactive rounded-2xl p-4 flex flex-col gap-2.5 cursor-pointer hover:border-[#f2b880]/45 text-left',
+                'group stagger-item luxury-card vesper-card-interactive rounded-2xl p-4 flex flex-col gap-3 cursor-pointer text-left',
                 cardAccentClass(a)
               ]"
             >
-              <div class="flex items-center justify-between gap-2 w-full">
-                <strong class="text-sm font-semibold text-white truncate">{{ a.name }}</strong>
-                <span class="font-mono text-xs text-[#f2b880] shrink-0">{{ a.price || '--' }}</span>
+              <div class="flex items-start justify-between gap-2.5 w-full">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-8 h-8 rounded-xl border border-[#f2b880]/22 bg-[#f2b880]/10 text-[#f2b880] inline-flex items-center justify-center shrink-0">
+                    <svg v-if="a.category === 'compute'" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <rect x="2" y="3" width="20" height="8" rx="2" />
+                      <rect x="2" y="13" width="20" height="8" rx="2" />
+                      <line x1="6" y1="7" x2="6.01" y2="7" />
+                      <line x1="6" y1="17" x2="6.01" y2="17" />
+                    </svg>
+                    <svg v-else-if="a.category === 'domain'" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" />
+                      <line x1="3" y1="12" x2="21" y2="12" />
+                      <path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z" />
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                    </svg>
+                  </span>
+                  <div class="min-w-0">
+                    <strong class="block text-sm font-semibold text-white group-hover:text-[#f7cba0] transition-colors truncate">{{ a.name }}</strong>
+                    <span class="block text-[11.5px] text-slate-400 truncate">{{ a.spec }}</span>
+                  </div>
+                </div>
+                <span class="font-mono tabular-nums text-xs font-semibold px-2 py-0.5 rounded-lg border border-[#f2b880]/22 bg-[#f2b880]/8 text-[#f2b880] shrink-0">
+                  {{ a.price || '--' }}
+                </span>
               </div>
-              <div class="text-xs text-slate-400 truncate w-full">{{ a.spec }}</div>
-              <div class="flex items-center justify-between text-[11px] pt-2 border-t border-[#fff8ee]/6 w-full">
-                <span class="font-mono text-slate-500">
+
+              <div class="flex items-center justify-between text-[11px] pt-2.5 border-t border-[#fff8ee]/7 w-full">
+                <span class="font-mono tabular-nums text-slate-500">
                   {{ formatDateOnly(a.due_date) }} · {{ a.auto_renew ? '自动续费' : '手动续费' }}
                 </span>
-                <span :class="['font-mono shrink-0', daysBadgeClass(a)]">{{ daysText(a) }}</span>
+                <span :class="['font-mono tabular-nums shrink-0', daysBadgeClass(a)]">{{ daysText(a) }}</span>
               </div>
             </button>
           </div>
@@ -317,13 +341,22 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
             <article
               v-for="t in store.state.tasks"
               :key="t.id"
-              class="stagger-item vesper-card vesper-card-interactive rounded-2xl p-4 flex flex-col gap-2.5"
+              @pointermove="trackSpotlight"
+              class="stagger-item luxury-card vesper-card-interactive rounded-2xl p-4 flex flex-col gap-3"
             >
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <strong class="text-sm font-semibold text-white">{{ t.name }}</strong>
-                  <div class="font-mono text-[11px] text-slate-400 mt-0.5">
-                    {{ describeCron(t.cron_expr) }} · Bot: {{ t.bot_id || 'butler' }}
+              <div class="flex items-start justify-between gap-2.5">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-8 h-8 rounded-xl border border-[#f2b880]/22 bg-[#f2b880]/10 text-[#f2b880] inline-flex items-center justify-center shrink-0">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" />
+                      <polyline points="12 7 12 12 15 14" />
+                    </svg>
+                  </span>
+                  <div class="min-w-0">
+                    <strong class="block text-sm font-semibold text-white truncate">{{ t.name }}</strong>
+                    <div class="font-mono text-[11px] text-slate-400 mt-0.5 truncate">
+                      {{ describeCron(t.cron_expr) }} · {{ t.bot_id || 'butler' }}
+                    </div>
                   </div>
                 </div>
                 <button
@@ -331,18 +364,18 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                   @click="toggleTaskEnabled(t.id, t.enabled)"
                   :class="[
                     'inline-flex items-center gap-1.5 font-mono text-[11px] min-h-[40px] sm:min-h-[28px] px-2.5 py-1 rounded-full border cursor-pointer shrink-0',
-                    t.enabled ? 'border-emerald-400/35 bg-emerald-400/10 text-emerald-300' : 'border-[#fff8ee]/12 text-slate-400'
+                    t.enabled ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' : 'border-[#fff8ee]/10 text-slate-400'
                   ]"
                 >
-                  <span :class="['w-1.5 h-1.5 rounded-full', t.enabled ? 'bg-emerald-400' : 'bg-slate-600']" aria-hidden="true" />
+                  <span :class="['w-1.5 h-1.5 rounded-full', t.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600']" aria-hidden="true" />
                   {{ t.enabled ? '已启用' : '已暂停' }}
                 </button>
               </div>
-              <p class="text-xs text-slate-300">{{ t.description }}</p>
-              <div class="font-mono text-[11px] text-slate-400 truncate">
+              <p class="text-xs text-slate-300/90 leading-relaxed">{{ t.description }}</p>
+              <div class="font-mono text-[11px] text-slate-400 truncate rounded-lg bg-[#050811]/60 border border-[#fff8ee]/6 px-2.5 py-1.5">
                 最近摘要: {{ t.last_run?.summary || '等待执行' }}
               </div>
-              <div class="flex items-center gap-2 pt-1">
+              <div class="flex items-center gap-2 pt-0.5">
                 <button
                   type="button"
                   @click="runTaskNow(t.id)"

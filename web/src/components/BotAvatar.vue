@@ -5,7 +5,7 @@ const props = withDefaults(
   defineProps<{
     avatarStyle?: string
     state?: string
-    size?: 'sm' | 'md' | 'lg'
+    size?: 'sm' | 'md' | 'lg' | 'xl'
   }>(),
   {
     avatarStyle: 'cyan',
@@ -15,18 +15,48 @@ const props = withDefaults(
 )
 
 const palette = computed(() => {
-  const map: Record<string, { ring: string; fill: string; eye: string }> = {
-    cyan: { ring: '#f2b880', fill: 'rgba(242, 184, 128, 0.15)', eye: '#fbf3e8' },
-    indigo: { ring: '#a5b4fc', fill: 'rgba(165, 180, 252, 0.16)', eye: '#eef2ff' },
-    amber: { ring: '#fbbf24', fill: 'rgba(251, 191, 36, 0.16)', eye: '#fef3c7' },
-    emerald: { ring: '#34d399', fill: 'rgba(52, 211, 153, 0.16)', eye: '#d1fae5' },
-    violet: { ring: '#d8b4fe', fill: 'rgba(216, 180, 254, 0.16)', eye: '#faf5ff' },
+  const map: Record<string, { ring: string; glow: string; fill: string; eye: string; visor: string }> = {
+    cyan: {
+      ring: '#f2b880',
+      glow: 'rgba(242, 184, 128, 0.34)',
+      fill: 'rgba(242, 184, 128, 0.14)',
+      eye: '#fbf3e8',
+      visor: 'rgba(242, 184, 128, 0.18)',
+    },
+    indigo: {
+      ring: '#a5b4fc',
+      glow: 'rgba(165, 180, 252, 0.32)',
+      fill: 'rgba(165, 180, 252, 0.14)',
+      eye: '#eef2ff',
+      visor: 'rgba(165, 180, 252, 0.18)',
+    },
+    amber: {
+      ring: '#fbbf24',
+      glow: 'rgba(251, 191, 36, 0.34)',
+      fill: 'rgba(251, 191, 36, 0.14)',
+      eye: '#fef3c7',
+      visor: 'rgba(251, 191, 36, 0.18)',
+    },
+    emerald: {
+      ring: '#34d399',
+      glow: 'rgba(52, 211, 153, 0.32)',
+      fill: 'rgba(52, 211, 153, 0.14)',
+      eye: '#d1fae5',
+      visor: 'rgba(52, 211, 153, 0.18)',
+    },
+    violet: {
+      ring: '#d8b4fe',
+      glow: 'rgba(216, 180, 254, 0.34)',
+      fill: 'rgba(216, 180, 254, 0.14)',
+      eye: '#faf5ff',
+      visor: 'rgba(216, 180, 254, 0.18)',
+    },
   }
   return map[props.avatarStyle] || map.cyan
 })
 
 const ringColor = computed(() => {
-  if (props.state === 'blocked') return '#ef4444'
+  if (props.state === 'blocked') return '#f87171'
   if (props.state === 'done') return '#34d399'
   if (props.state === 'thinking') return '#fbbf24'
   return palette.value.ring
@@ -35,32 +65,156 @@ const ringColor = computed(() => {
 const sizeClass = computed(() => {
   if (props.size === 'sm') return 'w-7 h-7'
   if (props.size === 'lg') return 'w-11 h-11'
+  if (props.size === 'xl') return 'w-20 h-20'
   return 'w-9 h-9'
+})
+
+const archetype = computed(() => {
+  if (props.avatarStyle === 'indigo') return 'sentinel'
+  if (props.avatarStyle === 'emerald') return 'radar'
+  if (props.avatarStyle === 'amber') return 'critic'
+  if (props.avatarStyle === 'violet') return 'swarm'
+  return 'butler'
 })
 </script>
 
 <template>
-  <div :class="['shrink-0 inline-flex items-center justify-center', sizeClass, `bot-avatar-${state}`]">
-    <svg viewBox="0 0 44 44" fill="none" class="w-full h-full block">
+  <div
+    :style="{ '--bot-glow': palette.glow }"
+    :class="[
+      'bot-avatar-root shrink-0 relative inline-flex items-center justify-center select-none',
+      sizeClass,
+      `bot-avatar-${state}`,
+      `bot-kind-${archetype}`
+    ]"
+  >
+    <!-- Soft ambient aura behind hero/large avatars -->
+    <span
+      v-if="size === 'xl' || size === 'lg'"
+      aria-hidden="true"
+      class="bot-aura pointer-events-none absolute inset-0 rounded-full blur-md opacity-60"
+    />
+
+    <svg viewBox="0 0 48 48" fill="none" class="bot-svg relative w-full h-full block overflow-visible">
+      <!-- Outer orbital aura ring -->
       <circle
-        cx="22"
-        cy="22"
-        r="19"
-        :fill="palette.fill"
-        :stroke="ringColor"
-        stroke-width="2"
-        class="bot-ring"
+        cx="24"
+        cy="24"
+        r="21"
+        stroke="currentColor"
+        stroke-width="0.9"
+        stroke-dasharray="3 5"
+        :style="{ color: ringColor }"
+        class="bot-orbit opacity-45"
       />
-      <g class="bot-eyes">
-        <circle cx="16.5" cy="21" r="2.6" :fill="palette.eye" />
-        <circle cx="27.5" cy="21" r="2.6" :fill="palette.eye" />
-        <path
-          d="M16 28.5 Q22 31.5 28 28.5"
+
+      <!-- Top Archetype Antennas / Horns / Crown -->
+      <g class="bot-crest" :stroke="ringColor" stroke-width="1.7" stroke-linecap="round">
+        <!-- Butler: sleek celestial antenna + pearl -->
+        <template v-if="archetype === 'butler'">
+          <line x1="24" y1="6" x2="24" y2="2" />
+          <circle cx="24" cy="1.8" r="1.4" :fill="ringColor" />
+        </template>
+        <!-- Sentinel: twin tactical sensor ears -->
+        <template v-else-if="archetype === 'sentinel'">
+          <path d="M11 12 L8 6" />
+          <path d="M37 12 L40 6" />
+          <circle cx="8" cy="5.5" r="1.1" :fill="ringColor" />
+          <circle cx="40" cy="5.5" r="1.1" :fill="ringColor" />
+        </template>
+        <!-- Radar: dual orbital scanner dish arcs -->
+        <template v-else-if="archetype === 'radar'">
+          <path d="M18 5.5 Q24 2 30 5.5" />
+          <line x1="24" y1="6.5" x2="24" y2="3" />
+        </template>
+        <!-- Critic (Grok): sharp energetic horn fin -->
+        <template v-else-if="archetype === 'critic'">
+          <path d="M18 7 L21 2.5 L24 6.5 L27 2.5 L30 7" stroke-linejoin="round" />
+        </template>
+        <!-- Swarm: twin orbiting satellites -->
+        <template v-else>
+          <circle cx="9" cy="9" r="1.5" :fill="ringColor" stroke="none" class="bot-sat-a" />
+          <circle cx="39" cy="39" r="1.5" :fill="ringColor" stroke="none" class="bot-sat-b" />
+        </template>
+      </g>
+
+      <!-- Main Chassis Head -->
+      <g class="bot-head">
+        <rect
+          x="7.5"
+          y="7.5"
+          width="33"
+          height="33"
+          rx="16.5"
+          :fill="palette.fill"
           :stroke="ringColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          opacity="0.85"
+          stroke-width="1.9"
+          class="bot-ring"
         />
+
+        <!-- Inner Visor Glass Plate -->
+        <rect
+          x="12"
+          y="15"
+          width="24"
+          height="16.5"
+          rx="8"
+          fill="rgba(6, 9, 19, 0.72)"
+          :stroke="palette.visor"
+          stroke-width="1"
+        />
+
+        <!-- Facial Expression Layer -->
+        <g class="bot-eyes">
+          <!-- Blocked / Alert expression -->
+          <template v-if="state === 'blocked'">
+            <path d="M16 19.5 L20 22.5 L16 25.5" :stroke="ringColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M32 19.5 L28 22.5 L32 25.5" :stroke="ringColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M19 29 Q24 26.5 29 29" :stroke="ringColor" stroke-width="1.6" stroke-linecap="round" />
+          </template>
+
+          <!-- Done / Happy crescent expression -->
+          <template v-else-if="state === 'done'">
+            <path d="M15.5 22.5 Q18.5 19 21.5 22.5" :stroke="palette.eye" stroke-width="2.2" stroke-linecap="round" />
+            <path d="M26.5 22.5 Q29.5 19 32.5 22.5" :stroke="palette.eye" stroke-width="2.2" stroke-linecap="round" />
+            <path d="M20 27.2 Q24 30 28 27.2" :stroke="ringColor" stroke-width="1.7" stroke-linecap="round" />
+          </template>
+
+          <!-- Active Idle / Thinking / Working Expressive Blinking Eyes -->
+          <template v-else>
+            <g class="bot-eye-pair">
+              <ellipse cx="18.5" cy="22" rx="2.4" ry="2.9" :fill="palette.eye" class="bot-eye-l" />
+              <ellipse cx="29.5" cy="22" rx="2.4" ry="2.9" :fill="palette.eye" class="bot-eye-r" />
+            </g>
+            <!-- Subtle character mouth -->
+            <path
+              v-if="archetype === 'critic'"
+              d="M19.5 27.5 Q24.5 29.8 29 26.6"
+              :stroke="ringColor"
+              stroke-width="1.65"
+              stroke-linecap="round"
+            />
+            <line
+              v-else-if="archetype === 'sentinel'"
+              x1="20.5"
+              y1="27.5"
+              x2="27.5"
+              y2="27.5"
+              :stroke="ringColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-dasharray="2 2"
+            />
+            <path
+              v-else
+              d="M20 27.2 Q24 29.4 28 27.2"
+              :stroke="ringColor"
+              stroke-width="1.65"
+              stroke-linecap="round"
+              opacity="0.88"
+            />
+          </template>
+        </g>
       </g>
     </svg>
   </div>

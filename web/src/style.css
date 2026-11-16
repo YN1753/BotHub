@@ -170,27 +170,101 @@ img, video {
 }
 
 .vesper-card {
-  background: rgba(14, 18, 34, 0.72);
-  border: 1px solid var(--border-glass);
+  position: relative;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 248, 238, 0.045) 0%, transparent 58%),
+    linear-gradient(180deg, rgba(16, 21, 39, 0.84) 0%, rgba(10, 13, 25, 0.88) 100%);
+  border: 1px solid rgba(255, 248, 238, 0.09);
   box-shadow:
-    inset 0 1px 0 rgba(255, 248, 238, 0.06),
-    0 8px 24px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(14px);
+    inset 0 1px 0 rgba(255, 248, 238, 0.1),
+    0 12px 30px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(18px);
+}
+
+/* Flagship Cursor-Tracking Specular Edge & Surface Spotlight Cards */
+.luxury-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(120% 85% at 85% 0%, rgba(242, 184, 128, 0.055) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(18, 23, 42, 0.82) 0%, rgba(10, 14, 27, 0.9) 100%);
+  border: 1px solid rgba(255, 248, 238, 0.095);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 238, 0.11),
+    0 14px 36px -8px rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(20px);
+  transition:
+    transform 240ms var(--ease-snappy),
+    border-color 220ms ease-out,
+    box-shadow 260ms ease-out;
+}
+
+.luxury-card > * {
+  position: relative;
+  z-index: 2;
+}
+
+.luxury-card::before,
+.luxury-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 280ms ease-out;
+}
+
+/* Soft ambient surface glow under cursor */
+.luxury-card::before {
+  z-index: 1;
+  background: radial-gradient(
+    280px circle at var(--mx, 50%) var(--my, 0%),
+    rgba(242, 184, 128, 0.095),
+    transparent 68%
+  );
+}
+
+/* Razor-sharp 1px specular champagne-gold border glint under cursor */
+.luxury-card::after {
+  z-index: 3;
+  padding: 1px;
+  background: radial-gradient(
+    200px circle at var(--mx, 50%) var(--my, 0%),
+    rgba(247, 203, 160, 0.65),
+    transparent 70%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+@media (hover: hover) {
+  .luxury-card:hover::before,
+  .luxury-card:hover::after {
+    opacity: 1;
+  }
 }
 
 .vesper-card-interactive {
   transition:
-    transform 220ms var(--ease-snappy),
-    border-color 180ms ease-out,
-    background-color 180ms ease-out,
-    box-shadow 220ms ease-out;
+    transform 240ms var(--ease-snappy),
+    border-color 200ms ease-out,
+    background-color 200ms ease-out,
+    box-shadow 240ms ease-out;
 }
 @media (prefers-reduced-motion: no-preference) {
   .vesper-card-interactive:hover {
-    transform: translateY(-2px);
+    transform: translateY(-3px);
     box-shadow:
-      inset 0 1px 0 rgba(255, 248, 238, 0.1),
-      0 14px 32px rgba(0, 0, 0, 0.44);
+      inset 0 1px 0 rgba(255, 248, 238, 0.14),
+      0 20px 44px -10px rgba(0, 0, 0, 0.6);
   }
 }
 
@@ -561,42 +635,156 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
   }
 }
 
-/* Procedural Bot SVG Animations */
-.bot-ring {
+/* ============================================================================
+   Living Interactive Bot Companion Animations (GrokBot Presence)
+   ============================================================================ */
+.bot-aura {
+  background: radial-gradient(circle, var(--bot-glow, rgba(242, 184, 128, 0.3)) 0%, transparent 72%);
+  transition: opacity 280ms ease, transform 280ms var(--ease-snappy);
+}
+
+.bot-head,
+.bot-crest,
+.bot-eye-pair,
+.bot-orbit,
+.bot-sat-a,
+.bot-sat-b {
+  transform-box: fill-box;
   transform-origin: center;
-  transition: stroke 0.25s ease;
 }
 
-.bot-avatar-thinking .bot-ring {
-  stroke-dasharray: 28 14;
-  animation: botSpin 1.6s linear infinite;
+.bot-head {
+  transition: transform 240ms var(--ease-snappy);
 }
 
-.bot-avatar-working .bot-ring {
-  stroke-dasharray: 18 10;
-  animation: botSpin 0.9s linear infinite;
+.bot-ring {
+  transition: stroke 0.25s ease, fill 0.25s ease;
 }
 
-.bot-avatar-thinking .bot-eyes {
-  animation: botLookUp 1.8s ease-in-out infinite;
-}
-
-.bot-avatar-working .bot-eyes {
-  animation: botScan 1.2s ease-in-out infinite;
-}
-
-.bot-avatar-blocked {
-  animation: botAlertPulse 1.4s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .bot-avatar-thinking .bot-ring,
-  .bot-avatar-working .bot-ring,
-  .bot-avatar-thinking .bot-eyes,
-  .bot-avatar-working .bot-eyes,
-  .bot-avatar-blocked {
-    animation: none;
+@media (prefers-reduced-motion: no-preference) {
+  /* Every Bot gently breathes & floats even while idle */
+  .bot-avatar-root .bot-svg {
+    animation: botBreath 4.2s ease-in-out infinite;
   }
+
+  /* Slow ambient orbital shimmer */
+  .bot-avatar-root .bot-orbit {
+    animation: botSpin 22s linear infinite;
+  }
+
+  /* Natural periodic blinking */
+  .bot-avatar-root .bot-eye-pair {
+    animation: botBlink 4.8s ease-in-out infinite;
+  }
+
+  /* Subtle curious glance inside the visor */
+  .bot-avatar-idle .bot-eyes {
+    animation: botIdleGlance 7s ease-in-out infinite;
+  }
+
+  /* Archetype crest micro-motion */
+  .bot-kind-butler .bot-crest {
+    animation: botCrestBob 3.2s ease-in-out infinite;
+  }
+  .bot-kind-swarm .bot-orbit {
+    animation-duration: 9s;
+  }
+
+  /* Hover / Group-Hover Wake-up Reaction! */
+  .bot-avatar-root:hover .bot-head,
+  .group:hover .bot-avatar-root .bot-head {
+    transform: translateY(-1.5px) scale(1.05);
+    transition: transform 240ms var(--ease-spring);
+  }
+  .bot-avatar-root:hover .bot-aura,
+  .group:hover .bot-avatar-root .bot-aura {
+    opacity: 0.95;
+    transform: scale(1.16);
+  }
+
+  /* State: Thinking */
+  .bot-avatar-thinking .bot-head {
+    animation: botThinkTilt 2.2s ease-in-out infinite;
+  }
+  .bot-avatar-thinking .bot-ring {
+    stroke-dasharray: 28 12;
+  }
+  .bot-avatar-thinking .bot-orbit {
+    animation: botSpin 2.4s linear infinite;
+    opacity: 0.9;
+  }
+  .bot-avatar-thinking .bot-eyes {
+    animation: botLookUp 1.8s ease-in-out infinite;
+  }
+
+  /* State: Working (High Kinetic Focus) */
+  .bot-avatar-working .bot-svg {
+    animation: botBreath 1.4s ease-in-out infinite;
+  }
+  .bot-avatar-working .bot-ring {
+    stroke-dasharray: 18 8;
+    animation: botSpin 1.1s linear infinite;
+  }
+  .bot-avatar-working .bot-orbit {
+    animation: botSpinReverse 1.6s linear infinite;
+    opacity: 0.95;
+  }
+  .bot-avatar-working .bot-eyes {
+    animation: botScan 1.1s ease-in-out infinite;
+  }
+
+  /* State: Done (Satisfied Nod) */
+  .bot-avatar-done .bot-head {
+    animation: botHappyNod 2.6s ease-in-out infinite;
+  }
+
+  /* State: Blocked */
+  .bot-avatar-blocked {
+    animation: botAlertPulse 1.4s ease-in-out infinite;
+  }
+  .bot-avatar-blocked .bot-head {
+    animation: botAlertShake 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes botBreath {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes botBlink {
+  0%, 44%, 48%, 94%, 100% { transform: scaleY(1); }
+  46%, 96% { transform: scaleY(0.12); }
+}
+
+@keyframes botIdleGlance {
+  0%, 38%, 100% { transform: translate(0px, 0px); }
+  44%, 56% { transform: translate(1.4px, -0.4px); }
+  64%, 76% { transform: translate(-1.3px, 0.2px); }
+}
+
+@keyframes botCrestBob {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-1px) rotate(3deg); }
+}
+
+@keyframes botThinkTilt {
+  0%, 100% { transform: rotate(0deg); }
+  35% { transform: rotate(-5deg) translateY(-1px); }
+  70% { transform: rotate(4deg); }
+}
+
+@keyframes botHappyNod {
+  0%, 100% { transform: translateY(0px); }
+  25% { transform: translateY(-2.2px) scale(1.03); }
+  50% { transform: translateY(0.6px); }
+}
+
+@keyframes botAlertShake {
+  0%, 82%, 100% { transform: translateX(0px); }
+  86% { transform: translateX(-1.5px); }
+  90% { transform: translateX(1.5px); }
+  94% { transform: translateX(-1px); }
 }
 
 @keyframes botSpin {
@@ -604,19 +792,24 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
   to { transform: rotate(360deg); }
 }
 
+@keyframes botSpinReverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
 @keyframes botLookUp {
   0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-1.8px); }
+  50% { transform: translateY(-2px); }
 }
 
 @keyframes botScan {
-  0%, 100% { transform: translateX(-1.5px); }
-  50% { transform: translateX(1.5px); }
+  0%, 100% { transform: translateX(-1.8px); }
+  50% { transform: translateX(1.8px); }
 }
 
 @keyframes botAlertPulse {
   0%, 100% { filter: drop-shadow(0 0 2px rgba(248, 113, 113, 0.4)); }
-  50% { filter: drop-shadow(0 0 9px rgba(248, 113, 113, 0.85)); }
+  50% { filter: drop-shadow(0 0 10px rgba(248, 113, 113, 0.88)); }
 }
 
 /* Safe Markdown Prose */

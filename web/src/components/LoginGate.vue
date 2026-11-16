@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, useId } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
+import { trackSpotlight } from '../utils/topLayer'
+import BotAvatar from './BotAvatar.vue'
 
 const store = useAppStore()
 const passwordId = useId()
@@ -25,11 +27,18 @@ async function handleSubmit() {
 
 <template>
   <main class="relative z-10 min-h-dvh flex items-center justify-center p-4">
-    <section class="aero-glass w-full max-w-md rounded-2xl p-7 shadow-2xl">
-      <div class="inline-flex items-center px-2.5 py-1 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880] font-mono text-[11px] tracking-wider mb-3">
-        VESPER BOTHUB
+    <section
+      @pointermove="trackSpotlight"
+      class="luxury-card w-full max-w-md rounded-2xl p-7 shadow-2xl"
+    >
+      <div class="flex items-center justify-between gap-3 mb-4">
+        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880] font-mono text-[11px] tracking-wider">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880]" aria-hidden="true" />
+          <span>VESPER BOTHUB</span>
+        </div>
+        <BotAvatar avatar-style="cyan" state="idle" size="lg" />
       </div>
-      <h1 class="text-2xl font-semibold text-white mb-1">星穹 GrokBot 中枢</h1>
+      <h1 class="text-2xl font-semibold text-white mb-1 tracking-tight">星穹 GrokBot 中枢</h1>
       <p class="font-mono text-xs text-slate-400 mb-6">bot.starryheavens.uk · 请输入管理密钥</p>
 
       <form class="flex flex-col gap-3" @submit.prevent="handleSubmit">
