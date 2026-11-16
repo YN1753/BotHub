@@ -176,6 +176,13 @@ export interface AvailableToolMeta {
   description: string
 }
 
+export interface UpstreamModelCheck {
+  id: string
+  usable: boolean
+  latency_ms?: number
+  reason?: string
+}
+
 export interface ModelPoolEntry {
   id: string
   name: string

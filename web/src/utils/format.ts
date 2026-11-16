@@ -35,7 +35,7 @@ export function generateSlug(text: string, prefix = 'item'): string {
 }
 
 export function shortVersion(ver: string): string {
-  return String(ver || 'v2.4.0').replace(/-[0-9a-f]{12,40}$/i, '')
+  return String(ver || '').replace(/-[0-9a-f]{12,40}$/i, '')
 }
 
 export function describeCron(expr?: string): string {

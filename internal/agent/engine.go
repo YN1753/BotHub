@@ -154,15 +154,15 @@ func truncateTitle(msg string) string {
 func NormalizeModelID(model string) string {
 	m := strings.TrimSpace(model)
 	switch m {
-	case "", "deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro":
-		return store.DefaultAIModel // "deepseek-flash" (DeepSeek Flash only)
+	case "", "deepseek-v4-pro":
+		return ""
 	default:
 		return m
 	}
 }
 
 // CallLightModel executes a non-streaming completion preferring explicit light model config,
-// then active Free Model Pool providers (when pool_for_light is enabled), then primary DeepSeek Flash / relay.
+// then active Free Model Pool providers (when pool_for_light is enabled), then primary DeepSeek / relay.
 func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
 	var candidates []ModelTarget
 
@@ -174,11 +174,15 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 	lightModel = strings.TrimSpace(lightModel)
 
 	if lightKey != "" {
+		primary := primaryDeepSeekTarget(e.store)
 		b := lightBase
 		if b == "" {
-			b = primaryDeepSeekTarget(e.store).BaseURL
+			b = primary.BaseURL
 		}
 		m := NormalizeModelID(lightModel)
+		if m == "" {
+			m = primary.Model
+		}
 		candidates = append(candidates, ModelTarget{
 			ID:       "light",
 			Label:    "轻量模型 · " + m,
@@ -231,7 +235,7 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+target.APIKey)
 		if target.Provider == "openrouter" {
-			req.Header.Set("HTTP-Referer", "https://bot.starryheavens.uk")
+			req.Header.Set("HTTP-Referer", "https://github.com/YN1753/BotHub")
 			req.Header.Set("X-Title", "Vesper BotHub")
 		}
 
@@ -646,6 +650,31 @@ func (e *Engine) streamSingleRound(
 	return e.streamSingleRoundWithProvider(ctx, "deepseek", baseURL, apiKey, model, messages, tools, thinking, onDelta)
 }
 
+func foldSystemIntoUserMessages(messages []apiMessage) []apiMessage {
+	var sysParts []string
+	rest := make([]apiMessage, 0, len(messages))
+	for _, m := range messages {
+		if m.Role == "system" {
+			if s := strings.TrimSpace(m.Content); s != "" {
+				sysParts = append(sysParts, s)
+			}
+			continue
+		}
+		rest = append(rest, m)
+	}
+	if len(sysParts) == 0 {
+		return messages
+	}
+	prefix := "[系统行为指令]\n" + strings.Join(sysParts, "\n") + "\n\n"
+	for i := range rest {
+		if rest[i].Role == "user" {
+			rest[i].Content = prefix + rest[i].Content
+			return rest
+		}
+	}
+	return append([]apiMessage{{Role: "user", Content: prefix}}, rest...)
+}
+
 func (e *Engine) streamSingleRoundWithProvider(
 	ctx context.Context,
 	provider, baseURL, apiKey, model string,
@@ -654,42 +683,84 @@ func (e *Engine) streamSingleRoundWithProvider(
 	thinking *thinkingConfig,
 	onDelta func(deltaReasoning, deltaContent string),
 ) (string, string, []apiToolCall, *TokenUsage, error) {
-	reqBody := chatCompletionRequest{
-		Model:         model,
-		Messages:      messages,
-		Tools:         tools,
-		Stream:        true,
-		StreamOptions: &streamOptions{IncludeUsage: true},
-		Thinking:      thinking,
-	}
-	payload, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", "", nil, nil, err
-	}
+	incUsage := true
+	curMessages := messages
+	curTools := tools
+	curThinking := thinking
 
-	endpoint := BuildChatCompletionsURL(baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return "", "", nil, nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	if provider == "openrouter" {
-		req.Header.Set("HTTP-Referer", "https://bot.starryheavens.uk")
-		req.Header.Set("X-Title", "Vesper BotHub")
-	}
+	var resp *http.Response
+	for attempt := 0; attempt < 3; attempt++ {
+		var streamOpts *streamOptions
+		if incUsage {
+			streamOpts = &streamOptions{IncludeUsage: true}
+		}
+		reqBody := chatCompletionRequest{
+			Model:         model,
+			Messages:      curMessages,
+			Tools:         curTools,
+			Stream:        true,
+			StreamOptions: streamOpts,
+			Thinking:      curThinking,
+		}
+		payload, err := json.Marshal(reqBody)
+		if err != nil {
+			return "", "", nil, nil, err
+		}
 
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return "", "", nil, nil, fmt.Errorf("调用 DeepSeek 接口失败: %w", err)
+		endpoint := BuildChatCompletionsURL(baseURL)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+		if err != nil {
+			return "", "", nil, nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		if provider == "openrouter" {
+			req.Header.Set("HTTP-Referer", "https://github.com/YN1753/BotHub")
+			req.Header.Set("X-Title", "Vesper BotHub")
+		}
+
+		var doErr error
+		resp, doErr = e.httpClient.Do(req)
+		if doErr != nil {
+			return "", "", nil, nil, fmt.Errorf("调用模型 [%s] 接口失败: %w", model, doErr)
+		}
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			break
+		}
+
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+		_ = resp.Body.Close()
+		errText := strings.TrimSpace(string(errBody))
+		lowerErr := strings.ToLower(errText)
+
+		// Auto-downgrade optional OpenAI params on 400/422 before giving up (thinking, stream_options, tools, or system role for Gemma)
+		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity) && attempt < 2 {
+			adjusted := false
+			if curThinking != nil && (strings.Contains(lowerErr, "thinking") || strings.Contains(lowerErr, "unknown")) {
+				curThinking = nil
+				adjusted = true
+			}
+			if incUsage && (strings.Contains(lowerErr, "stream_options") || strings.Contains(lowerErr, "include_usage") || strings.Contains(lowerErr, "unknown")) {
+				incUsage = false
+				adjusted = true
+			}
+			if len(curTools) > 0 && (strings.Contains(lowerErr, "tool") || strings.Contains(lowerErr, "function")) {
+				curTools = nil
+				adjusted = true
+			}
+			if strings.Contains(lowerErr, "developer instruction") || strings.Contains(lowerErr, "system instruction") {
+				curMessages = foldSystemIntoUserMessages(curMessages)
+				adjusted = true
+			}
+			if adjusted {
+				continue
+			}
+		}
+		return "", "", nil, nil, fmt.Errorf("[%s] 返回错误 (%d): %s", model, resp.StatusCode, errText)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		return "", "", nil, nil, fmt.Errorf("DeepSeek API 返回错误 (%d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
-	}
 
 	var reasoningBuf strings.Builder
 	var contentBuf strings.Builder

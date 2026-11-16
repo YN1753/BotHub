@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import type { ModelPoolEntry } from '../types/bothub'
+import type { ModelPoolEntry, UpstreamModelCheck } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -30,7 +30,20 @@ const expandedPoolId = ref('')
 const probingId = ref('')
 const probeResults = ref<Record<string, { ok: boolean; msg: string }>>({})
 const fetchingModelsId = ref('')
-const fetchedModels = ref<Record<string, string[]>>({})
+const verifyOnFetch = ref(true)
+const fetchedModelMeta = ref<
+  Record<
+    string,
+    {
+      usable: UpstreamModelCheck[]
+      failed: UpstreamModelCheck[]
+      filteredOutCount: number
+      unverifiedCount: number
+      showFailed: boolean
+      query: string
+    }
+  >
+>({})
 const showTemplatePicker = ref(false)
 
 const lightBaseUrl = ref('')
@@ -66,7 +79,7 @@ watch(
     poolFallback.value = c['pool_fallback'] !== 'false'
     poolEntries.value = (store.state.modelPool || []).map((x) => ({ ...x }))
     probeResults.value = {}
-    fetchedModels.value = {}
+    fetchedModelMeta.value = {}
     showTemplatePicker.value = false
     expandedPoolId.value = poolEntries.value[0]?.id || ''
 
@@ -112,6 +125,7 @@ async function saveAllConfig() {
     await BotHubApi.saveModelPool(normalized)
     store.notify('AI 引擎、免费模型池与凭据已安全保存')
     await store.loadDashboard(false)
+    poolEntries.value = (store.state.modelPool || []).map((x) => ({ ...x }))
   } catch (err: any) {
     store.notify(err.message)
   } finally {
@@ -144,7 +158,7 @@ async function probeTarget(targetId: string, provider: string, baseUrl: string, 
       provider,
       base_url: baseUrl.trim(),
       api_key: apiKey.trim(),
-      model: modelId.trim() || 'deepseek-flash',
+      model: modelId.trim() || 'deepseek-chat',
     })
     probeResults.value[targetId] = { ok: true, msg: res.message || `${res.latency_ms}ms OK` }
     if (res.model_health) {
@@ -194,23 +208,48 @@ async function fetchModelsForTarget(
       provider,
       base_url: baseUrl.trim(),
       api_key: apiKey.trim(),
+      verify: verifyOnFetch.value,
     })
-    fetchedModels.value[targetId] = res.models || []
-    if (res.models && res.models.length > 0) {
+    const checked = res.checked_models || (res.models || []).map((id) => ({ id, usable: true }))
+    const usable = checked.filter((c) => c.usable)
+    const failed = checked.filter((c) => !c.usable)
+    fetchedModelMeta.value[targetId] = {
+      usable,
+      failed,
+      filteredOutCount: res.filtered_out_count || 0,
+      unverifiedCount: res.unverified_count || 0,
+      showFailed: usable.length === 0 && failed.length > 0,
+      query: '',
+    }
+    if (usable.length > 0) {
       if (targetId === 'primary' && !aiModel.value.trim()) {
-        aiModel.value = res.models[0]
+        aiModel.value = usable[0].id
       } else if (entry && !entry.model.trim()) {
-        entry.model = res.models[0]
+        entry.model = usable[0].id
       }
-      store.notify(`已从接口实时拉取 ${res.models.length} 个可用模型`)
+      const skipInfo =
+        failed.length > 0 || (res.filtered_out_count || 0) > 0
+          ? `（已自动剔除 ${failed.length + (res.filtered_out_count || 0)} 个不可用/非对话模型）`
+          : ''
+      store.notify(`已筛选出 ${usable.length} 个实测可用模型${skipInfo}`)
+    } else if (failed.length > 0) {
+      store.notify(`已拉取列表但实测均不可用 (${failed.length} 个)，可展开下方查看原因`)
     } else {
-      store.notify('上游接口未返回可用模型列表')
+      store.notify('上游接口未返回可用对话模型')
     }
   } catch (err: any) {
     store.notify(`拉取模型失败: ${err.message}`)
   } finally {
     fetchingModelsId.value = ''
   }
+}
+
+function filteredUsableChecks(targetId: string): UpstreamModelCheck[] {
+  const meta = fetchedModelMeta.value[targetId]
+  if (!meta) return []
+  const q = meta.query.trim().toLowerCase()
+  if (!q) return meta.usable
+  return meta.usable.filter((c) => c.id.toLowerCase().includes(q))
 }
 
 function addPoolNodeFromTemplate(tplId?: string) {
@@ -374,8 +413,8 @@ async function handleImportBackup(e: Event) {
           <div class="modal-section flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2 flex-wrap">
               <div>
-                <div class="text-xs font-semibold text-[#f2b880]">主力引擎 (DeepSeek Flash / 中转站)</div>
-                <p class="text-[11px] text-slate-400 mt-0.5">主力固定采用轻量高性价比 DeepSeek Flash；支持填入任何 OpenAI 兼容中转站地址与模型别名</p>
+                <div class="text-xs font-semibold text-[#f2b880]">主力引擎 (DeepSeek / 自定义中转站)</div>
+                <p class="text-[11px] text-slate-400 mt-0.5">支持 DeepSeek 官方或任何 OpenAI 兼容中转站；点击下方实时拉取并自动验证真实可用的对话模型</p>
               </div>
               <button
                 type="button"
@@ -406,7 +445,7 @@ async function handleImportBackup(e: Event) {
                 @click="useOfficialFlashPreset"
                 class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
               >
-                DeepSeek 官方 (Flash)
+                DeepSeek 官方 (deepseek-chat)
               </button>
               <button
                 type="button"
@@ -435,29 +474,59 @@ async function handleImportBackup(e: Event) {
                     @click="fetchModelsForTarget('primary', 'deepseek', deepseekBaseUrl, deepseekKey)"
                     class="text-[10.5px] text-[#f2b880] hover:underline cursor-pointer disabled:opacity-45"
                   >
-                    {{ fetchingModelsId === 'primary' ? '拉取中...' : '拉取实时模型列表' }}
+                    {{ fetchingModelsId === 'primary' ? '探测可用模型中...' : verifyOnFetch ? '拉取并筛选可用模型' : '仅拉取清单' }}
                   </button>
                 </div>
-                <input v-model="aiModel" type="text" placeholder="点击右侧实时拉取或输入模型 ID" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                <input v-model="aiModel" type="text" placeholder="点击上方自动探测可用模型或手动输入" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
               </div>
             </div>
-            <div v-if="(fetchedModels.primary || []).length > 0" class="flex flex-col gap-1.5 rounded-xl border border-[#f2b880]/20 bg-[#050811]/70 p-2.5">
-              <span class="text-[10.5px] text-slate-400">实时拉取的主力可用模型 ({{ fetchedModels.primary.length }}): 点击选用</span>
-              <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+            <div v-if="fetchedModelMeta.primary" class="flex flex-col gap-2 rounded-xl border border-[#f2b880]/20 bg-[#050811]/70 p-2.5">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <span class="text-[10.5px] text-slate-300">
+                  {{ verifyOnFetch ? '实测可用模型' : '对话模型候选' }} ({{ filteredUsableChecks('primary').length }})
+                  <template v-if="fetchedModelMeta.primary.filteredOutCount > 0">
+                    · 已过滤 {{ fetchedModelMeta.primary.filteredOutCount }} 个非对话模型
+                  </template>
+                </span>
+                <input
+                  v-if="fetchedModelMeta.primary.usable.length > 6"
+                  v-model="fetchedModelMeta.primary.query"
+                  type="search"
+                  placeholder="搜索模型..."
+                  class="w-32 bg-[#070b18] border border-[#fff8ee]/12 rounded-md px-2 py-0.5 text-[10.5px] text-white focus:border-[#f2b880]/50 focus:outline-none"
+                />
+              </div>
+              <div v-if="filteredUsableChecks('primary').length > 0" class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
                 <button
-                  v-for="m in fetchedModels.primary"
-                  :key="m"
+                  v-for="item in filteredUsableChecks('primary')"
+                  :key="item.id"
                   type="button"
-                  @click="aiModel = m"
+                  @click="aiModel = item.id"
                   :class="[
-                    'px-2 py-0.5 rounded-md border font-mono text-[10.5px] cursor-pointer transition',
-                    aiModel === m
+                    'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border font-mono text-[10.5px] cursor-pointer transition',
+                    aiModel === item.id
                       ? 'border-[#f2b880] bg-[#f2b880]/20 text-[#f2b880]'
                       : 'border-[#fff8ee]/12 bg-[#070b18] text-slate-300 hover:border-[#f2b880]/45'
                   ]"
                 >
-                  {{ m }}
+                  <span>{{ item.id }}</span>
+                  <span v-if="item.latency_ms" class="text-[9.5px] text-emerald-300/80">{{ item.latency_ms }}ms</span>
                 </button>
+              </div>
+              <div v-if="fetchedModelMeta.primary.failed.length > 0" class="pt-1 border-t border-[#fff8ee]/8">
+                <button
+                  type="button"
+                  @click="fetchedModelMeta.primary.showFailed = !fetchedModelMeta.primary.showFailed"
+                  class="text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                >
+                  {{ fetchedModelMeta.primary.showFailed ? '收起不可用模型' : `查看被排除的不可用模型 (${fetchedModelMeta.primary.failed.length})` }}
+                </button>
+                <div v-if="fetchedModelMeta.primary.showFailed" class="mt-1.5 flex flex-col gap-1 max-h-24 overflow-y-auto">
+                  <div v-for="bad in fetchedModelMeta.primary.failed" :key="bad.id" class="flex items-center justify-between gap-2 text-[10px] font-mono text-rose-300/80">
+                    <span class="truncate">{{ bad.id }}</span>
+                    <span class="shrink-0 text-slate-400">{{ bad.reason }}</span>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -527,7 +596,7 @@ async function handleImportBackup(e: Event) {
               </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <ToggleSwitch
                 v-model="poolForLight"
                 label="后台摘要优先用免费池"
@@ -537,6 +606,11 @@ async function handleImportBackup(e: Event) {
                 v-model="poolFallback"
                 label="主力缺 Key/故障自动回退"
                 description="主力异常时自动顺延调用免费池"
+              />
+              <ToggleSwitch
+                v-model="verifyOnFetch"
+                label="拉取时自动实测可用性"
+                description="过滤 embedding/tts 并逐一探测 429/404 不可用模型"
               />
             </div>
 
@@ -668,26 +742,59 @@ async function handleImportBackup(e: Event) {
                         @click="fetchModelsForTarget(entry.id, entry.provider, entry.base_url, entry.api_key, entry)"
                         class="text-[10.5px] text-emerald-300 hover:underline cursor-pointer disabled:opacity-45"
                       >
-                        {{ fetchingModelsId === entry.id ? '拉取中...' : '实时拉取模型' }}
+                        {{ fetchingModelsId === entry.id ? '探测可用模型中...' : verifyOnFetch ? '拉取并筛选可用模型' : '仅拉取清单' }}
                       </button>
                     </div>
-                    <input v-model="entry.model" type="text" placeholder="点击实时拉取或输入模型 ID" class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                    <input v-model="entry.model" type="text" placeholder="点击上方自动筛选可用模型" class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
                   </div>
-                  <div v-if="(fetchedModels[entry.id] || []).length > 0" class="sm:col-span-2 flex flex-wrap gap-1.5 rounded-lg border border-emerald-400/20 bg-[#070b18] p-2 max-h-28 overflow-y-auto">
-                    <button
-                      v-for="m in fetchedModels[entry.id]"
-                      :key="m"
-                      type="button"
-                      @click="entry.model = m"
-                      :class="[
-                        'px-2 py-0.5 rounded border font-mono text-[10px] cursor-pointer transition',
-                        entry.model === m
-                          ? 'border-emerald-400 bg-emerald-400/20 text-emerald-200'
-                          : 'border-[#fff8ee]/12 text-slate-300 hover:border-emerald-400/45'
-                      ]"
-                    >
-                      {{ m }}
-                    </button>
+                  <div v-if="fetchedModelMeta[entry.id]" class="sm:col-span-2 flex flex-col gap-2 rounded-lg border border-emerald-400/20 bg-[#070b18] p-2.5">
+                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                      <span class="text-[10.5px] text-slate-300">
+                        {{ verifyOnFetch ? '实测可用' : '候选模型' }} ({{ filteredUsableChecks(entry.id).length }})
+                        <template v-if="fetchedModelMeta[entry.id].filteredOutCount > 0">
+                          · 已过滤 {{ fetchedModelMeta[entry.id].filteredOutCount }} 个非对话模型
+                        </template>
+                      </span>
+                      <input
+                        v-if="fetchedModelMeta[entry.id].usable.length > 6"
+                        v-model="fetchedModelMeta[entry.id].query"
+                        type="search"
+                        placeholder="搜索可用模型..."
+                        class="w-32 bg-[#050811] border border-[#fff8ee]/12 rounded-md px-2 py-0.5 text-[10px] text-white focus:border-emerald-400/50 focus:outline-none"
+                      />
+                    </div>
+                    <div v-if="filteredUsableChecks(entry.id).length > 0" class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                      <button
+                        v-for="item in filteredUsableChecks(entry.id)"
+                        :key="item.id"
+                        type="button"
+                        @click="entry.model = item.id"
+                        :class="[
+                          'inline-flex items-center gap-1.5 px-2 py-0.5 rounded border font-mono text-[10px] cursor-pointer transition',
+                          entry.model === item.id
+                            ? 'border-emerald-400 bg-emerald-400/20 text-emerald-200'
+                            : 'border-[#fff8ee]/12 text-slate-300 hover:border-emerald-400/45'
+                        ]"
+                      >
+                        <span>{{ item.id }}</span>
+                        <span v-if="item.latency_ms" class="text-[9px] text-emerald-300/80">{{ item.latency_ms }}ms</span>
+                      </button>
+                    </div>
+                    <div v-if="fetchedModelMeta[entry.id].failed.length > 0" class="pt-1 border-t border-[#fff8ee]/8">
+                      <button
+                        type="button"
+                        @click="fetchedModelMeta[entry.id].showFailed = !fetchedModelMeta[entry.id].showFailed"
+                        class="text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                      >
+                        {{ fetchedModelMeta[entry.id].showFailed ? '收起不可用模型' : `查看被排除的不可用模型 (${fetchedModelMeta[entry.id].failed.length})` }}
+                      </button>
+                      <div v-if="fetchedModelMeta[entry.id].showFailed" class="mt-1.5 flex flex-col gap-1 max-h-24 overflow-y-auto">
+                        <div v-for="bad in fetchedModelMeta[entry.id].failed" :key="bad.id" class="flex items-center justify-between gap-2 text-[10px] font-mono text-rose-300/80">
+                          <span class="truncate">{{ bad.id }}</span>
+                          <span class="shrink-0 text-slate-400">{{ bad.reason }}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <label class="sm:col-span-2 flex flex-col gap-1 text-slate-400">
                     <span>OpenAI 兼容 / Google Base URL</span>
@@ -805,6 +912,18 @@ async function handleImportBackup(e: Event) {
                 重置移动端 App Token
               </button>
             </div>
+          </div>
+
+          <div class="modal-section flex items-center justify-between gap-3">
+            <div>
+              <h4 class="text-xs font-semibold text-white">运行版本与构建信息</h4>
+              <p class="font-mono text-[11px] text-slate-400 mt-0.5">
+                {{ store.state.version }}
+                <template v-if="store.state.commit"> · {{ store.state.commit }}</template>
+                <template v-if="store.state.buildTime"> · {{ store.state.buildTime }}</template>
+              </p>
+            </div>
+            <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-full border border-[#fff8ee]/12 text-slate-400">运行中</span>
           </div>
 
           <div class="modal-section flex items-center justify-between gap-3">

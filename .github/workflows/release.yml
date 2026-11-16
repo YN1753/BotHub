@@ -59,6 +59,10 @@ jobs:
           npm ci
           npm run build
 
+      - name: Run Go Tests
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: go test -count=1 ./...
+
       - name: Build Static Single Binary (Embedded Frontend)
         env:
           CGO_ENABLED: 0
@@ -67,7 +71,14 @@ jobs:
         run: |
           COMMIT=$(echo "${{ github.sha }}" | cut -c1-7)
           BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          VERSION="${{ github.ref_type == 'tag' && github.ref_name || format('v2.0.0-{0}', github.sha) }}"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            TAG_AT_HEAD=$(git describe --tags --exact-match --match "v*" 2>/dev/null || true)
+            MAIN_VER=$(sed -n 's/.*Version *= *"\([^"]*\)".*/\1/p' main.go | head -n 1)
+            LATEST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || true)
+            VERSION="${TAG_AT_HEAD:-${MAIN_VER:-${LATEST_TAG:-v2.11.0}}}"
+          fi
           mkdir -p dist
           LDFLAGS="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X 'main.BuildTime=${BUILD_TIME}'"
           go build -trimpath -ldflags="${LDFLAGS}" -o "dist/${{ matrix.binary_name }}" .
@@ -147,7 +158,7 @@ jobs:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
           name: ${{ github.ref_type == 'tag' && format('BotHub {0}', github.ref_name) || 'BotHub Latest Build' }}
           prerelease: false
-          make_latest: true
+          make_latest: ${{ github.ref_type == 'tag' }}
           files: release_assets/*
           generate_release_notes: true
         env:
@@ -158,11 +169,24 @@ jobs:
     name: Deploy to CloudCone VPS
     needs: release
     runs-on: ubuntu-latest
+    concurrency:
+      group: vps-deploy
+      cancel-in-progress: false
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     steps:
+      - name: Checkout Source for Tag Check
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Check Deploy Credentials
         id: check-secrets
         run: |
+          if [ "${{ github.ref_type }}" != "tag" ] && [ -n "$(git tag --points-at HEAD 'v*')" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Notice: Tagged release exists at HEAD; skipping duplicate branch deploy."
+            exit 0
+          fi
           if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "Notice: VPS_SSH_KEY secret not found. Skipping auto-deploy step."

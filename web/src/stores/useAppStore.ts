@@ -47,7 +47,9 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.10.0',
+  version: 'v2.11.0',
+  commit: '',
+  buildTime: '',
   uptimeSec: 0,
   serverNow: '--',
   stats: {
@@ -181,24 +183,39 @@ export function useAppStore() {
   const modelOptions = computed<SelectOption[]>(() => {
     const enabledNodes = state.modelPool.filter((m) => m.enabled)
     const readyCount = enabledNodes.filter((m) => Boolean(m.api_key && m.model)).length
+    const hasPrimaryKey = Boolean((state.configs.deepseek_api_key || '').trim())
     const primaryModel = (state.configs.ai_model || '').trim()
-    const baseOpts: SelectOption[] = [
-      {
-        value: 'deepseek-flash',
-        label: primaryModel
-          ? `主力引擎 (${primaryModel})`
-          : '主力引擎 (需先在设置中拉取模型)',
-      },
-    ]
-    if (enabledNodes.length > 0) {
+    const primaryOpt: SelectOption = {
+      value: 'primary',
+      label: hasPrimaryKey
+        ? `主力引擎 (${primaryModel || '待拉取模型'})`
+        : '主力引擎 (需先配置 Key)',
+    }
+    const baseOpts: SelectOption[] = []
+
+    // If user only set up Free Pool (without Primary Key), put free-pool first as smart default
+    if (!hasPrimaryKey && enabledNodes.length > 0) {
       baseOpts.push({
         value: 'free-pool',
         label:
           readyCount > 0
             ? `免费模型池 (自动容灾 · ${readyCount} 已就绪)`
-            : '免费模型池 (自动轮询 · 待配 Key 与模型)',
+            : '免费模型池 (待配 Key 与模型)',
       })
+      baseOpts.push(primaryOpt)
+    } else {
+      baseOpts.push(primaryOpt)
+      if (enabledNodes.length > 0) {
+        baseOpts.push({
+          value: 'free-pool',
+          label:
+            readyCount > 0
+              ? `免费模型池 (自动容灾 · ${readyCount} 已就绪)`
+              : '免费模型池 (待配 Key 与模型)',
+        })
+      }
     }
+
     for (const node of enabledNodes) {
       const modelTag = node.model ? ` · ${node.model}` : ' · 待拉取模型'
       baseOpts.push({
@@ -241,6 +258,8 @@ export function useAppStore() {
     try {
       const data = await BotHubApi.dashboard()
       state.version = data.version || state.version
+      state.commit = data.commit || state.commit
+      state.buildTime = data.build_time || state.buildTime
       state.uptimeSec = Number(data.uptime_sec) || 0
       state.serverNow = data.server_now || '--'
       state.stats = data.stats || state.stats

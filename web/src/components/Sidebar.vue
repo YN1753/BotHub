@@ -271,9 +271,10 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
       <div ref="rosterRef" class="stagger-list flex-1 min-h-0 overflow-y-auto px-2.5 pb-2 flex flex-col gap-1">
         <div
           v-if="filteredBots.length === 0"
-          class="py-8 text-center flex flex-col items-center gap-2 text-xs text-slate-500"
+          class="py-8 text-center flex flex-col items-center gap-2 text-xs text-slate-500 px-3"
         >
-          <span>无匹配的专属 Bot</span>
+          <span v-if="store.state.bots.length === 0">还没有 Bot，点击上方「新建 Bot」开始</span>
+          <span v-else>无匹配的专属 Bot</span>
           <button
             v-if="searchQuery"
             type="button"

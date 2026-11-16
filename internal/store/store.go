@@ -15,7 +15,7 @@ import (
 
 const (
 	DefaultDeepSeekBaseURL = "https://api.deepseek.com/v1"
-	DefaultAIModel         = "deepseek-flash"
+	DefaultAIModel         = "deepseek-chat"
 	DefaultActivePersona   = "grok"
 	DefaultNezhaDBPath     = "/opt/nezha/dashboard/data/sqlite.db"
 
@@ -214,7 +214,7 @@ CREATE TABLE IF NOT EXISTS bots (
 
 	// Safe incremental column migrations for existing databases
 	alters := []string{
-		`ALTER TABLE tasks ADD COLUMN bot_id TEXT NOT NULL DEFAULT 'butler'`,
+		`ALTER TABLE tasks ADD COLUMN bot_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE agent_messages ADD COLUMN bot_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE agent_messages ADD COLUMN sender_bot_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE agent_messages ADD COLUMN msg_kind TEXT NOT NULL DEFAULT 'chat'`,
@@ -316,10 +316,10 @@ func (s *Store) seedDefaults() error {
 		}
 	}
 
-	// Automatically upgrade retired model IDs (deepseek-chat / deepseek-reasoner / deepseek-v4-pro) in existing databases
-	_, _ = s.db.Exec(`UPDATE configs SET value = 'deepseek-flash', updated_at = ? WHERE key = 'ai_model' AND value IN ('deepseek-chat','deepseek-reasoner','deepseek-v4-pro')`, now)
-	_, _ = s.db.Exec(`UPDATE bots SET model = 'deepseek-flash', updated_at = ? WHERE model IN ('deepseek-chat','deepseek-reasoner','deepseek-v4-pro')`, now)
-	_, _ = s.db.Exec(`UPDATE agent_sessions SET model = 'deepseek-flash' WHERE model IN ('deepseek-chat','deepseek-reasoner','deepseek-v4-pro')`)
+	// Clean up retired placeholder deepseek-v4-pro without touching real live model IDs like deepseek-chat / deepseek-reasoner / deepseek-flash
+	_, _ = s.db.Exec(`UPDATE configs SET value = 'deepseek-chat', updated_at = ? WHERE key = 'ai_model' AND value = 'deepseek-v4-pro'`, now)
+	_, _ = s.db.Exec(`UPDATE bots SET model = 'deepseek-chat', updated_at = ? WHERE model = 'deepseek-v4-pro'`, now)
+	_, _ = s.db.Exec(`UPDATE agent_sessions SET model = 'deepseek-chat' WHERE model = 'deepseek-v4-pro'`)
 	if envPass := strings.TrimSpace(os.Getenv("BOTHUB_ADMIN_TOKEN")); envPass != "" {
 		_ = s.SetConfig(KeyAdminPassHash, HashPassword(envPass))
 	}

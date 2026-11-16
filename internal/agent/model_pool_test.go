@@ -15,11 +15,14 @@ import (
 )
 
 func TestFreeModelPoolRoutingFailoverAndLiveFetchModels(t *testing.T) {
-	if got := NormalizeModelID("deepseek-v4-pro"); got != "deepseek-flash" {
-		t.Fatalf("expected deepseek-v4-pro normalized to deepseek-flash, got %q", got)
+	if got := NormalizeModelID("deepseek-v4-pro"); got != "" {
+		t.Fatalf("expected legacy deepseek-v4-pro cleared, got %q", got)
 	}
-	if got := NormalizeModelID("deepseek-reasoner"); got != "deepseek-flash" {
-		t.Fatalf("expected deepseek-reasoner normalized to deepseek-flash, got %q", got)
+	if got := NormalizeModelID("deepseek-chat"); got != "deepseek-chat" {
+		t.Fatalf("expected deepseek-chat preserved verbatim, got %q", got)
+	}
+	if got := NormalizeModelID("deepseek-reasoner"); got != "deepseek-reasoner" {
+		t.Fatalf("expected deepseek-reasoner preserved verbatim, got %q", got)
 	}
 
 	tmpDir := t.TempDir()
@@ -56,16 +59,36 @@ func TestFreeModelPoolRoutingFailoverAndLiveFetchModels(t *testing.T) {
 		SystemPrompt: "简洁回答",
 	})
 
-	// Mock upstream /models discovery + rate-limited node + healthy fallback node
+	// Mock upstream /models discovery + selective usability verification
 	googleRateLimited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/models") {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":[{"id":"models/gemini-2.5-flash"},{"id":"models/gemini-2.5-pro"}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"models/gemini-2.5-flash"},{"id":"models/gemini-2.5-pro"},{"id":"models/text-embedding-004"},{"id":"models/imagen-3.0-generate-002"},{"id":"models/gemini-2.5-flash-preview-tts"}]}`))
 			return
 		}
 		http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 	}))
 	defer googleRateLimited.Close()
+
+	// Dedicated server returning 200 for gemini-2.5-flash and 429 quota=0 for gemini-2.5-pro
+	selectiveVerifySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"models/gemini-2.5-flash"},{"id":"models/gemini-2.5-pro"},{"id":"models/gemini-embedding-001"},{"id":"models/veo-2.0-generate-001"}]}`))
+			return
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Model == "gemini-2.5-pro" {
+			http.Error(w, `{"error":{"message":"Quota exceeded for metric: limit: 0"}}`, http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer selectiveVerifySrv.Close()
 
 	var sfPayload string
 	sfServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -97,10 +120,22 @@ func TestFreeModelPoolRoutingFailoverAndLiveFetchModels(t *testing.T) {
 
 	eng := NewEngine(st, &fakeTaskController{st: st})
 
-	// Test live /models discovery from upstream
+	// Test live /models discovery filters non-chat modalities cleanly
 	fetchedGoogleModels, err := eng.FetchUpstreamModels(context.Background(), googleRateLimited.URL, "AIzaTestGoogleKey123456", "google")
 	if err != nil || len(fetchedGoogleModels) != 2 || fetchedGoogleModels[0] != "gemini-2.5-flash" {
 		t.Fatalf("unexpected live Google models fetch: models=%v err=%v", fetchedGoogleModels, err)
+	}
+
+	// Test FetchAndVerifyUpstreamModels verifies usability and keeps only usable chat models
+	verifiedRes, err := eng.FetchAndVerifyUpstreamModels(context.Background(), selectiveVerifySrv.URL, "AIzaTestGoogleKey123456", "google", true)
+	if err != nil {
+		t.Fatalf("FetchAndVerifyUpstreamModels failed: %v", err)
+	}
+	if verifiedRes.FilteredOutCount != 2 {
+		t.Fatalf("expected 2 non-chat models filtered out, got %d", verifiedRes.FilteredOutCount)
+	}
+	if len(verifiedRes.Models) != 1 || verifiedRes.Models[0] != "gemini-2.5-flash" {
+		t.Fatalf("expected only gemini-2.5-flash usable, got %+v", verifiedRes)
 	}
 
 	// User creates two free pool items from templates using dynamically discovered models

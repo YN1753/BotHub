@@ -58,11 +58,20 @@ export const BotHubApi = {
     provider: string
     base_url: string
     api_key: string
+    verify?: boolean
   }) =>
     apiRequest<{
       ok: boolean
       models: string[]
       count: number
+      checked_models?: Array<{
+        id: string
+        usable: boolean
+        latency_ms?: number
+        reason?: string
+      }>
+      filtered_out_count?: number
+      unverified_count?: number
     }>('/api/v2/model-pool/models', { method: 'POST', body: JSON.stringify(payload) }),
   testPush: () => apiRequest<{ ok: boolean; message: string }>('/api/test-push', { method: 'POST' }),
   rotateAppToken: () =>

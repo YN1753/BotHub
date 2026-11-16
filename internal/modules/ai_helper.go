@@ -47,9 +47,8 @@ func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, u
 	primaryKey = strings.TrimSpace(primaryKey)
 	primaryModel, _ := st.GetConfig(store.KeyAIModel)
 	primaryModel = strings.TrimSpace(primaryModel)
-	switch primaryModel {
-	case "", "deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro":
-		primaryModel = store.DefaultAIModel // "deepseek-flash"
+	if primaryModel == "" || primaryModel == "deepseek-v4-pro" {
+		primaryModel = store.DefaultAIModel
 	}
 
 	if lightKey != "" {
@@ -58,15 +57,15 @@ func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, u
 			b = primaryBase
 		}
 		m := lightModel
-		if m == "" || m == "deepseek-chat" || m == "deepseek-reasoner" || m == "deepseek-v4-pro" {
-			m = store.DefaultAIModel
+		if m == "" || m == "deepseek-v4-pro" {
+			m = primaryModel
 		}
 		candidates = append(candidates, llmCandidate{
 			baseURL:       b,
 			apiKey:        lightKey,
 			model:         m,
 			provider:      "custom",
-			allowThinking: strings.Contains(strings.ToLower(m), "flash") && b == primaryBase,
+			allowThinking: (strings.Contains(strings.ToLower(m), "flash") || m == "deepseek-chat") && strings.Contains(strings.ToLower(b), "deepseek.com"),
 		})
 	}
 
@@ -74,7 +73,7 @@ func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, u
 	usePoolLight := strings.TrimSpace(poolLightFlag) == "" || strings.EqualFold(strings.TrimSpace(poolLightFlag), "true") || strings.TrimSpace(poolLightFlag) == "1"
 	if usePoolLight {
 		for _, entry := range st.GetModelPool() {
-			if !entry.Enabled || strings.TrimSpace(entry.APIKey) == "" {
+			if !entry.Enabled || strings.TrimSpace(entry.APIKey) == "" || strings.TrimSpace(entry.Model) == "" {
 				continue
 			}
 			candidates = append(candidates, llmCandidate{
@@ -92,7 +91,7 @@ func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, u
 			apiKey:        primaryKey,
 			model:         primaryModel,
 			provider:      "deepseek",
-			allowThinking: strings.Contains(strings.ToLower(primaryModel), "flash"),
+			allowThinking: (strings.Contains(strings.ToLower(primaryModel), "flash") || primaryModel == "deepseek-chat") && strings.Contains(strings.ToLower(primaryBase), "deepseek.com"),
 		})
 	}
 

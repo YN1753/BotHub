@@ -60,9 +60,10 @@ const MONTH_DAY_OPTIONS = Array.from({ length: 28 }, (_, i) => {
 const templateOptions = computed(() =>
   store.state.templates.map((t) => ({ value: t.type, label: t.name }))
 )
-const botOptions = computed(() =>
-  store.state.bots.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` }))
-)
+const botOptions = computed(() => [
+  { value: '', label: '通用后台调度（不绑定特定 Bot）' },
+  ...store.state.bots.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` })),
+])
 const currentFields = computed(() => {
   const tpl = store.state.templates.find((t) => t.type === type.value)
   return tpl?.fields || []

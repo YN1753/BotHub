@@ -28,7 +28,7 @@ const mode = computed({
 const name = ref('')
 const roleTitle = ref('')
 const avatarStyle = ref('butler:gold')
-const model = ref('deepseek-flash')
+const model = ref(store.modelOptions.value[0]?.value || 'primary')
 const enableThinking = ref(true)
 const systemPrompt = ref('')
 const allowedTools = ref<string[]>([])
@@ -61,6 +61,9 @@ watch(
   () => store.state.showCreateBotModal,
   (open) => {
     if (!open) return
+    if (!store.modelOptions.value.some((o) => o.value === model.value)) {
+      model.value = store.modelOptions.value[0]?.value || 'primary'
+    }
     if (allowedTools.value.length === 0 && availableTools.value.length > 0) {
       allowedTools.value = availableTools.value.map((t) => t.id)
     }

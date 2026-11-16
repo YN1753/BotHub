@@ -30,7 +30,7 @@ const moreMenuId = useId()
 const composerId = useId()
 
 const inputPrompt = ref('')
-const selectedModel = ref('deepseek-flash')
+const selectedModel = ref('primary')
 const enableThinking = ref(true)
 const streamStatus = ref('就绪')
 const scrollContainerRef = ref<HTMLElement | null>(null)
@@ -149,7 +149,7 @@ const SLASH_COMMANDS = [
 const cfgName = ref('')
 const cfgRole = ref('')
 const cfgPrompt = ref('')
-const cfgModel = ref('deepseek-flash')
+const cfgModel = ref('primary')
 const cfgAvatar = ref('butler:gold')
 const cfgThinking = ref(true)
 const cfgTools = ref<string[]>([])
@@ -176,7 +176,7 @@ async function quickCreateBotFromTemplate(tplId: string) {
       name: tpl.name,
       role_title: tpl.role_title,
       avatar_style: tpl.avatar_style,
-      model: store.modelOptions.value[0]?.value || 'deepseek-flash',
+      model: store.modelOptions.value[0]?.value || 'primary',
       system_prompt: tpl.system_prompt,
       enable_thinking: tpl.enable_thinking,
       allowed_tools: JSON.stringify(tpl.allowed_tools || []),
@@ -219,12 +219,13 @@ watch(
   bot,
   (b) => {
     if (!b) return
-    selectedModel.value = b.model || 'deepseek-flash'
+    const normModel = !b.model || b.model === 'deepseek-flash' ? 'primary' : b.model
+    selectedModel.value = normModel
     enableThinking.value = b.enable_thinking !== false
     cfgName.value = b.name
     cfgRole.value = b.role_title
     cfgPrompt.value = b.system_prompt
-    cfgModel.value = b.model || 'deepseek-flash'
+    cfgModel.value = normModel
     cfgAvatar.value = b.avatar_style || 'cyan'
     cfgThinking.value = b.enable_thinking !== false
     cfgGroupMode.value = b.group_mode || 'smart'

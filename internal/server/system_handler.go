@@ -47,7 +47,7 @@ func maskSecret(val string) string {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	var tasks []any
+	tasks := make([]any, 0)
 	if s.scheduler != nil {
 		tList, err := s.scheduler.Status()
 		if err != nil {
@@ -368,6 +368,7 @@ func (s *Server) handleFetchUpstreamModels(w http.ResponseWriter, r *http.Reques
 		Provider string `json:"provider"`
 		BaseURL  string `json:"base_url"`
 		APIKey   string `json:"api_key"`
+		Verify   *bool  `json:"verify,omitempty"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "无效模型拉取请求")
@@ -389,18 +390,26 @@ func (s *Server) handleFetchUpstreamModels(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	verify := true
+	if req.Verify != nil {
+		verify = *req.Verify
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 38*time.Second)
 	defer cancel()
 
-	models, err := s.agent.FetchUpstreamModels(ctx, req.BaseURL, apiKey, req.Provider)
+	res, err := s.agent.FetchAndVerifyUpstreamModels(ctx, req.BaseURL, apiKey, req.Provider, verify)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":     true,
-		"models": models,
-		"count":  len(models),
+		"ok":                 true,
+		"models":             res.Models,
+		"count":              len(res.Models),
+		"checked_models":     res.CheckedModels,
+		"filtered_out_count": res.FilteredOutCount,
+		"unverified_count":   res.UnverifiedCount,
 	})
 }
 
