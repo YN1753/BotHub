@@ -43,6 +43,23 @@ type ToolFunction struct {
 	Parameters  map[string]any `json:"parameters"`
 }
 
+type AvailableToolMeta struct {
+	ID          string `json:"id"`
+	Description string `json:"description"`
+}
+
+func AvailableToolsPayload() []AvailableToolMeta {
+	defs := BuiltinTools()
+	out := make([]AvailableToolMeta, 0, len(defs))
+	for _, d := range defs {
+		out = append(out, AvailableToolMeta{
+			ID:          d.Function.Name,
+			Description: d.Function.Description,
+		})
+	}
+	return out
+}
+
 // BuiltinTools returns all OpenAI-compatible tool schemas exposed to DeepSeek.
 func BuiltinTools() []ToolDefinition {
 	return []ToolDefinition{

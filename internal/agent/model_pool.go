@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -142,6 +143,16 @@ func BuildChatCompletionsURL(baseURL string) string {
 		return u
 	}
 	return u + "/chat/completions"
+}
+
+func BuildModelsListURL(baseURL string) string {
+	u := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	u = strings.TrimSuffix(u, "/chat/completions")
+	u = strings.TrimRight(u, "/")
+	if strings.HasSuffix(u, "/models") {
+		return u
+	}
+	return u + "/models"
 }
 
 func IsAllowThinkingModel(provider, model string) bool {
@@ -366,4 +377,83 @@ func (e *Engine) ProbeModelTargetWithID(ctx context.Context, targetID, baseURL, 
 	}
 	e.health.recordSuccess(healthID, elapsed)
 	return elapsed, strings.TrimSpace(parsed.Choices[0].Message.Content), nil
+}
+
+// FetchUpstreamModels queries the upstream provider's /models endpoint dynamically using the given
+// OpenAI-compatible Base URL and API Key, returning a sorted list of live available model IDs.
+func (e *Engine) FetchUpstreamModels(ctx context.Context, baseURL, apiKey, provider string) ([]string, error) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	apiKey = strings.TrimSpace(apiKey)
+	if baseURL == "" || apiKey == "" {
+		return nil, fmt.Errorf("请先填写 Base URL 与 API Key")
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 18*time.Second)
+	defer cancel()
+
+	endpoint := BuildModelsListURL(baseURL)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if provider == "openrouter" {
+		req.Header.Set("X-Title", "Vesper BotHub")
+	}
+
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("拉取模型列表失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("拉取模型列表 HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+
+	var parsed struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Models []struct {
+			Name string `json:"name"`
+			ID   string `json:"id"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, fmt.Errorf("解析模型列表 JSON 失败: %w", err)
+	}
+
+	seen := make(map[string]bool)
+	models := make([]string, 0, len(parsed.Data)+len(parsed.Models))
+	addModel := func(id string) {
+		id = strings.TrimSpace(id)
+		id = strings.TrimPrefix(id, "models/")
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		models = append(models, id)
+	}
+	for _, item := range parsed.Data {
+		addModel(item.ID)
+	}
+	for _, item := range parsed.Models {
+		if item.ID != "" {
+			addModel(item.ID)
+		} else {
+			addModel(item.Name)
+		}
+	}
+
+	sort.SliceStable(models, func(i, j int) bool {
+		aFree := strings.Contains(strings.ToLower(models[i]), "free") || strings.Contains(strings.ToLower(models[i]), "flash")
+		bFree := strings.Contains(strings.ToLower(models[j]), "free") || strings.Contains(strings.ToLower(models[j]), "flash")
+		if aFree != bFree {
+			return aFree
+		}
+		return models[i] < models[j]
+	})
+	return models, nil
 }

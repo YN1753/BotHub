@@ -219,13 +219,15 @@ async function handleClearTimeline() {
 }
 
 async function handleDisbandGroup() {
-  if (!bot.value || bot.value.is_builtin) return
+  if (!bot.value) return
   if (!window.confirm(`确定解散群聊 [${bot.value.name}] 吗？群消息记录将被清除。`)) return
   await BotHubApi.deleteBot(bot.value.id)
   store.notify('群聊已解散')
   closeDrawer()
   await store.loadDashboard(false)
-  await store.selectBot('butler')
+  if (store.state.bots.length > 0) {
+    await store.selectBot(store.state.bots[0].id)
+  }
 }
 </script>
 
@@ -434,20 +436,11 @@ async function handleDisbandGroup() {
                 清空聊天记录
               </button>
               <button
-                v-if="!bot.is_builtin"
                 type="button"
                 @click="handleDisbandGroup"
                 class="min-h-[38px] rounded-xl border border-rose-400/35 bg-rose-500/12 text-xs text-rose-300 hover:bg-rose-500/22 cursor-pointer"
               >
                 解散群聊
-              </button>
-              <button
-                v-else
-                type="button"
-                @click="store.state.botView = 'config'; closeDrawer()"
-                class="min-h-[38px] rounded-xl border border-[#f2b880]/30 text-xs text-[#f2b880] hover:bg-[#f2b880]/10 cursor-pointer"
-              >
-                编辑工具权限
               </button>
             </div>
           </div>

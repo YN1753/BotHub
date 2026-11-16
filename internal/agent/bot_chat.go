@@ -109,71 +109,72 @@ func selectSmartGroupMembers(members []store.Bot, userMsg string) []store.Bot {
 		return members
 	}
 	lower := strings.ToLower(userMsg)
-	// Explicit "all" collaboration request triggers all group members
+	// Explicit collective request triggers all group members
 	for _, kw := range []string{"大家", "全部", "各位", "一起", "全员", "接力", "群策群力"} {
 		if strings.Contains(userMsg, kw) {
 			return members
 		}
 	}
-	type rule struct {
-		botID    string
-		keywords []string
-	}
-	rules := []rule{
-		{botID: "sentinel", keywords: []string{"探针", "哪吒", "vps", "节点", "服务器", "cpu", "内存", "负载", "掉线", "宕机", "告警", "延迟", "ssh", "nezha"}},
-		{botID: "butler", keywords: []string{"资产", "域名", "到期", "续费", "账单", "晨报", "定时", "例程", "cron", "日程", "会员", "cloudflare"}},
-		{botID: "radar", keywords: []string{"github", "开源", "趋势", "雷达", "新闻", "前沿", "hn", "hacker", "技术", "搜索", "网页", "url", "推荐"}},
-		{botID: "grok", keywords: []string{"架构", "锐评", "审查", "评审", "对比", "为什么", "设计", "优化", "方案", "分析", "总结"}},
+
+	toolDomainKeywords := map[string][]string{
+		"query_nezha_nodes": {"探针", "哪吒", "vps", "节点", "服务器", "cpu", "内存", "负载", "掉线", "宕机", "告警", "延迟", "ssh", "nezha"},
+		"manage_assets":     {"资产", "域名", "到期", "续费", "账单", "会员", "cloudflare"},
+		"manage_tasks":      {"定时", "例程", "cron", "日程", "晨报", "调度"},
+		"web_search":        {"github", "开源", "趋势", "雷达", "新闻", "前沿", "hn", "hacker", "搜索", "推荐"},
+		"read_url":          {"网页", "url", "链接", "http", "文章"},
 	}
 
-	picked := make([]store.Bot, 0, 2)
-	seen := make(map[string]bool)
-	memberMap := make(map[string]store.Bot, len(members))
+	type scored struct {
+		bot   store.Bot
+		score int
+	}
+	ranked := make([]scored, 0, len(members))
 	for _, m := range members {
-		memberMap[m.ID] = m
-	}
-
-	for _, r := range rules {
-		sp, exists := memberMap[r.botID]
-		if !exists || seen[sp.ID] {
-			continue
-		}
-		for _, kw := range r.keywords {
-			if strings.Contains(lower, kw) {
-				seen[sp.ID] = true
-				picked = append(picked, sp)
-				break
-			}
-		}
-		if len(picked) >= 2 {
-			break
-		}
-	}
-	// Also score custom specialist bots by matching role_title / name words
-	if len(picked) == 0 {
-		for _, m := range members {
-			roleTokens := strings.Fields(strings.ToLower(m.RoleTitle + " " + m.Name))
-			for _, tk := range roleTokens {
-				if len([]rune(tk)) >= 2 && strings.Contains(lower, tk) {
-					picked = append(picked, m)
-					seen[m.ID] = true
+		pts := 0
+		tools := m.AllowedToolList()
+		for _, toolName := range tools {
+			for _, kw := range toolDomainKeywords[toolName] {
+				if strings.Contains(lower, kw) {
+					pts += 3
 					break
 				}
 			}
-			if len(picked) >= 2 {
-				break
+		}
+		metaText := strings.ToLower(m.Name + " " + m.RoleTitle + " " + m.SystemPrompt)
+		for _, token := range strings.Fields(lower) {
+			if len([]rune(token)) >= 2 && strings.Contains(metaText, token) {
+				pts += 2
 			}
 		}
-	}
-	if len(picked) > 0 {
-		return picked
-	}
-	// Default smart lead: prefer grok or butler if in room, else first member
-	for _, preferred := range []string{"grok", "butler"} {
-		if sp, ok := memberMap[preferred]; ok {
-			return []store.Bot{sp}
+		for _, word := range strings.Fields(strings.ToLower(m.RoleTitle + " " + m.Name)) {
+			if len([]rune(word)) >= 2 && strings.Contains(lower, word) {
+				pts += 2
+			}
+		}
+		if pts > 0 {
+			ranked = append(ranked, scored{bot: m, score: pts})
 		}
 	}
+
+	if len(ranked) > 0 {
+		for i := 0; i < len(ranked); i++ {
+			for j := i + 1; j < len(ranked); j++ {
+				if ranked[j].score > ranked[i].score {
+					ranked[i], ranked[j] = ranked[j], ranked[i]
+				}
+			}
+		}
+		limit := 2
+		if len(ranked) < limit {
+			limit = len(ranked)
+		}
+		out := make([]store.Bot, 0, limit)
+		for i := 0; i < limit; i++ {
+			out = append(out, ranked[i].bot)
+		}
+		return out
+	}
+
 	return members[:1]
 }
 

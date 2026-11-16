@@ -463,10 +463,6 @@ func (s *Server) handleDeleteBot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Bot 不存在")
 		return
 	}
-	if existing.IsBuiltin {
-		writeError(w, http.StatusBadRequest, "内置核心 Bot 团队成员不可删除")
-		return
-	}
 	if err := s.store.DeleteBot(id); err != nil {
 		writeError(w, http.StatusInternalServerError, "删除 Bot 失败: "+err.Error())
 		return

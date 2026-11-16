@@ -226,7 +226,7 @@ func TestGrokBotRosterAndTimelineLifecycle(t *testing.T) {
 	s, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	// 1. Default 5 bots must be seeded
+	// 1. Fresh DB must start clean with 0 hardcoded bots; templates must still be available
 	reqList := httptest.NewRequest(http.MethodGet, "/api/v2/bots", nil)
 	recList := httptest.NewRecorder()
 	s.handleListBots(recList, reqList)
@@ -240,8 +240,11 @@ func TestGrokBotRosterAndTimelineLifecycle(t *testing.T) {
 	if err := json.Unmarshal(recList.Body.Bytes(), &listResp); err != nil {
 		t.Fatalf("unmarshal bots: %v", err)
 	}
-	if len(listResp.Bots) < 5 {
-		t.Fatalf("expected at least 5 default bots, got %d", len(listResp.Bots))
+	if len(listResp.Bots) != 0 {
+		t.Fatalf("expected clean DB with 0 hardcoded bots, got %d", len(listResp.Bots))
+	}
+	if len(store.BuiltinBotTemplates()) < 3 || len(store.ModelProviderTemplates()) < 4 {
+		t.Fatalf("expected creation templates available dynamically")
 	}
 
 	// 2. Create custom bot, update it, verify messages & unread clear
@@ -285,20 +288,11 @@ func TestGrokBotRosterAndTimelineLifecycle(t *testing.T) {
 		t.Fatalf("expected unread_count cleared to 0, got %d", botAfter.UnreadCount)
 	}
 
-	// Built-in bot cannot be deleted; custom bot can be deleted
-	reqDelBuiltin := httptest.NewRequest(http.MethodDelete, "/api/v2/bots/butler", nil)
-	reqDelBuiltin.SetPathValue("id", "butler")
-	recDelBuiltin := httptest.NewRecorder()
-	s.handleDeleteBot(recDelBuiltin, reqDelBuiltin)
-	if recDelBuiltin.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 when deleting builtin bot, got %d", recDelBuiltin.Code)
-	}
-
 	reqDelCustom := httptest.NewRequest(http.MethodDelete, "/api/v2/bots/"+customID, nil)
 	reqDelCustom.SetPathValue("id", customID)
 	recDelCustom := httptest.NewRecorder()
 	s.handleDeleteBot(recDelCustom, reqDelCustom)
 	if recDelCustom.Code != http.StatusOK {
-		t.Fatalf("expected 200 deleting custom bot, got %d", recDelCustom.Code)
+		t.Fatalf("expected 200 deleting bot, got %d", recDelCustom.Code)
 	}
 }

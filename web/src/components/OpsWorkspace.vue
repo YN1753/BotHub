@@ -99,8 +99,8 @@ async function handleSyncAssets() {
 }
 
 function taskBot(botId?: string) {
-  const id = botId || 'butler'
-  return store.state.bots.find((b) => b.id === id)
+  if (!botId) return undefined
+  return store.state.bots.find((b) => b.id === botId)
 }
 
 function exportAssetsCsv() {
@@ -398,7 +398,7 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                   <div class="min-w-0">
                     <strong class="block text-sm font-semibold text-white truncate">{{ t.name }}</strong>
                     <div class="font-mono text-[11px] text-slate-400 mt-0.5 truncate">
-                      {{ describeCron(t.cron_expr) }} · {{ t.bot_id || 'butler' }}
+                      {{ describeCron(t.cron_expr) }} · {{ t.bot_id || '未绑定 Bot' }}
                     </div>
                   </div>
                 </div>
@@ -436,13 +436,15 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                   </button>
                 </div>
                 <button
+                  v-if="t.bot_id && taskBot(t.bot_id)"
                   type="button"
-                  @click="store.jumpToBot(t.bot_id || 'butler')"
+                  @click="store.jumpToBot(t.bot_id)"
                   class="min-h-[36px] sm:min-h-[28px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#fff8ee]/10 bg-[#050811]/70 hover:border-[#f2b880]/40 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
                 >
                   <BotAvatar :avatar-style="taskBot(t.bot_id)?.avatar_style" :state="taskBot(t.bot_id)?.state" size="xs" :interactive="false" />
-                  <span>{{ taskBot(t.bot_id)?.name || (t.bot_id || 'butler') }}</span>
+                  <span>{{ taskBot(t.bot_id)?.name }}</span>
                 </button>
+                <span v-else class="font-mono text-[10.5px] text-slate-500">未绑定 Bot</span>
               </div>
             </article>
           </div>

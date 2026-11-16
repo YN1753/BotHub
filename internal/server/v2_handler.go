@@ -318,7 +318,7 @@ func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := store.NowShanghai()
-	markdown := fmt.Sprintf("### %s\n\n- **告警时间**：`%s`\n- **告警来源**：`哪吒探针 Webhook 回环`\n\n%s\n\n---\n*来自 Vesper BotHub · bot.starryheavens.uk*", title, now, content)
+	markdown := fmt.Sprintf("### %s\n\n- **告警时间**：`%s`\n- **告警来源**：`哪吒探针 Webhook 回环`\n\n%s\n\n---\n*来自 Vesper BotHub*", title, now, content)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
@@ -329,32 +329,11 @@ func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 		_, _ = s.store.CreateNotification("nezha_webhook", title, content, markdown, "high")
 	}
 
-	// Post alert to Sentinel Bot timeline and update its state to blocked
-	sentinelMsg := store.AgentMessage{
-		SessionID:   "bot:sentinel",
-		BotID:       "sentinel",
-		SenderBotID: "sentinel",
-		MsgKind:     "routine",
-		Role:        "assistant",
-		Content:     markdown,
-	}
-	if mid, mErr := s.store.AppendAgentMessage(sentinelMsg); mErr == nil {
-		sentinelMsg.ID = mid
-		sentinelMsg.CreatedAt = now
-	}
-	_ = s.store.SetBotState("sentinel", store.BotStateBlocked, title)
-	_ = s.store.IncrementBotUnread("sentinel", title)
-	if s.push != nil && s.push.Hub() != nil {
-		s.push.Hub().PublishEvent("bot_message", sentinelMsg)
-		s.push.Hub().PublishEvent("bot_state", map[string]any{
-			"bot_id":       "sentinel",
-			"state":        store.BotStateBlocked,
-			"last_summary": title,
-		})
-	}
+	targetBotID := s.resolveAlertTargetBotID()
+	s.appendAlertToBot(targetBotID, title, store.BotStateBlocked, markdown)
 
 	if shouldTriggerNezhaAITriage(title, content) && s.agent != nil {
-		go s.triageNezhaAlertAsync(title, content)
+		go s.triageNezhaAlertAsync(targetBotID, title, content)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -373,13 +352,7 @@ func shouldTriggerNezhaAITriage(title, content string) bool {
 	return false
 }
 
-func (s *Server) triageNezhaAlertAsync(title, content string) {
-	lightKey, _ := s.store.GetConfig(store.KeyLightAPIKey)
-	mainKey, _ := s.store.GetConfig(store.KeyDeepSeekAPIKey)
-	if strings.TrimSpace(lightKey) == "" && strings.TrimSpace(mainKey) == "" {
-		return
-	}
-
+func (s *Server) triageNezhaAlertAsync(targetBotID, title, content string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
@@ -399,26 +372,59 @@ func (s *Server) triageNezhaAlertAsync(title, content string) {
 		_, _ = s.store.CreateNotification("nezha_ai_triage", triageTitle, analysis, triageMD, "normal")
 	}
 
-	triageMsg := store.AgentMessage{
-		SessionID:   "bot:sentinel",
-		BotID:       "sentinel",
-		SenderBotID: "sentinel",
+	s.appendAlertToBot(targetBotID, triageTitle, store.BotStateDone, triageMD)
+}
+
+func (s *Server) resolveAlertTargetBotID() string {
+	bots, _ := s.store.ListBots()
+	for _, b := range bots {
+		if b.IsGroup {
+			continue
+		}
+		for _, tool := range b.AllowedToolList() {
+			if tool == "query_nezha_nodes" {
+				return b.ID
+			}
+		}
+	}
+	for _, b := range bots {
+		if !b.IsGroup {
+			return b.ID
+		}
+	}
+	return ""
+}
+
+func (s *Server) appendAlertToBot(botID, title, state, markdown string) {
+	if botID == "" {
+		return
+	}
+	now := store.NowShanghai()
+	msg := store.AgentMessage{
+		SessionID:   "bot:" + botID,
+		BotID:       botID,
+		SenderBotID: botID,
 		MsgKind:     "routine",
 		Role:        "assistant",
-		Content:     triageMD,
+		Content:     markdown,
 	}
-	if mid, mErr := s.store.AppendAgentMessage(triageMsg); mErr == nil {
-		triageMsg.ID = mid
-		triageMsg.CreatedAt = store.NowShanghai()
+	if mid, mErr := s.store.AppendAgentMessage(msg); mErr == nil {
+		msg.ID = mid
+		msg.CreatedAt = now
 	}
-	_ = s.store.SetBotState("sentinel", store.BotStateDone, triageTitle)
-	_ = s.store.IncrementBotUnread("sentinel", triageTitle)
+	_ = s.store.SetBotState(botID, state, title)
+	_ = s.store.IncrementBotUnread(botID, title)
+	unread := 0
+	if b, _ := s.store.GetBot(botID); b != nil {
+		unread = b.UnreadCount
+	}
 	if s.push != nil && s.push.Hub() != nil {
-		s.push.Hub().PublishEvent("bot_message", triageMsg)
+		s.push.Hub().PublishEvent("bot_message", msg)
 		s.push.Hub().PublishEvent("bot_state", map[string]any{
-			"bot_id":       "sentinel",
-			"state":        store.BotStateDone,
-			"last_summary": triageTitle,
+			"bot_id":       botID,
+			"state":        state,
+			"unread_count": unread,
+			"last_summary": title,
 		})
 	}
 }

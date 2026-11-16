@@ -50,97 +50,63 @@ func (b Bot) MemberIDList() []string {
 	return list
 }
 
-func DefaultBots(now string) []Bot {
-	allTools := `["read_url","web_search","query_nezha_nodes","manage_assets","manage_tasks","remember_fact","recall_memory"]`
-	return []Bot{
+// BotTemplate is served strictly as an optional creation preset (never auto-seeded into the bots table).
+type BotTemplate struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	RoleTitle      string   `json:"role_title"`
+	AvatarStyle    string   `json:"avatar_style"`
+	SystemPrompt   string   `json:"system_prompt"`
+	EnableThinking bool     `json:"enable_thinking"`
+	AllowedTools   []string `json:"allowed_tools"`
+}
+
+func BuiltinBotTemplates() []BotTemplate {
+	return []BotTemplate{
 		{
-			ID:             "team_room",
-			Name:           "中枢指挥群",
-			RoleTitle:      "多 Bot 协同与 @接力频道",
-			AvatarStyle:    "swarm:indigo",
-			SystemPrompt:   "你是 Vesper BotHub 中枢指挥群的协调官。擅长调度多位专属 Bot 协同排查问题，回答务必结构化、高信息密度，严禁使用任何 Emoji。",
-			Model:          DefaultAIModel,
-			EnableThinking: true,
-			AllowedTools:   allTools,
-			State:          BotStateIdle,
-			IsPinned:       true,
-			IsBuiltin:      true,
-			IsGroup:        true,
-			MemberIDs:      `["butler","sentinel","radar","grok"]`,
-			GroupMode:      "smart",
-			Announcement:   "欢迎来到中枢指挥群：支持 @指定 Bot 接力、右侧一键拉人调整成员，或直接下达指令由协同官智能调度。",
-			SortOrder:      1,
-			LastSummary:    "输入 @Bot名称 可点名接力协同",
-			CreatedAt:      now,
-			UpdatedAt:      now,
-		},
-		{
-			ID:             "butler",
-			Name:           "长庚执更",
+			ID:             "butler_tpl",
+			Name:           "资产与晨报管家",
 			RoleTitle:      "资产守望与晨间简报管家",
-			AvatarStyle:    "cyan",
-			SystemPrompt:   "你是长庚执更管家，负责维护数字资产台账、VPS 与域名到期提醒、每日晨报与定时调度。语气沉稳可靠、条理清晰，严禁使用任何 Emoji。",
-			Model:          DefaultAIModel,
+			AvatarStyle:    "butler:gold",
+			SystemPrompt:   "你是用户的数字资产与日常简报管家，擅长追踪服务器、域名与会员订阅到期提醒、制定续费策略与日常日程编排，语气沉稳条理清晰，严禁使用 Emoji。",
 			EnableThinking: true,
-			AllowedTools:   `["manage_assets","manage_tasks","remember_fact","recall_memory","read_url"]`,
-			State:          BotStateIdle,
-			IsPinned:       true,
-			IsBuiltin:      true,
-			SortOrder:      2,
-			LastSummary:    "负责每日晨报与资产到期守望",
-			CreatedAt:      now,
-			UpdatedAt:      now,
+			AllowedTools:   []string{"manage_assets", "manage_tasks", "remember_fact", "recall_memory", "read_url"},
 		},
 		{
-			ID:             "sentinel",
-			Name:           "探针哨兵",
+			ID:             "sentinel_tpl",
+			Name:           "探针巡检哨兵",
 			RoleTitle:      "哪吒节点巡检与故障排查",
-			AvatarStyle:    "amber",
-			SystemPrompt:   "你是探针哨兵 Bot，专注于哪吒探针节点状态直连查询、VPS 负载与掉线根因分析。遇到告警直接给出 3 条以内硬核排查指令，严禁使用任何 Emoji。",
-			Model:          DefaultAIModel,
+			AvatarStyle:    "sentinel:amber",
+			SystemPrompt:   "你是运维探针哨兵，专注直连查询节点在线状态、负载、流量健康度与故障根因分析，遇到异常直接给出可落地的排查指令，严禁使用 Emoji。",
 			EnableThinking: true,
-			AllowedTools:   `["query_nezha_nodes","read_url","recall_memory","remember_fact"]`,
-			State:          BotStateIdle,
-			IsPinned:       true,
-			IsBuiltin:      true,
-			SortOrder:      3,
-			LastSummary:    "实时守望哪吒探针与 Webhook 告警",
-			CreatedAt:      now,
-			UpdatedAt:      now,
+			AllowedTools:   []string{"query_nezha_nodes", "read_url", "recall_memory", "remember_fact"},
 		},
 		{
-			ID:             "radar",
-			Name:           "开源雷达",
-			RoleTitle:      "全网前沿技术与趋势猎手",
-			AvatarStyle:    "emerald",
-			SystemPrompt:   "你是开源雷达 Bot，专注 GitHub Trending、Hacker News、Go/Cloud/Android 前沿工程趋势检索与深度提炼，结合用户技术栈输出高价值洞察，严禁使用任何 Emoji。",
-			Model:          DefaultAIModel,
+			ID:             "radar_tpl",
+			Name:           "开源技术雷达",
+			RoleTitle:      "前沿技术检索与趋势精读",
+			AvatarStyle:    "radar:emerald",
+			SystemPrompt:   "你是开源技术雷达助手，专注 GitHub 热门项目、工程技术趋势检索与长文章摘要提炼，输出高信息密度结论，严禁使用 Emoji。",
 			EnableThinking: false,
-			AllowedTools:   `["web_search","read_url","remember_fact","recall_memory"]`,
-			State:          BotStateIdle,
-			IsPinned:       false,
-			IsBuiltin:      true,
-			SortOrder:      4,
-			LastSummary:    "定时追踪 GitHub 与 HN 前沿开源动态",
-			CreatedAt:      now,
-			UpdatedAt:      now,
+			AllowedTools:   []string{"web_search", "read_url", "remember_fact", "recall_memory"},
 		},
 		{
-			ID:             "grok",
-			Name:           "Grok 锐评官",
-			RoleTitle:      "高密度深度思考与架构顾问",
-			AvatarStyle:    "violet",
-			SystemPrompt:   "你是 Grok 锐评官，直击本质、拒绝废话、擅长第一性原理系统设计与毒辣犀利的方案评审。可直接调用全部工具查证事实后再结论，严禁使用任何 Emoji。",
-			Model:          DefaultAIModel,
+			ID:             "architect_tpl",
+			Name:           "架构锐评顾问",
+			RoleTitle:      "高密度深度思考与代码评审",
+			AvatarStyle:    "critic:violet",
+			SystemPrompt:   "你是系统架构评审顾问，直击问题本质、拒绝空话，擅长第一性原理系统设计与并发/安全隐患剖析。优先查证工具数据后再下结论，严禁使用 Emoji。",
 			EnableThinking: true,
-			AllowedTools:   allTools,
-			State:          BotStateIdle,
-			IsPinned:       false,
-			IsBuiltin:      true,
-			SortOrder:      5,
-			LastSummary:    "全局深度推理与系统架构评审",
-			CreatedAt:      now,
-			UpdatedAt:      now,
+			AllowedTools:   []string{"read_url", "web_search", "query_nezha_nodes", "manage_assets", "manage_tasks", "remember_fact", "recall_memory"},
+		},
+		{
+			ID:             "translator_tpl",
+			Name:           "技术文档编译官",
+			RoleTitle:      "外文资料与 RFC 精炼编译",
+			AvatarStyle:    "visor:indigo",
+			SystemPrompt:   "你是技术文档编译官，擅长把英文博客、RFC 与 Release Notes 提炼为结构化中文重点与可执行迁移清单，严禁使用 Emoji。",
+			EnableThinking: false,
+			AllowedTools:   []string{"read_url", "web_search", "remember_fact"},
 		},
 	}
 }
@@ -160,7 +126,7 @@ func (s *Store) ListBots() ([]Bot, error) {
 		if err := rows.Scan(&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt, &b.Model, &et, &b.AllowedTools, &b.State, &b.UnreadCount, &pin, &builtin, &isGroup, &b.MemberIDs, &b.GroupMode, &b.Announcement, &b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt); err == nil {
 			b.EnableThinking = et == 1
 			b.IsPinned = pin == 1
-			b.IsBuiltin = builtin == 1
+			b.IsBuiltin = false
 			b.IsGroup = isGroup == 1 || b.ID == "team_room"
 			if strings.TrimSpace(b.GroupMode) == "" {
 				b.GroupMode = "smart"
@@ -185,7 +151,7 @@ func (s *Store) GetBot(id string) (*Bot, error) {
 	}
 	b.EnableThinking = et == 1
 	b.IsPinned = pin == 1
-	b.IsBuiltin = builtin == 1
+	b.IsBuiltin = false
 	b.IsGroup = isGroup == 1 || b.ID == "team_room"
 	if strings.TrimSpace(b.GroupMode) == "" {
 		b.GroupMode = "smart"
@@ -258,8 +224,8 @@ func (s *Store) SaveBot(b Bot) error {
 
 func (s *Store) DeleteBot(id string) error {
 	_, _ = s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ?`, id)
-	_, _ = s.db.Exec(`UPDATE tasks SET bot_id = 'butler' WHERE bot_id = ?`, id)
-	_, err := s.db.Exec(`DELETE FROM bots WHERE id = ? AND is_builtin = 0`, id)
+	_, _ = s.db.Exec(`UPDATE tasks SET bot_id = '' WHERE bot_id = ?`, id)
+	_, err := s.db.Exec(`DELETE FROM bots WHERE id = ?`, id)
 	return err
 }
 

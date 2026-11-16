@@ -14,7 +14,7 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
-func TestFreeModelPoolRoutingFailoverAndFlashOnlyNormalization(t *testing.T) {
+func TestFreeModelPoolRoutingFailoverAndLiveFetchModels(t *testing.T) {
 	if got := NormalizeModelID("deepseek-v4-pro"); got != "deepseek-flash" {
 		t.Fatalf("expected deepseek-v4-pro normalized to deepseek-flash, got %q", got)
 	}
@@ -29,30 +29,51 @@ func TestFreeModelPoolRoutingFailoverAndFlashOnlyNormalization(t *testing.T) {
 	}
 	defer st.Close()
 
-	// Verify default pool ships with Google AI Studio & SiliconFlow
-	defaults := st.GetModelPool()
-	var hasGoogle, hasSilicon bool
-	for _, d := range defaults {
-		if d.ID == "google_ai_studio" {
-			hasGoogle = true
+	// Fresh DB pool must start blank (no pre-seeded hardcoded providers)
+	if initial := st.GetModelPool(); len(initial) != 0 {
+		t.Fatalf("expected initial free_model_pool empty, got %d items", len(initial))
+	}
+	// Creation templates must still include Google AI Studio & SiliconFlow
+	tpls := store.ModelProviderTemplates()
+	var hasGoogleTpl, hasSFTpl bool
+	for _, tpl := range tpls {
+		if tpl.ID == "google_ai_studio" {
+			hasGoogleTpl = true
 		}
-		if d.ID == "siliconflow_free" {
-			hasSilicon = true
+		if tpl.ID == "siliconflow" {
+			hasSFTpl = true
 		}
 	}
-	if !hasGoogle || !hasSilicon {
-		t.Fatalf("expected default pool to contain google_ai_studio and siliconflow_free, got %+v", defaults)
+	if !hasGoogleTpl || !hasSFTpl {
+		t.Fatalf("expected model provider creation templates for Google & SiliconFlow, got %+v", tpls)
 	}
 
-	// Mock Provider 1 (Google AI Studio) returning HTTP 429 rate limit
+	// Create user bot explicitly
+	_ = st.SaveBot(store.Bot{
+		ID:           "assistant_one",
+		Name:         "个人助理",
+		RoleTitle:    "测试 Bot",
+		SystemPrompt: "简洁回答",
+	})
+
+	// Mock upstream /models discovery + rate-limited node + healthy fallback node
 	googleRateLimited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"models/gemini-2.5-flash"},{"id":"models/gemini-2.5-pro"}]}`))
+			return
+		}
 		http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 	}))
 	defer googleRateLimited.Close()
 
-	// Mock Provider 2 (SiliconFlow) checking no DeepSeek `thinking` field is sent and streaming reply
 	var sfPayload string
 	sfServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"Qwen/Qwen2.5-7B-Instruct"},{"id":"deepseek-ai/DeepSeek-V3"}]}`))
+			return
+		}
 		raw, _ := io.ReadAll(r.Body)
 		sfPayload = string(raw)
 		if strings.Contains(r.URL.Path, "chat/completions") && !strings.Contains(r.URL.Path, "chat/completions/chat") {
@@ -74,20 +95,39 @@ func TestFreeModelPoolRoutingFailoverAndFlashOnlyNormalization(t *testing.T) {
 	}))
 	defer sfServer.Close()
 
-	// Configure pool with NO primary DeepSeek key at all (pure free pool mode!)
-	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "")
-	for i := range defaults {
-		if defaults[i].ID == "google_ai_studio" {
-			defaults[i].BaseURL = googleRateLimited.URL
-			defaults[i].APIKey = "AIzaTestGoogleKey123456"
-			defaults[i].Priority = 10
-		} else if defaults[i].ID == "siliconflow_free" {
-			defaults[i].BaseURL = sfServer.URL
-			defaults[i].APIKey = "sk-sf-testkey123456"
-			defaults[i].Priority = 20
-		}
+	eng := NewEngine(st, &fakeTaskController{st: st})
+
+	// Test live /models discovery from upstream
+	fetchedGoogleModels, err := eng.FetchUpstreamModels(context.Background(), googleRateLimited.URL, "AIzaTestGoogleKey123456", "google")
+	if err != nil || len(fetchedGoogleModels) != 2 || fetchedGoogleModels[0] != "gemini-2.5-flash" {
+		t.Fatalf("unexpected live Google models fetch: models=%v err=%v", fetchedGoogleModels, err)
 	}
-	if err := st.SaveModelPool(defaults); err != nil {
+
+	// User creates two free pool items from templates using dynamically discovered models
+	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "")
+	userPool := []store.ModelPoolEntry{
+		{
+			ID:       "google_user",
+			Name:     "Google AI Studio",
+			Provider: "google",
+			BaseURL:  googleRateLimited.URL,
+			APIKey:   "AIzaTestGoogleKey123456",
+			Model:    fetchedGoogleModels[0],
+			Enabled:  true,
+			Priority: 10,
+		},
+		{
+			ID:       "sf_user",
+			Name:     "硅基流动",
+			Provider: "siliconflow",
+			BaseURL:  sfServer.URL,
+			APIKey:   "sk-sf-testkey123456",
+			Model:    "Qwen/Qwen2.5-7B-Instruct",
+			Enabled:  true,
+			Priority: 20,
+		},
+	}
+	if err := st.SaveModelPool(userPool); err != nil {
 		t.Fatalf("SaveModelPool: %v", err)
 	}
 
@@ -101,11 +141,9 @@ func TestFreeModelPoolRoutingFailoverAndFlashOnlyNormalization(t *testing.T) {
 		t.Fatalf("expected Google API key preserved across **** mask roundtrip, got %q", reloaded[0].APIKey)
 	}
 
-	eng := NewEngine(st, &fakeTaskController{st: st})
-
-	// Test ChatStream on Bot with model="free-pool": should hit Google (429) -> failover cleanly to SiliconFlow
+	// Test ChatStream on Bot with model="free-pool": hits Google (429) -> failover cleanly to SiliconFlow
 	resp, err := eng.ChatStream(context.Background(), ChatRequest{
-		BotID:   "butler",
+		BotID:   "assistant_one",
 		Message: "测试免费模型池自动容灾切换",
 		Model:   "free-pool",
 	}, nil)
@@ -119,7 +157,7 @@ func TestFreeModelPoolRoutingFailoverAndFlashOnlyNormalization(t *testing.T) {
 		t.Fatalf("non-DeepSeek pool provider must not receive proprietary DeepSeek thinking field: %s", sfPayload)
 	}
 
-	// Test Primary Relay Station URL + custom relay model name
+	// Test Primary Relay Station URL + custom relay model name probe
 	var relayUsedModel, relayAuth string
 	relaySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		relayAuth = r.Header.Get("Authorization")
@@ -149,7 +187,14 @@ func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
 	}
 	defer st.Close()
 
-	var hitCounts = map[string]int{}
+	_ = st.SaveBot(store.Bot{
+		ID:           "assistant_one",
+		Name:         "个人助理",
+		RoleTitle:    "测试 Bot",
+		SystemPrompt: "简洁回答",
+	})
+
+	hitCounts := map[string]int{}
 	s1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hitCounts["google"]++
 		http.Error(w, `{"error":"rate limit"}`, http.StatusTooManyRequests)
@@ -174,25 +219,34 @@ func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
 	defer s2.Close()
 
 	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "")
-	pool := st.GetModelPool()
-	for i := range pool {
-		if pool[i].ID == "google_ai_studio" {
-			pool[i].BaseURL = s1.URL
-			pool[i].APIKey = "AIzaTestKey"
-			pool[i].Priority = 10
-		} else if pool[i].ID == "siliconflow_free" {
-			pool[i].BaseURL = s2.URL
-			pool[i].APIKey = "sk-sf-key"
-			pool[i].Priority = 20
-		}
-	}
-	_ = st.SaveModelPool(pool)
+	_ = st.SaveModelPool([]store.ModelPoolEntry{
+		{
+			ID:       "google_ai_studio",
+			Name:     "Google AI Studio",
+			Provider: "google",
+			BaseURL:  s1.URL,
+			APIKey:   "AIzaTestKey",
+			Model:    "gemini-2.5-flash",
+			Enabled:  true,
+			Priority: 10,
+		},
+		{
+			ID:       "siliconflow_free",
+			Name:     "硅基流动",
+			Provider: "siliconflow",
+			BaseURL:  s2.URL,
+			APIKey:   "sk-sf-key",
+			Model:    "Qwen/Qwen2.5-7B-Instruct",
+			Enabled:  true,
+			Priority: 20,
+		},
+	})
 
 	eng := NewEngine(st, &fakeTaskController{st: st})
 
 	var events []string
 	_, err = eng.ChatStream(context.Background(), ChatRequest{
-		BotID:   "butler",
+		BotID:   "assistant_one",
 		Message: "第一次提问",
 		Model:   "free-pool",
 	}, func(event string, _ any) {
@@ -207,7 +261,7 @@ func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
 
 	// Second turn should skip cooled google_ai_studio and hit s2 directly!
 	_, err = eng.ChatStream(context.Background(), ChatRequest{
-		BotID:   "butler",
+		BotID:   "assistant_one",
 		Message: "第二次提问",
 		Model:   "free-pool",
 	}, nil)
@@ -223,7 +277,7 @@ func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
 		t.Fatalf("unexpected health snapshot: %+v", snap)
 	}
 
-	msgs, _ := st.ListBotMessages("butler", 10)
+	msgs, _ := st.ListBotMessages("assistant_one", 10)
 	foundModelUsed := false
 	for _, m := range msgs {
 		if m.Role == "assistant" && m.ModelUsed == "Qwen/Qwen2.5-7B-Instruct" {
@@ -234,4 +288,3 @@ func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
 		t.Fatalf("expected persisted model_used=Qwen/Qwen2.5-7B-Instruct in agent_messages, got %+v", msgs)
 	}
 }
-

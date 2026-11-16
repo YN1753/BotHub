@@ -53,6 +53,17 @@ export const BotHubApi = {
       model_health?: Record<string, any>
       message: string
     }>('/api/v2/model-pool/test', { method: 'POST', body: JSON.stringify(payload) }),
+  fetchUpstreamModels: (payload: {
+    target_id: string
+    provider: string
+    base_url: string
+    api_key: string
+  }) =>
+    apiRequest<{
+      ok: boolean
+      models: string[]
+      count: number
+    }>('/api/v2/model-pool/models', { method: 'POST', body: JSON.stringify(payload) }),
   testPush: () => apiRequest<{ ok: boolean; message: string }>('/api/test-push', { method: 'POST' }),
   rotateAppToken: () =>
     apiRequest<{ ok: boolean; token: string; message: string }>('/api/v2/auth/token/rotate', {

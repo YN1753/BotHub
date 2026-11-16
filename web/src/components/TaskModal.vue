@@ -17,7 +17,7 @@ const isNew = computed(() => {
 const id = ref('')
 const name = ref('')
 const type = ref('morning')
-const botId = ref('butler')
+const botId = ref('')
 const enabled = ref(true)
 const description = ref('')
 
@@ -119,7 +119,7 @@ watch(
       id.value = ''
       name.value = ''
       type.value = 'morning'
-      botId.value = (item as any)?.bot_id || 'butler'
+      botId.value = (item as any)?.bot_id || store.state.activeBotId || store.state.bots[0]?.id || ''
       enabled.value = true
       description.value = ''
       freq.value = 'daily'
@@ -132,7 +132,7 @@ watch(
     id.value = t.id
     name.value = t.name
     type.value = t.type
-    botId.value = t.bot_id || 'butler'
+    botId.value = t.bot_id || store.state.bots[0]?.id || ''
     enabled.value = Boolean(t.enabled)
     description.value = t.description || ''
     parseCronExpr(t.cron_expr || '0 8 * * *')

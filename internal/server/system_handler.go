@@ -82,17 +82,20 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"version":         s.version,
-		"commit":          s.commit,
-		"build_time":      s.buildTime,
-		"modules":         tasks, // 兼容前端历史模块字段
-		"tasks":           tasks,
-		"bots":            bots,
-		"model_pool":      modelPool,
-		"model_health":    modelHealth,
-		"templates":       modules.BuiltinTemplates(),
-		"asset_templates": modules.BuiltinAssetTemplates(),
-		"personas":        agent.BuiltinPersonas(),
+		"version":                  s.version,
+		"commit":                   s.commit,
+		"build_time":               s.buildTime,
+		"modules":                  tasks, // 兼容前端历史模块字段
+		"tasks":                    tasks,
+		"bots":                     bots,
+		"bot_templates":            store.BuiltinBotTemplates(),
+		"model_pool":               modelPool,
+		"model_provider_templates": store.ModelProviderTemplates(),
+		"model_health":             modelHealth,
+		"available_tools":          agent.AvailableToolsPayload(),
+		"templates":                modules.BuiltinTemplates(),
+		"asset_templates":          modules.BuiltinAssetTemplates(),
+		"personas":                 agent.BuiltinPersonas(),
 		"agent_sessions":  sessions,
 		"agent_memories":  memories,
 		"notifications":   notifications,
@@ -157,7 +160,7 @@ func (s *Server) handleTestPush(w http.ResponseWriter, r *http.Request) {
 
 	channelName := "原生 APP 通知通道 (Inbox + SSE)"
 	now := store.NowShanghai()
-	content := fmt.Sprintf("### Vesper BotHub 通知链路自检\n\n- **活跃通道**：`%s`\n- **触发时间**：`%s`\n- **链路状态**：正常直连\n\n---\n*来自 Vesper BotHub · bot.starryheavens.uk*", channelName, now)
+	content := fmt.Sprintf("### Vesper BotHub 通知链路自检\n\n- **活跃通道**：`%s`\n- **触发时间**：`%s`\n- **链路状态**：正常直连\n\n---\n*来自 Vesper BotHub*", channelName, now)
 	if err := s.push.SendMarkdown(ctx, "system_test", "Vesper BotHub 原生 APP 通知测试", content); err != nil {
 		writeError(w, http.StatusBadGateway, "推送失败: "+err.Error())
 		return
@@ -356,6 +359,48 @@ func (s *Server) handleTestModelTarget(w http.ResponseWriter, r *http.Request) {
 		"reply":        preview,
 		"model_health": s.agent.GetModelHealth(),
 		"message":      fmt.Sprintf("连接成功 (%dms)", latencyMs),
+	})
+}
+
+func (s *Server) handleFetchUpstreamModels(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TargetID string `json:"target_id"`
+		Provider string `json:"provider"`
+		BaseURL  string `json:"base_url"`
+		APIKey   string `json:"api_key"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效模型拉取请求")
+		return
+	}
+
+	apiKey := strings.TrimSpace(req.APIKey)
+	if strings.Contains(apiKey, "****") || apiKey == "" {
+		if req.TargetID == "primary" {
+			stored, _ := s.store.GetConfig(store.KeyDeepSeekAPIKey)
+			apiKey = strings.TrimSpace(stored)
+		} else {
+			for _, item := range s.store.GetModelPool() {
+				if item.ID == req.TargetID {
+					apiKey = strings.TrimSpace(item.APIKey)
+					break
+				}
+			}
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+
+	models, err := s.agent.FetchUpstreamModels(ctx, req.BaseURL, apiKey, req.Provider)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"models": models,
+		"count":  len(models),
 	})
 }
 

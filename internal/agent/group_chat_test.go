@@ -14,6 +14,33 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
+func seedAgentTestBots(st *store.Store) {
+	_ = st.SaveBot(store.Bot{
+		ID:           "butler",
+		Name:         "长庚执更",
+		RoleTitle:    "资产与域名守望管家",
+		SystemPrompt: "资产管理",
+		AllowedTools: `["manage_assets","manage_tasks"]`,
+	})
+	_ = st.SaveBot(store.Bot{
+		ID:           "sentinel",
+		Name:         "探针哨兵",
+		RoleTitle:    "哪吒节点巡检哨兵",
+		SystemPrompt: "运维巡检",
+		AllowedTools: `["query_nezha_nodes"]`,
+	})
+	_ = st.SaveBot(store.Bot{
+		ID:           "team_room",
+		Name:         "协同测试群",
+		RoleTitle:    "多 Bot 协同",
+		SystemPrompt: "协同",
+		IsGroup:      true,
+		MemberIDs:    `["butler","sentinel"]`,
+		GroupMode:    "smart",
+		AllowedTools: `["manage_assets","query_nezha_nodes"]`,
+	})
+}
+
 func TestSelectSmartGroupMembersAndQuoteTempSummon(t *testing.T) {
 	tmpDir := t.TempDir()
 	st, err := store.Open(filepath.Join(tmpDir, "agent_group_test.db"))
@@ -21,6 +48,7 @@ func TestSelectSmartGroupMembersAndQuoteTempSummon(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
+	seedAgentTestBots(st)
 
 	// Verify smart group selection picks right domain bots without calling all 4
 	allBots, _ := st.ListBots()
@@ -103,6 +131,7 @@ func TestSmartGroupAutoBatonRelay(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
+	seedAgentTestBots(st)
 
 	callCount := 0
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -21,7 +21,7 @@ const SETTINGS_TABS = [
 // Config fields
 const deepseekKey = ref('')
 const deepseekBaseUrl = ref('https://api.deepseek.com/v1')
-const aiModel = ref('deepseek-flash')
+const aiModel = ref('')
 const activePersona = ref('grok')
 const poolForLight = ref(true)
 const poolFallback = ref(true)
@@ -29,12 +29,15 @@ const poolEntries = ref<ModelPoolEntry[]>([])
 const expandedPoolId = ref('')
 const probingId = ref('')
 const probeResults = ref<Record<string, { ok: boolean; msg: string }>>({})
+const fetchingModelsId = ref('')
+const fetchedModels = ref<Record<string, string[]>>({})
+const showTemplatePicker = ref(false)
 
 const lightBaseUrl = ref('')
 const lightApiKey = ref('')
 const lightModel = ref('')
 
-const nezhaUrl = ref('https://dash.starryheavens.uk')
+const nezhaUrl = ref('')
 const nezhaDbPath = ref('/opt/nezha/dashboard/data/sqlite.db')
 const appBearerToken = ref('')
 const cfApiToken = ref('')
@@ -57,23 +60,21 @@ watch(
     const c = store.state.configs || {}
     deepseekKey.value = c['deepseek_api_key'] || ''
     deepseekBaseUrl.value = c['deepseek_base_url'] || 'https://api.deepseek.com/v1'
-    const rawModel = c['ai_model'] || 'deepseek-flash'
-    aiModel.value =
-      rawModel === 'deepseek-chat' || rawModel === 'deepseek-reasoner' || rawModel === 'deepseek-v4-pro'
-        ? 'deepseek-flash'
-        : rawModel
+    aiModel.value = c['ai_model'] || ''
     activePersona.value = c['active_persona'] || 'grok'
     poolForLight.value = c['pool_for_light'] !== 'false'
     poolFallback.value = c['pool_fallback'] !== 'false'
     poolEntries.value = (store.state.modelPool || []).map((x) => ({ ...x }))
     probeResults.value = {}
+    fetchedModels.value = {}
+    showTemplatePicker.value = false
     expandedPoolId.value = poolEntries.value[0]?.id || ''
 
     lightBaseUrl.value = c['light_base_url'] || ''
     lightApiKey.value = c['light_api_key'] || ''
     lightModel.value = c['light_model'] || ''
 
-    nezhaUrl.value = c['nezha_url'] || 'https://dash.starryheavens.uk'
+    nezhaUrl.value = c['nezha_url'] || ''
     nezhaDbPath.value = c['nezha_db_path'] || '/opt/nezha/dashboard/data/sqlite.db'
     appBearerToken.value = c['app_bearer_token'] || ''
     cfApiToken.value = c['cf_api_token'] || ''
@@ -91,7 +92,7 @@ async function saveAllConfig() {
     await BotHubApi.saveConfig({
       deepseek_api_key: deepseekKey.value.trim(),
       deepseek_base_url: deepseekBaseUrl.value.trim() || 'https://api.deepseek.com/v1',
-      ai_model: aiModel.value.trim() || 'deepseek-flash',
+      ai_model: aiModel.value.trim(),
       active_persona: activePersona.value,
       pool_for_light: poolForLight.value ? 'true' : 'false',
       pool_fallback: poolFallback.value ? 'true' : 'false',
@@ -104,13 +105,11 @@ async function saveAllConfig() {
       cf_api_token: cfApiToken.value.trim(),
       bili_sessdata: biliSessdata.value.trim(),
     })
-    if (poolEntries.value.length > 0) {
-      const normalized = poolEntries.value.map((e, i) => ({
-        ...e,
-        priority: (i + 1) * 10,
-      }))
-      await BotHubApi.saveModelPool(normalized)
-    }
+    const normalized = poolEntries.value.map((e, i) => ({
+      ...e,
+      priority: (i + 1) * 10,
+    }))
+    await BotHubApi.saveModelPool(normalized)
     store.notify('AI 引擎、免费模型池与凭据已安全保存')
     await store.loadDashboard(false)
   } catch (err: any) {
@@ -176,20 +175,61 @@ async function probeAllEnabledPool() {
   store.notify(`全池测速完成：${okCount}/${active.length} 节点连通`)
 }
 
-function addCustomPoolNode() {
-  const id = `custom_${Date.now().toString(36).slice(-4)}`
+async function fetchModelsForTarget(
+  targetId: string,
+  provider: string,
+  baseUrl: string,
+  apiKey: string,
+  entry?: ModelPoolEntry
+) {
+  if (fetchingModelsId.value) return
+  if (!baseUrl.trim()) {
+    store.notify('请先填写 Base URL 再拉取实时模型列表')
+    return
+  }
+  fetchingModelsId.value = targetId
+  try {
+    const res = await BotHubApi.fetchUpstreamModels({
+      target_id: targetId,
+      provider,
+      base_url: baseUrl.trim(),
+      api_key: apiKey.trim(),
+    })
+    fetchedModels.value[targetId] = res.models || []
+    if (res.models && res.models.length > 0) {
+      if (targetId === 'primary' && !aiModel.value.trim()) {
+        aiModel.value = res.models[0]
+      } else if (entry && !entry.model.trim()) {
+        entry.model = res.models[0]
+      }
+      store.notify(`已从接口实时拉取 ${res.models.length} 个可用模型`)
+    } else {
+      store.notify('上游接口未返回可用模型列表')
+    }
+  } catch (err: any) {
+    store.notify(`拉取模型失败: ${err.message}`)
+  } finally {
+    fetchingModelsId.value = ''
+  }
+}
+
+function addPoolNodeFromTemplate(tplId?: string) {
+  const tpl = store.state.modelProviderTemplates.find((t) => t.id === tplId)
+  const suffix = Date.now().toString(36).slice(-4)
+  const id = tpl ? `${tpl.id}_${suffix}` : `node_${suffix}`
   poolEntries.value.push({
     id,
-    name: '自定义中转 / 免费模型节点',
-    provider: 'custom',
-    base_url: 'https://api.siliconflow.cn/v1',
+    name: tpl ? tpl.name : '自定义 OpenAI 节点',
+    provider: tpl ? tpl.provider : 'custom',
+    base_url: tpl ? tpl.base_url : '',
     api_key: '',
-    model: 'Qwen/Qwen2.5-7B-Instruct',
+    model: '',
     enabled: true,
     priority: (poolEntries.value.length + 1) * 10,
-    note: '任意 OpenAI 兼容免费或公益中转接口',
+    note: tpl ? tpl.docs_hint : '填入 Base URL 与 API Key 后点击「拉取模型」实时选择',
   })
   expandedPoolId.value = id
+  showTemplatePicker.value = false
 }
 
 function movePoolNode(index: number, delta: number) {
@@ -207,7 +247,7 @@ function removePoolNode(id: string) {
 
 function useOfficialFlashPreset() {
   deepseekBaseUrl.value = 'https://api.deepseek.com/v1'
-  aiModel.value = 'deepseek-flash'
+  if (!aiModel.value.trim()) aiModel.value = 'deepseek-chat'
 }
 
 function useRelayPreset() {
@@ -230,7 +270,7 @@ async function handleTestPush() {
 }
 
 function copyNativeAppProfile() {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://bot.starryheavens.uk'
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const profile = JSON.stringify(
     {
       endpoint: origin,
@@ -383,13 +423,42 @@ async function handleImportBackup(e: Event) {
             </label>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>API 地址 (支持中转站 Base URL)</span>
+                <span>API 地址 (官方或中转站 Base URL)</span>
                 <input v-model="deepseekBaseUrl" type="text" placeholder="https://api.deepseek.com/v1" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
               </label>
-              <label class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>主力模型 ID (默认 Flash / 可填中转别名)</span>
-                <input v-model="aiModel" type="text" placeholder="deepseek-flash" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
-              </label>
+              <div class="flex flex-col gap-1 text-xs text-slate-300">
+                <div class="flex items-center justify-between gap-2">
+                  <span>主力模型 ID (实时拉取或手填)</span>
+                  <button
+                    type="button"
+                    :disabled="fetchingModelsId === 'primary'"
+                    @click="fetchModelsForTarget('primary', 'deepseek', deepseekBaseUrl, deepseekKey)"
+                    class="text-[10.5px] text-[#f2b880] hover:underline cursor-pointer disabled:opacity-45"
+                  >
+                    {{ fetchingModelsId === 'primary' ? '拉取中...' : '拉取实时模型列表' }}
+                  </button>
+                </div>
+                <input v-model="aiModel" type="text" placeholder="点击右侧实时拉取或输入模型 ID" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+              </div>
+            </div>
+            <div v-if="(fetchedModels.primary || []).length > 0" class="flex flex-col gap-1.5 rounded-xl border border-[#f2b880]/20 bg-[#050811]/70 p-2.5">
+              <span class="text-[10.5px] text-slate-400">实时拉取的主力可用模型 ({{ fetchedModels.primary.length }}): 点击选用</span>
+              <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                <button
+                  v-for="m in fetchedModels.primary"
+                  :key="m"
+                  type="button"
+                  @click="aiModel = m"
+                  :class="[
+                    'px-2 py-0.5 rounded-md border font-mono text-[10.5px] cursor-pointer transition',
+                    aiModel === m
+                      ? 'border-[#f2b880] bg-[#f2b880]/20 text-[#f2b880]'
+                      : 'border-[#fff8ee]/12 bg-[#070b18] text-slate-300 hover:border-[#f2b880]/45'
+                  ]"
+                >
+                  {{ m }}
+                </button>
+              </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div class="flex flex-col gap-1 text-xs text-slate-300">
@@ -407,11 +476,12 @@ async function handleImportBackup(e: Event) {
           <div class="modal-section flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2 flex-wrap">
               <div>
-                <div class="text-xs font-semibold text-emerald-300">免费 AI 模型池 (Google AI Studio / 硅基流动 / 智谱等)</div>
-                <p class="text-[11px] text-slate-400 mt-0.5">按优先级自动轮询容灾：遇到限流或主力未填 Key 时无缝切换下一个可用免费节点</p>
+                <div class="text-xs font-semibold text-emerald-300">免费 AI 模型池 (默认空白 · 按模板创建并实时拉取模型)</div>
+                <p class="text-[11px] text-slate-400 mt-0.5">不预填写死列表，创建时可选用模板，并用 API Key 实时拉取可用模型</p>
               </div>
-              <div class="flex items-center gap-1.5 shrink-0">
+              <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
                 <button
+                  v-if="poolEntries.length > 0"
                   type="button"
                   :disabled="probingAll"
                   @click="probeAllEnabledPool"
@@ -421,10 +491,38 @@ async function handleImportBackup(e: Event) {
                 </button>
                 <button
                   type="button"
-                  @click="addCustomPoolNode"
+                  @click="showTemplatePicker = !showTemplatePicker"
                   class="min-h-[30px] px-2.5 rounded-lg border border-emerald-400/35 bg-emerald-400/10 hover:bg-emerald-400/18 text-[11px] text-emerald-300 cursor-pointer shrink-0"
                 >
-                  + 自定义节点
+                  {{ showTemplatePicker ? '收起模板' : '+ 从模板添加模型源' }}
+                </button>
+              </div>
+            </div>
+
+            <div
+              v-if="showTemplatePicker"
+              class="rounded-xl border border-emerald-400/25 bg-[#050811]/90 p-3 flex flex-col gap-2"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[11px] font-medium text-emerald-300">选择创建模板 (仅填充接入地址，模型由你实时拉取):</span>
+                <button
+                  type="button"
+                  @click="addPoolNodeFromTemplate()"
+                  class="text-[11px] text-slate-300 hover:text-white underline cursor-pointer"
+                >
+                  空白自定义
+                </button>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                <button
+                  v-for="tpl in store.state.modelProviderTemplates"
+                  :key="tpl.id"
+                  type="button"
+                  @click="addPoolNodeFromTemplate(tpl.id)"
+                  class="text-left rounded-lg border border-[#fff8ee]/10 bg-[#070b18] hover:border-emerald-400/45 px-2.5 py-2 transition cursor-pointer"
+                >
+                  <div class="text-xs font-medium text-white">{{ tpl.name }}</div>
+                  <div class="text-[10.5px] text-slate-400 mt-0.5 truncate">{{ tpl.base_url || tpl.docs_hint }}</div>
                 </button>
               </div>
             </div>
@@ -442,7 +540,15 @@ async function handleImportBackup(e: Event) {
               />
             </div>
 
-            <div class="flex flex-col gap-2">
+            <div
+              v-if="poolEntries.length === 0"
+              class="rounded-xl border border-dashed border-[#fff8ee]/12 bg-[#050811]/55 px-4 py-6 text-center flex flex-col items-center gap-2"
+            >
+              <p class="text-xs text-slate-300">当前模型池为空，无任何写死节点。</p>
+              <p class="text-[11px] text-slate-500">点击上方「+ 从模板添加模型源」选择 Google AI Studio、硅基流动等模板并填入 Key 后实时拉取模型。</p>
+            </div>
+
+            <div v-else class="flex flex-col gap-2">
               <div
                 v-for="(entry, idx) in poolEntries"
                 :key="entry.id"
@@ -459,14 +565,14 @@ async function handleImportBackup(e: Event) {
                         'w-2 h-2 rounded-full shrink-0',
                         !entry.enabled
                           ? 'bg-slate-600'
-                          : entry.api_key
+                          : entry.api_key && entry.model
                             ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
                             : 'bg-amber-400/75'
                       ]"
                     />
                     <span class="text-xs font-semibold text-white truncate">{{ entry.name }}</span>
                     <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#fff8ee]/[0.05] text-slate-400 shrink-0">
-                      {{ entry.model }}
+                      {{ entry.model || '未选择模型' }}
                     </span>
                     <span
                       v-if="healthBadgeText('pool:' + entry.id)"
@@ -523,7 +629,6 @@ async function handleImportBackup(e: Event) {
                       {{ entry.enabled ? '启用' : '停用' }}
                     </button>
                     <button
-                      v-if="entry.provider === 'custom'"
                       type="button"
                       @click="removePoolNode(entry.id)"
                       class="px-1.5 py-0.5 rounded border border-rose-400/30 text-[10.5px] text-rose-300 hover:bg-rose-500/15 cursor-pointer"
@@ -547,20 +652,46 @@ async function handleImportBackup(e: Event) {
 
                 <div v-if="expandedPoolId === entry.id" class="pt-2 border-t border-[#fff8ee]/8 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                   <label class="sm:col-span-2 flex flex-col gap-1 text-slate-400">
-                    <span>API Key ({{ entry.api_key ? '已配置，留着 **** 不变或覆盖输入新 Key' : '待填入免费 Key' }})</span>
-                    <input v-model="entry.api_key" type="password" placeholder="粘贴对应平台的免费 API Key..." class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                    <span>API Key ({{ entry.api_key ? '已配置，留着 **** 不变或覆盖输入新 Key' : '待填入 API Key' }})</span>
+                    <input v-model="entry.api_key" type="password" placeholder="粘贴对应平台的 API Key..." class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
                   </label>
                   <label class="flex flex-col gap-1 text-slate-400">
                     <span>显示名称</span>
                     <input v-model="entry.name" type="text" class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 text-xs text-white focus:border-[#f2b880]/60" />
                   </label>
-                  <label class="flex flex-col gap-1 text-slate-400">
-                    <span>上游模型 ID</span>
-                    <input v-model="entry.model" type="text" class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
-                  </label>
+                  <div class="flex flex-col gap-1 text-slate-400">
+                    <div class="flex items-center justify-between gap-2">
+                      <span>上游模型 ID</span>
+                      <button
+                        type="button"
+                        :disabled="fetchingModelsId === entry.id"
+                        @click="fetchModelsForTarget(entry.id, entry.provider, entry.base_url, entry.api_key, entry)"
+                        class="text-[10.5px] text-emerald-300 hover:underline cursor-pointer disabled:opacity-45"
+                      >
+                        {{ fetchingModelsId === entry.id ? '拉取中...' : '实时拉取模型' }}
+                      </button>
+                    </div>
+                    <input v-model="entry.model" type="text" placeholder="点击实时拉取或输入模型 ID" class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                  </div>
+                  <div v-if="(fetchedModels[entry.id] || []).length > 0" class="sm:col-span-2 flex flex-wrap gap-1.5 rounded-lg border border-emerald-400/20 bg-[#070b18] p-2 max-h-28 overflow-y-auto">
+                    <button
+                      v-for="m in fetchedModels[entry.id]"
+                      :key="m"
+                      type="button"
+                      @click="entry.model = m"
+                      :class="[
+                        'px-2 py-0.5 rounded border font-mono text-[10px] cursor-pointer transition',
+                        entry.model === m
+                          ? 'border-emerald-400 bg-emerald-400/20 text-emerald-200'
+                          : 'border-[#fff8ee]/12 text-slate-300 hover:border-emerald-400/45'
+                      ]"
+                    >
+                      {{ m }}
+                    </button>
+                  </div>
                   <label class="sm:col-span-2 flex flex-col gap-1 text-slate-400">
-                    <span>OpenAI 兼容 Base URL</span>
-                    <input v-model="entry.base_url" type="text" class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                    <span>OpenAI 兼容 / Google Base URL</span>
+                    <input v-model="entry.base_url" type="text" placeholder="https://.../v1" class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
                   </label>
                   <p v-if="entry.note" class="sm:col-span-2 text-slate-500">{{ entry.note }}</p>
                 </div>

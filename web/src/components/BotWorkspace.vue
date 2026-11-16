@@ -164,15 +164,32 @@ const VIEW_TABS = [
   { id: 'activity', label: '运行脉搏' },
 ]
 
-const TOOL_CATALOG = [
-  { id: 'read_url', label: 'read_url (网页抓取与摘要)' },
-  { id: 'web_search', label: 'web_search (开源雷达搜索)' },
-  { id: 'query_nezha_nodes', label: 'query_nezha_nodes (哪吒探针直连)' },
-  { id: 'manage_assets', label: 'manage_assets (数字资产台账)' },
-  { id: 'manage_tasks', label: 'manage_tasks (调度例程管控)' },
-  { id: 'remember_fact', label: 'remember_fact (写入长期记忆)' },
-  { id: 'recall_memory', label: 'recall_memory (检索长期记忆)' },
-]
+const availableTools = computed(() => store.state.availableTools || [])
+const creatingQuickBotId = ref('')
+
+async function quickCreateBotFromTemplate(tplId: string) {
+  const tpl = store.state.botTemplates.find((t) => t.id === tplId)
+  if (!tpl || creatingQuickBotId.value) return
+  creatingQuickBotId.value = tplId
+  try {
+    const res = await BotHubApi.createBot({
+      name: tpl.name,
+      role_title: tpl.role_title,
+      avatar_style: tpl.avatar_style,
+      model: store.modelOptions.value[0]?.value || 'deepseek-flash',
+      system_prompt: tpl.system_prompt,
+      enable_thinking: tpl.enable_thinking,
+      allowed_tools: JSON.stringify(tpl.allowed_tools || []),
+    })
+    store.notify(`已从模板创建「${res.bot.name}」`)
+    await store.loadDashboard(false)
+    await store.selectBot(res.bot.id)
+  } catch (err: any) {
+    store.notify(err.message || '创建失败')
+  } finally {
+    creatingQuickBotId.value = ''
+  }
+}
 
 const STARTER_CARDS = [
   {
@@ -305,11 +322,11 @@ function setReplyQuote(msg: ChatMessageUI) {
 
 async function saveMessageAsMemory(msg: ChatMessageUI) {
   const content = msg.content.replace(/\s+/g, ' ').trim().slice(0, 260)
-  if (!content) return
+  if (!content || !bot.value) return
   try {
     const key = `${msg.senderBotId || 'bot'}_note_${Date.now().toString(36)}`
     await BotHubApi.saveMemory({
-      scope: `bot:${bot.value?.id || 'butler'}`,
+      scope: `bot:${bot.value.id}`,
       category: 'insight',
       fact_key: key,
       content,
@@ -329,9 +346,11 @@ function toggleCfgMember(id: string) {
   }
 }
 
-const botRoutines = computed(() =>
-  store.state.tasks.filter((t) => (t.bot_id || 'butler') === (bot.value?.id || 'butler'))
-)
+const botRoutines = computed(() => {
+  const bid = bot.value?.id
+  if (!bid) return []
+  return store.state.tasks.filter((t) => t.bot_id === bid)
+})
 
 const scopedMemories = computed(() => {
   const bScope = `bot:${bot.value?.id || ''}`
@@ -339,7 +358,9 @@ const scopedMemories = computed(() => {
 })
 
 const activityEntries = computed(() => {
-  const bid = bot.value?.id || ''
+  const cur = bot.value
+  if (!cur) return []
+  const allowed = cur.allowed_tools || ''
   const items: Array<{ title: string; time: string; detail: string }> = []
   botRoutines.value.forEach((t) => {
     if (t.last_run) {
@@ -352,9 +373,17 @@ const activityEntries = computed(() => {
   })
   store.state.notifications
     .filter((n) => {
-      if (bid === 'sentinel') return n.source.includes('nezha')
-      if (bid === 'radar') return n.source.includes('radar')
-      if (bid === 'butler') return n.source.includes('morning') || n.source.includes('asset')
+      const s = n.source.toLowerCase()
+      if (cur.is_group) return true
+      if (s.includes('nezha') || s.includes('alert') || s.includes('webhook')) {
+        return allowed.includes('query_nezha_nodes')
+      }
+      if (s.includes('radar') || s.includes('bili')) {
+        return allowed.includes('web_search')
+      }
+      if (s.includes('morning') || s.includes('asset')) {
+        return allowed.includes('manage_assets')
+      }
       return false
     })
     .slice(0, 10)
@@ -695,7 +724,11 @@ async function sendPrompt(overrideText?: string) {
   if (!msg) return
 
   const curBot = bot.value
-  const botId = curBot?.id || 'butler'
+  if (!curBot) {
+    store.notify('请先创建一个 Bot 再开始对话')
+    return
+  }
+  const botId = curBot.id
   const quote = replyTarget.value
   lastPrompt = msg
   if (!overrideText) inputPrompt.value = ''
@@ -921,11 +954,11 @@ async function sendPrompt(overrideText?: string) {
               localId: `srv_${m.id}`,
               serverId: m.id,
               role: kind === 'system' ? 'system' : m.role === 'user' ? 'user' : 'assistant',
-              senderBotId: m.sender_bot_id || m.bot_id || sender?.id || 'butler',
+              senderBotId: m.sender_bot_id || m.bot_id || sender?.id || '',
               senderName: sender?.name || 'BotHub',
               roleTitle: sender?.role_title || '',
               avatarStyle: sender?.avatar_style || 'cyan',
-              model: m.model_used || sender?.model || 'deepseek-flash',
+              model: m.model_used || sender?.model || store.state.configs.ai_model || '',
               msgKind: kind,
               createdAt: m.created_at,
               content: m.content || '',
@@ -1024,12 +1057,14 @@ async function saveBotProfile() {
 }
 
 async function deleteCustomBot() {
-  if (!bot.value || bot.value.is_builtin) return
-  if (!window.confirm(`确定注销自定义 Bot [${bot.value.name}] 吗？其专属聊天流将一并移除。`)) return
+  if (!bot.value) return
+  if (!window.confirm(`确定删除 [${bot.value.name}] 吗？其专属聊天流将一并移除。`)) return
   await BotHubApi.deleteBot(bot.value.id)
-  store.notify('已注销自定义 Bot')
+  store.notify(`已删除「${bot.value.name}」`)
   await store.loadDashboard(false)
-  await store.selectBot('butler')
+  if (store.state.bots.length > 0) {
+    await store.selectBot(store.state.bots[0].id)
+  }
 }
 
 function stateBadgeClass(state?: string): string {
@@ -1082,7 +1117,7 @@ function stateBadgeClass(state?: string): string {
         <BotAvatar v-else :avatar-style="bot?.avatar_style" :state="bot?.state" size="md" />
         <div class="min-w-0">
           <div class="flex items-center gap-2">
-            <h1 class="text-sm md:text-base font-semibold text-white truncate">{{ bot?.name || '长庚执更' }}</h1>
+            <h1 class="text-sm md:text-base font-semibold text-white truncate">{{ bot?.name || 'BotHub 工作台' }}</h1>
             <span
               v-if="isGroupBot"
               class="hidden sm:inline-flex font-mono text-[10px] px-2 py-0.5 rounded-full border border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] text-slate-300 leading-none shrink-0"
@@ -1100,7 +1135,7 @@ function stateBadgeClass(state?: string): string {
         </div>
       </div>
 
-      <div class="flex items-center gap-2 max-w-full ml-auto">
+      <div v-if="bot" class="flex items-center gap-2 max-w-full ml-auto">
         <!-- Gliding Physics Segmented Control -->
         <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="Bot 子视图" />
 
@@ -1199,6 +1234,66 @@ function stateBadgeClass(state?: string): string {
       </div>
     </header>
 
+    <!-- Empty Team Onboarding View when 0 Bots exist -->
+    <div v-if="!bot" class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-10 flex items-center justify-center">
+      <div class="max-w-2xl w-full flex flex-col gap-5">
+        <div class="luxury-card rounded-2xl p-6 sm:p-7 flex flex-col gap-4 text-center items-center">
+          <BotAvatar avatar-style="butler:gold" state="idle" size="lg" />
+          <div>
+            <h2 class="text-lg font-semibold text-white">欢迎来到纯净的 Vesper BotHub</h2>
+            <p class="text-xs text-slate-400 mt-1.5 leading-relaxed max-w-lg mx-auto">
+              系统启动时不包含任何写死的模型池、资产台账、定时任务或强制内置角色。你可以按需接入模型 Key 实时拉取模型列表，并自由创建自己的 Bot 团队。
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+            <button
+              type="button"
+              @click="store.state.createModalMode = 'bot'; store.state.showCreateBotModal = true"
+              class="min-h-[42px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer"
+            >
+              + 创建专属 Bot
+            </button>
+            <button
+              type="button"
+              @click="store.state.showSettingsModal = true"
+              class="min-h-[42px] px-4 py-2 rounded-xl border border-[#f2b880]/35 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-xs font-medium text-[#f2b880] cursor-pointer"
+            >
+              配置模型 Key 与实时拉取模型
+            </button>
+          </div>
+        </div>
+
+        <div v-if="store.state.botTemplates.length > 0" class="flex flex-col gap-2.5">
+          <div class="flex items-center justify-between px-1">
+            <span class="text-xs font-medium text-slate-300">从推荐角色模板一键新建</span>
+            <span class="font-mono text-[10.5px] text-slate-500">创建后均可随时修改或删除</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button
+              v-for="tpl in store.state.botTemplates"
+              :key="tpl.id"
+              type="button"
+              :disabled="creatingQuickBotId === tpl.id"
+              @click="quickCreateBotFromTemplate(tpl.id)"
+              class="vesper-card vesper-card-interactive rounded-xl p-3.5 text-left flex items-center gap-3 cursor-pointer disabled:opacity-50"
+            >
+              <BotAvatar :avatar-style="tpl.avatar_style" state="idle" size="md" :interactive="false" />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between gap-2">
+                  <strong class="text-xs font-semibold text-white truncate">{{ tpl.name }}</strong>
+                  <span class="font-mono text-[10px] text-[#f2b880] shrink-0">
+                    {{ creatingQuickBotId === tpl.id ? '创建中...' : '+ 新建' }}
+                  </span>
+                </div>
+                <p class="text-[11px] text-slate-400 truncate mt-0.5">{{ tpl.role_title }}</p>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <template v-else>
     <!-- View 1: Persistent Stream -->
     <Transition
       enter-active-class="transition duration-200 ease-out"
@@ -1895,7 +1990,7 @@ function stateBadgeClass(state?: string): string {
             </div>
             <button
               type="button"
-              @click="store.state.editingTask = { bot_id: bot?.id || 'butler' }"
+              @click="store.state.editingTask = { bot_id: bot?.id || '' }"
               class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer"
             >
               + 添加例程
@@ -2036,12 +2131,12 @@ function stateBadgeClass(state?: string): string {
                 <span>绑定可用工具集 (最小权限白名单)</span>
                 <div class="flex flex-wrap gap-2">
                   <label
-                    v-for="tool in TOOL_CATALOG"
+                    v-for="tool in availableTools"
                     :key="tool.id"
                     class="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#fff8ee]/12 bg-[#060a16]/75 font-mono text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0] transition-colors"
                   >
                     <input v-model="cfgTools" type="checkbox" :value="tool.id" class="accent-[#f2b880]" />
-                    <span>{{ tool.label }}</span>
+                    <span>{{ tool.description }}</span>
                   </label>
                 </div>
               </div>
@@ -2049,12 +2144,12 @@ function stateBadgeClass(state?: string): string {
 
             <div class="flex items-center justify-between gap-3 flex-wrap pt-3 border-t border-[#fff8ee]/10">
               <button
-                v-if="bot && !bot.is_builtin"
+                v-if="bot"
                 type="button"
                 @click="deleteCustomBot"
                 class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 text-xs cursor-pointer"
               >
-                {{ isGroupBot ? '解散此群聊' : '注销此自定义 Bot' }}
+                {{ isGroupBot ? '解散此群聊' : '删除此 Bot' }}
               </button>
               <span v-else />
               <button
@@ -2116,6 +2211,7 @@ function stateBadgeClass(state?: string): string {
         </div>
       </div>
     </Transition>
+    </template>
 
     <GroupDrawer />
   </section>

@@ -43,12 +43,28 @@ function closeModal() {
 
 async function askBotAnalyze(n: { id: number; source: string; title: string; summary: string }) {
   await markRead(n.id)
+  if (store.state.bots.length === 0) {
+    store.state.showInboxModal = false
+    store.state.createModalMode = 'bot'
+    store.state.showCreateBotModal = true
+    store.notify('当前还没有 Bot，请先从模板或空白创建一个助手')
+    return
+  }
   const s = n.source.toLowerCase()
-  let targetBotId = 'team_room'
-  if (s.includes('nezha') || s.includes('alert') || s.includes('webhook')) targetBotId = 'sentinel'
-  else if (s.includes('radar') || s.includes('bili')) targetBotId = 'radar'
-  else if (s.includes('morning') || s.includes('asset')) targetBotId = 'butler'
-  await store.jumpToBot(targetBotId, `请深度分析这条系统情报并给出建议：\n标题：${n.title}\n摘要：${n.summary}`)
+  const findByToolOrRole = (toolId: string, keywords: string[]) =>
+    store.state.bots.find((b) => (b.allowed_tools || '').includes(toolId)) ||
+    store.state.bots.find((b) =>
+      keywords.some((kw) => `${b.name} ${b.role_title} ${b.id}`.toLowerCase().includes(kw))
+    )
+  let picked = store.state.bots.find((b) => b.is_group) || store.state.bots[0]
+  if (s.includes('nezha') || s.includes('alert') || s.includes('webhook')) {
+    picked = findByToolOrRole('query_nezha_nodes', ['运维', '哨兵', 'sentinel', '监控']) || picked
+  } else if (s.includes('radar') || s.includes('bili')) {
+    picked = findByToolOrRole('web_search', ['雷达', 'radar', '情报', '探索']) || picked
+  } else if (s.includes('morning') || s.includes('asset')) {
+    picked = findByToolOrRole('manage_assets', ['管家', '资产', 'butler']) || picked
+  }
+  await store.jumpToBot(picked.id, `请深度分析这条系统情报并给出建议：\n标题：${n.title}\n摘要：${n.summary}`)
 }
 
 async function markRead(id: number) {

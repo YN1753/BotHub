@@ -153,6 +153,29 @@ export interface PushLog {
   created_at: string
 }
 
+export interface BotTemplate {
+  id: string
+  name: string
+  role_title: string
+  avatar_style: string
+  system_prompt: string
+  enable_thinking: boolean
+  allowed_tools: string[]
+}
+
+export interface ModelProviderTemplate {
+  id: string
+  name: string
+  provider: string
+  base_url: string
+  docs_hint: string
+}
+
+export interface AvailableToolMeta {
+  id: string
+  description: string
+}
+
 export interface ModelPoolEntry {
   id: string
   name: string
@@ -182,7 +205,10 @@ export interface DashboardPayload {
   server_now: string
   tasks: Task[]
   bots: Bot[]
+  bot_templates?: BotTemplate[]
   model_pool?: ModelPoolEntry[]
+  model_provider_templates?: ModelProviderTemplate[]
+  available_tools?: AvailableToolMeta[]
   model_health?: Record<string, ModelHealthStats>
   templates: TaskTemplate[]
   asset_templates: AssetTemplate[]

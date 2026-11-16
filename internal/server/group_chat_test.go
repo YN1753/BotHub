@@ -12,9 +12,39 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
+func seedTestGroupBots(st *store.Store) {
+	_ = st.SaveBot(store.Bot{
+		ID:             "butler",
+		Name:           "长庚执更",
+		RoleTitle:      "资产守望管家",
+		AvatarStyle:    "butler:gold",
+		SystemPrompt:   "资产管家",
+		EnableThinking: true,
+		IsPinned:       true,
+		AllowedTools:   `["manage_assets","manage_tasks"]`,
+	})
+	_ = st.SaveBot(store.Bot{
+		ID:           "sentinel",
+		Name:         "探针哨兵",
+		RoleTitle:    "哪吒探针哨兵",
+		AvatarStyle:  "sentinel:amber",
+		SystemPrompt: "探针运维",
+		AllowedTools: `["query_nezha_nodes"]`,
+	})
+	_ = st.SaveBot(store.Bot{
+		ID:           "radar",
+		Name:         "开源雷达",
+		RoleTitle:    "开源雷达",
+		AvatarStyle:  "radar:emerald",
+		SystemPrompt: "技术雷达",
+		AllowedTools: `["web_search","read_url"]`,
+	})
+}
+
 func TestGroupMembershipAnnouncementAndAdhocGroup(t *testing.T) {
 	s, cleanup := setupTestServer(t)
 	defer cleanup()
+	seedTestGroupBots(s.store)
 
 	// 1. Seed 1v1 conversation history on butler
 	_, _ = s.store.AppendAgentMessage(store.AgentMessage{
@@ -143,6 +173,7 @@ func TestGroupMembershipAnnouncementAndAdhocGroup(t *testing.T) {
 func TestForwardMessageAndBackupBotsRoundTrip(t *testing.T) {
 	s, cleanup := setupTestServer(t)
 	defer cleanup()
+	seedTestGroupBots(s.store)
 
 	// 1. Forward a reference message from sentinel into butler
 	fwdBody, _ := json.Marshal(map[string]any{

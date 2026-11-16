@@ -233,7 +233,8 @@ CREATE TABLE IF NOT EXISTS bots (
 		}
 	}
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot ON agent_messages(bot_id, id ASC)`)
-	_, _ = s.db.Exec(`UPDATE bots SET is_group = 1, member_ids = '["butler","sentinel","radar","grok"]' WHERE id = 'team_room' AND is_group = 0`)
+	_, _ = s.db.Exec(`UPDATE bots SET is_builtin = 0 WHERE is_builtin = 1`)
+	_, _ = s.db.Exec(`UPDATE bots SET is_group = 1 WHERE id = 'team_room' AND is_group = 0`)
 	_, _ = s.db.Exec(`DELETE FROM configs WHERE key IN ('wecom_corpid', 'wecom_agentid', 'wecom_secret', 'wecom_touser', 'pushplus_token')`)
 	_, _ = s.db.Exec(`UPDATE configs SET value = 'native' WHERE key = 'push_channel' AND value != 'native'`)
 	return nil
@@ -283,7 +284,7 @@ func (s *Store) seedDefaults() error {
 		KeyMorningEnabled:      "true",
 		KeyMorningCron:         "0 8 * * *",
 		KeyMorningCity:         "Shanghai",
-		KeyNezhaURL:            "https://dash.starryheavens.uk",
+		KeyNezhaURL:            "",
 		KeyNezhaDBPath:         nezhaDBPath,
 		KeyRadarEnabled:        "true",
 		KeyRadarCron:           "0 12,20 * * *",
@@ -300,7 +301,7 @@ func (s *Store) seedDefaults() error {
 		KeyLightAPIKey:         lightKey,
 		KeyLightBaseURL:        lightBaseURL,
 		KeyLightModel:          lightModel,
-		KeyFreeModelPool:       DefaultModelPoolJSON(),
+		KeyFreeModelPool:       "[]",
 		KeyPoolForLight:        "true",
 		KeyPoolFallback:        "true",
 		KeyAppBearerToken:      appToken,
@@ -323,100 +324,6 @@ func (s *Store) seedDefaults() error {
 		_ = s.SetConfig(KeyAdminPassHash, HashPassword(envPass))
 	}
 
-	// Seed assets if table is empty
-	var count int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM assets`).Scan(&count); err == nil && count == 0 {
-		initial := []Asset{
-			{ID: "cf_starryheavens", Name: "starryheavens.uk", Category: "domain", Spec: "顶级主域 · Cloudflare", Price: "年付", Status: "运行中", DueDate: "2027-05-18T10:00:00+08:00", AutoRenew: true, WarnDays: "[30, 15, 7, 3, 1]", ExtraConfig: `{"account_id":"0c248525a82b6da799e178614786b970","domain":"starryheavens.uk"}`},
-			{ID: "cf_looseleaf", Name: "looseleaf.sarl", Category: "domain", Spec: "备用主域 · Cloudflare", Price: "年付", Status: "运行中", DueDate: "2027-05-18T10:00:00+08:00", AutoRenew: true, WarnDays: "[30, 15, 7, 3, 1]", ExtraConfig: `{"account_id":"0c248525a82b6da799e178614786b970","domain":"looseleaf.sarl"}`},
-			{ID: "bilibili", Name: "Bilibili", Category: "life", Spec: "大会员", Price: "年付", Status: "会员有效", DueDate: "2027-01-15T23:59:59+08:00", AutoRenew: false, WarnDays: "[14, 7, 3, 1]", ExtraConfig: `{"sessdata":""}`},
-			{ID: "qq_music", Name: "QQ 音乐", Category: "life", Spec: "豪华绿钻", Price: "活动月卡", Status: "活动体验中", DueDate: "2026-11-20T23:59:59+08:00", AutoRenew: false, WarnDays: "[7, 3, 1]", ExtraConfig: `{"uin":"","qm_keyst":"","is_trial":true}`},
-			{ID: "rak_sv", Name: "RakSmart SV", Category: "compute", Spec: "1C 1G · 50G SSD · 1TB VIP", Price: "$1.75 / 月", Status: "运行中", DueDate: "2026-12-12T00:00:00+08:00", AutoRenew: true, WarnDays: "[7, 3, 1]", ExtraConfig: `{"anchor_day":12}`},
-			{ID: "cc_la", Name: "CloudCone LA", Category: "compute", Spec: "2C 2G · 110G SSD", Price: "$21.66 / 年", Status: "待购入", DueDate: "2027-11-13T00:00:00+08:00", AutoRenew: false, WarnDays: "[14, 7, 3, 1]", ExtraConfig: `{}`},
-		}
-		for _, a := range initial {
-			_ = s.SaveAsset(a)
-		}
-	}
-
-	// Seed default tasks if tasks table is empty
-	var taskCount int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tasks`).Scan(&taskCount); err == nil && taskCount == 0 {
-		initialTasks := []Task{
-			{
-				ID:          "morning",
-				Name:        "每日晨报小秘书",
-				Type:        "morning",
-				BotID:       "butler",
-				Description: "汇总目标城市气象建议、每日格言、节点脉搏与临期资产",
-				CronExpr:    "0 8 * * *",
-				Enabled:     true,
-				Params:      `{"city":"Shanghai","nezha_url":"https://dash.starryheavens.uk"}`,
-				CreatedAt:   now,
-				UpdatedAt:   now,
-			},
-			{
-				ID:          "radar",
-				Name:        "全网开源技术雷达",
-				Type:        "radar",
-				BotID:       "radar",
-				Description: "抓取 GitHub Trending 与 Hacker News 热门高分条目，自动排版去重推送",
-				CronExpr:    "0 12,20 * * *",
-				Enabled:     true,
-				Params:      `{"hn_min_score":120,"limit":8}`,
-				CreatedAt:   now,
-				UpdatedAt:   now,
-			},
-			{
-				ID:          "asset_watcher",
-				Name:        "数字资产与会员守望",
-				Type:        "asset_watcher",
-				BotID:       "butler",
-				Description: "自动嗅探域名到期、B站大会员与VPS扣费周期，触发临期防扣款强提醒",
-				CronExpr:    "0 3 * * *",
-				Enabled:     true,
-				Params:      `{}`,
-				CreatedAt:   now,
-				UpdatedAt:   now,
-			},
-		}
-		for _, t := range initialTasks {
-			_ = s.SaveTask(t)
-		}
-	}
-
-	// Seed default persistent GrokBot teammates if missing (safe on existing upgrades)
-	for _, b := range DefaultBots(now) {
-		et := 0
-		if b.EnableThinking {
-			et = 1
-		}
-		pin := 0
-		if b.IsPinned {
-			pin = 1
-		}
-		builtin := 0
-		if b.IsBuiltin {
-			builtin = 1
-		}
-		isGroup := 0
-		if b.IsGroup {
-			isGroup = 1
-		}
-		memberIDs := b.MemberIDs
-		if strings.TrimSpace(memberIDs) == "" {
-			memberIDs = "[]"
-		}
-		groupMode := b.GroupMode
-		if strings.TrimSpace(groupMode) == "" {
-			groupMode = "smart"
-		}
-		_, _ = s.db.Exec(`INSERT OR IGNORE INTO bots (id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, group_mode, announcement, sort_order, last_summary, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.Model, et, b.AllowedTools, b.State, pin, builtin, isGroup, memberIDs, groupMode, b.Announcement, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
-	}
-	// Backfill task bot_id mappings on upgraded databases
-	_, _ = s.db.Exec(`UPDATE tasks SET bot_id = 'radar' WHERE type = 'radar' AND (bot_id = '' OR bot_id = 'butler')`)
 	return nil
 }
 

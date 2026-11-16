@@ -5,9 +5,12 @@ import type {
   AgentMessage,
   Asset,
   AssetTemplate,
+  AvailableToolMeta,
   Bot,
+  BotTemplate,
   ModelHealthStats,
   ModelPoolEntry,
+  ModelProviderTemplate,
   NotificationItem,
   PushLog,
   SelectOption,
@@ -44,7 +47,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.9.0',
+  version: 'v2.10.0',
   uptimeSec: 0,
   serverNow: '--',
   stats: {
@@ -57,7 +60,10 @@ const state = reactive({
     unread_notifications: 0,
   },
   bots: [] as Bot[],
+  botTemplates: [] as BotTemplate[],
   modelPool: [] as ModelPoolEntry[],
+  modelProviderTemplates: [] as ModelProviderTemplate[],
+  availableTools: [] as AvailableToolMeta[],
   modelHealth: {} as Record<string, ModelHealthStats>,
   assets: [] as Asset[],
   tasks: [] as Task[],
@@ -70,7 +76,7 @@ const state = reactive({
 
   // Navigation & Active Bot Workspace
   workspace: 'bots' as MainWorkspace,
-  activeBotId: localStorage.getItem('bothub_active_bot') || 'butler',
+  activeBotId: localStorage.getItem('bothub_active_bot') || '',
   botView: 'stream' as BotSubView,
   timeline: [] as ChatMessageUI[],
   isStreaming: false,
@@ -140,11 +146,11 @@ function mapServerMessage(m: AgentMessage, fallbackBot?: Bot): ChatMessageUI {
     localId: `srv_${m.id}`,
     serverId: m.id,
     role,
-    senderBotId: m.sender_bot_id || m.bot_id || sender?.id || 'butler',
+    senderBotId: m.sender_bot_id || m.bot_id || sender?.id || '',
     senderName: sender?.name || 'BotHub',
     roleTitle: sender?.role_title || '',
     avatarStyle: sender?.avatar_style || 'cyan',
-    model: m.model_used || sender?.model || 'deepseek-flash',
+    model: m.model_used || sender?.model || state.configs.ai_model || '',
     msgKind: kind,
     createdAt: m.created_at,
     content: m.content || '',
@@ -174,18 +180,30 @@ export function useAppStore() {
 
   const modelOptions = computed<SelectOption[]>(() => {
     const enabledNodes = state.modelPool.filter((m) => m.enabled)
-    const readyCount = enabledNodes.filter((m) => Boolean(m.api_key)).length
+    const readyCount = enabledNodes.filter((m) => Boolean(m.api_key && m.model)).length
+    const primaryModel = (state.configs.ai_model || '').trim()
     const baseOpts: SelectOption[] = [
-      { value: 'deepseek-flash', label: 'DeepSeek Flash (主力 / 支持中转站)' },
       {
-        value: 'free-pool',
-        label: readyCount > 0 ? `免费模型池 (自动容灾 · ${readyCount} 已就绪)` : '免费模型池 (自动轮询 · 待配 Key)',
+        value: 'deepseek-flash',
+        label: primaryModel
+          ? `主力引擎 (${primaryModel})`
+          : '主力引擎 (需先在设置中拉取模型)',
       },
     ]
+    if (enabledNodes.length > 0) {
+      baseOpts.push({
+        value: 'free-pool',
+        label:
+          readyCount > 0
+            ? `免费模型池 (自动容灾 · ${readyCount} 已就绪)`
+            : '免费模型池 (自动轮询 · 待配 Key 与模型)',
+      })
+    }
     for (const node of enabledNodes) {
+      const modelTag = node.model ? ` · ${node.model}` : ' · 待拉取模型'
       baseOpts.push({
         value: `pool:${node.id}`,
-        label: `${node.name} [${node.api_key ? '免费可用' : '待填Key'}]`,
+        label: `${node.name}${modelTag} [${node.api_key && node.model ? '可用' : '待配置'}]`,
       })
     }
     return baseOpts
@@ -227,7 +245,10 @@ export function useAppStore() {
       state.serverNow = data.server_now || '--'
       state.stats = data.stats || state.stats
       state.bots = data.bots || []
+      state.botTemplates = data.bot_templates || []
       state.modelPool = data.model_pool || []
+      state.modelProviderTemplates = data.model_provider_templates || []
+      state.availableTools = data.available_tools || []
       state.modelHealth = data.model_health || {}
       state.assets = data.assets || []
       state.tasks = data.tasks || []
@@ -238,7 +259,11 @@ export function useAppStore() {
       state.pushLogs = data.push_logs || []
       state.configs = data.configs || {}
 
-      if (loadInitialBot && state.bots.length > 0) {
+      if (state.bots.length === 0) {
+        state.activeBotId = ''
+        state.timeline = []
+        localStorage.removeItem('bothub_active_bot')
+      } else if (loadInitialBot || !state.bots.some((b) => b.id === state.activeBotId)) {
         const exists = state.bots.some((b) => b.id === state.activeBotId)
         const targetId = exists ? state.activeBotId : state.bots[0].id
         await selectBot(targetId)

@@ -212,7 +212,14 @@ func TestBuiltinToolsExecution(t *testing.T) {
 		t.Fatalf("manage_assets list failed: %v, out=%s", err, assetsOut)
 	}
 
-	// 3. Test manage_tasks list & run
+	// 3. Test manage_tasks create, list & run
+	_ = st.SaveTask(store.Task{
+		ID:       "asset_watcher",
+		Name:     "资产守望",
+		Type:     "asset_watcher",
+		CronExpr: "0 3 * * *",
+		Enabled:  true,
+	})
 	tasksOut, err := eng.ExecuteTool(context.Background(), "manage_tasks", `{"action":"list"}`)
 	if err != nil || !strings.Contains(tasksOut, "asset_watcher") {
 		t.Fatalf("manage_tasks list failed: %v, out=%s", err, tasksOut)

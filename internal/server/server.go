@@ -84,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/config", s.requireAuth(s.handleUpdateConfig))
 	mux.HandleFunc("POST /api/v2/model-pool", s.requireAuth(s.handleSaveModelPool))
 	mux.HandleFunc("POST /api/v2/model-pool/test", s.requireAuth(s.handleTestModelTarget))
+	mux.HandleFunc("POST /api/v2/model-pool/models", s.requireAuth(s.handleFetchUpstreamModels))
 	mux.HandleFunc("POST /api/auth/password", s.requireAuth(s.handleUpdatePassword))
 	mux.HandleFunc("POST /api/modules/{id}/run", s.requireAuth(s.handleRunTask))
 	mux.HandleFunc("POST /api/test-push", s.requireAuth(s.handleTestPush))
