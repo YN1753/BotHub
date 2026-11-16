@@ -216,9 +216,7 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
       >
         <div class="flex items-center gap-2 min-w-0">
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" aria-hidden="true" />
-          <span class="text-xs text-slate-400 truncate">
-            通道 · {{ store.state.configs['push_channel'] === 'pushplus' ? 'PushPlus' : '企业微信' }}
-          </span>
+          <span class="text-xs text-slate-400 truncate">原生 APP 通知</span>
         </div>
         <span class="font-mono text-xs font-semibold text-emerald-300 shrink-0">
           成功 {{ store.state.stats.sent_pushes }}

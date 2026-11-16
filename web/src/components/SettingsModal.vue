@@ -11,7 +11,7 @@ const activeTab = ref<'ai' | 'push' | 'integrations' | 'security'>('ai')
 
 const SETTINGS_TABS = [
   { id: 'ai', label: 'AI 大脑设置' },
-  { id: 'push', label: '消息推送通道' },
+  { id: 'push', label: '原生 APP 通知' },
   { id: 'integrations', label: '巡检与探针凭据' },
   { id: 'security', label: '安全与数据灾备' },
 ]
@@ -24,13 +24,6 @@ const activePersona = ref('grok')
 const lightBaseUrl = ref('')
 const lightApiKey = ref('')
 const lightModel = ref('')
-
-const pushChannel = ref('wecom')
-const wecomCorpId = ref('')
-const wecomAgentId = ref('')
-const wecomSecret = ref('')
-const wecomToUser = ref('@all')
-const pushplusToken = ref('')
 
 const nezhaUrl = ref('https://dash.starryheavens.uk')
 const nezhaDbPath = ref('/opt/nezha/dashboard/data/sqlite.db')
@@ -50,10 +43,6 @@ const PERSONA_OPTIONS = [
   { value: 'butler', label: '长庚执更管家' },
   { value: 'architect', label: '系统架构师' },
 ]
-const CHANNEL_OPTIONS = [
-  { value: 'wecom', label: '企业微信 (长庚执更主通道)' },
-  { value: 'pushplus', label: 'PushPlus 备用通道' },
-]
 
 watch(
   () => store.state.showSettingsModal,
@@ -67,13 +56,6 @@ watch(
     lightBaseUrl.value = c['light_base_url'] || ''
     lightApiKey.value = c['light_api_key'] || ''
     lightModel.value = c['light_model'] || ''
-
-    pushChannel.value = c['push_channel'] || 'wecom'
-    wecomCorpId.value = c['wecom_corpid'] || ''
-    wecomAgentId.value = c['wecom_agentid'] || ''
-    wecomSecret.value = c['wecom_secret'] || ''
-    wecomToUser.value = c['wecom_touser'] || '@all'
-    pushplusToken.value = c['pushplus_token'] || ''
 
     nezhaUrl.value = c['nezha_url'] || 'https://dash.starryheavens.uk'
     nezhaDbPath.value = c['nezha_db_path'] || '/opt/nezha/dashboard/data/sqlite.db'
@@ -98,12 +80,6 @@ async function saveAllConfig() {
       light_base_url: lightBaseUrl.value.trim(),
       light_api_key: lightApiKey.value.trim(),
       light_model: lightModel.value.trim(),
-      push_channel: pushChannel.value,
-      wecom_corpid: wecomCorpId.value.trim(),
-      wecom_agentid: wecomAgentId.value.trim(),
-      wecom_secret: wecomSecret.value.trim(),
-      wecom_touser: wecomToUser.value.trim() || '@all',
-      pushplus_token: pushplusToken.value.trim(),
       nezha_url: nezhaUrl.value.trim(),
       nezha_db_path: nezhaDbPath.value.trim(),
       app_bearer_token: appBearerToken.value.trim(),
@@ -257,45 +233,32 @@ async function handleImportBackup(e: Event) {
         </div>
       </form>
 
-        <!-- Tab: Push -->
-        <form v-else-if="activeTab === 'push'" key="push" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
-        <div class="flex flex-col gap-1 text-xs text-slate-300">
-          <span>主消息推送通道</span>
-          <CustomSelect v-model="pushChannel" :options="CHANNEL_OPTIONS" aria-label="主消息推送通道" />
-        </div>
-        <template v-if="pushChannel === 'wecom'">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>企业微信 CorpID</span>
-              <input v-model="wecomCorpId" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-            </label>
-            <label class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>应用 AgentID</span>
-              <input v-model="wecomAgentId" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-            </label>
-            <label class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>应用 Secret</span>
-              <input v-model="wecomSecret" type="password" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-            </label>
-            <label class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>接收成员 (ToUser)</span>
-              <input v-model="wecomToUser" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-            </label>
+        <!-- Tab: Native App Push -->
+        <form v-else-if="activeTab === 'push'" key="push" @submit.prevent="saveAllConfig" class="flex flex-col gap-4">
+        <div class="rounded-xl border border-[#f2b880]/28 bg-[#f2b880]/[0.07] p-3.5 flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0" aria-hidden="true" />
+              <strong class="text-sm font-semibold text-white">原生 APP 通知通道（已独家启用）</strong>
+            </div>
+            <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+              所有定时晨报、前沿雷达、资产到期提醒与哪吒探针告警将直接持久化至原生收件箱，并通过 <code class="font-mono text-[#f2b880]">/api/v2/events</code> SSE 长连接实时推送至移动端 APP 与控制台。
+            </p>
           </div>
-        </template>
-        <template v-else>
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>PushPlus Token</span>
-            <input v-model="pushplusToken" type="password" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-          </label>
-        </template>
+        </div>
+
+        <label class="flex flex-col gap-1.5 text-xs text-slate-300">
+          <span>Android / 原生 APP 接入令牌 (App Bearer Token)</span>
+          <input v-model="appBearerToken" type="password" placeholder="bh_..." class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+          <span class="text-[11px] text-slate-400">客户端请求头携带 Authorization: Bearer 令牌即可实时拉取与订阅 SSE 推送；可在「安全与数据灾备」中一键轮换。</span>
+        </label>
 
         <div class="flex items-center justify-end gap-2 pt-2">
           <button type="button" @click="handleTestPush" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
-            发送测试消息
+            发送测试通知到原生 APP
           </button>
           <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
-            保存通道设置
+            保存 APP 通道配置
           </button>
         </div>
       </form>
@@ -309,10 +272,6 @@ async function handleImportBackup(e: Event) {
         <label class="flex flex-col gap-1 text-xs text-slate-300">
           <span>哪吒 SQLite 本机路径 (只读直连)</span>
           <input v-model="nezhaDbPath" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-        </label>
-        <label class="flex flex-col gap-1 text-xs text-slate-300">
-          <span>Android 原生客户端令牌 (App Bearer Token)</span>
-          <input v-model="appBearerToken" type="password" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
         </label>
         <label class="flex flex-col gap-1 text-xs text-slate-300">
           <span>Cloudflare API Token</span>

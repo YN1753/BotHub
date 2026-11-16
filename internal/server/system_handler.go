@@ -26,8 +26,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 var sensitiveConfigKeys = map[string]bool{
-	store.KeyPushPlusToken:     true,
-	store.KeyWeComSecret:       true,
 	store.KeyCFAPIToken:        true,
 	store.KeyBiliSessdata:      true,
 	store.KeyDeepSeekAPIKey:    true,
@@ -107,12 +105,6 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allowedKeys := map[string]bool{
-		"push_channel":        true,
-		"pushplus_token":      true,
-		"wecom_corpid":        true,
-		"wecom_agentid":       true,
-		"wecom_secret":        true,
-		"wecom_touser":        true,
 		"cf_api_token":        true,
 		"nezha_url":           true,
 		"nezha_db_path":       true,
@@ -128,6 +120,7 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		"app_bearer_token":    true,
 	}
 
+	_ = s.store.SetConfig(store.KeyPushChannel, "native")
 	for k, v := range updates {
 		if !allowedKeys[k] {
 			continue
@@ -149,27 +142,17 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTestPush(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	channel, _ := s.store.GetConfig(store.KeyPushChannel)
-	channel = strings.ToLower(strings.TrimSpace(channel))
-	if channel == "" {
-		channel = "wecom"
-	}
-
-	channelName := "企业微信 · 长庚执更"
-	if channel == "pushplus" {
-		channelName = "PushPlus 备用通道"
-	}
-
+	channelName := "原生 APP 通知通道 (Inbox + SSE)"
 	now := store.NowShanghai()
-	content := fmt.Sprintf("### Vesper BotHub 通道自检\n\n- **服务节点**：CloudCone LA\n- **活跃通道**：`%s`\n- **触发时间**：`%s`\n- **网络链路**：正常直连\n\n---\n*来自 Vesper BotHub · bot.starryheavens.uk*", channelName, now)
-	if err := s.push.SendMarkdown(ctx, "system_test", "Vesper BotHub 链路连通测试", content); err != nil {
+	content := fmt.Sprintf("### Vesper BotHub 通知链路自检\n\n- **活跃通道**：`%s`\n- **触发时间**：`%s`\n- **链路状态**：正常直连\n\n---\n*来自 Vesper BotHub · bot.starryheavens.uk*", channelName, now)
+	if err := s.push.SendMarkdown(ctx, "system_test", "Vesper BotHub 原生 APP 通知测试", content); err != nil {
 		writeError(w, http.StatusBadGateway, "推送失败: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": fmt.Sprintf("测试消息已成功通过 [%s] 投递", channelName)})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "测试通知已成功推送至原生 APP 收件箱与 SSE 实时通道"})
 }
 
 type BackupData struct {
@@ -221,12 +204,6 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Restore Configs
 	allowedKeys := map[string]bool{
-		"push_channel":        true,
-		"pushplus_token":      true,
-		"wecom_corpid":        true,
-		"wecom_agentid":       true,
-		"wecom_secret":        true,
-		"wecom_touser":        true,
 		"cf_api_token":        true,
 		"nezha_url":           true,
 		"nezha_db_path":       true,
@@ -241,6 +218,7 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		"light_model":         true,
 		"app_bearer_token":    true,
 	}
+	_ = s.store.SetConfig(store.KeyPushChannel, "native")
 	for k, v := range backup.Configs {
 		if allowedKeys[k] {
 			_ = s.store.SetConfig(k, strings.TrimSpace(v))

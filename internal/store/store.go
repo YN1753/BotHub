@@ -14,21 +14,12 @@ import (
 )
 
 const (
-	DefaultPushPlusToken   = "f99b5ca6eee44e16ad94d1721bfc20f0"
-	DefaultWeComCorpID     = "wwda96f68ec84b1f74"
-	DefaultWeComAgentID    = "1000002"
-	DefaultWeComSecret     = "P8R70brpQMVWrmysZaGlWsiTqS6QV5GJOWfBHfWvjC4"
-	DefaultWeComToUser     = "@all"
 	DefaultDeepSeekBaseURL = "https://api.deepseek.com/v1"
 	DefaultAIModel         = "deepseek-flash"
 	DefaultActivePersona   = "grok"
 	DefaultNezhaDBPath     = "/opt/nezha/dashboard/data/sqlite.db"
 
 	KeyPushChannel         = "push_channel"
-	KeyWeComCorpID         = "wecom_corpid"
-	KeyWeComAgentID        = "wecom_agentid"
-	KeyWeComSecret         = "wecom_secret"
-	KeyWeComToUser         = "wecom_touser"
 	KeyMorningEnabled      = "morning_enabled"
 	KeyMorningCron         = "morning_cron"
 	KeyMorningCity         = "morning_city"
@@ -42,7 +33,6 @@ const (
 	KeyAssetWatcherCron    = "asset_watcher_cron"
 	KeyCFAPIToken          = "cf_api_token"
 	KeyBiliSessdata        = "bili_sessdata"
-	KeyPushPlusToken       = "pushplus_token"
 	KeyDeepSeekAPIKey      = "deepseek_api_key"
 	KeyDeepSeekBaseURL     = "deepseek_base_url"
 	KeyAIModel             = "ai_model"
@@ -229,35 +219,13 @@ CREATE TABLE IF NOT EXISTS bots (
 		}
 	}
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot ON agent_messages(bot_id, id ASC)`)
+	_, _ = s.db.Exec(`DELETE FROM configs WHERE key IN ('wecom_corpid', 'wecom_agentid', 'wecom_secret', 'wecom_touser', 'pushplus_token')`)
+	_, _ = s.db.Exec(`UPDATE configs SET value = 'native' WHERE key = 'push_channel' AND value != 'native'`)
 	return nil
 }
 
 func (s *Store) seedDefaults() error {
-	pushChannel := strings.TrimSpace(os.Getenv("BOTHUB_PUSH_CHANNEL"))
-	if pushChannel == "" {
-		pushChannel = "wecom"
-	}
-	wecomCorpID := strings.TrimSpace(os.Getenv("BOTHUB_WECOM_CORPID"))
-	if wecomCorpID == "" {
-		wecomCorpID = DefaultWeComCorpID
-	}
-	wecomAgentID := strings.TrimSpace(os.Getenv("BOTHUB_WECOM_AGENTID"))
-	if wecomAgentID == "" {
-		wecomAgentID = DefaultWeComAgentID
-	}
-	wecomSecret := strings.TrimSpace(os.Getenv("BOTHUB_WECOM_SECRET"))
-	if wecomSecret == "" {
-		wecomSecret = DefaultWeComSecret
-	}
-	wecomToUser := strings.TrimSpace(os.Getenv("BOTHUB_WECOM_TOUSER"))
-	if wecomToUser == "" {
-		wecomToUser = DefaultWeComToUser
-	}
-
-	pushToken := strings.TrimSpace(os.Getenv("BOTHUB_PUSHPLUS_TOKEN"))
-	if pushToken == "" {
-		pushToken = DefaultPushPlusToken
-	}
+	pushChannel := "native"
 	adminToken := strings.TrimSpace(os.Getenv("BOTHUB_ADMIN_TOKEN"))
 	if adminToken == "" {
 		adminToken = "vesper-bothub"
@@ -297,10 +265,6 @@ func (s *Store) seedDefaults() error {
 	now := NowShanghai()
 	defaults := map[string]string{
 		KeyPushChannel:         pushChannel,
-		KeyWeComCorpID:         wecomCorpID,
-		KeyWeComAgentID:        wecomAgentID,
-		KeyWeComSecret:         wecomSecret,
-		KeyWeComToUser:         wecomToUser,
 		KeyMorningEnabled:      "true",
 		KeyMorningCron:         "0 8 * * *",
 		KeyMorningCity:         "Shanghai",
@@ -314,7 +278,6 @@ func (s *Store) seedDefaults() error {
 		KeyAssetWatcherCron:    "0 3 * * *",
 		KeyCFAPIToken:          "",
 		KeyBiliSessdata:        "",
-		KeyPushPlusToken:       pushToken,
 		KeyDeepSeekAPIKey:      deepseekKey,
 		KeyDeepSeekBaseURL:     deepseekBaseURL,
 		KeyAIModel:             aiModel,

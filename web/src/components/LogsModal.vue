@@ -17,8 +17,8 @@ watch(
 <template>
   <BaseModal
     :open="store.state.showLogsModal"
-    title="外部通道推送历史流水"
-    subtitle="企业微信与 PushPlus 投递记录 (实时审计)"
+    title="原生 APP 通知推送流水"
+    subtitle="原生收件箱入库与 SSE 实时推送审计记录"
     max-width="2xl"
     @close="store.state.showLogsModal = false"
   >
