@@ -96,19 +96,130 @@ html, body {
 .subtitle { font-size: 13px; color: var(--text-sub); margin-bottom: 22px; }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 
-/* Main Shell */
-.app-shell {
+/* Main Shell (WeChat / QQ Desktop 3-Column Window) */
+.app-shell.qq-window {
   position: relative;
   z-index: 10;
-  max-width: 1480px;
-  width: 100%;
-  height: 100vh;
-  margin: 0 auto;
-  padding: 12px 16px;
+  max-width: 1440px;
+  width: calc(100% - 28px);
+  height: calc(100vh - 28px);
+  margin: 14px auto;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.qq-rail {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  overflow: hidden;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 6px 10px;
+  background: rgba(4, 7, 16, 0.82);
+  border-right: 1px solid var(--glass-border);
+  user-select: none;
+}
+
+.qq-rail-top,
+.qq-rail-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.qq-rail-avatar {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.28), rgba(99, 102, 241, 0.35));
+  border: 1px solid rgba(0, 229, 255, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text-main);
+  margin-bottom: 8px;
+}
+
+.qq-rail-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--live-teal, #10b981);
+  border: 2px solid #040710;
+}
+
+.qq-rail-btn {
+  position: relative;
+  width: 50px;
+  padding: 8px 4px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.qq-rail-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
+}
+
+.qq-rail-btn.active {
+  background: rgba(0, 229, 255, 0.14);
+  border-color: rgba(0, 229, 255, 0.28);
+  color: var(--accent-cyan, #38bdf8);
+}
+
+.qq-rail-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  margin-left: 0;
+  min-width: 16px;
+  height: 16px;
+  font-size: 10px;
+  padding: 0 4px;
+}
+
+.qq-rail-ver {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+.qq-new-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.qq-ops-pane {
+  padding: 20px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-height: 0;
 }
 
 .topbar {
@@ -1029,11 +1140,50 @@ button, input, select, textarea {
 }
 
 .im-composer-wrap {
-  padding: 10px 18px 14px;
+  padding: 8px 18px 12px;
   border-top: 1px solid var(--glass-border);
-  background: rgba(6, 10, 22, 0.45);
+  background: rgba(6, 10, 22, 0.52);
   display: flex;
   flex-direction: column;
+  gap: 6px;
+}
+
+.im-composer-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.im-composer-tools-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.im-textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.55;
+  resize: none;
+  outline: none;
+  padding: 4px 0;
+  min-height: 62px;
+}
+
+.im-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.im-composer-send-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -1234,20 +1384,42 @@ button, input, select, textarea {
 
 /* Responsive */
 @media (max-width: 860px) {
-  .app-shell {
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
-    padding: 12px 12px 32px;
+  .app-shell.qq-window {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    width: 100%;
+    height: 100vh;
+    margin: 0;
+    border-radius: 0;
+  }
+  .qq-rail {
+    flex-direction: row;
+    padding: 6px 8px;
+    border-right: none;
+    border-bottom: 1px solid var(--glass-border);
+    overflow-x: auto;
+  }
+  .qq-rail-top,
+  .qq-rail-bottom {
+    flex-direction: row;
+    width: auto;
+    gap: 4px;
+  }
+  .qq-rail-avatar,
+  .qq-rail-ver {
+    display: none;
+  }
+  .qq-rail-btn {
+    width: auto;
+    padding: 6px 10px;
   }
   .agent-shell.im-shell {
     grid-template-columns: 1fr;
-    min-height: 75vh;
   }
   .im-sidebar {
     border-right: none;
     border-bottom: 1px solid var(--glass-border);
-    max-height: 170px;
+    max-height: 150px;
   }
   .agent-msg-user, .agent-msg-assistant {
     max-width: 88%;

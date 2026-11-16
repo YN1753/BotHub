@@ -3150,12 +3150,8 @@
       const row = document.createElement("div");
       row.className = "agent-msg-row agent-msg-row-user";
       row.innerHTML = `
-        <div class="im-avatar im-avatar-user">我</div>
+        <div class="im-avatar im-avatar-user" title="${Utils.esc(timeStr ? Utils.formatTime(timeStr) : "刚刚")}">我</div>
         <div class="agent-msg agent-msg-user">
-          <div class="agent-msg-meta mono">
-            <span>管理员</span>
-            <span>${Utils.esc(timeStr ? Utils.formatTime(timeStr) : "刚刚")}</span>
-          </div>
           <div class="agent-msg-content">${Utils.esc(text)}</div>
         </div>
       `;
@@ -3689,9 +3685,9 @@
     const components = [
       new ToastComponent("#toast", store, bus),
       new AuthComponent("#login-view", store, bus),
-      new TopbarComponent("header.topbar", store, bus),
+      new TopbarComponent(".qq-rail", store, bus),
       new MetricsComponent(".metrics-grid", store, bus),
-      new WorkspaceSwitcherComponent(".workspace-tabs", store, bus),
+      new WorkspaceSwitcherComponent(".qq-rail", store, bus),
       new AgentHubComponent("#workspace-agent", store, bus),
       new AgentMemoriesModalComponent("#memories-modal-overlay", store, bus),
       new InboxModalComponent("#inbox-modal-overlay", store, bus),
