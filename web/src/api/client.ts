@@ -93,6 +93,14 @@ export const BotHubApi = {
     group_mode?: string
     carry_context?: boolean
   }) => apiRequest<{ ok: boolean; bot: Bot }>('/api/v2/bots/adhoc-group', { method: 'POST', body: JSON.stringify(payload) }),
+  forwardBotMessage: (
+    targetBotId: string,
+    payload: { from_name: string; content: string; note?: string }
+  ) =>
+    apiRequest<{ ok: boolean; message: AgentMessage }>(`/api/v2/bots/${encodeURIComponent(targetBotId)}/forward`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 
   // Memories
   saveMemory: (payload: Pick<AgentMemory, 'category' | 'fact_key' | 'content'> & { scope?: string }) =>

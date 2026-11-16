@@ -139,3 +139,80 @@ func TestGroupMembershipAnnouncementAndAdhocGroup(t *testing.T) {
 		t.Fatalf("expected only user message remaining on butler, got: %+v", butlerMsgs)
 	}
 }
+
+func TestForwardMessageAndBackupBotsRoundTrip(t *testing.T) {
+	s, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// 1. Forward a reference message from sentinel into butler
+	fwdBody, _ := json.Marshal(map[string]any{
+		"from_name": "探针哨兵",
+		"content":   "CloudCone LA 内存使用率达到 92%，建议迁移轻负载容器。",
+		"note":      "评估是否要降配省钱",
+	})
+	reqFwd := httptest.NewRequest(http.MethodPost, "/api/v2/bots/butler/forward", bytes.NewReader(fwdBody))
+	reqFwd.SetPathValue("id", "butler")
+	recFwd := httptest.NewRecorder()
+	s.handleForwardBotMessage(recFwd, reqFwd)
+	if recFwd.Code != http.StatusOK {
+		t.Fatalf("forward failed: %d: %s", recFwd.Code, recFwd.Body.String())
+	}
+	butlerAfterFwd, _ := s.store.GetBot("butler")
+	if butlerAfterFwd.UnreadCount < 1 || !strings.Contains(butlerAfterFwd.LastSummary, "转发") {
+		t.Fatalf("expected unread count >= 1 and forward summary on butler, got %+v", butlerAfterFwd)
+	}
+
+	// 2. Create custom group + scoped memory, export backup JSON, reset DB, import backup
+	grp := store.Bot{
+		ID:           "group_backup_test",
+		Name:         "灾备应急群",
+		RoleTitle:    "备份验证",
+		AvatarStyle:  "swarm:gold",
+		SystemPrompt: "协同官",
+		IsGroup:      true,
+		MemberIDs:    `["butler","sentinel"]`,
+		GroupMode:    "mention_only",
+		Announcement: "每周五检查冷备份",
+	}
+	if err := s.store.SaveBot(grp); err != nil {
+		t.Fatalf("save custom group: %v", err)
+	}
+	if err := s.store.SaveAgentMemoryWithScope("bot:butler", "schedule", "backup_day", "Friday 03:00"); err != nil {
+		t.Fatalf("save scoped memory: %v", err)
+	}
+
+	reqExp := httptest.NewRequest(http.MethodGet, "/api/system/export", nil)
+	recExp := httptest.NewRecorder()
+	s.handleExportBackup(recExp, reqExp)
+	if recExp.Code != http.StatusOK {
+		t.Fatalf("export backup failed: %d", recExp.Code)
+	}
+
+	var exported BackupData
+	if err := json.Unmarshal(recExp.Body.Bytes(), &exported); err != nil {
+		t.Fatalf("unmarshal backup: %v", err)
+	}
+	if len(exported.Bots) == 0 {
+		t.Fatalf("expected Bots included in backup export")
+	}
+
+	// Re-import into a fresh server
+	s2, cleanup2 := setupTestServer(t)
+	defer cleanup2()
+	reqImp := httptest.NewRequest(http.MethodPost, "/api/system/import", bytes.NewReader(recExp.Body.Bytes()))
+	recImp := httptest.NewRecorder()
+	s2.handleImportBackup(recImp, reqImp)
+	if recImp.Code != http.StatusOK {
+		t.Fatalf("import backup failed: %d: %s", recImp.Code, recImp.Body.String())
+	}
+
+	restoredGrp, _ := s2.store.GetBot("group_backup_test")
+	if restoredGrp == nil || !restoredGrp.IsGroup || restoredGrp.Announcement != "每周五检查冷备份" || restoredGrp.GroupMode != "mention_only" {
+		t.Fatalf("expected custom group restored completely, got %+v", restoredGrp)
+	}
+	restoredMems, _ := s2.store.ListAgentMemories("backup_day", 5)
+	if len(restoredMems) != 1 || restoredMems[0].Scope != "bot:butler" {
+		t.Fatalf("expected scoped memory restored with bot:butler scope, got %+v", restoredMems)
+	}
+}
+

@@ -393,9 +393,21 @@ func (s *Store) seedDefaults() error {
 		if b.IsBuiltin {
 			builtin = 1
 		}
-		_, _ = s.db.Exec(`INSERT OR IGNORE INTO bots (id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, sort_order, last_summary, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
-			b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.Model, et, b.AllowedTools, b.State, pin, builtin, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
+		isGroup := 0
+		if b.IsGroup {
+			isGroup = 1
+		}
+		memberIDs := b.MemberIDs
+		if strings.TrimSpace(memberIDs) == "" {
+			memberIDs = "[]"
+		}
+		groupMode := b.GroupMode
+		if strings.TrimSpace(groupMode) == "" {
+			groupMode = "smart"
+		}
+		_, _ = s.db.Exec(`INSERT OR IGNORE INTO bots (id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, group_mode, announcement, sort_order, last_summary, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.Model, et, b.AllowedTools, b.State, pin, builtin, isGroup, memberIDs, groupMode, b.Announcement, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
 	}
 	// Backfill task bot_id mappings on upgraded databases
 	_, _ = s.db.Exec(`UPDATE tasks SET bot_id = 'radar' WHERE type = 'radar' AND (bot_id = '' OR bot_id = 'butler')`)

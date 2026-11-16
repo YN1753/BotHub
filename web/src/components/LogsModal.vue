@@ -4,15 +4,31 @@ import { useAppStore } from '../stores/useAppStore'
 import { formatTime } from '../utils/format'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
+import SegmentedTabs from './SegmentedTabs.vue'
 
 const store = useAppStore()
 const listRef = ref<HTMLElement | null>(null)
+const filterStatus = ref<'all' | 'sent' | 'failed'>('all')
+
+const LOG_TABS = [
+  { id: 'all', label: '全部流水' },
+  { id: 'sent', label: '已投递' },
+  { id: 'failed', label: '异常重试' },
+]
 
 const sentCount = computed(() => store.state.pushLogs.filter((l) => l.status === 'sent').length)
 const failedCount = computed(() => store.state.pushLogs.filter((l) => l.status !== 'sent').length)
 
+const filteredLogs = computed(() =>
+  store.state.pushLogs.filter((l) => {
+    if (filterStatus.value === 'sent') return l.status === 'sent'
+    if (filterStatus.value === 'failed') return l.status !== 'sent'
+    return true
+  })
+)
+
 watch(
-  () => [store.state.showLogsModal, store.state.pushLogs.length],
+  () => [store.state.showLogsModal, filteredLogs.value.length],
   () => nextTick(() => applySiblingStaggerFallback(listRef.value))
 )
 </script>
@@ -43,12 +59,16 @@ watch(
       </div>
     </div>
 
+    <div class="shrink-0">
+      <SegmentedTabs v-model="filterStatus" :items="LOG_TABS" variant="subtle" aria-label="投递状态筛选" />
+    </div>
+
     <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
-      <div v-if="store.state.pushLogs.length === 0" class="py-12 text-center text-sm text-slate-500">
-        暂无推送流水记录
+      <div v-if="filteredLogs.length === 0" class="py-12 text-center text-sm text-slate-500">
+        暂无匹配推送流水记录
       </div>
       <article
-        v-for="log in store.state.pushLogs"
+        v-for="log in filteredLogs"
         :key="log.id"
         @pointermove="trackSpotlight"
         class="stagger-item luxury-card rounded-xl p-3.5"
@@ -71,6 +91,15 @@ watch(
           <span class="font-mono tabular-nums text-[11px] text-slate-400 shrink-0">{{ formatTime(log.created_at) }}</span>
         </div>
         <div class="font-mono text-[11px] text-slate-400 mt-1.5 truncate">模块: {{ log.module_id }} · {{ log.response_msg }}</div>
+        <details v-if="log.content" class="vesper-details mt-2">
+          <summary class="cursor-pointer inline-flex items-center gap-1 font-mono text-[10.5px] text-[#f2b880] select-none">
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron shrink-0">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span>查看推送报文</span>
+          </summary>
+          <pre class="mt-2 p-2.5 rounded-lg bg-[#050811]/85 border border-[#fff8ee]/8 text-[11px] font-mono text-slate-300 whitespace-pre-wrap break-all">{{ log.content }}</pre>
+        </details>
       </article>
     </div>
   </BaseModal>

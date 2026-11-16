@@ -103,6 +103,36 @@ function taskBot(botId?: string) {
   return store.state.bots.find((b) => b.id === id)
 }
 
+function exportAssetsCsv() {
+  if (!filteredAssets.value.length) {
+    store.notify('当前筛选结果为空，无法导出')
+    return
+  }
+  const header = ['ID', '名称', '类别', '规格', '费用', '状态', '到期日期', '剩余天数', '自动续费']
+  const rows = filteredAssets.value.map((a) => [
+    a.id,
+    a.name,
+    a.category,
+    a.spec,
+    a.price,
+    a.status,
+    formatDateOnly(a.due_date),
+    String(a.days_left),
+    a.auto_renew ? '是' : '否',
+  ])
+  const csv = [header, ...rows]
+    .map((cols) => cols.map((c) => `"${String(c ?? '').replaceAll('"', '""')}"`).join(','))
+    .join('\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `bothub_assets_${Date.now()}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+  store.notify(`已导出 ${filteredAssets.value.length} 项数字资产`)
+}
+
 async function runTaskNow(id: string) {
   try {
     const res = await BotHubApi.runTask(id)
@@ -236,7 +266,14 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
         <div class="flex flex-col gap-3.5">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-base font-semibold text-white">数字资产与会员守望</h2>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                @click="exportAssetsCsv"
+                class="min-h-[44px] sm:min-h-[34px] px-3 py-2 rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:border-[#f2b880]/40 hover:text-[#f2b880] text-xs cursor-pointer"
+              >
+                导出 CSV
+              </button>
               <button
                 type="button"
                 @click="store.state.editingAsset = null"

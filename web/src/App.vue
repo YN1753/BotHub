@@ -14,6 +14,7 @@ import SettingsModal from './components/SettingsModal.vue'
 import AssetModal from './components/AssetModal.vue'
 import TaskModal from './components/TaskModal.vue'
 import QuickSwitcherModal from './components/QuickSwitcherModal.vue'
+import ForwardModal from './components/ForwardModal.vue'
 
 const store = useAppStore()
 const mobileSidebarOpen = ref(false)
@@ -115,6 +116,7 @@ onBeforeUnmount(() => {
     <AssetModal />
     <TaskModal />
     <QuickSwitcherModal />
+    <ForwardModal />
 
     <!-- Non-intrusive Top Toast Banner -->
     <Transition

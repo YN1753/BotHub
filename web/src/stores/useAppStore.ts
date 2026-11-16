@@ -41,7 +41,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.6.0',
+  version: 'v2.7.0',
   uptimeSec: 0,
   serverNow: '--',
   stats: {
@@ -69,6 +69,15 @@ const state = reactive({
   botView: 'stream' as BotSubView,
   timeline: [] as ChatMessageUI[],
   isStreaming: false,
+  sseConnected: false,
+  soundEnabled: localStorage.getItem('bothub_sound') === '1',
+  draftsByBot: (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem('bothub_drafts') || '{}') as Record<string, string>
+    } catch {
+      return {} as Record<string, string>
+    }
+  })(),
 
   // Modals & Drawers
   showInboxModal: false,
@@ -78,6 +87,7 @@ const state = reactive({
   showCreateBotModal: false,
   showGroupDrawer: false,
   showQuickSwitcher: false,
+  forwardingMessage: null as { fromName: string; content: string } | null,
   createModalMode: 'bot' as 'bot' | 'group',
   pendingDraftPrompt: '',
   editingAsset: undefined as Asset | null | undefined, // undefined = closed, null = new
@@ -270,11 +280,60 @@ export function useAppStore() {
     notify(`[${bot.name}] 对话时间线已清空`)
   }
 
+  function setBotDraft(botId: string, text: string) {
+    if (!botId) return
+    if (text) state.draftsByBot[botId] = text
+    else delete state.draftsByBot[botId]
+    try {
+      sessionStorage.setItem('bothub_drafts', JSON.stringify(state.draftsByBot))
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+
+  function getBotDraft(botId: string): string {
+    return state.draftsByBot[botId] || ''
+  }
+
+  function toggleSound() {
+    state.soundEnabled = !state.soundEnabled
+    localStorage.setItem('bothub_sound', state.soundEnabled ? '1' : '0')
+    if (state.soundEnabled) playSubtleChime()
+    notify(state.soundEnabled ? '已开启完成轻提示音' : '已关闭提示音')
+  }
+
+  function playSubtleChime() {
+    if (!state.soundEnabled || typeof window === 'undefined') return
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      if (!AudioCtx) return
+      const ctx = new AudioCtx()
+      const now = ctx.currentTime
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(587.33, now)
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.09)
+      gain.gain.setValueAtTime(0.035, now)
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start(now)
+      osc.stop(now + 0.24)
+      window.setTimeout(() => ctx.close().catch(() => {}), 300)
+    } catch {
+      // ignore autoplay block
+    }
+  }
+
   function startSSE() {
     if (sseSource || typeof EventSource === 'undefined') return
     const latestId = state.notifications.length > 0 ? state.notifications[0].id : 0
     const es = new EventSource(`/api/v2/events?last_event_id=${encodeURIComponent(latestId)}`)
     sseSource = es
+    es.onopen = () => {
+      state.sseConnected = true
+    }
 
     es.addEventListener('notification', (ev: MessageEvent) => {
       try {
@@ -340,11 +399,13 @@ export function useAppStore() {
     })
 
     es.onerror = () => {
+      state.sseConnected = false
       if (!state.authenticated) stopSSE()
     }
   }
 
   function stopSSE() {
+    state.sseConnected = false
     if (sseSource) {
       sseSource.close()
       sseSource = null
@@ -366,5 +427,9 @@ export function useAppStore() {
     togglePinBot,
     deleteSingleMessage,
     clearActiveBotTimeline,
+    setBotDraft,
+    getBotDraft,
+    toggleSound,
+    playSubtleChime,
   }
 }

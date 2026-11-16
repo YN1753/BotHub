@@ -161,6 +161,7 @@ type BackupData struct {
 	Configs       map[string]string   `json:"configs"`
 	Assets        []store.Asset       `json:"assets"`
 	Tasks         []store.Task        `json:"tasks"`
+	Bots          []store.Bot         `json:"bots,omitempty"`
 	AgentMemories []store.AgentMemory `json:"agent_memories,omitempty"`
 }
 
@@ -175,6 +176,7 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "导出任务失败: "+err.Error())
 		return
 	}
+	bots, _ := s.store.ListBots()
 	memories, _ := s.store.ListAgentMemories("", 500)
 	cfgs, _ := s.store.GetAllConfigs()
 	delete(cfgs, store.KeyAdminPassHash)
@@ -186,6 +188,7 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 		Configs:       cfgs,
 		Assets:        assets,
 		Tasks:         tasks,
+		Bots:          bots,
 		AgentMemories: memories,
 	}
 
@@ -247,24 +250,36 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 4. Restore Agent Memories
+	// 4. Restore Agent Memories (preserve scope)
 	for _, m := range backup.AgentMemories {
 		if strings.TrimSpace(m.FactKey) == "" || strings.TrimSpace(m.Content) == "" {
 			continue
 		}
-		_ = s.store.SaveAgentMemory(m.Category, m.FactKey, m.Content)
+		_ = s.store.SaveAgentMemoryWithScope(m.Scope, m.Category, m.FactKey, m.Content)
 	}
 
-	// 4. Reload scheduler
+	// 5. Restore Custom Bots & Group Configurations
+	botsCount := 0
+	for _, b := range backup.Bots {
+		if strings.TrimSpace(b.ID) == "" || strings.TrimSpace(b.Name) == "" {
+			continue
+		}
+		if err := s.store.SaveBot(b); err == nil {
+			botsCount++
+		}
+	}
+
+	// 6. Reload scheduler
 	if s.scheduler != nil {
 		_ = s.scheduler.Reload()
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":              true,
-		"message":         fmt.Sprintf("备份恢复成功：已恢复 %d 个资产，%d 个任务及全局配置", assetsCount, tasksCount),
+		"message":         fmt.Sprintf("备份恢复成功：已恢复 %d 个资产，%d 个任务，%d 个 Bot 与全局配置", assetsCount, tasksCount, botsCount),
 		"assets_restored": assetsCount,
 		"tasks_restored":  tasksCount,
+		"bots_restored":   botsCount,
 	})
 }
 

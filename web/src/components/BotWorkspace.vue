@@ -63,6 +63,79 @@ const slashHighlight = ref(0)
 const announcementDismissed = ref(false)
 const relaySteps = ref<Array<{ id: string; name: string; status: 'done' | 'active'; guest?: boolean }>>([])
 
+// In-Chat Message Search (QQ/WeChat Cmd+F)
+const chatSearchOpen = ref(false)
+const chatSearchQuery = ref('')
+const chatSearchCursor = ref(0)
+const chatSearchInputRef = ref<HTMLInputElement | null>(null)
+
+const chatSearchMatches = computed(() => {
+  const q = chatSearchQuery.value.trim().toLowerCase()
+  if (!q) return []
+  return store.state.timeline
+    .filter((m) => m.role !== 'system' && m.content.toLowerCase().includes(q))
+    .map((m) => m.localId)
+})
+
+const focusedMatchId = computed(() =>
+  chatSearchMatches.value[chatSearchCursor.value] || ''
+)
+
+function openChatSearch() {
+  store.state.botView = 'stream'
+  chatSearchOpen.value = true
+  nextTick(() => {
+    chatSearchInputRef.value?.focus()
+    chatSearchInputRef.value?.select()
+  })
+}
+
+function closeChatSearch() {
+  chatSearchOpen.value = false
+  chatSearchQuery.value = ''
+  chatSearchCursor.value = 0
+}
+
+function jumpSearchMatch(delta: number) {
+  const list = chatSearchMatches.value
+  if (!list.length) return
+  chatSearchCursor.value = (chatSearchCursor.value + delta + list.length) % list.length
+  const targetId = list[chatSearchCursor.value]
+  nextTick(() => {
+    const el = scrollContainerRef.value?.querySelector(`[data-msg-id="${CSS.escape(targetId)}"]`)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
+watch(chatSearchMatches, (list) => {
+  chatSearchCursor.value = 0
+  if (list.length > 0) {
+    nextTick(() => {
+      const el = scrollContainerRef.value?.querySelector(`[data-msg-id="${CSS.escape(list[0])}"]`)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
+})
+
+function findPrecedingUserPrompt(idx: number): string {
+  for (let i = idx - 1; i >= 0; i--) {
+    const item = store.state.timeline[i]
+    if (item && item.role === 'user' && item.content.trim()) {
+      return item.content.trim()
+    }
+  }
+  return lastPrompt
+}
+
+function openForwardForMessage(msg: ChatMessageUI) {
+  const fromBot = bot.value?.name || msg.senderName || 'BotHub'
+  const senderLabel = msg.role === 'user' ? `${fromBot} (管理员提问)` : `${fromBot} · ${msg.senderName}`
+  store.state.forwardingMessage = {
+    fromName: senderLabel,
+    content: msg.content,
+  }
+}
+
 const SLASH_COMMANDS = [
   { cmd: '/assets', title: '资产全面审计', desc: '盘点 VPS、域名与订阅到期风险', prompt: '请调用工具盘点当前全部数字资产与临期风险并给出续费建议。' },
   { cmd: '/nezha', title: '探针节点巡检', desc: '查看哪吒节点在线率与负载情况', prompt: '请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线与健康状态。' },
@@ -465,6 +538,9 @@ function handleComposerKeydown(e: KeyboardEvent) {
 }
 
 watch(inputPrompt, (val) => {
+  if (store.state.activeBotId) {
+    store.setBotDraft(store.state.activeBotId, val)
+  }
   if (!val) {
     mentionOpen.value = false
     slashOpen.value = false
@@ -478,10 +554,21 @@ watch(inputPrompt, (val) => {
 
 watch(
   () => store.state.activeBotId,
-  () => {
+  (newId, oldId) => {
+    if (oldId && oldId !== newId) {
+      store.setBotDraft(oldId, inputPrompt.value)
+    }
+    const draft = store.state.pendingDraftPrompt ? '' : store.getBotDraft(newId)
+    if (!store.state.pendingDraftPrompt) {
+      inputPrompt.value = draft
+    }
+    closeChatSearch()
     userScrolledUp.value = false
     scrollToBottom(true)
-    nextTick(() => applySiblingStaggerFallback(starterGridRef.value))
+    nextTick(() => {
+      autoResizeTextarea()
+      applySiblingStaggerFallback(starterGridRef.value)
+    })
   }
 )
 
@@ -544,11 +631,31 @@ function handleOutsideFallback(e: MouseEvent) {
   moreFallbackOpen.value = false
 }
 
+function handleWorkspaceKeydown(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+    if (store.state.workspace === 'bots' && store.state.botView === 'stream') {
+      e.preventDefault()
+      openChatSearch()
+    }
+  } else if (e.key === 'Escape' && chatSearchOpen.value) {
+    closeChatSearch()
+  }
+}
+
 onMounted(() => {
   document.addEventListener('click', handleOutsideFallback)
+  window.addEventListener('keydown', handleWorkspaceKeydown)
+  const savedDraft = store.getBotDraft(store.state.activeBotId)
+  if (savedDraft && !inputPrompt.value) {
+    inputPrompt.value = savedDraft
+    nextTick(() => autoResizeTextarea())
+  }
   applySiblingStaggerFallback(starterGridRef.value)
 })
-onBeforeUnmount(() => document.removeEventListener('click', handleOutsideFallback))
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleOutsideFallback)
+  window.removeEventListener('keydown', handleWorkspaceKeydown)
+})
 
 function appendMention(tag: string) {
   const prefix = inputPrompt.value && !inputPrompt.value.endsWith(' ') ? ' ' : ''
@@ -787,6 +894,7 @@ async function sendPrompt(overrideText?: string) {
     }, 1600)
     if (activeTurn.statusText === '思考与生成中...') activeTurn.statusText = '已完成'
     streamStatus.value = '就绪'
+    store.playSubtleChime()
     await store.loadDashboard(false)
     // Reload synced server IDs quietly so reply/delete have accurate IDs
     if (curBot?.id === store.state.activeBotId) {
@@ -1044,6 +1152,27 @@ function stateBadgeClass(state?: string): string {
           >
             <button
               type="button"
+              @click="openChatSearch(); closeMoreMenu()"
+              class="min-h-[44px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <span>查找聊天记录</span>
+            </button>
+            <button
+              type="button"
+              @click="store.toggleSound(); closeMoreMenu()"
+              class="min-h-[44px] sm:min-h-[34px] w-full flex items-center justify-between gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
+            >
+              <span class="inline-flex items-center gap-2.5">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>
+                <span>回复提示音</span>
+              </span>
+              <span class="font-mono text-[10px]" :class="store.state.soundEnabled ? 'text-[#f2b880]' : 'text-slate-500'">
+                {{ store.state.soundEnabled ? '开' : '关' }}
+              </span>
+            </button>
+            <button
+              type="button"
               @click="store.loadDashboard(false); closeMoreMenu()"
               class="min-h-[44px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
             >
@@ -1079,6 +1208,62 @@ function stateBadgeClass(state?: string): string {
       enter-to-class="opacity-100 translate-y-0"
     >
       <div v-show="store.state.botView === 'stream'" class="flex-1 min-h-0 flex flex-col">
+        <!-- Slide-Down In-Chat Search Bar (Cmd/Ctrl + F) -->
+        <Transition
+          enter-active-class="transition duration-160 ease-out"
+          enter-from-class="opacity-0 -translate-y-2"
+          enter-to-class="opacity-100 translate-y-0"
+        >
+          <div
+            v-if="chatSearchOpen"
+            class="px-4 md:px-6 py-2 border-b border-[#fff8ee]/10 bg-[#070b17]/95 backdrop-blur-lg flex items-center gap-2 shrink-0"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="text-[#f2b880] shrink-0">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              ref="chatSearchInputRef"
+              v-model="chatSearchQuery"
+              type="search"
+              placeholder="在当前会话中搜索聊天记录..."
+              @keydown.enter.exact.prevent="jumpSearchMatch(1)"
+              @keydown.shift.enter.prevent="jumpSearchMatch(-1)"
+              @keydown.escape="closeChatSearch"
+              class="flex-1 min-w-0 bg-transparent text-xs text-white placeholder-slate-500 py-1"
+            />
+            <span v-if="chatSearchQuery.trim()" class="font-mono text-[11px] text-slate-400 shrink-0">
+              {{ chatSearchMatches.length ? `${chatSearchCursor + 1}/${chatSearchMatches.length}` : '0/0' }}
+            </span>
+            <button
+              type="button"
+              :disabled="!chatSearchMatches.length"
+              @click="jumpSearchMatch(-1)"
+              aria-label="上一条匹配"
+              class="w-7 h-7 rounded-lg border border-[#fff8ee]/10 text-slate-300 hover:text-[#f2b880] disabled:opacity-30 inline-flex items-center justify-center cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="18 15 12 9 6 15" /></svg>
+            </button>
+            <button
+              type="button"
+              :disabled="!chatSearchMatches.length"
+              @click="jumpSearchMatch(1)"
+              aria-label="下一条匹配"
+              class="w-7 h-7 rounded-lg border border-[#fff8ee]/10 text-slate-300 hover:text-[#f2b880] disabled:opacity-30 inline-flex items-center justify-center cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9" /></svg>
+            </button>
+            <button
+              type="button"
+              @click="closeChatSearch"
+              aria-label="关闭查找"
+              class="w-7 h-7 rounded-lg text-slate-400 hover:text-white inline-flex items-center justify-center cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </div>
+        </Transition>
+
         <!-- Pinned Group Announcement Banner (QQ/WeChat style) -->
         <div
           v-if="isGroupBot && bot?.announcement && !announcementDismissed"
@@ -1211,7 +1396,14 @@ function stateBadgeClass(state?: string): string {
               </div>
 
               <!-- User Message Pill -->
-              <div v-else-if="m.role === 'user'" class="msg-enter reveal-host max-w-[820px] w-full mx-auto flex flex-col items-end gap-1">
+              <div
+                v-else-if="m.role === 'user'"
+                :data-msg-id="m.localId"
+                :class="[
+                  'msg-enter reveal-host max-w-[820px] w-full mx-auto flex flex-col items-end gap-1 rounded-2xl transition-shadow',
+                  focusedMatchId === m.localId ? 'ring-1 ring-[#f2b880]/70 p-1' : ''
+                ]"
+              >
                 <div
                   :title="formatTime(m.createdAt)"
                   class="max-w-[85%] sm:max-w-[74%] rounded-2xl rounded-tr-sm px-4 py-2.5 bg-[#f2b880]/14 border border-[#f2b880]/28 text-sm text-slate-100 leading-relaxed whitespace-pre-wrap"
@@ -1233,6 +1425,13 @@ function stateBadgeClass(state?: string): string {
                     引用
                   </button>
                   <button
+                    type="button"
+                    @click="openForwardForMessage(m)"
+                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
+                  >
+                    转发
+                  </button>
+                  <button
                     v-if="m.serverId"
                     type="button"
                     @click="store.deleteSingleMessage(m)"
@@ -1244,7 +1443,14 @@ function stateBadgeClass(state?: string): string {
               </div>
 
               <!-- Bot Message -->
-              <article v-else class="msg-enter reveal-host max-w-[820px] w-full mx-auto">
+              <article
+                v-else
+                :data-msg-id="m.localId"
+                :class="[
+                  'msg-enter reveal-host max-w-[820px] w-full mx-auto rounded-2xl transition-shadow',
+                  focusedMatchId === m.localId ? 'ring-1 ring-[#f2b880]/70 bg-[#f2b880]/[0.04] px-2.5 py-1.5' : ''
+                ]"
+              >
                 <div
                   :class="[
                     'flex flex-col gap-2.5',
@@ -1379,18 +1585,25 @@ function stateBadgeClass(state?: string): string {
                     </button>
                     <button
                       type="button"
+                      @click="openForwardForMessage(m)"
+                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                    >
+                      转发
+                    </button>
+                    <button
+                      type="button"
                       @click="copyMessageContent(m.content)"
                       class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
                     >
                       复制全文
                     </button>
                     <button
-                      v-if="lastPrompt"
+                      v-if="findPrecedingUserPrompt(idx)"
                       type="button"
-                      @click="sendPrompt(lastPrompt)"
+                      @click="sendPrompt(findPrecedingUserPrompt(idx))"
                       class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
                     >
-                      重新生成
+                      重试该轮
                     </button>
                     <button
                       v-if="m.serverId"
@@ -1424,7 +1637,7 @@ function stateBadgeClass(state?: string): string {
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <polyline points="6 9 12 15 18 9" />
               </svg>
-              <span>回到底部</span>
+              <span>{{ store.state.isStreaming ? '正在生成 · 回到底部' : '回到底部' }}</span>
             </button>
           </Transition>
         </div>

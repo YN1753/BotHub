@@ -524,3 +524,69 @@ func (s *Server) handleDeleteBotMessage(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
+
+func (s *Server) handleForwardBotMessage(w http.ResponseWriter, r *http.Request) {
+	targetID := strings.TrimSpace(r.PathValue("id"))
+	targetBot, err := s.store.GetBot(targetID)
+	if err != nil || targetBot == nil {
+		writeError(w, http.StatusNotFound, "目标会话不存在")
+		return
+	}
+
+	var req struct {
+		FromName string `json:"from_name"`
+		Content  string `json:"content"`
+		Note     string `json:"note"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32*1024)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效转发请求体")
+		return
+	}
+
+	cleanContent := notifier.StripEmoji(strings.TrimSpace(req.Content))
+	if cleanContent == "" {
+		writeError(w, http.StatusBadRequest, "转发内容不能为空")
+		return
+	}
+	fromName := notifier.StripEmoji(strings.TrimSpace(req.FromName))
+	if fromName == "" {
+		fromName = "其他会话"
+	}
+	note := notifier.StripEmoji(strings.TrimSpace(req.Note))
+
+	var body strings.Builder
+	body.WriteString(fmt.Sprintf("[来自「%s」的转发记录]\n", fromName))
+	body.WriteString(cleanContent)
+	if note != "" {
+		body.WriteString("\n\n附言：" + note)
+	}
+
+	sysNotice := s.appendGroupSystemNotice(targetBot.ID, fmt.Sprintf("已从「%s」转发一条消息", fromName))
+
+	fwdMsg := store.AgentMessage{
+		SessionID: "bot:" + targetBot.ID,
+		BotID:     targetBot.ID,
+		MsgKind:   "chat",
+		Role:      "user",
+		Content:   body.String(),
+	}
+	id, err := s.store.AppendAgentMessage(fwdMsg)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "转发写入失败: "+err.Error())
+		return
+	}
+	fwdMsg.ID = id
+	_ = s.store.IncrementBotUnread(targetBot.ID, fmt.Sprintf("收到来自「%s」的转发消息", fromName))
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("bot_message", fwdMsg)
+		s.push.Hub().PublishEvent("bot_state", map[string]any{
+			"bot_id":       targetBot.ID,
+			"last_summary": fmt.Sprintf("收到来自「%s」的转发消息", fromName),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"message":       fwdMsg,
+		"system_notice": sysNotice,
+	})
+}

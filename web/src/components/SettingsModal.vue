@@ -33,6 +33,7 @@ const biliSessdata = ref('')
 
 const newPassword = ref('')
 const saving = ref(false)
+const testingPush = ref(false)
 
 const AI_MODEL_OPTIONS = [
   { value: 'deepseek-flash', label: 'DeepSeek Flash (默认主力)' },
@@ -96,12 +97,33 @@ async function saveAllConfig() {
 }
 
 async function handleTestPush() {
+  if (testingPush.value) return
+  testingPush.value = true
   try {
     const res = await BotHubApi.testPush()
     store.notify(res.message || '测试消息已推送')
   } catch (err: any) {
     store.notify(err.message)
+  } finally {
+    testingPush.value = false
   }
+}
+
+function copyNativeAppProfile() {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://bot.starryheavens.uk'
+  const profile = JSON.stringify(
+    {
+      endpoint: origin,
+      sse_events: `${origin}/api/v2/events`,
+      inbox_api: `${origin}/api/v2/notifications`,
+      auth_header: 'Authorization: Bearer <YOUR_APP_BEARER_TOKEN>',
+    },
+    null,
+    2
+  )
+  navigator.clipboard?.writeText(profile).then(() => {
+    store.notify('已复制原生 APP 接入端点 JSON')
+  })
 }
 
 async function handleUpdatePassword() {
@@ -241,9 +263,14 @@ async function handleImportBackup(e: Event) {
         <!-- Tab: Native App Push -->
         <form v-else-if="activeTab === 'push'" key="push" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
           <div class="luxury-card rounded-2xl p-4 border-[#f2b880]/28">
-            <div class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" aria-hidden="true" />
-              <strong class="text-sm font-semibold text-white">原生 APP 通知通道（独家启用）</strong>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <div class="flex items-center gap-2">
+                <span :class="['w-2 h-2 rounded-full shrink-0', store.state.sseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400']" aria-hidden="true" />
+                <strong class="text-sm font-semibold text-white">原生 APP 通知通道（独家启用）</strong>
+              </div>
+              <span :class="['font-mono text-[10.5px] px-2 py-0.5 rounded-full border', store.state.sseConnected ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' : 'border-amber-400/30 bg-amber-400/10 text-amber-300']">
+                {{ store.state.sseConnected ? 'SSE 实时通道已连接' : 'SSE 等待重连' }}
+              </span>
             </div>
             <p class="text-xs text-slate-300/90 mt-1.5 leading-relaxed">
               所有定时晨报、前沿雷达、资产到期提醒与哪吒探针告警均直接入库至原生收件箱，并通过 <code class="font-mono text-[#f2b880]">/api/v2/events</code> SSE 长连接实时投递至移动端 APP 与控制台。
@@ -258,13 +285,18 @@ async function handleImportBackup(e: Event) {
             <p class="text-[11px] text-slate-400">客户端请求头携带 Authorization: Bearer 令牌即可订阅实时通知流；可在「安全与数据灾备」中轮换。</p>
           </div>
 
-          <div class="flex items-center justify-end gap-2 pt-1">
-            <button type="button" @click="handleTestPush" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
-              发送测试通知到原生 APP
+          <div class="flex items-center justify-between gap-2 flex-wrap pt-1">
+            <button type="button" @click="copyNativeAppProfile" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer">
+              复制移动端接入配置
             </button>
-            <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
-              保存 APP 通道配置
-            </button>
+            <div class="flex items-center gap-2">
+              <button type="button" :disabled="testingPush" @click="handleTestPush" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer disabled:opacity-50">
+                {{ testingPush ? '发送自检中...' : '发送测试通知到原生 APP' }}
+              </button>
+              <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
+                保存 APP 通道配置
+              </button>
+            </div>
           </div>
         </form>
 

@@ -256,6 +256,7 @@ func (e *Engine) chatStreamForBot(
 		}
 
 		var targets []store.Bot
+		allowAutoRelay := false
 		switch strings.TrimSpace(bot.GroupMode) {
 		case "sequential":
 			targets = members
@@ -265,9 +266,10 @@ func (e *Engine) chatStreamForBot(
 			}
 		default: // "smart"
 			targets = selectSmartGroupMembers(members, userMsg)
+			allowAutoRelay = len(targets) == 1 && len(members) > 1
 		}
 		if len(targets) > 0 {
-			return e.runTeamRoomHandoff(ctx, req, bot, targets, memberSet, history, promptMsg, baseURL, apiKey, emit)
+			return e.runTeamRoomHandoffWithRelay(ctx, req, bot, targets, members, allowAutoRelay, memberSet, history, promptMsg, baseURL, apiKey, emit)
 		}
 	}
 
@@ -313,15 +315,42 @@ func (e *Engine) runTeamRoomHandoff(
 	userMsg, baseURL, apiKey string,
 	emit func(event string, data any),
 ) (*ChatResponse, error) {
+	return e.runTeamRoomHandoffWithRelay(ctx, req, roomBot, specialists, nil, false, memberSet, roomHistory, userMsg, baseURL, apiKey, emit)
+}
+
+func (e *Engine) runTeamRoomHandoffWithRelay(
+	ctx context.Context,
+	req ChatRequest,
+	roomBot *store.Bot,
+	specialists []store.Bot,
+	groupPool []store.Bot,
+	allowAutoRelay bool,
+	memberSet map[string]bool,
+	roomHistory []store.AgentMessage,
+	userMsg, baseURL, apiKey string,
+	emit func(event string, data any),
+) (*ChatResponse, error) {
 	var combinedContent strings.Builder
 	var combinedReasoning strings.Builder
 	var allTraces []ToolTrace
 	var totalUsage TokenUsage
 	hasUsage := false
 
+	calledSet := make(map[string]bool, len(specialists)+1)
+	for _, s := range specialists {
+		calledSet[s.ID] = true
+	}
+
 	e.emitBotState(roomBot.ID, store.BotStateWorking, "多 Bot 协同处理中...")
 
-	for i, sp := range specialists {
+	executeList := append([]store.Bot(nil), specialists...)
+	autoRelayed := false
+
+	for i := 0; i < len(executeList); i++ {
+		sp := executeList[i]
+		if roomBot.ID != sp.ID {
+			e.emitBotState(roomBot.ID, store.BotStateWorking, fmt.Sprintf("%s 发言中 (%d/%d)...", sp.Name, i+1, len(executeList)))
+		}
 		if emit != nil {
 			emit("bot_turn", map[string]any{
 				"bot_id":        roomBot.ID,
@@ -331,7 +360,7 @@ func (e *Engine) runTeamRoomHandoff(
 				"avatar_style":  sp.AvatarStyle,
 				"is_temp_guest": memberSet != nil && !memberSet[sp.ID],
 				"step":          i + 1,
-				"total_steps":   len(specialists),
+				"total_steps":   len(executeList),
 			})
 		}
 
@@ -359,15 +388,29 @@ func (e *Engine) runTeamRoomHandoff(
 			totalUsage.CompletionTokens += resp.Usage.CompletionTokens
 			totalUsage.TotalTokens += resp.Usage.TotalTokens
 		}
+
+		// 1-hop smart group relay when the lead specialist explicitly @mentions another group member
+		if allowAutoRelay && !autoRelayed && len(groupPool) > 0 {
+			followups := e.resolveMentionedBots(resp.Content, groupPool)
+			for _, f := range followups {
+				if !calledSet[f.ID] {
+					calledSet[f.ID] = true
+					executeList = append(executeList, f)
+					autoRelayed = true
+					break
+				}
+			}
+		}
 	}
 
 	e.emitBotState(roomBot.ID, store.BotStateIdle, truncateTitle(combinedContent.String()))
 
+	lastResponder := executeList[len(executeList)-1]
 	finalResp := &ChatResponse{
 		BotID:            roomBot.ID,
-		SenderBotID:      specialists[len(specialists)-1].ID,
+		SenderBotID:      lastResponder.ID,
 		SessionID:        "bot:" + roomBot.ID,
-		Model:            specialists[0].Model,
+		Model:            executeList[0].Model,
 		ReasoningContent: combinedReasoning.String(),
 		Content:          combinedContent.String(),
 		ToolTraces:       allTraces,
@@ -528,6 +571,9 @@ func (e *Engine) runSingleBotTurn(
 
 		e.emitBotState(actingBot.ID, store.BotStateWorking, "正在调用工具...")
 		for _, tc := range toolCalls {
+			if timelineBotID != "" && timelineBotID != actingBot.ID {
+				e.emitBotState(timelineBotID, store.BotStateWorking, fmt.Sprintf("%s: 调用 %s...", actingBot.Name, tc.Function.Name))
+			}
 			if emit != nil {
 				emit("tool_start", map[string]any{
 					"id":            tc.ID,

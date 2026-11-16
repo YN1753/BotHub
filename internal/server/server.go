@@ -116,6 +116,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v2/bots/adhoc-group", s.requireAuth(s.handleCreateAdhocGroup))
 	mux.HandleFunc("POST /api/v2/bots/{id}", s.requireAuth(s.handleUpdateBot))
 	mux.HandleFunc("POST /api/v2/bots/{id}/members", s.requireAuth(s.handleUpdateGroupMembers))
+	mux.HandleFunc("POST /api/v2/bots/{id}/forward", s.requireAuth(s.handleForwardBotMessage))
 	mux.HandleFunc("DELETE /api/v2/bots/{id}", s.requireAuth(s.handleDeleteBot))
 	mux.HandleFunc("GET /api/v2/bots/{id}/messages", s.requireAuth(s.handleGetBotMessages))
 	mux.HandleFunc("DELETE /api/v2/bots/{id}/messages", s.requireAuth(s.handleClearBotMessages))

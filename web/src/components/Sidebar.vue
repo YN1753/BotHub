@@ -19,14 +19,17 @@ const emit = defineEmits<{
 
 const store = useAppStore()
 const searchQuery = ref('')
+const rosterScope = ref<'all' | 'groups' | 'dms'>('all')
 const rosterRef = ref<HTMLElement | null>(null)
 
 const filteredBots = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return store.state.bots
-  return store.state.bots.filter((b) =>
-    `${b.name} ${b.role_title} ${b.last_summary}`.toLowerCase().includes(q)
-  )
+  return store.state.bots.filter((b) => {
+    if (rosterScope.value === 'groups' && !isGroup(b)) return false
+    if (rosterScope.value === 'dms' && isGroup(b)) return false
+    if (!q) return true
+    return `${b.name} ${b.role_title} ${b.last_summary}`.toLowerCase().includes(q)
+  })
 })
 
 const specialistMap = computed(() => {
@@ -218,26 +221,49 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
         </nav>
 
         <!-- Roster Header + Quick Search / Cmd+K -->
-        <div class="pt-2 border-t border-[#fff8ee]/8 flex items-center justify-between gap-2">
-          <div class="flex items-center gap-1.5 min-w-0">
-            <span class="font-mono text-[10.5px] tracking-wider text-slate-500">会话 ({{ filteredBots.length }})</span>
+        <div class="pt-2 border-t border-[#fff8ee]/8 flex flex-col gap-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="font-mono text-[10.5px] tracking-wider text-slate-500">会话 ({{ filteredBots.length }})</span>
+              <button
+                type="button"
+                @click="store.state.showQuickSwitcher = true; emit('closeMobile')"
+                title="全局搜索与快速跳转 (Cmd/Ctrl + K)"
+                class="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-[#fff8ee]/10 bg-[#fff8ee]/[0.03] hover:border-[#f2b880]/40 hover:text-[#f2b880] font-mono text-[10px] text-slate-400 cursor-pointer"
+              >
+                <span>Cmd+K</span>
+              </button>
+            </div>
+            <input
+              v-model="searchQuery"
+              type="search"
+              aria-label="筛选 Bot"
+              placeholder="筛选..."
+              @keydown.escape="searchQuery = ''"
+              class="w-24 focus:w-28 transition-[width,border-color] duration-200 bg-transparent border-b border-[#fff8ee]/12 focus:border-[#f2b880] text-xs text-slate-100 placeholder-slate-500 px-1 py-0.5 focus:outline-none"
+            />
+          </div>
+
+          <div class="grid grid-cols-3 gap-1 rounded-lg bg-[#050811]/70 p-0.5 border border-[#fff8ee]/8">
             <button
+              v-for="tab in ([
+                { id: 'all', label: '全部' },
+                { id: 'groups', label: '群聊' },
+                { id: 'dms', label: '专属' },
+              ] as const)"
+              :key="tab.id"
               type="button"
-              @click="store.state.showQuickSwitcher = true; emit('closeMobile')"
-              title="全局搜索与快速跳转 (Cmd/Ctrl + K)"
-              class="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-[#fff8ee]/10 bg-[#fff8ee]/[0.03] hover:border-[#f2b880]/40 hover:text-[#f2b880] font-mono text-[10px] text-slate-400 cursor-pointer"
+              @click="rosterScope = tab.id"
+              :class="[
+                'py-1 rounded-md text-[11px] font-medium cursor-pointer transition-colors',
+                rosterScope === tab.id
+                  ? 'bg-[#f2b880]/16 text-[#f2b880]'
+                  : 'text-slate-400 hover:text-slate-200'
+              ]"
             >
-              <span>Cmd+K</span>
+              {{ tab.label }}
             </button>
           </div>
-          <input
-            v-model="searchQuery"
-            type="search"
-            aria-label="筛选 Bot"
-            placeholder="筛选..."
-            @keydown.escape="searchQuery = ''"
-            class="w-24 focus:w-28 transition-[width,border-color] duration-200 bg-transparent border-b border-[#fff8ee]/12 focus:border-[#f2b880] text-xs text-slate-100 placeholder-slate-500 px-1 py-0.5 focus:outline-none"
-          />
         </div>
       </div>
 
@@ -320,8 +346,11 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
                 </div>
               </div>
               <div class="text-[11px] text-slate-400/90 truncate mt-0.5">
-                <span v-if="b.state === 'thinking' || b.state === 'working'" class="text-[#f2b880]">正在输入: </span>
-                <span>{{ b.last_summary || b.role_title }}</span>
+                <span v-if="store.state.draftsByBot[b.id] && store.state.activeBotId !== b.id" class="text-rose-400 font-medium">[草稿] {{ store.state.draftsByBot[b.id] }}</span>
+                <template v-else>
+                  <span v-if="b.state === 'thinking' || b.state === 'working'" class="text-[#f2b880]">正在输入: </span>
+                  <span>{{ b.last_summary || b.role_title }}</span>
+                </template>
               </div>
             </div>
           </button>
