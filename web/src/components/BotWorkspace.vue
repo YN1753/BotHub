@@ -6,8 +6,10 @@ import { botStateLabel, describeCron, formatTime } from '../utils/format'
 import { renderSafeMarkdown } from '../utils/markdown'
 import { applySiblingStaggerFallback, isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
 import BotAvatar from './BotAvatar.vue'
+import BotAvatarPicker from './BotAvatarPicker.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
+import ToggleSwitch from './ToggleSwitch.vue'
 
 defineProps<{
   desktopCollapsed?: boolean
@@ -50,9 +52,10 @@ const cfgName = ref('')
 const cfgRole = ref('')
 const cfgPrompt = ref('')
 const cfgModel = ref('deepseek-flash')
-const cfgAvatar = ref('cyan')
+const cfgAvatar = ref('butler:gold')
 const cfgThinking = ref(true)
 const cfgTools = ref<string[]>([])
+const cfgMembers = ref<string[]>([])
 const savingProfile = ref(false)
 
 const VIEW_TABS = [
@@ -75,14 +78,6 @@ const TOOL_CATALOG = [
 const MODEL_OPTIONS = [
   { value: 'deepseek-flash', label: 'DeepSeek Flash (主力)' },
   { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro (深度)' },
-]
-
-const AVATAR_OPTIONS = [
-  { value: 'cyan', label: '暮光暖金 (Vesper Gold)' },
-  { value: 'indigo', label: '深空靛蓝 (Deep Indigo)' },
-  { value: 'amber', label: '炽焰琥珀 (Warm Amber)' },
-  { value: 'emerald', label: '星野翠绿 (Emerald)' },
-  { value: 'violet', label: '星云暮紫 (Nebula Violet)' },
 ]
 
 const STARTER_CARDS = [
@@ -127,9 +122,37 @@ watch(
     } catch {
       cfgTools.value = []
     }
+    try {
+      const mArr = JSON.parse(b.member_ids || '[]')
+      cfgMembers.value = Array.isArray(mArr) ? mArr : []
+    } catch {
+      cfgMembers.value = []
+    }
   },
   { immediate: true }
 )
+
+const isGroupBot = computed(() => Boolean(bot.value?.is_group || bot.value?.id === 'team_room'))
+
+const availableSpecialistBots = computed(() =>
+  store.state.bots.filter((b) => !b.is_group && b.id !== 'team_room')
+)
+
+const groupMembers = computed(() => {
+  if (!isGroupBot.value) return []
+  const ids = cfgMembers.value
+  const map = new Map(availableSpecialistBots.value.map((b) => [b.id, b]))
+  const resolved = ids.map((id) => map.get(id)).filter((x): x is NonNullable<typeof x> => Boolean(x))
+  return resolved.length > 0 ? resolved : availableSpecialistBots.value
+})
+
+function toggleCfgMember(id: string) {
+  if (cfgMembers.value.includes(id)) {
+    cfgMembers.value = cfgMembers.value.filter((x) => x !== id)
+  } else {
+    cfgMembers.value = [...cfgMembers.value, id]
+  }
+}
 
 const botRoutines = computed(() =>
   store.state.tasks.filter((t) => (t.bot_id || 'butler') === (bot.value?.id || 'butler'))
@@ -552,6 +575,7 @@ async function saveBotProfile() {
       enable_thinking: cfgThinking.value,
       system_prompt: cfgPrompt.value.trim(),
       allowed_tools: JSON.stringify(cfgTools.value),
+      member_ids: JSON.stringify(cfgMembers.value),
       is_pinned: bot.value.is_pinned,
     })
     store.notify('Bot 人设与工具权限已更新')
@@ -919,18 +943,19 @@ function stateBadgeClass(state?: string): string {
         <!-- Floating Composer Dock -->
         <div class="px-3 sm:px-6 pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] sm:pb-5">
           <div
-            v-if="bot?.id === 'team_room'"
+            v-if="isGroupBot && groupMembers.length > 0"
             class="max-w-[820px] w-full mx-auto mb-2 flex items-center gap-1.5 flex-wrap"
           >
             <span class="font-mono text-[11px] text-slate-400">@点名协同:</span>
             <button
-              v-for="tag in ['@探针哨兵 ', '@长庚执更 ', '@开源雷达 ', '@Grok 锐评官 ']"
-              :key="tag"
+              v-for="member in groupMembers"
+              :key="member.id"
               type="button"
-              @click="appendMention(tag)"
-              class="min-h-[36px] sm:min-h-[28px] px-2.5 py-1 rounded-full text-xs border border-[#fff8ee]/12 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer"
+              @click="appendMention(`@${member.name} `)"
+              class="min-h-[36px] sm:min-h-[28px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border border-[#fff8ee]/12 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer"
             >
-              {{ tag.trim() }}
+              <BotAvatar :avatar-style="member.avatar_style" :state="member.state" size="sm" />
+              <span>@{{ member.name }}</span>
             </button>
           </div>
 
@@ -1101,27 +1126,53 @@ function stateBadgeClass(state?: string): string {
     >
       <div v-show="store.state.botView === 'config'" class="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
         <div class="max-w-4xl mx-auto flex flex-col gap-5">
-          <form @submit.prevent="saveBotProfile" class="vesper-card rounded-2xl p-5 flex flex-col gap-4">
+          <form @submit.prevent="saveBotProfile" class="luxury-card rounded-2xl p-5 flex flex-col gap-4">
+            <BotAvatarPicker v-model="cfgAvatar" :preview-name="cfgName || bot?.name" />
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <label class="flex flex-col gap-1.5 text-xs text-slate-300">
-                <span>Bot 名称</span>
-                <input v-model="cfgName" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+                <span>{{ isGroupBot ? '群聊名称' : 'Bot 名称' }}</span>
+                <input v-model="cfgName" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
               </label>
               <label class="flex flex-col gap-1.5 text-xs text-slate-300">
                 <span>职责定位</span>
-                <input v-model="cfgRole" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+                <input v-model="cfgRole" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
               </label>
               <div class="flex flex-col gap-1.5 text-xs text-slate-300">
                 <span>默认推理模型</span>
                 <CustomSelect v-model="cfgModel" :options="MODEL_OPTIONS" aria-label="默认推理模型" />
               </div>
-              <div class="flex flex-col gap-1.5 text-xs text-slate-300">
-                <span>头像主题色</span>
-                <CustomSelect v-model="cfgAvatar" :options="AVATAR_OPTIONS" aria-label="头像主题色" />
+              <div class="flex flex-col justify-end">
+                <ToggleSwitch v-model="cfgThinking" label="默认开启深度思考" />
               </div>
+
+              <!-- Group Member Selector when viewing a group chat -->
+              <div v-if="isGroupBot" class="md:col-span-2 flex flex-col gap-2 text-xs text-slate-300">
+                <span>群聊协同成员 ({{ cfgMembers.length }} 位)</span>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    v-for="sp in availableSpecialistBots"
+                    :key="sp.id"
+                    type="button"
+                    @click="toggleCfgMember(sp.id)"
+                    :aria-pressed="cfgMembers.includes(sp.id)"
+                    :class="[
+                      'group flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left cursor-pointer',
+                      cfgMembers.includes(sp.id)
+                        ? 'border-[#f2b880]/60 bg-[#f2b880]/12 text-white'
+                        : 'border-[#fff8ee]/10 bg-[#070a16]/70 text-slate-400 hover:border-[#fff8ee]/25'
+                    ]"
+                  >
+                    <BotAvatar :avatar-style="sp.avatar_style" :state="sp.state" size="sm" />
+                    <span class="text-xs font-medium flex-1 truncate">{{ sp.name }}</span>
+                    <span class="text-[11px] font-mono">{{ cfgMembers.includes(sp.id) ? '在群' : '未选' }}</span>
+                  </button>
+                </div>
+              </div>
+
               <label class="md:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
                 <span>专属人设与行为约束 (System Prompt)</span>
-                <textarea v-model="cfgPrompt" rows="4" class="auto-size-textarea rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none resize-y" />
+                <textarea v-model="cfgPrompt" rows="4" class="auto-size-textarea rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 resize-y" />
               </label>
               <div class="md:col-span-2 flex flex-col gap-2 text-xs text-slate-300">
                 <span>绑定可用工具集 (最小权限白名单)</span>
@@ -1145,22 +1196,16 @@ function stateBadgeClass(state?: string): string {
                 @click="deleteCustomBot"
                 class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 text-xs cursor-pointer"
               >
-                注销此自定义 Bot
+                {{ isGroupBot ? '解散此群聊' : '注销此自定义 Bot' }}
               </button>
               <span v-else />
-              <div class="flex items-center gap-4 flex-wrap">
-                <label class="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                  <input v-model="cfgThinking" type="checkbox" class="accent-[#f2b880]" />
-                  <span>默认开启深度思考</span>
-                </label>
-                <button
-                  type="submit"
-                  :disabled="savingProfile"
-                  class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
-                >
-                  {{ savingProfile ? '保存中...' : '保存配置' }}
-                </button>
-              </div>
+              <button
+                type="submit"
+                :disabled="savingProfile"
+                class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+              >
+                {{ savingProfile ? '保存中...' : '保存配置' }}
+              </button>
             </div>
           </form>
 

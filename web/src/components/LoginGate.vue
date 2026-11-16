@@ -49,9 +49,8 @@ async function handleSubmit() {
           type="password"
           placeholder="输入访问密钥..."
           autocomplete="current-password"
-          autofocus
           required
-          class="w-full min-h-[44px] rounded-xl border border-[#fff8ee]/12 bg-[#070a14]/85 px-3.5 py-2.5 font-mono text-sm text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
+          class="w-full min-h-[44px] rounded-xl border border-[#fff8ee]/12 bg-[#070a14]/85 px-3.5 py-2.5 font-mono text-sm text-white placeholder-slate-500 focus:border-[#f2b880]/60"
         />
         <button
           type="submit"

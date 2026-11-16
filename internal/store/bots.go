@@ -28,6 +28,8 @@ type Bot struct {
 	UnreadCount    int    `json:"unread_count"`
 	IsPinned       bool   `json:"is_pinned"`
 	IsBuiltin      bool   `json:"is_builtin"`
+	IsGroup        bool   `json:"is_group"`
+	MemberIDs      string `json:"member_ids"` // JSON string array of Bot IDs when IsGroup=true
 	SortOrder      int    `json:"sort_order"`
 	LastSummary    string `json:"last_summary"`
 	CreatedAt      string `json:"created_at"`
@@ -40,6 +42,12 @@ func (b Bot) AllowedToolList() []string {
 	return list
 }
 
+func (b Bot) MemberIDList() []string {
+	var list []string
+	_ = json.Unmarshal([]byte(b.MemberIDs), &list)
+	return list
+}
+
 func DefaultBots(now string) []Bot {
 	allTools := `["read_url","web_search","query_nezha_nodes","manage_assets","manage_tasks","remember_fact","recall_memory"]`
 	return []Bot{
@@ -47,7 +55,7 @@ func DefaultBots(now string) []Bot {
 			ID:             "team_room",
 			Name:           "中枢指挥群",
 			RoleTitle:      "多 Bot 协同与 @接力频道",
-			AvatarStyle:    "indigo",
+			AvatarStyle:    "swarm:indigo",
 			SystemPrompt:   "你是 Vesper BotHub 中枢指挥群的协调官。擅长调度多位专属 Bot 协同排查问题，回答务必结构化、高信息密度，严禁使用任何 Emoji。",
 			Model:          DefaultAIModel,
 			EnableThinking: true,
@@ -55,6 +63,8 @@ func DefaultBots(now string) []Bot {
 			State:          BotStateIdle,
 			IsPinned:       true,
 			IsBuiltin:      true,
+			IsGroup:        true,
+			MemberIDs:      `["butler","sentinel","radar","grok"]`,
 			SortOrder:      1,
 			LastSummary:    "输入 @Bot名称 可点名接力协同",
 			CreatedAt:      now,
@@ -132,7 +142,7 @@ func DefaultBots(now string) []Bot {
 }
 
 func (s *Store) ListBots() ([]Bot, error) {
-	rows, err := s.db.Query(`SELECT id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, sort_order, last_summary, created_at, updated_at
+	rows, err := s.db.Query(`SELECT id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, sort_order, last_summary, created_at, updated_at
 		FROM bots ORDER BY is_pinned DESC, sort_order ASC, updated_at DESC`)
 	if err != nil {
 		return nil, err
@@ -142,11 +152,12 @@ func (s *Store) ListBots() ([]Bot, error) {
 	var list []Bot
 	for rows.Next() {
 		var b Bot
-		var et, pin, builtin int
-		if err := rows.Scan(&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt, &b.Model, &et, &b.AllowedTools, &b.State, &b.UnreadCount, &pin, &builtin, &b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt); err == nil {
+		var et, pin, builtin, isGroup int
+		if err := rows.Scan(&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt, &b.Model, &et, &b.AllowedTools, &b.State, &b.UnreadCount, &pin, &builtin, &isGroup, &b.MemberIDs, &b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt); err == nil {
 			b.EnableThinking = et == 1
 			b.IsPinned = pin == 1
 			b.IsBuiltin = builtin == 1
+			b.IsGroup = isGroup == 1 || b.ID == "team_room"
 			list = append(list, b)
 		}
 	}
@@ -155,10 +166,10 @@ func (s *Store) ListBots() ([]Bot, error) {
 
 func (s *Store) GetBot(id string) (*Bot, error) {
 	var b Bot
-	var et, pin, builtin int
-	err := s.db.QueryRow(`SELECT id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, sort_order, last_summary, created_at, updated_at
+	var et, pin, builtin, isGroup int
+	err := s.db.QueryRow(`SELECT id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, sort_order, last_summary, created_at, updated_at
 		FROM bots WHERE id = ?`, strings.TrimSpace(id)).
-		Scan(&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt, &b.Model, &et, &b.AllowedTools, &b.State, &b.UnreadCount, &pin, &builtin, &b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt)
+		Scan(&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt, &b.Model, &et, &b.AllowedTools, &b.State, &b.UnreadCount, &pin, &builtin, &isGroup, &b.MemberIDs, &b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -168,6 +179,7 @@ func (s *Store) GetBot(id string) (*Bot, error) {
 	b.EnableThinking = et == 1
 	b.IsPinned = pin == 1
 	b.IsBuiltin = builtin == 1
+	b.IsGroup = isGroup == 1 || b.ID == "team_room"
 	return &b, nil
 }
 
@@ -178,13 +190,16 @@ func (s *Store) SaveBot(b Bot) error {
 	}
 	b.UpdatedAt = now
 	if b.AvatarStyle == "" {
-		b.AvatarStyle = "cyan"
+		b.AvatarStyle = "butler:gold"
 	}
 	if b.Model == "" {
 		b.Model = DefaultAIModel
 	}
 	if b.AllowedTools == "" {
 		b.AllowedTools = "[]"
+	}
+	if strings.TrimSpace(b.MemberIDs) == "" {
+		b.MemberIDs = "[]"
 	}
 	if b.State == "" {
 		b.State = BotStateIdle
@@ -201,8 +216,12 @@ func (s *Store) SaveBot(b Bot) error {
 	if b.IsBuiltin {
 		builtin = 1
 	}
-	_, err := s.db.Exec(`INSERT INTO bots (id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, sort_order, last_summary, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	isGroup := 0
+	if b.IsGroup {
+		isGroup = 1
+	}
+	_, err := s.db.Exec(`INSERT INTO bots (id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, sort_order, last_summary, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			role_title = excluded.role_title,
@@ -213,10 +232,12 @@ func (s *Store) SaveBot(b Bot) error {
 			allowed_tools = excluded.allowed_tools,
 			state = excluded.state,
 			is_pinned = excluded.is_pinned,
+			is_group = excluded.is_group,
+			member_ids = excluded.member_ids,
 			sort_order = excluded.sort_order,
 			last_summary = excluded.last_summary,
 			updated_at = excluded.updated_at`,
-		b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.Model, et, b.AllowedTools, b.State, b.UnreadCount, pin, builtin, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
+		b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.Model, et, b.AllowedTools, b.State, b.UnreadCount, pin, builtin, isGroup, b.MemberIDs, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
 	return err
 }
 

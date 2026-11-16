@@ -71,10 +71,20 @@ img, video {
   block-size: auto;
 }
 
-/* Accessible focus indicator without visual noise on pointer click */
+/* Suppress distracting focus boxes globally while keeping clean border highlights on inputs */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus,
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--accent-gold);
-  outline-offset: 2px;
+  outline: none;
+}
+
+.modal-section {
+  background:
+    radial-gradient(110% 80% at 100% 0%, rgba(242, 184, 128, 0.04) 0%, transparent 55%),
+    rgba(7, 10, 22, 0.72);
+  border: 1px solid rgba(255, 248, 238, 0.09);
+  box-shadow: inset 0 1px 0 rgba(255, 248, 238, 0.06);
+  border-radius: 1rem;
+  padding: 0.9rem 1rem;
 }
 
 /* Crisp interactive tactile motion */

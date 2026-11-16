@@ -188,147 +188,160 @@ async function handleImportBackup(e: Event) {
       >
         <!-- Tab: AI -->
         <form v-if="activeTab === 'ai'" key="ai" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
-        <label class="flex flex-col gap-1 text-xs text-slate-300">
-          <span>DeepSeek API Key</span>
-          <input v-model="deepseekKey" type="password" placeholder="sk-..." class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-        </label>
-        <label class="flex flex-col gap-1 text-xs text-slate-300">
-          <span>API 接口地址 (Base URL)</span>
-          <input v-model="deepseekBaseUrl" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-        </label>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>默认主力模型</span>
-            <CustomSelect v-model="aiModel" :options="AI_MODEL_OPTIONS" aria-label="默认主力模型" />
-          </div>
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>默认人设</span>
-            <CustomSelect v-model="activePersona" :options="PERSONA_OPTIONS" aria-label="默认人设" />
-          </div>
-        </div>
-
-        <div class="pt-3 mt-1 border-t border-[#fff8ee]/10">
-          <h4 class="text-sm font-semibold text-white">第二套轻量省钱模型配置 (可选)</h4>
-          <p class="text-[11px] text-slate-400 mt-0.5">用于 read_url 摘要、后台记忆提炼及晨报/雷达批处理；留空自动回退主模型</p>
-        </div>
-        <label class="flex flex-col gap-1 text-xs text-slate-300">
-          <span>轻量模型 Base URL</span>
-          <input v-model="lightBaseUrl" type="text" placeholder="如 https://api.siliconflow.cn/v1" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-        </label>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>轻量模型 API Key</span>
-            <input v-model="lightApiKey" type="password" placeholder="留空则回退主 Key" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-          </label>
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>轻量模型 ID</span>
-            <input v-model="lightModel" type="text" placeholder="如 deepseek-flash" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-          </label>
-        </div>
-
-        <div class="flex justify-end pt-2">
-          <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
-            保存 AI 大脑设置
-          </button>
-        </div>
-      </form>
-
-        <!-- Tab: Native App Push -->
-        <form v-else-if="activeTab === 'push'" key="push" @submit.prevent="saveAllConfig" class="flex flex-col gap-4">
-        <div class="rounded-xl border border-[#f2b880]/28 bg-[#f2b880]/[0.07] p-3.5 flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0" aria-hidden="true" />
-              <strong class="text-sm font-semibold text-white">原生 APP 通知通道（已独家启用）</strong>
+          <div class="modal-section flex flex-col gap-3">
+            <div class="text-xs font-semibold text-[#f2b880]">主推理大脑 (Primary Engine)</div>
+            <label class="flex flex-col gap-1 text-xs text-slate-300">
+              <span>DeepSeek API Key</span>
+              <input v-model="deepseekKey" type="password" placeholder="sk-..." class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-slate-300">
+              <span>API 接口地址 (Base URL)</span>
+              <input v-model="deepseekBaseUrl" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+            </label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="flex flex-col gap-1 text-xs text-slate-300">
+                <span>默认主力模型</span>
+                <CustomSelect v-model="aiModel" :options="AI_MODEL_OPTIONS" aria-label="默认主力模型" />
+              </div>
+              <div class="flex flex-col gap-1 text-xs text-slate-300">
+                <span>默认人设</span>
+                <CustomSelect v-model="activePersona" :options="PERSONA_OPTIONS" aria-label="默认人设" />
+              </div>
             </div>
-            <p class="text-xs text-slate-300 mt-1 leading-relaxed">
-              所有定时晨报、前沿雷达、资产到期提醒与哪吒探针告警将直接持久化至原生收件箱，并通过 <code class="font-mono text-[#f2b880]">/api/v2/events</code> SSE 长连接实时推送至移动端 APP 与控制台。
-            </p>
           </div>
-        </div>
 
-        <label class="flex flex-col gap-1.5 text-xs text-slate-300">
-          <span>Android / 原生 APP 接入令牌 (App Bearer Token)</span>
-          <input v-model="appBearerToken" type="password" placeholder="bh_..." class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-          <span class="text-[11px] text-slate-400">客户端请求头携带 Authorization: Bearer 令牌即可实时拉取与订阅 SSE 推送；可在「安全与数据灾备」中一键轮换。</span>
-        </label>
+          <div class="modal-section flex flex-col gap-3">
+            <div>
+              <div class="text-xs font-semibold text-[#f2b880]">第二套轻量省钱模型 (可选)</div>
+              <p class="text-[11px] text-slate-400 mt-0.5">用于网页摘要、记忆提炼及晨报批处理；留空自动回退主模型</p>
+            </div>
+            <label class="flex flex-col gap-1 text-xs text-slate-300">
+              <span>轻量模型 Base URL</span>
+              <input v-model="lightBaseUrl" type="text" placeholder="如 https://api.siliconflow.cn/v1" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+            </label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label class="flex flex-col gap-1 text-xs text-slate-300">
+                <span>轻量模型 API Key</span>
+                <input v-model="lightApiKey" type="password" placeholder="留空则回退主 Key" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              </label>
+              <label class="flex flex-col gap-1 text-xs text-slate-300">
+                <span>轻量模型 ID</span>
+                <input v-model="lightModel" type="text" placeholder="如 deepseek-flash" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              </label>
+            </div>
+          </div>
 
-        <div class="flex items-center justify-end gap-2 pt-2">
-          <button type="button" @click="handleTestPush" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
-            发送测试通知到原生 APP
-          </button>
-          <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
-            保存 APP 通道配置
-          </button>
-        </div>
-      </form>
-
-        <!-- Tab: Integrations -->
-        <form v-else-if="activeTab === 'integrations'" key="integrations" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
-        <label class="flex flex-col gap-1 text-xs text-slate-300">
-          <span>哪吒监控面板地址</span>
-          <input v-model="nezhaUrl" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-        </label>
-        <label class="flex flex-col gap-1 text-xs text-slate-300">
-          <span>哪吒 SQLite 本机路径 (只读直连)</span>
-          <input v-model="nezhaDbPath" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-        </label>
-        <label class="flex flex-col gap-1 text-xs text-slate-300">
-          <span>Cloudflare API Token</span>
-          <input v-model="cfApiToken" type="password" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-        </label>
-        <label class="flex flex-col gap-1 text-xs text-slate-300">
-          <span>哔哩哔哩 SESSDATA</span>
-          <input v-model="biliSessdata" type="password" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-        </label>
-        <div class="flex justify-end pt-2">
-          <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
-            保存巡检凭据
-          </button>
-        </div>
-      </form>
-
-        <!-- Tab: Security & Backup -->
-        <div v-else key="security" class="flex flex-col gap-5">
-        <form @submit.prevent="handleUpdatePassword" class="flex flex-col gap-2">
-          <h4 class="text-sm font-semibold text-white">修改控制台访问密钥</h4>
-          <div class="flex flex-col sm:flex-row gap-2">
-            <input v-model="newPassword" type="password" minlength="6" placeholder="输入新密钥 (至少6位)" aria-label="输入新密钥" required class="flex-1 min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
-            <button type="submit" class="min-h-[44px] sm:min-h-[40px] px-4 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
-              更新密钥
+          <div class="flex justify-end pt-1">
+            <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
+              保存 AI 大脑设置
             </button>
           </div>
         </form>
 
-        <div class="pt-4 border-t border-[#fff8ee]/10 flex flex-col gap-2.5">
-          <h4 class="text-sm font-semibold text-white">系统数据备份与令牌轮换</h4>
-          <div class="flex flex-wrap gap-2.5">
-            <button type="button" @click="handleExportBackup" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
-              导出配置备份 (JSON)
-            </button>
-            <label class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer inline-flex items-center">
-              导入恢复备份
-              <input type="file" accept=".json" class="hidden" @change="handleImportBackup" />
-            </label>
-            <button type="button" @click="handleRotateToken" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer">
-              重置移动端 App Token
-            </button>
+        <!-- Tab: Native App Push -->
+        <form v-else-if="activeTab === 'push'" key="push" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
+          <div class="luxury-card rounded-2xl p-4 border-[#f2b880]/28">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" aria-hidden="true" />
+              <strong class="text-sm font-semibold text-white">原生 APP 通知通道（独家启用）</strong>
+            </div>
+            <p class="text-xs text-slate-300/90 mt-1.5 leading-relaxed">
+              所有定时晨报、前沿雷达、资产到期提醒与哪吒探针告警均直接入库至原生收件箱，并通过 <code class="font-mono text-[#f2b880]">/api/v2/events</code> SSE 长连接实时投递至移动端 APP 与控制台。
+            </p>
           </div>
-        </div>
 
-        <div class="pt-4 border-t border-[#fff8ee]/10 flex items-center justify-between gap-3">
-          <div>
-            <h4 class="text-sm font-semibold text-white">当前会话安全</h4>
-            <p class="text-[11px] text-slate-400">退出后将清除本机控制台登录 Cookie</p>
+          <div class="modal-section flex flex-col gap-2">
+            <label class="flex flex-col gap-1.5 text-xs text-slate-300">
+              <span>Android / 原生 APP 接入令牌 (App Bearer Token)</span>
+              <input v-model="appBearerToken" type="password" placeholder="bh_..." class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+            </label>
+            <p class="text-[11px] text-slate-400">客户端请求头携带 Authorization: Bearer 令牌即可订阅实时通知流；可在「安全与数据灾备」中轮换。</p>
           </div>
-          <button
-            type="button"
-            @click="handleLogout"
-            class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-rose-400/45 bg-rose-500/15 text-xs font-medium text-rose-300 hover:bg-rose-500/25 cursor-pointer shrink-0"
-          >
-            退出登录
-          </button>
-        </div>
+
+          <div class="flex items-center justify-end gap-2 pt-1">
+            <button type="button" @click="handleTestPush" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
+              发送测试通知到原生 APP
+            </button>
+            <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
+              保存 APP 通道配置
+            </button>
+          </div>
+        </form>
+
+        <!-- Tab: Integrations -->
+        <form v-else-if="activeTab === 'integrations'" key="integrations" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
+          <div class="modal-section flex flex-col gap-3">
+            <div class="text-xs font-semibold text-[#f2b880]">服务器探针直连 (哪吒监控)</div>
+            <label class="flex flex-col gap-1 text-xs text-slate-300">
+              <span>哪吒监控面板地址</span>
+              <input v-model="nezhaUrl" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-slate-300">
+              <span>哪吒 SQLite 本机路径 (只读直连)</span>
+              <input v-model="nezhaDbPath" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+            </label>
+          </div>
+
+          <div class="modal-section flex flex-col gap-3">
+            <div class="text-xs font-semibold text-[#f2b880]">域名与生态扩展凭据</div>
+            <label class="flex flex-col gap-1 text-xs text-slate-300">
+              <span>Cloudflare API Token</span>
+              <input v-model="cfApiToken" type="password" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-slate-300">
+              <span>哔哩哔哩 SESSDATA</span>
+              <input v-model="biliSessdata" type="password" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+            </label>
+          </div>
+
+          <div class="flex justify-end pt-1">
+            <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
+              保存巡检凭据
+            </button>
+          </div>
+        </form>
+
+        <!-- Tab: Security & Backup -->
+        <div v-else key="security" class="flex flex-col gap-3.5">
+          <form @submit.prevent="handleUpdatePassword" class="modal-section flex flex-col gap-2.5">
+            <div class="text-xs font-semibold text-[#f2b880]">访问密钥管理</div>
+            <div class="flex flex-col sm:flex-row gap-2">
+              <input v-model="newPassword" type="password" minlength="6" placeholder="输入新密钥 (至少6位)" aria-label="输入新密钥" required class="flex-1 min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              <button type="submit" class="min-h-[44px] sm:min-h-[40px] px-4 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer shrink-0">
+                更新密钥
+              </button>
+            </div>
+          </form>
+
+          <div class="modal-section flex flex-col gap-3">
+            <div class="text-xs font-semibold text-[#f2b880]">系统数据灾备与令牌轮换</div>
+            <div class="flex flex-wrap gap-2.5">
+              <button type="button" @click="handleExportBackup" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
+                导出配置备份 (JSON)
+              </button>
+              <label class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer inline-flex items-center">
+                导入恢复备份
+                <input type="file" accept=".json" class="hidden" @change="handleImportBackup" />
+              </label>
+              <button type="button" @click="handleRotateToken" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer">
+                重置移动端 App Token
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-section flex items-center justify-between gap-3">
+            <div>
+              <h4 class="text-xs font-semibold text-white">退出当前控制台登录</h4>
+              <p class="text-[11px] text-slate-400 mt-0.5">清除本机 Cookie 鉴权状态，需重新验证密钥</p>
+            </div>
+            <button
+              type="button"
+              @click="handleLogout"
+              class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-rose-400/45 bg-rose-500/15 text-xs font-medium text-rose-300 hover:bg-rose-500/25 cursor-pointer shrink-0"
+            >
+              退出登录
+            </button>
+          </div>
         </div>
       </Transition>
     </div>

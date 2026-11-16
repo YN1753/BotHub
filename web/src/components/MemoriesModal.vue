@@ -3,7 +3,7 @@ import { ref, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { formatTime } from '../utils/format'
-import { applySiblingStaggerFallback } from '../utils/topLayer'
+import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 
@@ -65,7 +65,7 @@ watch(
     max-width="2xl"
     @close="closeModal"
   >
-    <form @submit.prevent="handleAdd" class="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
+    <form @submit.prevent="handleAdd" class="modal-section grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
       <div class="flex flex-col gap-1 text-xs text-slate-300">
         <span>记忆分类</span>
         <CustomSelect v-model="category" :options="CAT_OPTIONS" aria-label="记忆分类" />
@@ -77,7 +77,7 @@ watch(
           type="text"
           placeholder="如 primary_vps"
           required
-          class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none"
+          class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60"
         />
       </label>
       <div class="sm:col-span-2 flex flex-col sm:flex-row gap-2">
@@ -87,35 +87,36 @@ watch(
           placeholder="如 主力生产节点位于 CloudCone LA DC2，部署 Vesper 与哪吒面板"
           aria-label="记忆内容"
           required
-          class="flex-1 min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none"
+          class="flex-1 min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
         />
         <button
           type="submit"
           :disabled="saving"
-          class="min-h-[44px] sm:min-h-[40px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+          class="min-h-[44px] sm:min-h-[40px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50 shrink-0"
         >
           写入记忆
         </button>
       </div>
     </form>
 
-    <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
-      <div v-if="store.state.memories.length === 0" class="py-8 text-center text-sm text-slate-500">
+    <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
+      <div v-if="store.state.memories.length === 0" class="py-10 text-center text-sm text-slate-500">
         尚未写入长期记忆条目
       </div>
       <article
         v-for="m in store.state.memories"
         :key="m.id"
-        class="stagger-item rounded-xl border border-[#fff8ee]/11 bg-[#070a16]/80 p-3"
+        @pointermove="trackSpotlight"
+        class="stagger-item luxury-card rounded-xl p-3.5"
       >
         <div class="flex items-center justify-between gap-2 flex-wrap">
-          <div class="flex items-center gap-2">
-            <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880]">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880] shrink-0">
               {{ m.category }}
             </span>
-            <strong class="font-mono text-xs text-white">{{ m.fact_key }}</strong>
+            <strong class="font-mono text-xs text-white truncate">{{ m.fact_key }}</strong>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 shrink-0">
             <span class="font-mono text-[11px] text-slate-500">{{ formatTime(m.updated_at) }}</span>
             <button
               type="button"
@@ -126,7 +127,7 @@ watch(
             </button>
           </div>
         </div>
-        <p class="text-xs text-slate-200 mt-1.5">{{ m.content }}</p>
+        <p class="text-xs text-slate-200 mt-1.5 leading-relaxed">{{ m.content }}</p>
       </article>
     </div>
   </BaseModal>

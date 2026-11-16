@@ -4,7 +4,7 @@ import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { formatTime } from '../utils/format'
 import { renderSafeMarkdown } from '../utils/markdown'
-import { applySiblingStaggerFallback } from '../utils/topLayer'
+import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 
@@ -120,22 +120,27 @@ watch(
       <article
         v-for="n in filtered"
         :key="n.id"
+        @pointermove="trackSpotlight"
         :class="[
-          'stagger-item rounded-xl border bg-[#070a16]/80 p-3.5 transition-colors',
-          !n.read_at ? 'border-l-4 border-l-[#f2b880] border-[#fff8ee]/14' : 'border-[#fff8ee]/10'
+          'stagger-item luxury-card rounded-xl p-3.5',
+          !n.read_at ? 'border-l-[3px] border-l-[#f2b880]' : ''
         ]"
       >
         <div class="flex items-start justify-between gap-2 flex-wrap">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880]">
+          <div class="flex items-center gap-2 flex-wrap min-w-0">
+            <span
+              v-if="!n.read_at"
+              class="w-2 h-2 rounded-full bg-[#f2b880] shadow-[0_0_8px_#f2b880] shrink-0"
+              title="未读"
+            />
+            <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-[#f2b880]/28 bg-[#f2b880]/10 text-[#f2b880] shrink-0">
               {{ n.source }}
             </span>
-            <strong class="text-sm text-white">{{ n.title }}</strong>
-            <span v-if="!n.read_at" class="font-mono text-[11px] text-[#f2b880]">[未读]</span>
+            <strong class="text-sm text-white truncate">{{ n.title }}</strong>
           </div>
-          <span class="font-mono text-[11px] text-slate-400">{{ formatTime(n.created_at) }}</span>
+          <span class="font-mono tabular-nums text-[11px] text-slate-400 shrink-0">{{ formatTime(n.created_at) }}</span>
         </div>
-        <p class="text-xs text-slate-400 mt-1">{{ n.summary }}</p>
+        <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">{{ n.summary }}</p>
         <details class="vesper-details mt-2" @toggle="(e: any) => e.target?.open && markRead(n.id)">
           <summary class="cursor-pointer inline-flex items-center gap-1 font-mono text-[11px] text-[#f2b880] select-none">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron shrink-0">

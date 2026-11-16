@@ -196,6 +196,8 @@ CREATE TABLE IF NOT EXISTS bots (
 	unread_count INTEGER NOT NULL DEFAULT 0,
 	is_pinned INTEGER NOT NULL DEFAULT 0,
 	is_builtin INTEGER NOT NULL DEFAULT 0,
+	is_group INTEGER NOT NULL DEFAULT 0,
+	member_ids TEXT NOT NULL DEFAULT '[]',
 	sort_order INTEGER NOT NULL DEFAULT 100,
 	last_summary TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL,
@@ -212,6 +214,8 @@ CREATE TABLE IF NOT EXISTS bots (
 		`ALTER TABLE agent_messages ADD COLUMN sender_bot_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE agent_messages ADD COLUMN msg_kind TEXT NOT NULL DEFAULT 'chat'`,
 		`ALTER TABLE agent_memories ADD COLUMN scope TEXT NOT NULL DEFAULT 'global'`,
+		`ALTER TABLE bots ADD COLUMN is_group INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE bots ADD COLUMN member_ids TEXT NOT NULL DEFAULT '[]'`,
 	}
 	for _, stmt := range alters {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
@@ -219,6 +223,7 @@ CREATE TABLE IF NOT EXISTS bots (
 		}
 	}
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot ON agent_messages(bot_id, id ASC)`)
+	_, _ = s.db.Exec(`UPDATE bots SET is_group = 1, member_ids = '["butler","sentinel","radar","grok"]' WHERE id = 'team_room' AND is_group = 0`)
 	_, _ = s.db.Exec(`DELETE FROM configs WHERE key IN ('wecom_corpid', 'wecom_agentid', 'wecom_secret', 'wecom_touser', 'pushplus_token')`)
 	_, _ = s.db.Exec(`UPDATE configs SET value = 'native' WHERE key = 'push_channel' AND value != 'native'`)
 	return nil

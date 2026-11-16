@@ -121,12 +121,15 @@ onBeforeUnmount(() => {
     @pointerdown="handlePointerDown"
     @pointerup="handlePointerUp"
   >
-    <div class="flex flex-col min-h-0 max-h-[90dvh] sm:max-h-[86dvh] p-4 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom,1rem))] gap-4">
-      <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto -mt-1 shrink-0" aria-hidden="true" />
+    <div class="relative flex flex-col min-h-0 max-h-[90dvh] sm:max-h-[86dvh]">
+      <!-- Subtle top warm hairline glow -->
+      <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#f2b880]/45 to-transparent" aria-hidden="true" />
 
-      <div class="flex items-start justify-between gap-3 shrink-0">
+      <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto mt-2.5 shrink-0" aria-hidden="true" />
+
+      <div class="flex items-start justify-between gap-3 px-4 sm:px-5 pt-4 pb-3 border-b border-[#fff8ee]/8 bg-[#080c18]/55 shrink-0">
         <div class="min-w-0">
-          <h3 :id="titleId" class="text-base sm:text-lg font-semibold text-white">
+          <h3 :id="titleId" class="text-base sm:text-lg font-semibold text-white tracking-tight">
             {{ title }}
           </h3>
           <p v-if="subtitle" class="text-xs text-slate-400 mt-0.5">
@@ -140,7 +143,7 @@ onBeforeUnmount(() => {
             type="button"
             aria-label="关闭窗口"
             @click="requestAnimatedClose"
-            class="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] inline-flex items-center justify-center rounded-xl border border-[#fff8ee]/14 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 hover:bg-white/5 cursor-pointer"
+            class="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] inline-flex items-center justify-center rounded-xl border border-[#fff8ee]/12 bg-[#070a16]/60 text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 hover:bg-white/5 cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -150,7 +153,9 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <slot />
+      <div class="flex-1 min-h-0 flex flex-col p-4 sm:p-5 pb-[max(1.1rem,env(safe-area-inset-bottom,1.1rem))] gap-4 overflow-hidden">
+        <slot />
+      </div>
     </div>
   </dialog>
 </template>

@@ -77,7 +77,7 @@ func (e *Engine) resolveMentionedBots(userMsg string, allBots []store.Bot) []sto
 	matched := make([]store.Bot, 0)
 	seen := make(map[string]bool)
 	for _, b := range allBots {
-		if b.ID == "team_room" || seen[b.ID] {
+		if b.IsGroup || b.ID == "team_room" || seen[b.ID] {
 			continue
 		}
 		if strings.Contains(userMsg, "@"+b.Name) || strings.Contains(lower, "@"+strings.ToLower(b.ID)) {
@@ -86,6 +86,22 @@ func (e *Engine) resolveMentionedBots(userMsg string, allBots []store.Bot) []sto
 		}
 	}
 	return matched
+}
+
+func resolveGroupMemberBots(groupBot *store.Bot, allBots []store.Bot) []store.Bot {
+	botMap := make(map[string]store.Bot, len(allBots))
+	for _, b := range allBots {
+		if !b.IsGroup && b.ID != "team_room" {
+			botMap[b.ID] = b
+		}
+	}
+	var members []store.Bot
+	for _, id := range groupBot.MemberIDList() {
+		if b, ok := botMap[strings.TrimSpace(id)]; ok {
+			members = append(members, b)
+		}
+	}
+	return members
 }
 
 func (e *Engine) chatStreamForBot(
@@ -119,12 +135,16 @@ func (e *Engine) chatStreamForBot(
 		return nil, fmt.Errorf("记录消息失败: %w", err)
 	}
 
-	// Team Room multi-bot @mention handoff
-	if bot.ID == "team_room" {
+	// Multi-bot group chat (@mention targets, or sequential all-member collaboration when no @ specified)
+	if bot.IsGroup || bot.ID == "team_room" {
 		allBots, _ := e.store.ListBots()
 		mentioned := e.resolveMentionedBots(userMsg, allBots)
 		if len(mentioned) > 0 {
 			return e.runTeamRoomHandoff(ctx, req, bot, mentioned, history, userMsg, baseURL, apiKey, emit)
+		}
+		members := resolveGroupMemberBots(bot, allBots)
+		if len(members) > 0 {
+			return e.runTeamRoomHandoff(ctx, req, bot, members, history, userMsg, baseURL, apiKey, emit)
 		}
 	}
 

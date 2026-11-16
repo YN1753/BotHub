@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { getColorPalette, parseAvatarStyle } from '../utils/botLook'
 
 const props = withDefaults(
   defineProps<{
@@ -14,46 +15,9 @@ const props = withDefaults(
   }
 )
 
-const palette = computed(() => {
-  const map: Record<string, { ring: string; glow: string; fill: string; eye: string; visor: string }> = {
-    cyan: {
-      ring: '#f2b880',
-      glow: 'rgba(242, 184, 128, 0.34)',
-      fill: 'rgba(242, 184, 128, 0.14)',
-      eye: '#fbf3e8',
-      visor: 'rgba(242, 184, 128, 0.18)',
-    },
-    indigo: {
-      ring: '#a5b4fc',
-      glow: 'rgba(165, 180, 252, 0.32)',
-      fill: 'rgba(165, 180, 252, 0.14)',
-      eye: '#eef2ff',
-      visor: 'rgba(165, 180, 252, 0.18)',
-    },
-    amber: {
-      ring: '#fbbf24',
-      glow: 'rgba(251, 191, 36, 0.34)',
-      fill: 'rgba(251, 191, 36, 0.14)',
-      eye: '#fef3c7',
-      visor: 'rgba(251, 191, 36, 0.18)',
-    },
-    emerald: {
-      ring: '#34d399',
-      glow: 'rgba(52, 211, 153, 0.32)',
-      fill: 'rgba(52, 211, 153, 0.14)',
-      eye: '#d1fae5',
-      visor: 'rgba(52, 211, 153, 0.18)',
-    },
-    violet: {
-      ring: '#d8b4fe',
-      glow: 'rgba(216, 180, 254, 0.34)',
-      fill: 'rgba(216, 180, 254, 0.14)',
-      eye: '#faf5ff',
-      visor: 'rgba(216, 180, 254, 0.18)',
-    },
-  }
-  return map[props.avatarStyle] || map.cyan
-})
+const parsed = computed(() => parseAvatarStyle(props.avatarStyle))
+const archetype = computed(() => parsed.value.shape)
+const palette = computed(() => getColorPalette(parsed.value.color))
 
 const ringColor = computed(() => {
   if (props.state === 'blocked') return '#f87171'
@@ -67,14 +31,6 @@ const sizeClass = computed(() => {
   if (props.size === 'lg') return 'w-11 h-11'
   if (props.size === 'xl') return 'w-20 h-20'
   return 'w-9 h-9'
-})
-
-const archetype = computed(() => {
-  if (props.avatarStyle === 'indigo') return 'sentinel'
-  if (props.avatarStyle === 'emerald') return 'radar'
-  if (props.avatarStyle === 'amber') return 'critic'
-  if (props.avatarStyle === 'violet') return 'swarm'
-  return 'butler'
 })
 </script>
 
@@ -122,19 +78,24 @@ const archetype = computed(() => {
           <circle cx="8" cy="5.5" r="1.1" :fill="ringColor" />
           <circle cx="40" cy="5.5" r="1.1" :fill="ringColor" />
         </template>
-        <!-- Radar: dual orbital scanner dish arcs -->
+        <!-- Radar: directional parabolic dish -->
         <template v-else-if="archetype === 'radar'">
           <path d="M18 5.5 Q24 2 30 5.5" />
           <line x1="24" y1="6.5" x2="24" y2="3" />
         </template>
-        <!-- Critic (Grok): sharp energetic horn fin -->
+        <!-- Critic: sharp energetic horn fin -->
         <template v-else-if="archetype === 'critic'">
           <path d="M18 7 L21 2.5 L24 6.5 L27 2.5 L30 7" stroke-linejoin="round" />
         </template>
         <!-- Swarm: twin orbiting satellites -->
+        <template v-else-if="archetype === 'swarm'">
+          <circle cx="9" cy="9" r="1.6" :fill="ringColor" stroke="none" class="bot-sat-a" />
+          <circle cx="39" cy="39" r="1.6" :fill="ringColor" stroke="none" class="bot-sat-b" />
+        </template>
+        <!-- Visor: sleek twin cyber side fins -->
         <template v-else>
-          <circle cx="9" cy="9" r="1.5" :fill="ringColor" stroke="none" class="bot-sat-a" />
-          <circle cx="39" cy="39" r="1.5" :fill="ringColor" stroke="none" class="bot-sat-b" />
+          <path d="M5 20 L8 17 L8 27 L5 24 Z" :fill="ringColor" stroke="none" opacity="0.8" />
+          <path d="M43 20 L40 17 L40 27 L43 24 Z" :fill="ringColor" stroke="none" opacity="0.8" />
         </template>
       </g>
 
@@ -145,7 +106,7 @@ const archetype = computed(() => {
           y="7.5"
           width="33"
           height="33"
-          rx="16.5"
+          :rx="archetype === 'visor' ? 11 : 16.5"
           :fill="palette.fill"
           :stroke="ringColor"
           stroke-width="1.9"
@@ -154,12 +115,12 @@ const archetype = computed(() => {
 
         <!-- Inner Visor Glass Plate -->
         <rect
-          x="12"
-          y="15"
-          width="24"
-          height="16.5"
-          rx="8"
-          fill="rgba(6, 9, 19, 0.72)"
+          :x="archetype === 'visor' ? 10.5 : 12"
+          :y="archetype === 'visor' ? 16.5 : 15"
+          :width="archetype === 'visor' ? 27 : 24"
+          :height="archetype === 'visor' ? 13 : 16.5"
+          :rx="archetype === 'visor' ? 6.5 : 8"
+          fill="rgba(6, 9, 19, 0.78)"
           :stroke="palette.visor"
           stroke-width="1"
         />
@@ -180,13 +141,21 @@ const archetype = computed(() => {
             <path d="M20 27.2 Q24 30 28 27.2" :stroke="ringColor" stroke-width="1.7" stroke-linecap="round" />
           </template>
 
-          <!-- Active Idle / Thinking / Working Expressive Blinking Eyes -->
+          <!-- Visor Archetype Luminous LED Bar Eyes -->
+          <template v-else-if="archetype === 'visor'">
+            <g class="bot-eye-pair">
+              <rect x="15" y="21" width="6.5" height="3.2" rx="1.6" :fill="palette.eye" />
+              <rect x="26.5" y="21" width="6.5" height="3.2" rx="1.6" :fill="palette.eye" />
+            </g>
+            <line x1="21" y1="33" x2="27" y2="33" :stroke="ringColor" stroke-width="1.6" stroke-linecap="round" opacity="0.85" />
+          </template>
+
+          <!-- Standard Active Idle / Thinking / Working Expressive Blinking Eyes -->
           <template v-else>
             <g class="bot-eye-pair">
               <ellipse cx="18.5" cy="22" rx="2.4" ry="2.9" :fill="palette.eye" class="bot-eye-l" />
               <ellipse cx="29.5" cy="22" rx="2.4" ry="2.9" :fill="palette.eye" class="bot-eye-r" />
             </g>
-            <!-- Subtle character mouth -->
             <path
               v-if="archetype === 'critic'"
               d="M19.5 27.5 Q24.5 29.8 29 26.6"

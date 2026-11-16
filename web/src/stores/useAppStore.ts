@@ -71,7 +71,8 @@ const state = reactive({
   showLogsModal: false,
   showSettingsModal: false,
   showCreateBotModal: false,
-  editingAsset: null as Asset | null | undefined, // undefined = closed, null = new
+  createModalMode: 'bot' as 'bot' | 'group',
+  editingAsset: undefined as Asset | null | undefined, // undefined = closed, null = new
   editingTask: undefined as Task | Partial<Task> | null | undefined,
 
   // Toast

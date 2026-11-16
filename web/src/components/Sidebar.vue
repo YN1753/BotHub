@@ -115,17 +115,32 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
           </div>
         </div>
 
-        <button
-          type="button"
-          @click="store.state.showCreateBotModal = true; emit('closeMobile')"
-          class="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-center gap-2 rounded-xl border border-[#f2b880]/28 bg-[#f2b880]/10 hover:bg-[#f2b880]/18 hover:border-[#f2b880]/55 text-xs sm:text-sm font-medium text-[#f7cba0] cursor-pointer"
-        >
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          <span>新建专属 Bot</span>
-        </button>
+        <div class="grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            @click="store.state.createModalMode = 'bot'; store.state.showCreateBotModal = true; emit('closeMobile')"
+            class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1.5 rounded-xl border border-[#f2b880]/30 bg-[#f2b880]/10 hover:bg-[#f2b880]/18 hover:border-[#f2b880]/55 text-xs font-medium text-[#f7cba0] cursor-pointer"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            <span>新建 Bot</span>
+          </button>
+          <button
+            type="button"
+            @click="store.state.createModalMode = 'group'; store.state.showCreateBotModal = true; emit('closeMobile')"
+            class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1.5 rounded-xl border border-[#fff8ee]/12 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/45 hover:text-[#f7cba0] text-xs font-medium text-slate-200 cursor-pointer"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span>建群聊</span>
+          </button>
+        </div>
 
         <!-- Primary Workspace Navigation (Simplified flat items) -->
         <nav aria-label="主工作区切换" class="flex flex-col gap-0.5 pt-0.5">
@@ -222,7 +237,15 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
           <BotAvatar :avatar-style="b.avatar_style" :state="b.state" size="md" />
           <div class="flex-1 min-w-0">
             <div class="flex items-center justify-between gap-1.5">
-              <span class="text-[13px] font-semibold text-slate-100 truncate">{{ b.name }}</span>
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-[13px] font-semibold text-slate-100 truncate">{{ b.name }}</span>
+                <span
+                  v-if="b.is_group || b.id === 'team_room'"
+                  class="px-1.5 py-0.5 rounded bg-[#fff8ee]/8 text-[9.5px] font-mono text-slate-300 leading-none shrink-0"
+                >
+                  群聊
+                </span>
+              </div>
               <span
                 v-if="b.unread_count > 0"
                 class="px-1.5 py-0.5 rounded-full bg-[#f2b880] text-[#070a13] font-mono text-[10px] font-bold leading-none shrink-0"

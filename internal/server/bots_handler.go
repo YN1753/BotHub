@@ -11,9 +11,12 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
-func newBotID() string {
+func newBotID(isGroup bool) string {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
+	if isGroup {
+		return "group_" + hex.EncodeToString(b)
+	}
 	return "bot_" + hex.EncodeToString(b)
 }
 
@@ -37,27 +40,50 @@ func (s *Server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 	}
 	req.ID = strings.TrimSpace(req.ID)
 	if req.ID == "" {
-		req.ID = newBotID()
+		req.ID = newBotID(req.IsGroup)
 	}
 	req.Name = notifier.StripEmoji(strings.TrimSpace(req.Name))
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "Bot 名称不能为空")
+		if req.IsGroup {
+			writeError(w, http.StatusBadRequest, "群聊名称不能为空")
+		} else {
+			writeError(w, http.StatusBadRequest, "Bot 名称不能为空")
+		}
 		return
 	}
 	req.RoleTitle = notifier.StripEmoji(strings.TrimSpace(req.RoleTitle))
 	if req.RoleTitle == "" {
-		req.RoleTitle = "专属智能助理"
+		if req.IsGroup {
+			req.RoleTitle = "多 Bot 协同讨论群"
+		} else {
+			req.RoleTitle = "专属智能助理"
+		}
 	}
 	req.SystemPrompt = notifier.StripEmoji(strings.TrimSpace(req.SystemPrompt))
 	if req.SystemPrompt == "" {
-		req.SystemPrompt = "你是用户的专属 AI 助手，回答高信息密度、结构清晰，严禁使用 Emoji。"
+		if req.IsGroup {
+			req.SystemPrompt = "你是多 Bot 协同群聊的统筹协调官，请结合群内各专家视角输出简洁、精准、零冗余的结论，严禁使用 Emoji。"
+		} else {
+			req.SystemPrompt = "你是用户的专属 AI 助手，回答高信息密度、结构清晰，严禁使用 Emoji。"
+		}
+	}
+	if strings.TrimSpace(req.MemberIDs) == "" {
+		req.MemberIDs = "[]"
 	}
 	if req.SortOrder == 0 {
-		req.SortOrder = 20
+		if req.IsGroup {
+			req.SortOrder = 10
+		} else {
+			req.SortOrder = 20
+		}
 	}
 	req.IsBuiltin = false
 	req.State = store.BotStateIdle
-	req.LastSummary = "已就绪，随时待命"
+	if req.IsGroup {
+		req.LastSummary = "群聊已创建，可 @成员 或直接发起群组协同"
+	} else {
+		req.LastSummary = "已就绪，随时待命"
+	}
 
 	if err := s.store.SaveBot(req); err != nil {
 		writeError(w, http.StatusInternalServerError, "创建 Bot 失败: "+err.Error())
@@ -101,6 +127,9 @@ func (s *Server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.AllowedTools != "" {
 		existing.AllowedTools = req.AllowedTools
+	}
+	if req.MemberIDs != "" {
+		existing.MemberIDs = req.MemberIDs
 	}
 	existing.EnableThinking = req.EnableThinking
 	existing.IsPinned = req.IsPinned

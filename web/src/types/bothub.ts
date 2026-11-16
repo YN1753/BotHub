@@ -15,6 +15,8 @@ export interface Bot {
   unread_count: number
   is_pinned: boolean
   is_builtin: boolean
+  is_group?: boolean
+  member_ids?: string
   sort_order: number
   last_summary: string
   created_at: string
