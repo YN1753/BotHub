@@ -6,12 +6,15 @@ import type {
   Asset,
   AvailableToolMeta,
   Bot,
+  BotExecutionLog,
+  BotThread,
   ModelHealthStats,
   ModelPoolEntry,
   NotificationItem,
   Persona,
   PushLog,
   SelectOption,
+  Skill,
   Task,
   TaskTemplate,
 } from '../types/bothub'
@@ -45,7 +48,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.12.0',
+  version: 'v2.13.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -60,6 +63,7 @@ const state = reactive({
     unread_notifications: 0,
   },
   bots: [] as Bot[],
+  skills: [] as Skill[],
   modelPool: [] as ModelPoolEntry[],
   availableTools: [] as AvailableToolMeta[],
   personas: [] as Persona[],
@@ -75,6 +79,10 @@ const state = reactive({
   // Navigation & Active Bot Workspace
   workspace: 'bots' as MainWorkspace,
   activeBotId: localStorage.getItem('bothub_active_bot') || '',
+  activeThreadId: '',
+  botThreads: [] as BotThread[],
+  botMemories: [] as AgentMemory[],
+  botExecutions: [] as BotExecutionLog[],
   botView: 'stream' as BotSubView,
   timeline: [] as ChatMessageUI[],
   isStreaming: false,
@@ -91,11 +99,13 @@ const state = reactive({
   // Modals & Drawers
   showInboxModal: false,
   showMemoriesModal: false,
+  showSkillsModal: false,
   showLogsModal: false,
   showSettingsModal: false,
   showCreateBotModal: false,
   showGroupDrawer: false,
   showQuickSwitcher: false,
+  memoryModalDefaultScope: '',
   forwardingMessage: null as { fromName: string; content: string } | null,
   createModalMode: 'bot' as 'bot' | 'group',
   pendingDraftPrompt: '',
@@ -260,6 +270,7 @@ export function useAppStore() {
       state.serverNow = data.server_now || '--'
       state.stats = data.stats || state.stats
       state.bots = data.bots || []
+      state.skills = data.skills || []
       state.modelPool = data.model_pool || []
       state.availableTools = data.available_tools || []
       state.personas = data.personas || []
@@ -274,6 +285,10 @@ export function useAppStore() {
 
       if (state.bots.length === 0) {
         state.activeBotId = ''
+        state.activeThreadId = ''
+        state.botThreads = []
+        state.botMemories = []
+        state.botExecutions = []
         state.timeline = []
         localStorage.removeItem('bothub_active_bot')
       } else if (loadInitialBot || !state.bots.some((b) => b.id === state.activeBotId)) {
@@ -286,7 +301,7 @@ export function useAppStore() {
     }
   }
 
-  async function selectBot(botId: string) {
+  async function selectBot(botId: string, threadId?: string) {
     state.activeBotId = botId
     state.workspace = 'bots'
     localStorage.setItem('bothub_active_bot', botId)
@@ -296,12 +311,72 @@ export function useAppStore() {
       if (bot.state === 'done') bot.state = 'idle'
     }
     try {
-      const res = await BotHubApi.getBotMessages(botId)
+      const targetThread = threadId !== undefined ? threadId : (bot?.active_thread_id || '')
+      const res = await BotHubApi.getBotMessages(botId, targetThread)
+      state.activeThreadId = res.thread_id || ''
+      state.botThreads = res.threads || []
+      state.botMemories = res.memories || []
+      state.botExecutions = res.executions || []
+      if (res.bot) {
+        const idx = state.bots.findIndex((b) => b.id === botId)
+        if (idx >= 0) state.bots[idx] = { ...state.bots[idx], ...res.bot }
+      }
       state.timeline = (res.messages || [])
         .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'system')
         .map((m) => mapServerMessage(m, res.bot || bot))
     } catch (err: any) {
       notify(err.message || '加载 Bot 对话流失败')
+    }
+  }
+
+  async function refreshActiveBot() {
+    if (!state.activeBotId) return
+    await selectBot(state.activeBotId, state.activeThreadId)
+  }
+
+  async function switchThread(threadId: string) {
+    if (!state.activeBotId) return
+    await selectBot(state.activeBotId, threadId)
+  }
+
+  async function createThread(title?: string) {
+    if (!state.activeBotId) return null
+    try {
+      const res = await BotHubApi.createBotThread(state.activeBotId, title)
+      state.botThreads = res.threads || []
+      await selectBot(state.activeBotId, res.thread.id)
+      notify(`已新建话题「${res.thread.title}」`)
+      return res.thread
+    } catch (err: any) {
+      notify(err.message || '新建话题失败')
+      return null
+    }
+  }
+
+  async function renameThread(threadId: string, title: string) {
+    if (!state.activeBotId) return
+    try {
+      const res = await BotHubApi.updateBotThread(state.activeBotId, threadId, { title })
+      state.botThreads = res.threads || []
+      notify('话题名称已更新')
+    } catch (err: any) {
+      notify(err.message || '重命名话题失败')
+    }
+  }
+
+  async function deleteThread(threadId: string) {
+    if (!state.activeBotId) return
+    try {
+      const res = await BotHubApi.deleteBotThread(state.activeBotId, threadId)
+      state.botThreads = res.threads || []
+      if (state.activeThreadId === threadId) {
+        await selectBot(state.activeBotId, '')
+      } else {
+        await refreshActiveBot()
+      }
+      notify('已删除该话题记录')
+    } catch (err: any) {
+      notify(err.message || '删除话题失败')
     }
   }
 
@@ -339,9 +414,10 @@ export function useAppStore() {
   async function clearActiveBotTimeline() {
     const bot = activeBot.value
     if (!bot) return
-    await BotHubApi.clearBotMessages(bot.id)
+    await BotHubApi.clearBotMessages(bot.id, state.activeThreadId)
     state.timeline = []
-    notify(`[${bot.name}] 对话时间线已清空`)
+    await refreshActiveBot()
+    notify(state.activeThreadId ? `[${bot.name}] 当前话题记录已清空` : `[${bot.name}] 主对话时间线已清空`)
   }
 
   function setBotDraft(botId: string, text: string) {
@@ -449,11 +525,12 @@ export function useAppStore() {
       try {
         const msg = JSON.parse(ev.data) as AgentMessage
         if (!msg?.bot_id) return
-        if (msg.bot_id === state.activeBotId && (!state.isStreaming || msg.role === 'system')) {
+        const sameThread = (msg.thread_id || '') === (state.activeThreadId || '')
+        if (msg.bot_id === state.activeBotId && sameThread && (!state.isStreaming || msg.role === 'system')) {
           if (!state.timeline.some((t) => msg.id && t.serverId === msg.id)) {
             state.timeline.push(mapServerMessage(msg))
           }
-        } else {
+        } else if (msg.bot_id !== state.activeBotId) {
           const target = state.bots.find((b) => b.id === msg.bot_id)
           if (target) target.unread_count = (target.unread_count || 0) + 1
         }
@@ -488,6 +565,11 @@ export function useAppStore() {
     logout,
     loadDashboard,
     selectBot,
+    refreshActiveBot,
+    switchThread,
+    createThread,
+    renameThread,
+    deleteThread,
     jumpToBot,
     togglePinBot,
     deleteSingleMessage,

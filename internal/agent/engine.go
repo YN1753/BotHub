@@ -47,6 +47,7 @@ func NewEngine(st *store.Store, sched TaskController) *Engine {
 type ChatRequest struct {
 	SessionID      string `json:"session_id"`
 	BotID          string `json:"bot_id,omitempty"`
+	ThreadID       string `json:"thread_id,omitempty"`
 	Message        string `json:"message"`
 	Persona        string `json:"persona"`
 	Model          string `json:"model"`
@@ -71,6 +72,7 @@ type TokenUsage struct {
 type ChatResponse struct {
 	SessionID        string      `json:"session_id"`
 	BotID            string      `json:"bot_id,omitempty"`
+	ThreadID         string      `json:"thread_id,omitempty"`
 	SenderBotID      string      `json:"sender_bot_id,omitempty"`
 	Persona          string      `json:"persona"`
 	Model            string      `json:"model"`
@@ -546,16 +548,28 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 }
 
 func (e *Engine) distillMemoryAsync(userMsg, assistantReply string) {
-	if len([]rune(userMsg)) < 8 {
+	e.distillMemoryWithScope("global", store.BotModeHybrid, userMsg, assistantReply)
+}
+
+func (e *Engine) distillMemoryWithScope(scope, botMode, userMsg, assistantReply string) {
+	if len([]rune(strings.TrimSpace(userMsg))) < 6 {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	sys := `你是长期记忆提炼器。从用户和助手的最新一轮对话中判断是否包含值得长期跨会话记住的稳定事实（如服务器地址、个人偏好、常用域名、架构约定）。
-如果有，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"category":"infra|preference|schedule|general","fact_key":"英文蛇形键名","content":"简洁中文事实"}。
-如果只是一次性闲聊、常规状态查询或无新长期事实，输出：{"save":false}。严禁包含任何 Emoji。`
-	prompt := fmt.Sprintf("用户：%s\n助手：%s", userMsg, assistantReply)
+	var sys string
+	if botMode == store.BotModeCompanion {
+		sys = `你是专属陪伴助手的情境记忆提炼器。从这一轮自然对话中，判断是否包含值得长期记住的个人点滴（用户最近的心情、喜好禁忌、重要事件、人际关系、聊天约定或生活习惯）。
+如果有，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"category":"preference|relation|emotion|general","fact_key":"简短英文蛇形键名","content":"自然具体的中文记忆描述","importance":4,"pinned":false}。importance 为 1-5，非常重要的人生节点或核心喜好 pinned 设 true。
+如果只是毫无保留价值的日常寒暄（如“在吗”“你好”），输出：{"save":false}。严禁包含任何 Emoji。`
+	} else {
+		sys = `你是长期记忆提炼器。从用户和助手的最新一轮对话中判断是否包含值得长期跨会话记住的稳定事实（如架构约定、偏好风格、重要项目背景、常用主机的非敏感约束）。
+如果有，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"category":"infra|preference|schedule|insight|general","fact_key":"英文蛇形键名","content":"简洁中文事实","importance":3,"pinned":false}。importance 为 1-5。
+如果只是一次性闲聊或常规流水查询，输出：{"save":false}。严禁包含任何 Emoji。`
+	}
+
+	prompt := fmt.Sprintf("用户：%s\n回应：%s", userMsg, assistantReply)
 	raw, err := e.CallLightModel(ctx, sys, prompt)
 	if err != nil {
 		return
@@ -567,13 +581,18 @@ func (e *Engine) distillMemoryAsync(userMsg, assistantReply string) {
 	clean = strings.TrimSpace(clean)
 
 	var parsed struct {
-		Save     bool   `json:"save"`
-		Category string `json:"category"`
-		FactKey  string `json:"fact_key"`
-		Content  string `json:"content"`
+		Save       bool   `json:"save"`
+		Category   string `json:"category"`
+		FactKey    string `json:"fact_key"`
+		Content    string `json:"content"`
+		Importance int    `json:"importance"`
+		Pinned     bool   `json:"pinned"`
 	}
 	if json.Unmarshal([]byte(clean), &parsed) == nil && parsed.Save && strings.TrimSpace(parsed.FactKey) != "" && strings.TrimSpace(parsed.Content) != "" {
-		_ = e.store.SaveAgentMemory(parsed.Category, parsed.FactKey, notifier.StripEmoji(parsed.Content))
+		if parsed.Importance <= 0 {
+			parsed.Importance = 3
+		}
+		_ = e.store.SaveAgentMemoryDetailed(scope, parsed.Category, parsed.FactKey, notifier.StripEmoji(parsed.Content), parsed.Importance, parsed.Pinned)
 	}
 }
 

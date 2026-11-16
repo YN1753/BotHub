@@ -13,6 +13,13 @@ const (
 	BotStateWorking  = "working"
 	BotStateBlocked  = "blocked"
 	BotStateDone     = "done"
+
+	BotModeWorker    = "worker"
+	BotModeCompanion = "companion"
+	BotModeHybrid    = "hybrid"
+
+	MemoryPolicyIsolated = "isolated"
+	MemoryPolicyStandard = "standard"
 )
 
 type Bot struct {
@@ -21,9 +28,13 @@ type Bot struct {
 	RoleTitle      string `json:"role_title"`
 	AvatarStyle    string `json:"avatar_style"`
 	SystemPrompt   string `json:"system_prompt"`
+	BotMode        string `json:"bot_mode"`      // worker | companion | hybrid
+	MemoryPolicy   string `json:"memory_policy"` // isolated | standard
+	Traits         string `json:"traits"`        // tone / speaking style nuances
 	Model          string `json:"model"`
 	EnableThinking bool   `json:"enable_thinking"`
 	AllowedTools   string `json:"allowed_tools"` // JSON string array
+	SkillIDs       string `json:"skill_ids"`     // JSON string array of Skill IDs
 	State          string `json:"state"`         // idle | thinking | working | blocked | done
 	UnreadCount    int    `json:"unread_count"`
 	IsPinned       bool   `json:"is_pinned"`
@@ -32,15 +43,42 @@ type Bot struct {
 	MemberIDs      string `json:"member_ids"`   // JSON string array of Bot IDs when IsGroup=true
 	GroupMode      string `json:"group_mode"`   // smart | sequential | mention_only
 	Announcement   string `json:"announcement"` // Pinned group notice banner
+	ActiveThreadID string `json:"active_thread_id"`
 	SortOrder      int    `json:"sort_order"`
 	LastSummary    string `json:"last_summary"`
 	CreatedAt      string `json:"created_at"`
 	UpdatedAt      string `json:"updated_at"`
 }
 
+func NormalizeBotMode(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case BotModeWorker:
+		return BotModeWorker
+	case BotModeCompanion:
+		return BotModeCompanion
+	default:
+		return BotModeHybrid
+	}
+}
+
+func NormalizeMemoryPolicy(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case MemoryPolicyIsolated:
+		return MemoryPolicyIsolated
+	default:
+		return MemoryPolicyStandard
+	}
+}
+
 func (b Bot) AllowedToolList() []string {
 	var list []string
 	_ = json.Unmarshal([]byte(b.AllowedTools), &list)
+	return list
+}
+
+func (b Bot) SkillIDList() []string {
+	var list []string
+	_ = json.Unmarshal([]byte(b.SkillIDs), &list)
 	return list
 }
 
@@ -51,7 +89,12 @@ func (b Bot) MemberIDList() []string {
 }
 
 func (s *Store) ListBots() ([]Bot, error) {
-	rows, err := s.db.Query(`SELECT id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, COALESCE(group_mode,'smart'), COALESCE(announcement,''), sort_order, last_summary, created_at, updated_at
+	rows, err := s.db.Query(`SELECT id, name, role_title, avatar_style, system_prompt,
+		COALESCE(bot_mode,'hybrid'), COALESCE(memory_policy,'standard'), COALESCE(traits,''),
+		model, enable_thinking, allowed_tools, COALESCE(skill_ids,'[]'),
+		state, unread_count, is_pinned, is_builtin, is_group, member_ids,
+		COALESCE(group_mode,'smart'), COALESCE(announcement,''), COALESCE(active_thread_id,''),
+		sort_order, last_summary, created_at, updated_at
 		FROM bots ORDER BY is_pinned DESC, sort_order ASC, updated_at DESC`)
 	if err != nil {
 		return nil, err
@@ -62,11 +105,20 @@ func (s *Store) ListBots() ([]Bot, error) {
 	for rows.Next() {
 		var b Bot
 		var et, pin, builtin, isGroup int
-		if err := rows.Scan(&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt, &b.Model, &et, &b.AllowedTools, &b.State, &b.UnreadCount, &pin, &builtin, &isGroup, &b.MemberIDs, &b.GroupMode, &b.Announcement, &b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt); err == nil {
+		if err := rows.Scan(
+			&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt,
+			&b.BotMode, &b.MemoryPolicy, &b.Traits,
+			&b.Model, &et, &b.AllowedTools, &b.SkillIDs,
+			&b.State, &b.UnreadCount, &pin, &builtin, &isGroup, &b.MemberIDs,
+			&b.GroupMode, &b.Announcement, &b.ActiveThreadID,
+			&b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt,
+		); err == nil {
 			b.EnableThinking = et == 1
 			b.IsPinned = pin == 1
 			b.IsBuiltin = false
 			b.IsGroup = isGroup == 1
+			b.BotMode = NormalizeBotMode(b.BotMode)
+			b.MemoryPolicy = NormalizeMemoryPolicy(b.MemoryPolicy)
 			if strings.TrimSpace(b.GroupMode) == "" {
 				b.GroupMode = "smart"
 			}
@@ -79,9 +131,21 @@ func (s *Store) ListBots() ([]Bot, error) {
 func (s *Store) GetBot(id string) (*Bot, error) {
 	var b Bot
 	var et, pin, builtin, isGroup int
-	err := s.db.QueryRow(`SELECT id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, COALESCE(group_mode,'smart'), COALESCE(announcement,''), sort_order, last_summary, created_at, updated_at
+	err := s.db.QueryRow(`SELECT id, name, role_title, avatar_style, system_prompt,
+		COALESCE(bot_mode,'hybrid'), COALESCE(memory_policy,'standard'), COALESCE(traits,''),
+		model, enable_thinking, allowed_tools, COALESCE(skill_ids,'[]'),
+		state, unread_count, is_pinned, is_builtin, is_group, member_ids,
+		COALESCE(group_mode,'smart'), COALESCE(announcement,''), COALESCE(active_thread_id,''),
+		sort_order, last_summary, created_at, updated_at
 		FROM bots WHERE id = ?`, strings.TrimSpace(id)).
-		Scan(&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt, &b.Model, &et, &b.AllowedTools, &b.State, &b.UnreadCount, &pin, &builtin, &isGroup, &b.MemberIDs, &b.GroupMode, &b.Announcement, &b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt)
+		Scan(
+			&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt,
+			&b.BotMode, &b.MemoryPolicy, &b.Traits,
+			&b.Model, &et, &b.AllowedTools, &b.SkillIDs,
+			&b.State, &b.UnreadCount, &pin, &builtin, &isGroup, &b.MemberIDs,
+			&b.GroupMode, &b.Announcement, &b.ActiveThreadID,
+			&b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt,
+		)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -92,6 +156,8 @@ func (s *Store) GetBot(id string) (*Bot, error) {
 	b.IsPinned = pin == 1
 	b.IsBuiltin = false
 	b.IsGroup = isGroup == 1
+	b.BotMode = NormalizeBotMode(b.BotMode)
+	b.MemoryPolicy = NormalizeMemoryPolicy(b.MemoryPolicy)
 	if strings.TrimSpace(b.GroupMode) == "" {
 		b.GroupMode = "smart"
 	}
@@ -110,8 +176,13 @@ func (s *Store) SaveBot(b Bot) error {
 	if b.Model == "" {
 		b.Model = DefaultAIModel
 	}
+	b.BotMode = NormalizeBotMode(b.BotMode)
+	b.MemoryPolicy = NormalizeMemoryPolicy(b.MemoryPolicy)
 	if b.AllowedTools == "" {
 		b.AllowedTools = "[]"
+	}
+	if strings.TrimSpace(b.SkillIDs) == "" {
+		b.SkillIDs = "[]"
 	}
 	if strings.TrimSpace(b.MemberIDs) == "" {
 		b.MemberIDs = "[]"
@@ -138,31 +209,39 @@ func (s *Store) SaveBot(b Bot) error {
 	if b.IsGroup {
 		isGroup = 1
 	}
-	_, err := s.db.Exec(`INSERT INTO bots (id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, group_mode, announcement, sort_order, last_summary, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO bots (id, name, role_title, avatar_style, system_prompt, bot_mode, memory_policy, traits, model, enable_thinking, allowed_tools, skill_ids, state, unread_count, is_pinned, is_builtin, is_group, member_ids, group_mode, announcement, active_thread_id, sort_order, last_summary, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			role_title = excluded.role_title,
 			avatar_style = excluded.avatar_style,
 			system_prompt = excluded.system_prompt,
+			bot_mode = excluded.bot_mode,
+			memory_policy = excluded.memory_policy,
+			traits = excluded.traits,
 			model = excluded.model,
 			enable_thinking = excluded.enable_thinking,
 			allowed_tools = excluded.allowed_tools,
+			skill_ids = excluded.skill_ids,
 			state = excluded.state,
 			is_pinned = excluded.is_pinned,
 			is_group = excluded.is_group,
 			member_ids = excluded.member_ids,
 			group_mode = excluded.group_mode,
 			announcement = excluded.announcement,
+			active_thread_id = excluded.active_thread_id,
 			sort_order = excluded.sort_order,
 			last_summary = excluded.last_summary,
 			updated_at = excluded.updated_at`,
-		b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.Model, et, b.AllowedTools, b.State, b.UnreadCount, pin, builtin, isGroup, b.MemberIDs, b.GroupMode, b.Announcement, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
+		b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.BotMode, b.MemoryPolicy, b.Traits, b.Model, et, b.AllowedTools, b.SkillIDs, b.State, b.UnreadCount, pin, builtin, isGroup, b.MemberIDs, b.GroupMode, b.Announcement, b.ActiveThreadID, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
 	return err
 }
 
 func (s *Store) DeleteBot(id string) error {
 	_, _ = s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ?`, id)
+	_, _ = s.db.Exec(`DELETE FROM bot_threads WHERE bot_id = ?`, id)
+	_, _ = s.db.Exec(`DELETE FROM bot_execution_logs WHERE bot_id = ?`, id)
+	_, _ = s.db.Exec(`DELETE FROM agent_memories WHERE scope = ?`, "bot:"+id)
 	_, _ = s.db.Exec(`UPDATE tasks SET bot_id = '' WHERE bot_id = ?`, id)
 	_, err := s.db.Exec(`DELETE FROM bots WHERE id = ?`, id)
 	return err

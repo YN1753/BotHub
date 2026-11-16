@@ -3,7 +3,9 @@ import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { trackSpotlight } from '../utils/topLayer'
+import type { BotMode, MemoryPolicy } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
+import BotAvatar from './BotAvatar.vue'
 import BotAvatarPicker from './BotAvatarPicker.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -14,6 +16,17 @@ const store = useAppStore()
 const CREATE_TABS = [
   { id: 'bot', label: '创建专属 Bot' },
   { id: 'group', label: '创建多 Bot 群聊' },
+]
+
+const BOT_MODE_TABS = [
+  { id: 'companion', label: '陪伴聊天型' },
+  { id: 'hybrid', label: '综合协同型' },
+  { id: 'worker', label: '干活执行型' },
+]
+
+const MEMORY_POLICY_OPTIONS = [
+  { value: 'isolated', label: '严格私有记忆 (仅 Bot 自己可见，不串记忆)' },
+  { value: 'standard', label: '私有记忆 + 全局共享事实' },
 ]
 
 const mode = computed({
@@ -27,9 +40,13 @@ const name = ref('')
 const roleTitle = ref('')
 const avatarStyle = ref('butler:gold')
 const model = ref(store.modelOptions.value[0]?.value || 'primary')
+const botMode = ref<BotMode>('hybrid')
+const memoryPolicy = ref<MemoryPolicy>('isolated')
+const traits = ref('')
 const enableThinking = ref(true)
 const systemPrompt = ref('')
 const allowedTools = ref<string[]>([])
+const selectedSkillIds = ref<string[]>([])
 
 // Group chat state
 const groupName = ref('')
@@ -41,10 +58,31 @@ const groupAnnouncement = ref('')
 const saving = ref(false)
 
 const availableTools = computed(() => store.state.availableTools || [])
+const availableSkills = computed(() => (store.state.skills || []).filter((s) => s.enabled !== false))
 
 const availableSpecialistBots = computed(() =>
   store.state.bots.filter((b) => !b.is_group)
 )
+
+function applyBotModeDefaults(nextMode: BotMode) {
+  if (nextMode === 'companion') {
+    // Companion friend bots should converse naturally without forced ops tools unless explicitly selected
+    allowedTools.value = availableTools.value
+      .filter((t) => t.id === 'remember_fact' || t.id === 'recall_memory')
+      .map((t) => t.id)
+    enableThinking.value = false
+  } else if (nextMode === 'worker') {
+    allowedTools.value = availableTools.value.map((t) => t.id)
+    enableThinking.value = true
+  } else {
+    allowedTools.value = availableTools.value.map((t) => t.id)
+    enableThinking.value = true
+  }
+}
+
+watch(botMode, (next) => {
+  applyBotModeDefaults(next)
+})
 
 watch(
   () => store.state.showCreateBotModal,
@@ -53,7 +91,7 @@ watch(
     if (!store.modelOptions.value.some((o) => o.value === model.value)) {
       model.value = store.modelOptions.value[0]?.value || 'primary'
     }
-    if (allowedTools.value.length === 0 && availableTools.value.length > 0) {
+    if (allowedTools.value.length === 0 && botMode.value !== 'companion' && availableTools.value.length > 0) {
       allowedTools.value = availableTools.value.map((t) => t.id)
     }
     if (groupMembers.value.length === 0) {
@@ -75,6 +113,11 @@ function closeModal() {
   store.state.showCreateBotModal = false
 }
 
+function openSkillsWorkshop() {
+  closeModal()
+  store.state.showSkillsModal = true
+}
+
 async function handleSubmit() {
   if (saving.value) return
   if (mode.value === 'group') {
@@ -88,18 +131,47 @@ async function handleSubmit() {
     }
     saving.value = true
     try {
+      const selectedBots = availableSpecialistBots.value.filter((b) =>
+        groupMembers.value.includes(b.id)
+      )
+      const toolSet = new Set<string>()
+      const skillSet = new Set<string>()
+      let derivedModel = store.modelOptions.value[0]?.value || 'primary'
+      let allCompanion = selectedBots.length > 0
+      selectedBots.forEach((b) => {
+        if (b.model && derivedModel === (store.modelOptions.value[0]?.value || 'primary')) {
+          derivedModel = b.model
+        }
+        if (b.bot_mode !== 'companion') allCompanion = false
+        try {
+          const ts = JSON.parse(b.allowed_tools || '[]')
+          if (Array.isArray(ts)) ts.forEach((t) => toolSet.add(String(t)))
+        } catch {
+          // ignore
+        }
+        try {
+          const ss = JSON.parse(b.skill_ids || '[]')
+          if (Array.isArray(ss)) ss.forEach((s) => skillSet.add(String(s)))
+        } catch {
+          // ignore
+        }
+      })
+
       const res = await BotHubApi.createBot({
         name: groupName.value.trim(),
         role_title: groupDesc.value.trim() || `多 Bot 协同群 (${groupMembers.value.length} 成员)`,
         avatar_style: groupAvatar.value,
-        model: 'deepseek-flash',
-        enable_thinking: true,
+        model: derivedModel,
+        bot_mode: allCompanion ? 'companion' : 'hybrid',
+        memory_policy: 'isolated',
+        enable_thinking: !allCompanion,
         is_group: true,
         member_ids: JSON.stringify(groupMembers.value),
         group_mode: groupMode.value,
         announcement: groupAnnouncement.value.trim(),
-        allowed_tools: '["read_url","web_search","query_nezha_nodes","manage_assets","manage_tasks","remember_fact","recall_memory"]',
-        system_prompt: groupDesc.value.trim() || '你是群聊协同协调官，整合各位成员观点并输出精确决策。',
+        allowed_tools: JSON.stringify(Array.from(toolSet)),
+        skill_ids: JSON.stringify(Array.from(skillSet)),
+        system_prompt: groupDesc.value.trim() || '根据群内成员性格与职责自然交流协同。',
       })
       store.notify('多 Bot 协同群聊创建成功')
       groupName.value = ''
@@ -124,19 +196,25 @@ async function handleSubmit() {
   try {
     const res = await BotHubApi.createBot({
       name: name.value.trim(),
-      role_title: roleTitle.value.trim() || '专属智能助理',
+      role_title: roleTitle.value.trim() || (botMode.value === 'companion' ? '专属生活伙伴' : '专属智能助理'),
       avatar_style: avatarStyle.value,
       model: model.value,
+      bot_mode: botMode.value,
+      memory_policy: memoryPolicy.value,
+      traits: traits.value.trim(),
       enable_thinking: enableThinking.value,
       is_group: false,
       member_ids: '[]',
       allowed_tools: JSON.stringify(allowedTools.value),
+      skill_ids: JSON.stringify(selectedSkillIds.value),
       system_prompt: systemPrompt.value.trim(),
     })
     store.notify('专属 Bot 创建并激活成功')
     name.value = ''
     roleTitle.value = ''
+    traits.value = ''
     systemPrompt.value = ''
+    selectedSkillIds.value = []
     closeModal()
     await store.loadDashboard(false)
     if (res.bot?.id) {
@@ -153,8 +231,8 @@ async function handleSubmit() {
 <template>
   <BaseModal
     :open="store.state.showCreateBotModal"
-    :title="mode === 'group' ? '组建多 Bot 协同群聊' : '招募全新专属 Bot 成员'"
-    :subtitle="mode === 'group' ? '编排多位专属 Bot 在同一时间线内按序或 @点名接力协同' : '定制动态机甲形象、思考偏好与最小权限工具白名单'"
+    :title="mode === 'group' ? '组建多 Bot 协同群聊' : '创造全新专属 Bot 伙伴'"
+    :subtitle="mode === 'group' ? '拉起独立人格成员在同一话题流按需互动与协作' : '赋予独立性格、记忆域、交流定位以及定制技能/工具'"
     max-width="2xl"
     @close="closeModal"
   >
@@ -172,9 +250,25 @@ async function handleSubmit() {
         leave-from-class="opacity-100"
         leave-to-class="opacity-0"
       >
-        <!-- Mode 1: Single Specialist Bot -->
+        <!-- Mode 1: Single Specialist / Companion Bot -->
         <div v-if="mode === 'bot'" key="bot" class="flex flex-col gap-3.5">
-          <BotAvatarPicker v-model="avatarStyle" :preview-name="name || '新专属 Bot'" />
+          <BotAvatarPicker v-model="avatarStyle" :preview-name="name || '新 Bot 伙伴'" />
+
+          <div class="modal-section flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-xs font-medium text-slate-200">交流定位 / 角色模式</span>
+              <span class="text-[11px] text-slate-400">
+                {{
+                  botMode === 'companion'
+                    ? '像真人朋友一样自然聊天陪伴，不主动套用死板汇报格式'
+                    : botMode === 'worker'
+                    ? '结果导向的干活专家，优先核验工具数据再下结论'
+                    : '兼顾自然沟通与工具执行'
+                }}
+              </span>
+            </div>
+            <SegmentedTabs v-model="botMode" :items="BOT_MODE_TABS" variant="subtle" aria-label="角色模式" />
+          </div>
 
           <div class="modal-section grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label class="flex flex-col gap-1.5 text-xs text-slate-300">
@@ -182,51 +276,91 @@ async function handleSubmit() {
               <input
                 v-model="name"
                 type="text"
-                placeholder="如：云账单精算师"
+                placeholder="如：阿彻 / 云账单管家 / 深夜酒馆"
                 required
                 class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
               />
             </label>
             <label class="flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>职责定位</span>
+              <span>关系定位 / 职责头衔</span>
               <input
                 v-model="roleTitle"
                 type="text"
-                placeholder="如：账单追踪与资源优化顾问"
+                :placeholder="botMode === 'companion' ? '如：毒舌却温暖的老朋友' : '如：服务器巡检与成本分析专员'"
                 required
                 class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
               />
             </label>
+            <label class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
+              <span>性格特质与说话口吻</span>
+              <input
+                v-model="traits"
+                type="text"
+                placeholder="如：说话简短直接、爱接梗、像真人发微信，不要每次列一二三点"
+                class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-xs text-white focus:border-[#f2b880]/60"
+              />
+            </label>
             <div class="flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>默认推理模型</span>
+              <span>推理模型 (动态实时读取)</span>
               <CustomSelect v-model="model" :options="store.modelOptions.value" aria-label="默认推理模型" />
             </div>
-            <div class="flex flex-col justify-end">
-              <ToggleSwitch v-model="enableThinking" label="默认开启深度思考" />
+            <div class="flex flex-col gap-1.5 text-xs text-slate-300">
+              <span>记忆隔离策略</span>
+              <CustomSelect v-model="memoryPolicy" :options="MEMORY_POLICY_OPTIONS" aria-label="记忆隔离策略" />
+            </div>
+            <div class="sm:col-span-2 flex items-center justify-between pt-1">
+              <ToggleSwitch v-model="enableThinking" label="默认开启深度思考推理链" />
             </div>
           </div>
 
           <div class="modal-section flex flex-col gap-3">
             <label class="flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>专属人设指令 (System Prompt)</span>
+              <span>灵魂背景与行为准则 (System Prompt)</span>
               <textarea
                 v-model="systemPrompt"
                 rows="3"
-                placeholder="描述它的思考风格、决策依据与输出偏好..."
+                placeholder="描写它的过往经历、与你的关系、遇到不同话题时该如何回应..."
                 class="auto-size-textarea w-full rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 resize-y"
               />
             </label>
 
             <div class="flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>授权工具集 ({{ allowedTools.length }}/{{ availableTools.length }})</span>
+              <span>内置工具白名单 ({{ allowedTools.length }}/{{ availableTools.length }})</span>
               <div class="flex flex-wrap gap-1.5">
                 <label
                   v-for="tool in availableTools"
                   :key="tool.id"
-                  class="min-h-[38px] sm:min-h-[32px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl border border-[#fff8ee]/12 bg-[#050811]/80 text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0] transition-colors"
+                  class="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-[#fff8ee]/12 bg-[#050811]/80 text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0] transition-colors"
                 >
                   <input v-model="allowedTools" type="checkbox" :value="tool.id" class="accent-[#f2b880]" />
                   <span>{{ tool.description }}</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-1.5 text-xs text-slate-300 pt-1 border-t border-[#fff8ee]/8">
+              <div class="flex items-center justify-between">
+                <span>挂载自定义技能 ({{ selectedSkillIds.length }}/{{ availableSkills.length }})</span>
+                <button
+                  type="button"
+                  @click="openSkillsWorkshop"
+                  class="text-[11px] text-[#f2b880] hover:underline cursor-pointer"
+                >
+                  + 去技能工坊新建
+                </button>
+              </div>
+              <div v-if="availableSkills.length === 0" class="text-[11px] text-slate-500">
+                暂无已启用的自定义技能，可随时在「技能工坊」创建后回来绑定。
+              </div>
+              <div v-else class="flex flex-wrap gap-1.5">
+                <label
+                  v-for="sk in availableSkills"
+                  :key="sk.id"
+                  class="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-[#fff8ee]/12 bg-[#050811]/80 text-xs text-slate-300 cursor-pointer hover:border-cyan-400/40 has-[:checked]:border-cyan-400/55 has-[:checked]:bg-cyan-500/14 has-[:checked]:text-cyan-200 transition-colors"
+                >
+                  <input v-model="selectedSkillIds" type="checkbox" :value="sk.id" class="accent-cyan-400" />
+                  <span>{{ sk.name }}</span>
+                  <span class="font-mono text-[10px] opacity-70">{{ sk.kind === 'webhook' ? 'API' : 'Doc' }}</span>
                 </label>
               </div>
             </div>
@@ -243,7 +377,7 @@ async function handleSubmit() {
               <input
                 v-model="groupName"
                 type="text"
-                placeholder="如：深夜故障联合应急群"
+                placeholder="如：深夜吐槽茶话会 / 生产故障联合群"
                 required
                 class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
               />
@@ -253,7 +387,7 @@ async function handleSubmit() {
               <input
                 v-model="groupDesc"
                 type="text"
-                placeholder="如：探针异常排查与架构评估"
+                placeholder="如：轻松聊天互相接梗 / 运维评估"
                 class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
               />
             </label>
@@ -262,8 +396,8 @@ async function handleSubmit() {
               <SegmentedTabs
                 v-model="groupMode"
                 :items="[
-                  { id: 'smart', label: '智能协同' },
-                  { id: 'sequential', label: '全员接力' },
+                  { id: 'smart', label: '智能编排' },
+                  { id: 'sequential', label: '轮流发言' },
                   { id: 'mention_only', label: '仅 @点名' },
                 ]"
                 variant="subtle"
@@ -275,7 +409,7 @@ async function handleSubmit() {
               <input
                 v-model="groupAnnouncement"
                 type="text"
-                placeholder="如：优先调用探针与资产工具核验事实后再讨论"
+                placeholder="如：各自带入本人性格与专长自然接话"
                 class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
               />
             </label>
@@ -283,8 +417,8 @@ async function handleSubmit() {
 
           <div class="modal-section flex flex-col gap-2.5">
             <div class="flex items-center justify-between gap-2">
-              <span class="text-xs font-medium text-slate-200">选择进群协同 Bot 成员（已选 {{ groupMembers.length }} 位）</span>
-              <span class="font-mono text-[10.5px] text-slate-400">支持 @点名 或按序接力协同</span>
+              <span class="text-xs font-medium text-slate-200">选择进群成员（已选 {{ groupMembers.length }} 位）</span>
+              <span class="font-mono text-[10.5px] text-slate-400">自动汇集所选成员的性格与可用技能</span>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">

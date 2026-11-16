@@ -110,7 +110,16 @@ func (s *Server) handleDeleteAgentSession(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleListAgentMemories(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	memories, err := s.store.ListAgentMemories(query, 100)
+	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+	var scopes []string
+	if scope != "" {
+		for _, part := range strings.Split(scope, ",") {
+			if trimmed := strings.TrimSpace(part); trimmed != "" {
+				scopes = append(scopes, trimmed)
+			}
+		}
+	}
+	memories, err := s.store.ListScopedMemories(scopes, query, 120)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "获取记忆列表失败: "+err.Error())
 		return
@@ -122,10 +131,12 @@ func (s *Server) handleListAgentMemories(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleSaveAgentMemory(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Scope    string `json:"scope"`
-		Category string `json:"category"`
-		FactKey  string `json:"fact_key"`
-		Content  string `json:"content"`
+		Scope      string `json:"scope"`
+		Category   string `json:"category"`
+		FactKey    string `json:"fact_key"`
+		Content    string `json:"content"`
+		Importance int    `json:"importance"`
+		Pinned     bool   `json:"pinned"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "无效请求体")
@@ -139,11 +150,84 @@ func (s *Server) handleSaveAgentMemory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "记忆键名与内容不能为空")
 		return
 	}
-	if err := s.store.SaveAgentMemoryWithScope(scope, cat, key, content); err != nil {
+	imp := req.Importance
+	if imp <= 0 {
+		imp = 3
+	}
+	if err := s.store.SaveAgentMemoryDetailed(scope, cat, key, content, imp, req.Pinned); err != nil {
 		writeError(w, http.StatusInternalServerError, "保存记忆失败: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleUpdateAgentMemory(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("id")), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "无效记忆 ID")
+		return
+	}
+	existing, err := s.store.GetAgentMemory(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "查询记忆失败: "+err.Error())
+		return
+	}
+	if existing == nil {
+		writeError(w, http.StatusNotFound, "记忆条目不存在")
+		return
+	}
+
+	var req struct {
+		Scope      *string `json:"scope"`
+		Category   *string `json:"category"`
+		FactKey    *string `json:"fact_key"`
+		Content    *string `json:"content"`
+		Importance *int    `json:"importance"`
+		Pinned     *bool   `json:"pinned"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效请求体")
+		return
+	}
+
+	scope := existing.Scope
+	if req.Scope != nil {
+		if v := notifier.StripEmoji(strings.TrimSpace(*req.Scope)); v != "" {
+			scope = v
+		}
+	}
+	cat := existing.Category
+	if req.Category != nil {
+		if v := notifier.StripEmoji(strings.TrimSpace(*req.Category)); v != "" {
+			cat = v
+		}
+	}
+	key := existing.FactKey
+	if req.FactKey != nil {
+		key = notifier.StripEmoji(strings.TrimSpace(*req.FactKey))
+	}
+	content := existing.Content
+	if req.Content != nil {
+		content = notifier.StripEmoji(strings.TrimSpace(*req.Content))
+	}
+	if key == "" || content == "" {
+		writeError(w, http.StatusBadRequest, "记忆键名与内容不能为空")
+		return
+	}
+	imp := existing.Importance
+	if req.Importance != nil && *req.Importance > 0 {
+		imp = *req.Importance
+	}
+	pinned := existing.Pinned
+	if req.Pinned != nil {
+		pinned = *req.Pinned
+	}
+	if err := s.store.UpdateAgentMemory(id, scope, cat, key, content, imp, pinned); err != nil {
+		writeError(w, http.StatusInternalServerError, "更新记忆失败: "+err.Error())
+		return
+	}
+	updated, _ := s.store.GetAgentMemory(id)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "memory": updated})
 }
 
 func (s *Server) handleDeleteAgentMemory(w http.ResponseWriter, r *http.Request) {

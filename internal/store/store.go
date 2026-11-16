@@ -165,13 +165,61 @@ CREATE INDEX IF NOT EXISTS idx_agent_messages_session ON agent_messages(session_
 
 CREATE TABLE IF NOT EXISTS agent_memories (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	scope TEXT NOT NULL DEFAULT 'global',
 	category TEXT NOT NULL DEFAULT 'general',
-	fact_key TEXT NOT NULL UNIQUE,
+	fact_key TEXT NOT NULL,
 	content TEXT NOT NULL,
+	importance INTEGER NOT NULL DEFAULT 3,
+	pinned INTEGER NOT NULL DEFAULT 0,
+	recall_count INTEGER NOT NULL DEFAULT 0,
+	last_recalled_at TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	UNIQUE(scope, fact_key)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_memories_cat ON agent_memories(category, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope, pinned DESC, importance DESC, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS bot_threads (
+	id TEXT PRIMARY KEY,
+	bot_id TEXT NOT NULL,
+	title TEXT NOT NULL,
+	summary TEXT NOT NULL DEFAULT '',
+	archived INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_agent_memories_cat ON agent_memories(category, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bot_threads_bot ON bot_threads(bot_id, archived, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS skills (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	slug TEXT NOT NULL UNIQUE,
+	kind TEXT NOT NULL DEFAULT 'prompt',
+	description TEXT NOT NULL DEFAULT '',
+	instruction TEXT NOT NULL DEFAULT '',
+	http_method TEXT NOT NULL DEFAULT 'GET',
+	http_url TEXT NOT NULL DEFAULT '',
+	http_headers TEXT NOT NULL DEFAULT '{}',
+	params_schema TEXT NOT NULL DEFAULT '[]',
+	enabled INTEGER NOT NULL DEFAULT 1,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bot_execution_logs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	bot_id TEXT NOT NULL,
+	thread_id TEXT NOT NULL DEFAULT '',
+	exec_type TEXT NOT NULL,
+	name TEXT NOT NULL,
+	input_summary TEXT NOT NULL DEFAULT '',
+	output_summary TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'ok',
+	duration_ms INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bot_exec_logs_bot ON bot_execution_logs(bot_id, id DESC);
 
 CREATE TABLE IF NOT EXISTS notifications (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -226,17 +274,85 @@ CREATE TABLE IF NOT EXISTS bots (
 		`ALTER TABLE agent_messages ADD COLUMN reply_to_id INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE agent_messages ADD COLUMN reply_preview TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE agent_messages ADD COLUMN model_used TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE agent_messages ADD COLUMN thread_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE bots ADD COLUMN bot_mode TEXT NOT NULL DEFAULT 'hybrid'`,
+		`ALTER TABLE bots ADD COLUMN memory_policy TEXT NOT NULL DEFAULT 'standard'`,
+		`ALTER TABLE bots ADD COLUMN skill_ids TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE bots ADD COLUMN traits TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE bots ADD COLUMN active_thread_id TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range alters {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 			return err
 		}
 	}
+	if err := s.migrateScopedMemoriesTable(); err != nil {
+		return err
+	}
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot ON agent_messages(bot_id, id ASC)`)
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot_thread ON agent_messages(bot_id, thread_id, id ASC)`)
 	_, _ = s.db.Exec(`UPDATE bots SET is_builtin = 0 WHERE is_builtin = 1`)
 	_, _ = s.db.Exec(`UPDATE bots SET is_group = 1 WHERE id = 'team_room' AND is_group = 0`)
 	_, _ = s.db.Exec(`DELETE FROM configs WHERE key IN ('wecom_corpid', 'wecom_agentid', 'wecom_secret', 'wecom_touser', 'pushplus_token')`)
 	_, _ = s.db.Exec(`UPDATE configs SET value = 'native' WHERE key = 'push_channel' AND value != 'native'`)
+	return nil
+}
+
+func (s *Store) migrateScopedMemoriesTable() error {
+	var createSQL string
+	err := s.db.QueryRow(`SELECT COALESCE(sql, '') FROM sqlite_master WHERE type='table' AND name='agent_memories'`).Scan(&createSQL)
+	if err != nil {
+		return nil
+	}
+	needsTableRebuild := strings.Contains(createSQL, "fact_key TEXT NOT NULL UNIQUE")
+	if needsTableRebuild {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		rebuildStmts := []string{
+			`CREATE TABLE agent_memories_v2 (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				scope TEXT NOT NULL DEFAULT 'global',
+				category TEXT NOT NULL DEFAULT 'general',
+				fact_key TEXT NOT NULL,
+				content TEXT NOT NULL,
+				importance INTEGER NOT NULL DEFAULT 3,
+				pinned INTEGER NOT NULL DEFAULT 0,
+				recall_count INTEGER NOT NULL DEFAULT 0,
+				last_recalled_at TEXT NOT NULL DEFAULT '',
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL,
+				UNIQUE(scope, fact_key)
+			)`,
+			`INSERT OR IGNORE INTO agent_memories_v2 (id, scope, category, fact_key, content, created_at, updated_at)
+			 SELECT id, COALESCE(NULLIF(TRIM(scope), ''), 'global'), category, fact_key, content, created_at, updated_at FROM agent_memories`,
+			`DROP TABLE agent_memories`,
+			`ALTER TABLE agent_memories_v2 RENAME TO agent_memories`,
+			`CREATE INDEX IF NOT EXISTS idx_agent_memories_cat ON agent_memories(category, updated_at DESC)`,
+			`CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope, pinned DESC, importance DESC, updated_at DESC)`,
+		}
+		for _, q := range rebuildStmts {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	}
+
+	memAlters := []string{
+		`ALTER TABLE agent_memories ADD COLUMN importance INTEGER NOT NULL DEFAULT 3`,
+		`ALTER TABLE agent_memories ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE agent_memories ADD COLUMN recall_count INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE agent_memories ADD COLUMN last_recalled_at TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, stmt := range memAlters {
+		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return err
+		}
+	}
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope, pinned DESC, importance DESC, updated_at DESC)`)
 	return nil
 }
 
@@ -263,9 +379,6 @@ func (s *Store) seedDefaults() error {
 		activePersona = DefaultActivePersona
 	}
 	nezhaDBPath := strings.TrimSpace(os.Getenv("BOTHUB_NEZHA_DB_PATH"))
-	if nezhaDBPath == "" {
-		nezhaDBPath = DefaultNezhaDBPath
-	}
 
 	lightKey := strings.TrimSpace(os.Getenv("BOTHUB_LIGHT_API_KEY"))
 	lightBaseURL := strings.TrimSpace(os.Getenv("BOTHUB_LIGHT_BASE_URL"))

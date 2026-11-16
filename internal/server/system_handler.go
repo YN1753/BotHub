@@ -75,6 +75,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	memories, _ := s.store.ListAgentMemories("", 50)
 	notifications, _ := s.store.ListNotifications(0, 40, false)
 	bots, _ := s.store.ListBots()
+	skills, _ := s.store.ListSkills()
 	modelPool := store.MaskModelPool(s.store.GetModelPool())
 	var modelHealth any
 	if s.agent != nil {
@@ -95,11 +96,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"modules":         tasks, // 兼容前端历史模块字段
 		"tasks":           tasks,
 		"bots":            bots,
+		"skills":          skills,
 		"model_pool":      modelPool,
 		"model_health":    modelHealth,
 		"available_tools": agent.AvailableToolsPayload(),
 		"templates":       templates,
-		"personas":        agent.BuiltinPersonas(),
 		"agent_sessions":  sessions,
 		"agent_memories":  memories,
 		"notifications":   notifications,
@@ -179,6 +180,7 @@ type BackupData struct {
 	Assets        []store.Asset       `json:"assets"`
 	Tasks         []store.Task        `json:"tasks"`
 	Bots          []store.Bot         `json:"bots,omitempty"`
+	Skills        []store.Skill       `json:"skills,omitempty"`
 	AgentMemories []store.AgentMemory `json:"agent_memories,omitempty"`
 }
 
@@ -194,6 +196,7 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	bots, _ := s.store.ListBots()
+	skills, _ := s.store.ListSkills()
 	memories, _ := s.store.ListAgentMemories("", 500)
 	cfgs, _ := s.store.GetAllConfigs()
 	delete(cfgs, store.KeyAdminPassHash)
@@ -206,6 +209,7 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 		Assets:        assets,
 		Tasks:         tasks,
 		Bots:          bots,
+		Skills:        skills,
 		AgentMemories: memories,
 	}
 
@@ -270,15 +274,26 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 4. Restore Agent Memories (preserve scope)
+	// 4. Restore Agent Memories (preserve scope, importance, pinned)
 	for _, m := range backup.AgentMemories {
 		if strings.TrimSpace(m.FactKey) == "" || strings.TrimSpace(m.Content) == "" {
 			continue
 		}
-		_ = s.store.SaveAgentMemoryWithScope(m.Scope, m.Category, m.FactKey, m.Content)
+		_ = s.store.SaveAgentMemoryDetailed(m.Scope, m.Category, m.FactKey, m.Content, m.Importance, m.Pinned)
 	}
 
-	// 5. Restore Custom Bots & Group Configurations
+	// 5. Restore Custom Skills
+	skillsCount := 0
+	for _, sk := range backup.Skills {
+		if strings.TrimSpace(sk.ID) == "" || strings.TrimSpace(sk.Name) == "" {
+			continue
+		}
+		if err := s.store.SaveSkill(sk); err == nil {
+			skillsCount++
+		}
+	}
+
+	// 6. Restore Custom Bots & Group Configurations
 	botsCount := 0
 	for _, b := range backup.Bots {
 		if strings.TrimSpace(b.ID) == "" || strings.TrimSpace(b.Name) == "" {
@@ -289,16 +304,17 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 6. Reload scheduler
+	// 7. Reload scheduler
 	if s.scheduler != nil {
 		_ = s.scheduler.Reload()
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":              true,
-		"message":         fmt.Sprintf("备份恢复成功：已恢复 %d 个资产，%d 个任务，%d 个 Bot 与全局配置", assetsCount, tasksCount, botsCount),
+		"message":         fmt.Sprintf("备份恢复成功：已恢复 %d 个资产，%d 个任务，%d 个技能，%d 个 Bot 与全局配置", assetsCount, tasksCount, skillsCount, botsCount),
 		"assets_restored": assetsCount,
 		"tasks_restored":  tasksCount,
+		"skills_restored": skillsCount,
 		"bots_restored":   botsCount,
 	})
 }

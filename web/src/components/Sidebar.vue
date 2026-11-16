@@ -377,30 +377,38 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
         </div>
       </div>
 
-      <!-- Minimal 3-Tool Footer -->
-      <div class="p-2.5 border-t border-[#fff8ee]/8 grid grid-cols-3 gap-1 pb-[max(0.625rem,env(safe-area-inset-bottom,0.625rem))]">
+      <!-- Minimal 4-Tool Footer -->
+      <div class="p-2.5 border-t border-[#fff8ee]/8 grid grid-cols-4 gap-1 pb-[max(0.625rem,env(safe-area-inset-bottom,0.625rem))]">
         <button
           type="button"
           @click="store.state.showMemoriesModal = true; emit('closeMobile')"
-          class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1.5 rounded-xl text-xs text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.04] cursor-pointer"
+          class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1 rounded-xl text-[11.5px] text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.04] cursor-pointer"
         >
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a4 4 0 0 0-4 4v1a3 3 0 0 0-3 3v1a3 3 0 0 0 2 2.83V17a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3v-3.17A3 3 0 0 0 19 11v-1a3 3 0 0 0-3-3V6a4 4 0 0 0-4-4z" /><line x1="12" y1="7" x2="12" y2="15" /></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a4 4 0 0 0-4 4v1a3 3 0 0 0-3 3v1a3 3 0 0 0 2 2.83V17a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3v-3.17A3 3 0 0 0 19 11v-1a3 3 0 0 0-3-3V6a4 4 0 0 0-4-4z" /><line x1="12" y1="7" x2="12" y2="15" /></svg>
           <span>记忆</span>
         </button>
         <button
           type="button"
-          @click="store.state.showLogsModal = true; emit('closeMobile')"
-          class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1.5 rounded-xl text-xs text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.04] cursor-pointer"
+          @click="store.state.showSkillsModal = true; emit('closeMobile')"
+          class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1 rounded-xl text-[11.5px] text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.04] cursor-pointer"
         >
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg>
+          <span>技能</span>
+        </button>
+        <button
+          type="button"
+          @click="store.state.showLogsModal = true; emit('closeMobile')"
+          class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1 rounded-xl text-[11.5px] text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.04] cursor-pointer"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
           <span>流水</span>
         </button>
         <button
           type="button"
           @click="store.state.showSettingsModal = true; emit('closeMobile')"
-          class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1.5 rounded-xl text-xs text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.04] cursor-pointer"
+          class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1 rounded-xl text-[11.5px] text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.04] cursor-pointer"
         >
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
           <span>设置</span>
         </button>
       </div>

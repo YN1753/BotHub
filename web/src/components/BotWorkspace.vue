@@ -5,7 +5,7 @@ import { BotHubApi } from '../api/client'
 import { botStateLabel, describeCron, formatTime, formatTimelineDivider, groupModeLabel } from '../utils/format'
 import { renderSafeMarkdown } from '../utils/markdown'
 import { applySiblingStaggerFallback, isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
-import type { Bot } from '../types/bothub'
+import type { AgentMemory, Bot, BotMode, MemoryPolicy } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
 import BotGroupAvatar from './BotGroupAvatar.vue'
 import BotAvatarPicker from './BotAvatarPicker.vue'
@@ -152,10 +152,45 @@ const cfgPrompt = ref('')
 const cfgModel = ref('primary')
 const cfgAvatar = ref('butler:gold')
 const cfgThinking = ref(true)
+const cfgBotMode = ref<BotMode>('hybrid')
+const cfgMemoryPolicy = ref<MemoryPolicy>('standard')
+const cfgTraits = ref('')
 const cfgTools = ref<string[]>([])
+const cfgSkillIds = ref<string[]>([])
 const cfgMembers = ref<string[]>([])
 const cfgGroupMode = ref('smart')
 const savingProfile = ref(false)
+
+// Inline Bot-Scoped Memory CRUD
+const newMemKey = ref('')
+const newMemContent = ref('')
+const newMemCategory = ref('preference')
+const newMemImportance = ref(3)
+const newMemPinned = ref(false)
+const savingMem = ref(false)
+const editingMemId = ref<number | null>(null)
+const editMemContent = ref('')
+
+// Inline Topic Thread rename
+const renamingThreadId = ref<string | null>(null)
+const renameThreadTitle = ref('')
+
+const BOT_MODE_TABS = [
+  { id: 'companion', label: '陪伴聊天型' },
+  { id: 'hybrid', label: '综合协同型' },
+  { id: 'worker', label: '干活执行型' },
+]
+
+const MEMORY_POLICY_OPTIONS = [
+  { value: 'isolated', label: '严格私有 (仅 Bot 自身可见)' },
+  { value: 'standard', label: '私有 + 全局共享事实' },
+]
+
+function botModeLabel(mode?: string): string {
+  if (mode === 'companion') return '陪伴'
+  if (mode === 'worker') return '执行'
+  return '全能'
+}
 
 const VIEW_TABS = [
   { id: 'stream', label: '对话流' },
@@ -165,6 +200,7 @@ const VIEW_TABS = [
 ]
 
 const availableTools = computed(() => store.state.availableTools || [])
+const availableSkills = computed(() => (store.state.skills || []).filter((s) => s.enabled !== false))
 
 const botToolBadges = computed(() => {
   if (!bot.value) return []
@@ -197,14 +233,25 @@ watch(
     cfgModel.value = normModel
     cfgAvatar.value = b.avatar_style || 'cyan'
     cfgThinking.value = b.enable_thinking !== false
+    cfgBotMode.value = (b.bot_mode as BotMode) || 'hybrid'
+    cfgMemoryPolicy.value = (b.memory_policy as MemoryPolicy) || 'standard'
+    cfgTraits.value = b.traits || ''
     cfgGroupMode.value = b.group_mode || 'smart'
     announcementDismissed.value = false
     replyTarget.value = null
+    renamingThreadId.value = null
+    editingMemId.value = null
     try {
       const arr = JSON.parse(b.allowed_tools || '[]')
       cfgTools.value = Array.isArray(arr) ? arr : []
     } catch {
       cfgTools.value = []
+    }
+    try {
+      const sArr = JSON.parse(b.skill_ids || '[]')
+      cfgSkillIds.value = Array.isArray(sArr) ? sArr : []
+    } catch {
+      cfgSkillIds.value = []
     }
     try {
       const mArr = JSON.parse(b.member_ids || '[]')
@@ -323,43 +370,122 @@ const botRoutines = computed(() => {
 })
 
 const scopedMemories = computed(() => {
-  const bScope = `bot:${bot.value?.id || ''}`
+  const serverMems = store.state.botMemories || []
+  if (serverMems.length > 0) return serverMems
+  const cur = bot.value
+  if (!cur) return []
+  const bScope = `bot:${cur.id}`
+  if (cur.memory_policy === 'isolated') {
+    return store.state.memories.filter((m) => m.scope === bScope)
+  }
   return store.state.memories.filter((m) => !m.scope || m.scope === 'global' || m.scope === bScope)
 })
+
+async function addBotMemory() {
+  if (!bot.value || !newMemKey.value.trim() || !newMemContent.value.trim() || savingMem.value) return
+  savingMem.value = true
+  try {
+    await BotHubApi.saveMemory({
+      scope: `bot:${bot.value.id}`,
+      category: newMemCategory.value,
+      fact_key: newMemKey.value.trim(),
+      content: newMemContent.value.trim(),
+      importance: newMemImportance.value,
+      pinned: newMemPinned.value,
+    })
+    newMemKey.value = ''
+    newMemContent.value = ''
+    newMemPinned.value = false
+    store.notify(`已写入「${bot.value.name}」专属记忆`)
+    await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
+  } catch (err: any) {
+    store.notify(err.message || '写入记忆失败')
+  } finally {
+    savingMem.value = false
+  }
+}
+
+async function saveInlineMemEdit(mem: AgentMemory) {
+  if (!editMemContent.value.trim()) return
+  try {
+    await BotHubApi.updateMemory(mem.id, { content: editMemContent.value.trim() })
+    editingMemId.value = null
+    store.notify('记忆条目已更新')
+    await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
+  } catch (err: any) {
+    store.notify(err.message || '更新失败')
+  }
+}
+
+async function toggleBotMemoryPin(mem: AgentMemory) {
+  try {
+    await BotHubApi.updateMemory(mem.id, { pinned: !mem.pinned })
+    await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
+  } catch (err: any) {
+    store.notify(err.message || '操作失败')
+  }
+}
+
+async function deleteBotMemory(id: number) {
+  try {
+    await BotHubApi.deleteMemory(id)
+    store.notify('记忆条目已移除')
+    await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
+  } catch (err: any) {
+    store.notify(err.message || '移除失败')
+  }
+}
+
+function openScopedMemoriesManager() {
+  if (!bot.value) return
+  store.state.memoryModalDefaultScope = `bot:${bot.value.id}`
+  store.state.showMemoriesModal = true
+}
 
 const activityEntries = computed(() => {
   const cur = bot.value
   if (!cur) return []
-  const allowed = cur.allowed_tools || ''
-  const items: Array<{ title: string; time: string; detail: string }> = []
+  const items: Array<{ title: string; time: string; detail: string; status?: string }> = []
+
+  // 1. Real per-Bot execution audit logs (tools, custom skills, chat/routine completions)
+  ;(store.state.botExecutions || []).forEach((ex) => {
+    const kindLabel =
+      ex.action_kind === 'tool'
+        ? `工具调用 · ${ex.tool_name}`
+        : ex.action_kind === 'skill'
+        ? `技能调用 · ${ex.tool_name}`
+        : ex.action_kind === 'routine'
+        ? '例程任务'
+        : '对话响应'
+    items.push({
+      title: kindLabel,
+      time: `${formatTime(ex.created_at)} · ${ex.duration_ms}ms`,
+      detail: ex.summary || ex.tool_name,
+      status: ex.status,
+    })
+  })
+
+  // 2. Tasks explicitly bound to THIS Bot
+  const boundTaskIDs = new Set<string>()
   botRoutines.value.forEach((t) => {
+    boundTaskIDs.add(t.id)
     if (t.last_run) {
       items.push({
-        title: `例程执行 · ${t.name}`,
+        title: `绑定例程 · ${t.name}`,
         time: `${formatTime(t.last_run.started_at)} · ${t.last_run.duration_ms}ms`,
         detail: t.last_run.summary,
+        status: t.last_run.status,
       })
     }
   })
+
+  // 3. Notifications ONLY if emitted by this Bot or one of its bound tasks (strict isolation!)
   store.state.notifications
-    .filter((n) => {
-      const s = n.source.toLowerCase()
-      if (cur.is_group) return true
-      if (s.includes('nezha') || s.includes('alert') || s.includes('webhook')) {
-        return allowed.includes('query_nezha_nodes')
-      }
-      if (s.includes('radar') || s.includes('bili')) {
-        return allowed.includes('web_search')
-      }
-      if (s.includes('morning') || s.includes('asset')) {
-        return allowed.includes('manage_assets')
-      }
-      return false
-    })
-    .slice(0, 10)
+    .filter((n) => boundTaskIDs.has(n.source) || n.source === `bot:${cur.id}` || n.source === cur.id)
+    .slice(0, 12)
     .forEach((n) => {
       items.push({
-        title: `推送投递 · ${n.title}`,
+        title: `专属推送 · ${n.title}`,
         time: formatTime(n.created_at),
         detail: n.summary,
       })
@@ -761,6 +887,7 @@ async function sendPrompt(overrideText?: string) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         bot_id: botId,
+        thread_id: store.state.activeThreadId || '',
         message: msg,
         model: selectedModel.value,
         enable_thinking: enableThinking.value,
@@ -897,9 +1024,12 @@ async function sendPrompt(overrideText?: string) {
     streamStatus.value = '就绪'
     store.playSubtleChime()
     await store.loadDashboard(false)
-    // Reload synced server IDs quietly so reply/delete have accurate IDs
+    // Reload synced server IDs, threads, memories and execution logs quietly
     if (curBot?.id === store.state.activeBotId) {
-      const synced = await BotHubApi.getBotMessages(curBot.id).catch(() => null)
+      const synced = await BotHubApi.getBotMessages(curBot.id, store.state.activeThreadId).catch(() => null)
+      if (synced?.threads) store.state.botThreads = synced.threads
+      if (synced?.memories) store.state.botMemories = synced.memories
+      if (synced?.executions) store.state.botExecutions = synced.executions
       if (synced?.messages && !store.state.isStreaming) {
         const srvMsgs = synced.messages.filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'system')
         if (srvMsgs.length >= store.state.timeline.length) {
@@ -1010,20 +1140,38 @@ async function saveBotProfile() {
       role_title: cfgRole.value.trim(),
       avatar_style: cfgAvatar.value,
       model: cfgModel.value,
+      bot_mode: cfgBotMode.value,
+      memory_policy: cfgMemoryPolicy.value,
+      traits: cfgTraits.value.trim(),
       enable_thinking: cfgThinking.value,
       system_prompt: cfgPrompt.value.trim(),
       allowed_tools: JSON.stringify(cfgTools.value),
+      skill_ids: JSON.stringify(cfgSkillIds.value),
       member_ids: JSON.stringify(cfgMembers.value),
       group_mode: cfgGroupMode.value,
       is_pinned: bot.value.is_pinned,
     })
-    store.notify('Bot 人设与工具权限已更新')
-    await store.loadDashboard(false)
+    store.notify('Bot 人设、记忆策略与技能权限已更新')
+    await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
   } catch (err: any) {
     store.notify(err.message)
   } finally {
     savingProfile.value = false
   }
+}
+
+function startRenameThread(id: string, curTitle: string) {
+  renamingThreadId.value = id
+  renameThreadTitle.value = curTitle
+}
+
+async function commitRenameThread() {
+  if (!renamingThreadId.value) return
+  const title = renameThreadTitle.value.trim()
+  if (title) {
+    await store.renameThread(renamingThreadId.value, title)
+  }
+  renamingThreadId.value = null
 }
 
 async function deleteCustomBot() {
@@ -1093,6 +1241,19 @@ function stateBadgeClass(state?: string): string {
               class="hidden sm:inline-flex font-mono text-[10px] px-2 py-0.5 rounded-full border border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] text-slate-300 leading-none shrink-0"
             >
               {{ groupModeLabel(bot?.group_mode) }}
+            </span>
+            <span
+              v-else-if="bot"
+              :class="[
+                'hidden sm:inline-flex font-mono text-[10px] px-2 py-0.5 rounded-full border leading-none shrink-0',
+                bot.bot_mode === 'companion'
+                  ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200'
+                  : bot.bot_mode === 'worker'
+                  ? 'border-cyan-400/35 bg-cyan-500/10 text-cyan-200'
+                  : 'border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] text-slate-300',
+              ]"
+            >
+              {{ botModeLabel(bot.bot_mode) }}
             </span>
             <span
               v-if="bot?.state && bot.state !== 'idle'"
@@ -1243,6 +1404,89 @@ function stateBadgeClass(state?: string): string {
       enter-to-class="opacity-100 translate-y-0"
     >
       <div v-show="store.state.botView === 'stream'" class="flex-1 min-h-0 flex flex-col">
+        <!-- Per-Bot / Per-Group Scoped Topic Threads Bar -->
+        <div
+          v-if="bot"
+          class="px-4 md:px-6 py-1.5 border-b border-[#fff8ee]/8 bg-[#050811]/75 flex items-center gap-1.5 overflow-x-auto shrink-0 no-scrollbar"
+        >
+          <span class="text-[10.5px] font-mono text-slate-500 shrink-0 mr-1">话题</span>
+          <button
+            type="button"
+            @click="store.switchThread('')"
+            :class="[
+              'px-2.5 py-1 rounded-lg text-[11px] whitespace-nowrap cursor-pointer transition-colors border',
+              !store.state.activeThreadId
+                ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f7cba0] font-medium'
+                : 'border-[#fff8ee]/10 bg-transparent text-slate-400 hover:text-slate-200',
+            ]"
+          >
+            主时间线
+          </button>
+
+          <div
+            v-for="th in store.state.botThreads"
+            :key="th.id"
+            class="inline-flex items-center gap-1 shrink-0"
+          >
+            <input
+              v-if="renamingThreadId === th.id"
+              v-model="renameThreadTitle"
+              type="text"
+              @keydown.enter.prevent="commitRenameThread"
+              @keydown.escape="renamingThreadId = null"
+              @blur="commitRenameThread"
+              class="w-32 px-2 py-0.5 rounded-lg border border-[#f2b880]/60 bg-[#070a16] text-[11px] text-white"
+            />
+            <div
+              v-else
+              :class="[
+                'inline-flex items-center gap-1 rounded-lg border transition-colors',
+                store.state.activeThreadId === th.id
+                  ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f7cba0]'
+                  : 'border-[#fff8ee]/10 bg-transparent text-slate-400 hover:text-slate-200',
+              ]"
+            >
+              <button
+                type="button"
+                @click="store.switchThread(th.id)"
+                @dblclick="startRenameThread(th.id, th.title)"
+                class="px-2.5 py-1 text-[11px] whitespace-nowrap cursor-pointer font-medium"
+              >
+                {{ th.title }}
+                <span v-if="th.message_count > 0" class="font-mono text-[10px] opacity-65 ml-0.5">
+                  ({{ th.message_count }})
+                </span>
+              </button>
+              <button
+                v-if="store.state.activeThreadId === th.id"
+                type="button"
+                title="重命名话题"
+                @click.stop="startRenameThread(th.id, th.title)"
+                class="pr-1 text-[10px] text-slate-400 hover:text-[#f2b880] cursor-pointer"
+              >
+                改
+              </button>
+              <button
+                v-if="store.state.activeThreadId === th.id"
+                type="button"
+                title="删除此话题"
+                @click.stop="store.deleteThread(th.id)"
+                class="pr-2 text-[10px] text-slate-400 hover:text-rose-300 cursor-pointer"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            @click="store.createThread('')"
+            class="ml-auto shrink-0 px-2.5 py-1 rounded-lg border border-dashed border-[#fff8ee]/16 text-[11px] text-slate-300 hover:border-[#f2b880]/50 hover:text-[#f2b880] cursor-pointer whitespace-nowrap"
+          >
+            + 新话题
+          </button>
+        </div>
+
         <!-- Slide-Down In-Chat Search Bar (Cmd/Ctrl + F) -->
         <Transition
           enter-active-class="transition duration-160 ease-out"
@@ -1980,20 +2224,38 @@ function stateBadgeClass(state?: string): string {
           <form @submit.prevent="saveBotProfile" class="luxury-card rounded-2xl p-5 flex flex-col gap-4">
             <BotAvatarPicker v-model="cfgAvatar" :preview-name="cfgName || bot?.name" />
 
+            <div class="flex flex-col gap-2 text-xs text-slate-300">
+              <span>交流定位 / 角色模式</span>
+              <SegmentedTabs v-model="cfgBotMode" :items="BOT_MODE_TABS" variant="subtle" aria-label="交流定位" />
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <label class="flex flex-col gap-1.5 text-xs text-slate-300">
                 <span>{{ isGroupBot ? '群聊名称' : 'Bot 名称' }}</span>
                 <input v-model="cfgName" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
               </label>
               <label class="flex flex-col gap-1.5 text-xs text-slate-300">
-                <span>职责定位</span>
+                <span>职责定位 / 关系称谓</span>
                 <input v-model="cfgRole" type="text" required class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
+              </label>
+              <label class="md:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
+                <span>性格特质与沟通口吻</span>
+                <input
+                  v-model="cfgTraits"
+                  type="text"
+                  placeholder="如：说话像真人发消息一样简短有温度 / 严谨务实直击根因"
+                  class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-xs text-white focus:border-[#f2b880]/60"
+                />
               </label>
               <div class="flex flex-col gap-1.5 text-xs text-slate-300">
                 <span>默认推理模型</span>
                 <CustomSelect v-model="cfgModel" :options="store.modelOptions.value" aria-label="默认推理模型" />
               </div>
-              <div class="flex flex-col justify-end">
+              <div class="flex flex-col gap-1.5 text-xs text-slate-300">
+                <span>记忆隔离策略</span>
+                <CustomSelect v-model="cfgMemoryPolicy" :options="MEMORY_POLICY_OPTIONS" aria-label="记忆隔离策略" />
+              </div>
+              <div class="md:col-span-2 flex items-center justify-between">
                 <ToggleSwitch v-model="cfgThinking" label="默认开启深度思考" />
               </div>
 
@@ -2040,15 +2302,42 @@ function stateBadgeClass(state?: string): string {
                 <textarea v-model="cfgPrompt" rows="4" class="auto-size-textarea rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 resize-y" />
               </label>
               <div class="md:col-span-2 flex flex-col gap-2 text-xs text-slate-300">
-                <span>绑定可用工具集 (最小权限白名单)</span>
+                <span>绑定内置工具集 ({{ cfgTools.length }}/{{ availableTools.length }})</span>
                 <div class="flex flex-wrap gap-2">
                   <label
                     v-for="tool in availableTools"
                     :key="tool.id"
-                    class="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#fff8ee]/12 bg-[#060a16]/75 font-mono text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0] transition-colors"
+                    class="min-h-[36px] inline-flex items-center gap-2 px-3 py-1 rounded-xl border border-[#fff8ee]/12 bg-[#060a16]/75 font-mono text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0] transition-colors"
                   >
                     <input v-model="cfgTools" type="checkbox" :value="tool.id" class="accent-[#f2b880]" />
                     <span>{{ tool.description }}</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="md:col-span-2 flex flex-col gap-2 text-xs text-slate-300 pt-2 border-t border-[#fff8ee]/8">
+                <div class="flex items-center justify-between">
+                  <span>挂载自定义技能 ({{ cfgSkillIds.length }}/{{ availableSkills.length }})</span>
+                  <button
+                    type="button"
+                    @click="store.state.showSkillsModal = true"
+                    class="text-[11px] text-[#f2b880] hover:underline cursor-pointer"
+                  >
+                    打开技能工坊
+                  </button>
+                </div>
+                <div v-if="availableSkills.length === 0" class="text-[11px] text-slate-500">
+                  暂无已启用的自定义技能，点击右上「打开技能工坊」创建自己的 Playbook 或 Webhook 工具。
+                </div>
+                <div v-else class="flex flex-wrap gap-2">
+                  <label
+                    v-for="sk in availableSkills"
+                    :key="sk.id"
+                    class="min-h-[36px] inline-flex items-center gap-2 px-3 py-1 rounded-xl border border-[#fff8ee]/12 bg-[#060a16]/75 text-xs text-slate-300 cursor-pointer hover:border-cyan-400/40 has-[:checked]:border-cyan-400/55 has-[:checked]:bg-cyan-500/14 has-[:checked]:text-cyan-200 transition-colors"
+                  >
+                    <input v-model="cfgSkillIds" type="checkbox" :value="sk.id" class="accent-cyan-400" />
+                    <span>{{ sk.name }}</span>
+                    <span class="font-mono text-[10px] opacity-70">{{ sk.kind === 'webhook' ? 'API' : 'Doc' }}</span>
                   </label>
                 </div>
               </div>
@@ -2074,9 +2363,61 @@ function stateBadgeClass(state?: string): string {
             </div>
           </form>
 
-          <div class="vesper-card rounded-2xl p-5">
-            <h3 class="font-semibold text-sm text-white mb-3">关联记忆背景 (全局 + 专属域)</h3>
-            <div v-if="scopedMemories.length === 0" class="text-xs text-slate-500">暂无关联长期记忆</div>
+          <!-- Scoped Memory CRUD inline inside Bot/Group Config -->
+          <div class="vesper-card rounded-2xl p-5 flex flex-col gap-3">
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <h3 class="font-semibold text-sm text-white">
+                  {{ isGroupBot ? '当前群聊专属记忆' : '当前 Bot 记忆域' }} ({{ scopedMemories.length }})
+                </h3>
+                <p class="text-[11px] text-slate-400 mt-0.5">
+                  {{
+                    cfgMemoryPolicy === 'isolated'
+                      ? '当前策略为严格私有：仅读取当前 Bot/群聊的独立记忆，绝不与其他 Bot 混淆。'
+                      : '当前策略为私有优先 + 全局共享：当前 Bot 专属记忆权重更高，并保留全局基础设施事实。'
+                  }}
+                </p>
+              </div>
+              <button
+                type="button"
+                @click="openScopedMemoriesManager"
+                class="px-3 py-1.5 rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] cursor-pointer"
+              >
+                在记忆库管理
+              </button>
+            </div>
+
+            <form @submit.prevent="addBotMemory" class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+              <input
+                v-model="newMemKey"
+                type="text"
+                placeholder="记忆键名 (如 preferred_tone)"
+                required
+                class="sm:col-span-3 min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 font-mono text-xs text-white"
+              />
+              <input
+                v-model="newMemContent"
+                type="text"
+                placeholder="写给它记住的专属事实或偏好..."
+                required
+                class="sm:col-span-6 min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white"
+              />
+              <label class="sm:col-span-1 inline-flex items-center justify-center gap-1 text-[11px] text-slate-300 cursor-pointer">
+                <input v-model="newMemPinned" type="checkbox" class="accent-[#f2b880]" />
+                <span>置顶</span>
+              </label>
+              <button
+                type="submit"
+                :disabled="savingMem"
+                class="sm:col-span-2 min-h-[36px] rounded-xl bg-[#f2b880]/18 border border-[#f2b880]/45 text-[#f7cba0] hover:bg-[#f2b880]/28 text-xs font-medium cursor-pointer disabled:opacity-50"
+              >
+                {{ savingMem ? '写入中' : '写入专属记忆' }}
+              </button>
+            </form>
+
+            <div v-if="scopedMemories.length === 0" class="text-xs text-slate-500 py-3">
+              暂无关联长期记忆；对话中会自动沉淀偏好与重要背景，也可在上方直接添加。
+            </div>
             <div class="flex flex-col gap-2">
               <article
                 v-for="mem in scopedMemories"
@@ -2084,10 +2425,61 @@ function stateBadgeClass(state?: string): string {
                 class="rounded-xl border border-[#fff8ee]/10 bg-[#070a16]/75 px-3.5 py-2.5"
               >
                 <div class="flex items-center justify-between gap-2 flex-wrap">
-                  <strong class="font-mono text-xs text-[#f2b880]">{{ mem.fact_key }}</strong>
-                  <span class="font-mono text-[11px] text-slate-500">{{ mem.scope || 'global' }} · {{ mem.category }}</span>
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <span
+                      v-if="mem.pinned"
+                      class="px-1.5 py-0.5 rounded border border-amber-400/50 bg-amber-400/15 font-mono text-[10px] text-amber-200"
+                    >
+                      置顶
+                    </span>
+                    <span class="px-1.5 py-0.5 rounded border border-[#fff8ee]/10 font-mono text-[10px] text-slate-400">
+                      W{{ mem.importance || 3 }}
+                    </span>
+                    <strong class="font-mono text-xs text-[#f2b880]">{{ mem.fact_key }}</strong>
+                    <span class="font-mono text-[10.5px] text-slate-500">
+                      · {{ mem.scope?.startsWith('bot:') ? '本域私有' : '全局共享' }}
+                      <template v-if="mem.recall_count"> · 召回 {{ mem.recall_count }} 次</template>
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      @click="toggleBotMemoryPin(mem)"
+                      class="px-2 py-0.5 rounded border border-[#fff8ee]/10 text-[10.5px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+                    >
+                      {{ mem.pinned ? '取消置顶' : '置顶' }}
+                    </button>
+                    <button
+                      type="button"
+                      @click="editingMemId === mem.id ? (editingMemId = null) : (editingMemId = mem.id, editMemContent = mem.content)"
+                      class="px-2 py-0.5 rounded border border-[#fff8ee]/10 text-[10.5px] text-slate-300 hover:text-white cursor-pointer"
+                    >
+                      {{ editingMemId === mem.id ? '取消' : '编辑' }}
+                    </button>
+                    <button
+                      type="button"
+                      @click="deleteBotMemory(mem.id)"
+                      class="px-2 py-0.5 rounded border border-rose-400/30 text-[10.5px] text-rose-300 hover:bg-rose-500/15 cursor-pointer"
+                    >
+                      移除
+                    </button>
+                  </div>
                 </div>
-                <p class="text-xs text-slate-200 mt-1">{{ mem.content }}</p>
+                <div v-if="editingMemId === mem.id" class="mt-2 flex gap-2">
+                  <input
+                    v-model="editMemContent"
+                    type="text"
+                    class="flex-1 min-h-[32px] rounded-lg border border-[#f2b880]/45 bg-[#050811] px-2.5 text-xs text-white"
+                  />
+                  <button
+                    type="button"
+                    @click="saveInlineMemEdit(mem)"
+                    class="px-3 py-1 rounded-lg bg-[#f2b880] text-[#070a13] font-semibold text-xs cursor-pointer"
+                  >
+                    保存
+                  </button>
+                </div>
+                <p v-else class="text-xs text-slate-200 mt-1">{{ mem.content }}</p>
               </article>
             </div>
           </div>
@@ -2103,9 +2495,16 @@ function stateBadgeClass(state?: string): string {
     >
       <div v-show="store.state.botView === 'activity'" class="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
         <div class="max-w-4xl mx-auto flex flex-col gap-3">
-          <h2 class="text-base sm:text-lg font-semibold text-white">运行脉搏与最近汇报摘要</h2>
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <h2 class="text-base sm:text-lg font-semibold text-white">
+              {{ bot?.name || '当前 Bot' }} 的专属运行脉搏
+            </h2>
+            <span class="text-[11px] font-mono text-slate-400">
+              仅显示该会话自身的工具/技能调用、绑定例程与专属推送
+            </span>
+          </div>
           <div v-if="activityEntries.length === 0" class="vesper-card rounded-2xl p-8 text-center text-sm text-slate-400">
-            暂无后台运行脉搏记录
+            暂无该 Bot 的专属运行记录
           </div>
           <div ref="activityListRef" class="stagger-list flex flex-col gap-2.5">
             <article
@@ -2114,8 +2513,21 @@ function stateBadgeClass(state?: string): string {
               class="stagger-item vesper-card rounded-xl px-4 py-3"
             >
               <div class="flex items-center justify-between gap-2 flex-wrap">
-                <strong class="text-sm text-white">{{ act.title }}</strong>
-                <span class="font-mono text-[11px] text-slate-400">{{ act.time }}</span>
+                <div class="flex items-center gap-2 min-w-0">
+                  <span
+                    v-if="act.status"
+                    :class="[
+                      'px-1.5 py-0.5 rounded font-mono text-[10px] border shrink-0',
+                      act.status === 'error'
+                        ? 'border-rose-400/40 bg-rose-500/10 text-rose-300'
+                        : 'border-emerald-400/40 bg-emerald-500/10 text-emerald-300',
+                    ]"
+                  >
+                    {{ act.status }}
+                  </span>
+                  <strong class="text-sm text-white truncate">{{ act.title }}</strong>
+                </div>
+                <span class="font-mono text-[11px] text-slate-400 shrink-0">{{ act.time }}</span>
               </div>
               <p class="text-xs text-slate-300 mt-1">{{ act.detail }}</p>
             </article>

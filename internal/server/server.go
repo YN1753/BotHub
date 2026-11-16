@@ -111,9 +111,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/agent/sessions/{id}", s.requireAuth(s.handleDeleteAgentSession))
 	mux.HandleFunc("GET /api/agent/memories", s.requireAuth(s.handleListAgentMemories))
 	mux.HandleFunc("POST /api/agent/memories", s.requireAuth(s.handleSaveAgentMemory))
+	mux.HandleFunc("POST /api/agent/memories/{id}", s.requireAuth(s.handleUpdateAgentMemory))
 	mux.HandleFunc("DELETE /api/agent/memories/{id}", s.requireAuth(s.handleDeleteAgentMemory))
 
-	// BotHub v2 Persistent Bots (GrokBot Model)
+	// BotHub v2 Custom Skills
+	mux.HandleFunc("GET /api/v2/skills", s.requireAuth(s.handleListSkills))
+	mux.HandleFunc("POST /api/v2/skills", s.requireAuth(s.handleCreateSkill))
+	mux.HandleFunc("POST /api/v2/skills/{id}", s.requireAuth(s.handleUpdateSkill))
+	mux.HandleFunc("DELETE /api/v2/skills/{id}", s.requireAuth(s.handleDeleteSkill))
+	mux.HandleFunc("POST /api/v2/skills/{id}/test", s.requireAuth(s.handleTestSkill))
+
+	// BotHub v2 Persistent Bots (GrokBot Model) & Isolated Multi-Topic Threads
 	mux.HandleFunc("GET /api/v2/bots", s.requireAuth(s.handleListBots))
 	mux.HandleFunc("POST /api/v2/bots", s.requireAuth(s.handleCreateBot))
 	mux.HandleFunc("POST /api/v2/bots/adhoc-group", s.requireAuth(s.handleCreateAdhocGroup))
@@ -124,6 +132,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v2/bots/{id}/messages", s.requireAuth(s.handleGetBotMessages))
 	mux.HandleFunc("DELETE /api/v2/bots/{id}/messages", s.requireAuth(s.handleClearBotMessages))
 	mux.HandleFunc("DELETE /api/v2/bots/{id}/messages/{msgId}", s.requireAuth(s.handleDeleteBotMessage))
+	mux.HandleFunc("POST /api/v2/bots/{id}/threads", s.requireAuth(s.handleCreateBotThread))
+	mux.HandleFunc("POST /api/v2/bots/{id}/threads/{threadId}", s.requireAuth(s.handleUpdateBotThread))
+	mux.HandleFunc("DELETE /api/v2/bots/{id}/threads/{threadId}", s.requireAuth(s.handleDeleteBotThread))
 
 	// BotHub v2 Native Push Stream, Inbox & Webhooks
 	mux.HandleFunc("GET /api/v2/app/version", s.handleV2AppVersion)

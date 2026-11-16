@@ -89,16 +89,26 @@ func (s *Server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 			req.RoleTitle = "专属智能助理"
 		}
 	}
+	req.BotMode = store.NormalizeBotMode(req.BotMode)
+	req.MemoryPolicy = store.NormalizeMemoryPolicy(req.MemoryPolicy)
+	req.Traits = notifier.StripEmoji(strings.TrimSpace(req.Traits))
 	req.SystemPrompt = notifier.StripEmoji(strings.TrimSpace(req.SystemPrompt))
 	if req.SystemPrompt == "" {
 		if req.IsGroup {
-			req.SystemPrompt = "你是多 Bot 协同群聊的统筹协调官，请结合群内各专家视角输出简洁、精准、零冗余的结论，严禁使用 Emoji。"
+			req.SystemPrompt = "你是协同群聊成员的统筹伙伴，结合各位成员专长简洁协作，严禁使用 Emoji。"
+		} else if req.BotMode == store.BotModeCompanion {
+			req.SystemPrompt = "你是一个真诚、有温度、有自己性格的聊天伙伴。像老朋友一样自然聊天陪伴，记住我们的点滴约定，严禁使用 Emoji。"
+		} else if req.BotMode == store.BotModeWorker {
+			req.SystemPrompt = "你是干练可靠的专业执行助手，优先调动绑定工具与技能核查真实数据并直接落地解决，严禁使用 Emoji。"
 		} else {
-			req.SystemPrompt = "你是用户的专属 AI 助手，回答高信息密度、结构清晰，严禁使用 Emoji。"
+			req.SystemPrompt = "你是用户的专属智能伙伴，既能自然沟通陪伴也能调动工具高效办事，严禁使用 Emoji。"
 		}
 	}
 	if strings.TrimSpace(req.MemberIDs) == "" {
 		req.MemberIDs = "[]"
+	}
+	if strings.TrimSpace(req.SkillIDs) == "" {
+		req.SkillIDs = "[]"
 	}
 	req.GroupMode = normalizeGroupMode(req.GroupMode)
 	req.Announcement = notifier.StripEmoji(strings.TrimSpace(req.Announcement))
@@ -144,12 +154,17 @@ func (s *Server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		RoleTitle      string  `json:"role_title"`
 		AvatarStyle    string  `json:"avatar_style"`
 		SystemPrompt   string  `json:"system_prompt"`
+		BotMode        *string `json:"bot_mode"`
+		MemoryPolicy   *string `json:"memory_policy"`
+		Traits         *string `json:"traits"`
 		Model          string  `json:"model"`
 		EnableThinking *bool   `json:"enable_thinking"`
 		AllowedTools   string  `json:"allowed_tools"`
+		SkillIDs       *string `json:"skill_ids"`
 		MemberIDs      string  `json:"member_ids"`
 		GroupMode      *string `json:"group_mode"`
 		Announcement   *string `json:"announcement"`
+		ActiveThreadID *string `json:"active_thread_id"`
 		IsPinned       *bool   `json:"is_pinned"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32*1024)).Decode(&req); err != nil {
@@ -167,6 +182,15 @@ func (s *Server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 	if v := notifier.StripEmoji(strings.TrimSpace(req.SystemPrompt)); v != "" {
 		existing.SystemPrompt = v
 	}
+	if req.BotMode != nil {
+		existing.BotMode = store.NormalizeBotMode(*req.BotMode)
+	}
+	if req.MemoryPolicy != nil {
+		existing.MemoryPolicy = store.NormalizeMemoryPolicy(*req.MemoryPolicy)
+	}
+	if req.Traits != nil {
+		existing.Traits = notifier.StripEmoji(strings.TrimSpace(*req.Traits))
+	}
 	if v := strings.TrimSpace(req.AvatarStyle); v != "" {
 		existing.AvatarStyle = v
 	}
@@ -176,8 +200,18 @@ func (s *Server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 	if req.AllowedTools != "" {
 		existing.AllowedTools = req.AllowedTools
 	}
+	if req.SkillIDs != nil {
+		sids := strings.TrimSpace(*req.SkillIDs)
+		if sids == "" {
+			sids = "[]"
+		}
+		existing.SkillIDs = sids
+	}
 	if req.MemberIDs != "" {
 		existing.MemberIDs = req.MemberIDs
+	}
+	if req.ActiveThreadID != nil {
+		existing.ActiveThreadID = strings.TrimSpace(*req.ActiveThreadID)
 	}
 	if req.EnableThinking != nil {
 		existing.EnableThinking = *req.EnableThinking
@@ -390,16 +424,65 @@ func (s *Server) handleCreateAdhocGroup(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	toolSet := make(map[string]bool)
+	skillSet := make(map[string]bool)
+	mergedTools := make([]string, 0)
+	mergedSkills := make([]string, 0)
+	allCompanion := true
+	hasWorker := false
+	groupModel := ""
+	for _, mid := range members {
+		m := botMap[mid]
+		if groupModel == "" && strings.TrimSpace(m.Model) != "" {
+			groupModel = strings.TrimSpace(m.Model)
+		}
+		if m.BotMode != store.BotModeCompanion {
+			allCompanion = false
+		}
+		if m.BotMode == store.BotModeWorker {
+			hasWorker = true
+		}
+		for _, t := range m.AllowedToolList() {
+			if !toolSet[t] {
+				toolSet[t] = true
+				mergedTools = append(mergedTools, t)
+			}
+		}
+		for _, sid := range m.SkillIDList() {
+			if !skillSet[sid] {
+				skillSet[sid] = true
+				mergedSkills = append(mergedSkills, sid)
+			}
+		}
+	}
+	if groupModel == "" {
+		if cfgModel, _ := s.store.GetConfig(store.KeyAIModel); strings.TrimSpace(cfgModel) != "" {
+			groupModel = strings.TrimSpace(cfgModel)
+		} else {
+			groupModel = store.DefaultAIModel
+		}
+	}
+	derivedMode := store.BotModeHybrid
+	if allCompanion {
+		derivedMode = store.BotModeCompanion
+	} else if hasWorker && len(mergedTools)+len(mergedSkills) > 0 {
+		derivedMode = store.BotModeWorker
+	}
+	rawTools, _ := json.Marshal(mergedTools)
+	rawSkills, _ := json.Marshal(mergedSkills)
 	rawMembers, _ := json.Marshal(members)
 	newGroup := store.Bot{
 		ID:             newBotID(true),
 		Name:           groupName,
 		RoleTitle:      fmt.Sprintf("临时协同群 (%s)", strings.Join(memberNames, " · ")),
 		AvatarStyle:    "swarm:gold",
-		SystemPrompt:   "你是临时多人协同讨论群的协调官，汇总各专家成员的专业视角后输出结构化决策，严禁使用 Emoji。",
-		Model:          store.DefaultAIModel,
-		EnableThinking: true,
-		AllowedTools:   `["read_url","web_search","query_nezha_nodes","manage_assets","manage_tasks","remember_fact","recall_memory"]`,
+		SystemPrompt:   "根据每位群成员的性格、专业与分工自然协作交流，必要时汇总决策或轻松互动，严禁使用 Emoji。",
+		Model:          groupModel,
+		EnableThinking: !allCompanion,
+		AllowedTools:   string(rawTools),
+		BotMode:        derivedMode,
+		MemoryPolicy:   store.MemoryPolicyStandard,
+		SkillIDs:       string(rawSkills),
 		State:          store.BotStateIdle,
 		IsGroup:        true,
 		MemberIDs:      string(rawMembers),
@@ -477,11 +560,29 @@ func (s *Server) handleGetBotMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Bot 不存在")
 		return
 	}
-	msgs, err := s.store.ListBotMessages(id, 100)
+
+	threadID := strings.TrimSpace(r.URL.Query().Get("thread_id"))
+	hasThreadParam := r.URL.Query().Has("thread_id")
+	if !hasThreadParam {
+		threadID = strings.TrimSpace(bot.ActiveThreadID)
+	} else if threadID != strings.TrimSpace(bot.ActiveThreadID) {
+		_ = s.store.SetBotActiveThread(id, threadID)
+		bot.ActiveThreadID = threadID
+	}
+
+	msgs, err := s.store.ListBotMessagesByThread(id, threadID, 120)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "读取 Bot 对话流失败: "+err.Error())
 		return
 	}
+	threads, _ := s.store.ListBotThreads(id)
+	memScopes := []string{"bot:" + id}
+	if bot.MemoryPolicy != store.MemoryPolicyIsolated {
+		memScopes = append(memScopes, "global")
+	}
+	memories, _ := s.store.ListScopedMemories(memScopes, "", 60)
+	executions, _ := s.store.ListBotExecutions(id, 40)
+
 	_ = s.store.ClearBotUnread(id)
 	if s.push != nil && s.push.Hub() != nil {
 		s.push.Hub().PublishEvent("bot_state", map[string]any{
@@ -491,20 +592,114 @@ func (s *Server) handleGetBotMessages(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":       true,
-		"bot":      bot,
-		"messages": msgs,
+		"ok":         true,
+		"bot":        bot,
+		"thread_id":  threadID,
+		"messages":   msgs,
+		"threads":    threads,
+		"memories":   memories,
+		"executions": executions,
 	})
 }
 
 func (s *Server) handleClearBotMessages(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
-	if err := s.store.ClearBotMessages(id); err != nil {
+	if r.URL.Query().Has("thread_id") {
+		tid := strings.TrimSpace(r.URL.Query().Get("thread_id"))
+		if err := s.store.ClearBotMessagesInThread(id, tid); err != nil {
+			writeError(w, http.StatusInternalServerError, "清空话题对话流失败: "+err.Error())
+			return
+		}
+	} else if err := s.store.ClearBotMessages(id); err != nil {
 		writeError(w, http.StatusInternalServerError, "清空 Bot 对话流失败: "+err.Error())
 		return
 	}
 	_ = s.store.ClearBotUnread(id)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleCreateBotThread(w http.ResponseWriter, r *http.Request) {
+	botID := strings.TrimSpace(r.PathValue("id"))
+	bot, err := s.store.GetBot(botID)
+	if err != nil || bot == nil {
+		writeError(w, http.StatusNotFound, "Bot 不存在")
+		return
+	}
+	var req struct {
+		Title string `json:"title"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*1024)).Decode(&req)
+
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	threadID := "th_" + hex.EncodeToString(b)
+	title := notifier.StripEmoji(strings.TrimSpace(req.Title))
+	if title == "" {
+		title = "新话题"
+	}
+	th := store.BotThread{
+		ID:    threadID,
+		BotID: botID,
+		Title: title,
+	}
+	if err := s.store.SaveBotThread(th); err != nil {
+		writeError(w, http.StatusInternalServerError, "创建话题失败: "+err.Error())
+		return
+	}
+	_ = s.store.SetBotActiveThread(botID, threadID)
+	threads, _ := s.store.ListBotThreads(botID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"thread":  th,
+		"threads": threads,
+	})
+}
+
+func (s *Server) handleUpdateBotThread(w http.ResponseWriter, r *http.Request) {
+	botID := strings.TrimSpace(r.PathValue("id"))
+	threadID := strings.TrimSpace(r.PathValue("threadId"))
+	th, err := s.store.GetBotThread(botID, threadID)
+	if err != nil || th == nil {
+		writeError(w, http.StatusNotFound, "话题不存在")
+		return
+	}
+	var req struct {
+		Title    *string `json:"title"`
+		Archived *bool   `json:"archived"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*1024)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效请求体")
+		return
+	}
+	if req.Title != nil {
+		if v := notifier.StripEmoji(strings.TrimSpace(*req.Title)); v != "" {
+			th.Title = v
+		}
+	}
+	if req.Archived != nil {
+		th.Archived = *req.Archived
+	}
+	if err := s.store.SaveBotThread(*th); err != nil {
+		writeError(w, http.StatusInternalServerError, "更新话题失败: "+err.Error())
+		return
+	}
+	threads, _ := s.store.ListBotThreads(botID)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "thread": th, "threads": threads})
+}
+
+func (s *Server) handleDeleteBotThread(w http.ResponseWriter, r *http.Request) {
+	botID := strings.TrimSpace(r.PathValue("id"))
+	threadID := strings.TrimSpace(r.PathValue("threadId"))
+	if err := s.store.DeleteBotThread(botID, threadID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	bot, _ := s.store.GetBot(botID)
+	if bot != nil && bot.ActiveThreadID == threadID {
+		_ = s.store.SetBotActiveThread(botID, "")
+	}
+	threads, _ := s.store.ListBotThreads(botID)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "threads": threads})
 }
 
 func (s *Server) handleDeleteBotMessage(w http.ResponseWriter, r *http.Request) {

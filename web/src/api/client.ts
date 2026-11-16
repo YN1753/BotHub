@@ -3,8 +3,11 @@ import type {
   AgentMessage,
   Asset,
   Bot,
+  BotExecutionLog,
+  BotThread,
   DashboardPayload,
   ModelPoolEntry,
+  Skill,
   Task,
 } from '../types/bothub'
 
@@ -111,12 +114,37 @@ export const BotHubApi = {
     }),
   deleteBot: (id: string) =>
     apiRequest(`/api/v2/bots/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  getBotMessages: (id: string) =>
-    apiRequest<{ ok: boolean; bot: Bot; messages: AgentMessage[] }>(
-      `/api/v2/bots/${encodeURIComponent(id)}/messages`
+  getBotMessages: (id: string, threadId?: string) => {
+    const qs = threadId ? `?thread_id=${encodeURIComponent(threadId)}` : ''
+    return apiRequest<{
+      ok: boolean
+      bot: Bot
+      thread_id: string
+      messages: AgentMessage[]
+      threads: BotThread[]
+      memories: AgentMemory[]
+      executions: BotExecutionLog[]
+    }>(`/api/v2/bots/${encodeURIComponent(id)}/messages${qs}`)
+  },
+  clearBotMessages: (id: string, threadId?: string) => {
+    const qs = threadId ? `?thread_id=${encodeURIComponent(threadId)}` : ''
+    return apiRequest(`/api/v2/bots/${encodeURIComponent(id)}/messages${qs}`, { method: 'DELETE' })
+  },
+  createBotThread: (botId: string, title?: string) =>
+    apiRequest<{ ok: boolean; thread: BotThread; threads: BotThread[] }>(
+      `/api/v2/bots/${encodeURIComponent(botId)}/threads`,
+      { method: 'POST', body: JSON.stringify({ title: title || '' }) }
     ),
-  clearBotMessages: (id: string) =>
-    apiRequest(`/api/v2/bots/${encodeURIComponent(id)}/messages`, { method: 'DELETE' }),
+  updateBotThread: (botId: string, threadId: string, payload: { title?: string; archived?: boolean }) =>
+    apiRequest<{ ok: boolean; thread: BotThread; threads: BotThread[] }>(
+      `/api/v2/bots/${encodeURIComponent(botId)}/threads/${encodeURIComponent(threadId)}`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
+  deleteBotThread: (botId: string, threadId: string) =>
+    apiRequest<{ ok: boolean; threads: BotThread[] }>(
+      `/api/v2/bots/${encodeURIComponent(botId)}/threads/${encodeURIComponent(threadId)}`,
+      { method: 'DELETE' }
+    ),
   deleteBotMessage: (botId: string, msgId: number) =>
     apiRequest(`/api/v2/bots/${encodeURIComponent(botId)}/messages/${encodeURIComponent(String(msgId))}`, {
       method: 'DELETE',
@@ -143,10 +171,50 @@ export const BotHubApi = {
     }),
 
   // Memories
-  saveMemory: (payload: Pick<AgentMemory, 'category' | 'fact_key' | 'content'> & { scope?: string }) =>
-    apiRequest('/api/agent/memories', { method: 'POST', body: JSON.stringify(payload) }),
+  listMemories: (scope?: string, q?: string) => {
+    const params = new URLSearchParams()
+    if (scope) params.set('scope', scope)
+    if (q) params.set('q', q)
+    const qs = params.toString() ? `?${params.toString()}` : ''
+    return apiRequest<{ ok: boolean; memories: AgentMemory[] }>(`/api/agent/memories${qs}`)
+  },
+  saveMemory: (
+    payload: Pick<AgentMemory, 'category' | 'fact_key' | 'content'> & {
+      scope?: string
+      importance?: number
+      pinned?: boolean
+    }
+  ) => apiRequest('/api/agent/memories', { method: 'POST', body: JSON.stringify(payload) }),
+  updateMemory: (
+    id: number,
+    payload: Partial<Pick<AgentMemory, 'scope' | 'category' | 'fact_key' | 'content' | 'importance' | 'pinned'>>
+  ) =>
+    apiRequest<{ ok: boolean; memory: AgentMemory }>(
+      `/api/agent/memories/${encodeURIComponent(String(id))}`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
   deleteMemory: (id: number) =>
     apiRequest(`/api/agent/memories/${encodeURIComponent(String(id))}`, { method: 'DELETE' }),
+
+  // Custom Skills
+  listSkills: () => apiRequest<{ ok: boolean; skills: Skill[] }>('/api/v2/skills'),
+  createSkill: (payload: Partial<Skill>) =>
+    apiRequest<{ ok: boolean; skill: Skill }>('/api/v2/skills', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateSkill: (id: string, payload: Partial<Skill>) =>
+    apiRequest<{ ok: boolean; skill: Skill }>(`/api/v2/skills/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteSkill: (id: string) =>
+    apiRequest(`/api/v2/skills/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  testSkill: (id: string, args: Record<string, any>) =>
+    apiRequest<{ ok: boolean; status_code: number; latency_ms: number; result: any }>(
+      `/api/v2/skills/${encodeURIComponent(id)}/test`,
+      { method: 'POST', body: JSON.stringify({ args }) }
+    ),
 
   // Notifications
   markNotificationRead: (id: number) =>

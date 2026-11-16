@@ -2,6 +2,9 @@ export type BotState = 'idle' | 'thinking' | 'working' | 'blocked' | 'done'
 
 export type AvatarStyle = 'cyan' | 'indigo' | 'amber' | 'emerald' | 'violet'
 
+export type BotMode = 'worker' | 'companion' | 'hybrid'
+export type MemoryPolicy = 'standard' | 'isolated'
+
 export interface Bot {
   id: string
   name: string
@@ -11,6 +14,11 @@ export interface Bot {
   model: string
   enable_thinking: boolean
   allowed_tools: string
+  bot_mode?: BotMode | string
+  memory_policy?: MemoryPolicy | string
+  skill_ids?: string
+  traits?: string
+  active_thread_id?: string
   state: BotState | string
   unread_count: number
   is_pinned: boolean
@@ -23,6 +31,54 @@ export interface Bot {
   last_summary: string
   created_at: string
   updated_at: string
+}
+
+export interface SkillParamField {
+  key: string
+  type: 'string' | 'integer' | 'boolean' | string
+  description: string
+  required?: boolean
+}
+
+export type SkillKind = 'prompt' | 'webhook'
+
+export interface Skill {
+  id: string
+  slug: string
+  name: string
+  description: string
+  kind: SkillKind | string
+  instruction: string
+  http_method: string
+  http_url: string
+  http_headers: string
+  params_schema: string
+  enabled: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+export interface BotThread {
+  id: string
+  bot_id: string
+  title: string
+  last_summary: string
+  message_count: number
+  archived: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface BotExecutionLog {
+  id: number
+  bot_id: string
+  thread_id: string
+  action_kind: string
+  tool_name: string
+  status: string
+  summary: string
+  duration_ms: number
+  created_at: string
 }
 
 export interface ToolTrace {
@@ -42,6 +98,7 @@ export interface AgentMessage {
   id: number
   session_id: string
   bot_id?: string
+  thread_id?: string
   sender_bot_id?: string
   msg_kind?: 'chat' | 'routine' | 'system' | string
   role: 'user' | 'assistant' | 'tool' | 'system' | string
@@ -61,6 +118,10 @@ export interface AgentMemory {
   category: string
   fact_key: string
   content: string
+  importance?: number
+  pinned?: boolean
+  recall_count?: number
+  last_recalled_at?: string
   created_at: string
   updated_at: string
 }
@@ -197,6 +258,7 @@ export interface DashboardPayload {
   server_now: string
   tasks: Task[]
   bots: Bot[]
+  skills?: Skill[]
   model_pool?: ModelPoolEntry[]
   available_tools?: AvailableToolMeta[]
   personas?: Persona[]

@@ -24,6 +24,30 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+type toolScopeCtxKey struct{}
+
+// ToolScope defines isolated execution/memory boundaries for the current Bot or Group turn.
+type ToolScope struct {
+	BotID         string
+	TimelineBotID string
+	ThreadID      string
+	MemoryPolicy  string
+}
+
+func WithToolScope(ctx context.Context, sc ToolScope) context.Context {
+	return context.WithValue(ctx, toolScopeCtxKey{}, sc)
+}
+
+func toolScopeFromContext(ctx context.Context) ToolScope {
+	if ctx == nil {
+		return ToolScope{}
+	}
+	if v, ok := ctx.Value(toolScopeCtxKey{}).(ToolScope); ok {
+		return v
+	}
+	return ToolScope{}
+}
+
 // TaskController abstracts Scheduler operations for tool execution.
 type TaskController interface {
 	Status() ([]scheduler.TaskStatus, error)
@@ -221,21 +245,33 @@ func BuiltinTools() []ToolDefinition {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "remember_fact",
-				Description: "将用户提到的重要偏好、架构约定、常用主机信息或长期备忘写入 SQLite 长期记忆库，后续对话将自动挂载。",
+				Description: "将与当前会话相关的用户偏好、关系故事、重要约定或核心事实写入隔离的长期记忆库，默认仅绑定当前 Bot/群聊作用域。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"category": map[string]any{
 							"type":        "string",
-							"description": "记忆分类：preference（用户偏好）/ infra（基础设施与节点）/ schedule（日程约定）/ general（通用事实）",
+							"description": "记忆分类：preference（偏好）/ relation（人际与故事）/ emotion（心情与生活）/ infra（节点与工程）/ schedule（约定）/ insight（洞察）/ general（通用）",
 						},
 						"fact_key": map[string]any{
 							"type":        "string",
-							"description": "简短唯一的事实键名（同 category + fact_key 会自动覆盖更新），如 primary_vps / push_style",
+							"description": "简短唯一的事实键名（同作用域下同名会覆盖更新），如 user_tea_habit / deploy_rule",
 						},
 						"content": map[string]any{
 							"type":        "string",
 							"description": "要记住的具体事实内容",
+						},
+						"importance": map[string]any{
+							"type":        "integer",
+							"description": "重要程度 1~5（默认 3，核心约定可设为 5）",
+						},
+						"pinned": map[string]any{
+							"type":        "boolean",
+							"description": "是否置顶为高优先常驻记忆",
+						},
+						"scope": map[string]any{
+							"type":        "string",
+							"description": "可选：'self'（默认，仅当前 Bot/群私有）或 'global'（显式跨全团队共享）",
 						},
 					},
 					"required": []string{"fact_key", "content"},
@@ -246,13 +282,13 @@ func BuiltinTools() []ToolDefinition {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "recall_memory",
-				Description: "检索 SQLite 长期记忆库中存储的用户偏好、基础设施信息与历史事实。",
+				Description: "检索当前 Bot 或群聊专属作用域内的长期记忆（自动隔离其他 Bot 隐私记忆）。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"query": map[string]any{
 							"type":        "string",
-							"description": "可选：检索关键词（留空则返回全部近期核心记忆）",
+							"description": "可选：检索关键词（留空则返回当前作用域核心记忆）",
 						},
 					},
 				},
@@ -261,8 +297,31 @@ func BuiltinTools() []ToolDefinition {
 	}
 }
 
-// ExecuteTool dispatches a tool call by name and returns a JSON-formatted result string.
+// ExecuteTool dispatches built-in tools and user-defined custom webhook skills.
 func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) (string, error) {
+	if strings.HasPrefix(name, "skill_") {
+		slug := strings.TrimPrefix(name, "skill_")
+		sk, err := e.store.GetSkillBySlug(slug)
+		if err != nil || sk == nil || !sk.Enabled || sk.Kind != "webhook" {
+			return "", fmt.Errorf("未找到或未启用自定义技能: %s", name)
+		}
+		var args map[string]any
+		if strings.TrimSpace(argsJSON) != "" {
+			_ = json.Unmarshal([]byte(argsJSON), &args)
+		}
+		statusCode, bodyText, execErr := e.ExecuteWebhookSkill(ctx, *sk, args)
+		if execErr != nil {
+			return "", execErr
+		}
+		out, _ := json.Marshal(map[string]any{
+			"ok":          true,
+			"skill":       sk.Name,
+			"status_code": statusCode,
+			"result":      bodyText,
+		})
+		return string(out), nil
+	}
+
 	switch name {
 	case "read_url":
 		return e.toolReadURL(ctx, argsJSON)
@@ -620,12 +679,9 @@ func (e *Engine) toolQueryNezhaNodes(ctx context.Context, argsJSON string) (stri
 	nodes := make([]nodeRecord, 0)
 	sourceUsed := "local_assets"
 
-	// 1. Try read-only direct SQLite connection to Nezha Dashboard DB if present
+	// 1. Try read-only direct SQLite connection to Nezha Dashboard DB only when configured
 	dbPath, _ := e.store.GetConfig(store.KeyNezhaDBPath)
 	dbPath = strings.TrimSpace(dbPath)
-	if dbPath == "" {
-		dbPath = store.DefaultNezhaDBPath
-	}
 
 	if info, err := os.Stat(dbPath); err == nil && !info.IsDir() {
 		dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(3000)", dbPath)
@@ -1010,11 +1066,14 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 	}
 }
 
-func (e *Engine) toolRememberFact(_ context.Context, argsJSON string) (string, error) {
+func (e *Engine) toolRememberFact(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Category string `json:"category"`
-		FactKey  string `json:"fact_key"`
-		Content  string `json:"content"`
+		Category   string `json:"category"`
+		FactKey    string `json:"fact_key"`
+		Content    string `json:"content"`
+		Importance int    `json:"importance"`
+		Pinned     bool   `json:"pinned"`
+		Scope      string `json:"scope"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 remember_fact 参数失败: %w", err)
@@ -1025,29 +1084,77 @@ func (e *Engine) toolRememberFact(_ context.Context, argsJSON string) (string, e
 	if cat == "" {
 		cat = "general"
 	}
-	if err := e.store.SaveAgentMemory(cat, key, content); err != nil {
+
+	sc := toolScopeFromContext(ctx)
+	targetScope := "global"
+	if strings.TrimSpace(sc.TimelineBotID) != "" {
+		targetScope = "bot:" + strings.TrimSpace(sc.TimelineBotID)
+	} else if strings.TrimSpace(sc.BotID) != "" {
+		targetScope = "bot:" + strings.TrimSpace(sc.BotID)
+	}
+	if strings.EqualFold(strings.TrimSpace(args.Scope), "global") && sc.MemoryPolicy != store.MemoryPolicyIsolated {
+		targetScope = "global"
+	}
+
+	imp := args.Importance
+	if imp <= 0 {
+		imp = 3
+	}
+	if err := e.store.SaveAgentMemoryDetailed(targetScope, cat, key, content, imp, args.Pinned); err != nil {
 		return "", err
 	}
 	out, _ := json.Marshal(map[string]any{
-		"ok":       true,
-		"category": cat,
-		"fact_key": key,
-		"content":  content,
+		"ok":         true,
+		"scope":      targetScope,
+		"category":   cat,
+		"fact_key":   key,
+		"content":    content,
+		"importance": imp,
+		"pinned":     args.Pinned,
 	})
 	return string(out), nil
 }
 
-func (e *Engine) toolRecallMemory(_ context.Context, argsJSON string) (string, error) {
+func (e *Engine) toolRecallMemory(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Query string `json:"query"`
 	}
 	_ = json.Unmarshal([]byte(argsJSON), &args)
-	memories, err := e.store.ListAgentMemories(strings.TrimSpace(args.Query), 25)
+
+	sc := toolScopeFromContext(ctx)
+	var scopes []string
+	if sc.TimelineBotID != "" || sc.BotID != "" {
+		seen := make(map[string]bool)
+		addScope := func(s string) {
+			if s != "" && !seen[s] {
+				seen[s] = true
+				scopes = append(scopes, s)
+			}
+		}
+		if sc.TimelineBotID != "" {
+			addScope("bot:" + sc.TimelineBotID)
+		}
+		if sc.BotID != "" {
+			addScope("bot:" + sc.BotID)
+		}
+		if sc.MemoryPolicy != store.MemoryPolicyIsolated {
+			addScope("global")
+		}
+	}
+
+	memories, err := e.store.ListScopedMemories(scopes, strings.TrimSpace(args.Query), 25)
 	if err != nil {
 		return "", err
 	}
+	ids := make([]int64, 0, len(memories))
+	for _, m := range memories {
+		ids = append(ids, m.ID)
+	}
+	e.store.TouchRecalledMemories(ids)
+
 	out, _ := json.Marshal(map[string]any{
 		"count":    len(memories),
+		"scopes":   scopes,
 		"memories": memories,
 	})
 	return string(out), nil

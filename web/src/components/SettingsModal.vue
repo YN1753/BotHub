@@ -4,7 +4,6 @@ import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import type { ModelPoolEntry, UpstreamModelCheck } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
-import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
 
@@ -18,11 +17,10 @@ const SETTINGS_TABS = [
   { id: 'security', label: '安全与数据灾备' },
 ]
 
-// Config fields
+// Config fields (clean blank defaults, no hardcoded presets)
 const deepseekKey = ref('')
-const deepseekBaseUrl = ref('https://api.deepseek.com/v1')
+const deepseekBaseUrl = ref('')
 const aiModel = ref('')
-const activePersona = ref('grok')
 const poolForLight = ref(true)
 const poolFallback = ref(true)
 const poolEntries = ref<ModelPoolEntry[]>([])
@@ -50,7 +48,7 @@ const lightApiKey = ref('')
 const lightModel = ref('')
 
 const nezhaUrl = ref('')
-const nezhaDbPath = ref('/opt/nezha/dashboard/data/sqlite.db')
+const nezhaDbPath = ref('')
 const appBearerToken = ref('')
 const cfApiToken = ref('')
 const biliSessdata = ref('')
@@ -59,21 +57,14 @@ const newPassword = ref('')
 const saving = ref(false)
 const testingPush = ref(false)
 
-const personaOptions = computed(() =>
-  store.state.personas.length > 0
-    ? store.state.personas.map((p) => ({ value: p.id, label: p.name }))
-    : [{ value: 'grok', label: '默认智能模式' }]
-)
-
 watch(
   () => store.state.showSettingsModal,
   (open) => {
     if (!open) return
     const c = store.state.configs || {}
     deepseekKey.value = c['deepseek_api_key'] || ''
-    deepseekBaseUrl.value = c['deepseek_base_url'] || 'https://api.deepseek.com/v1'
+    deepseekBaseUrl.value = c['deepseek_base_url'] || ''
     aiModel.value = c['ai_model'] || ''
-    activePersona.value = c['active_persona'] || store.state.personas[0]?.id || 'grok'
     poolForLight.value = c['pool_for_light'] !== 'false'
     poolFallback.value = c['pool_fallback'] !== 'false'
     poolEntries.value = (store.state.modelPool || []).map((x) => ({ ...x }))
@@ -86,7 +77,7 @@ watch(
     lightModel.value = c['light_model'] || ''
 
     nezhaUrl.value = c['nezha_url'] || ''
-    nezhaDbPath.value = c['nezha_db_path'] || '/opt/nezha/dashboard/data/sqlite.db'
+    nezhaDbPath.value = c['nezha_db_path'] || ''
     appBearerToken.value = c['app_bearer_token'] || ''
     cfApiToken.value = c['cf_api_token'] || ''
     biliSessdata.value = c['bili_sessdata'] || ''
@@ -102,9 +93,8 @@ async function saveAllConfig() {
   try {
     await BotHubApi.saveConfig({
       deepseek_api_key: deepseekKey.value.trim(),
-      deepseek_base_url: deepseekBaseUrl.value.trim() || 'https://api.deepseek.com/v1',
+      deepseek_base_url: deepseekBaseUrl.value.trim(),
       ai_model: aiModel.value.trim(),
-      active_persona: activePersona.value,
       pool_for_light: poolForLight.value ? 'true' : 'false',
       pool_fallback: poolFallback.value ? 'true' : 'false',
       light_base_url: lightBaseUrl.value.trim(),
@@ -148,6 +138,10 @@ function healthBadgeText(key: string): string {
 
 async function probeTarget(targetId: string, provider: string, baseUrl: string, apiKey: string, modelId: string) {
   if (probingId.value && !probingAll.value) return
+  if (!modelId.trim()) {
+    store.notify('请先拉取可用模型并选中或填写模型 ID')
+    return
+  }
   probingId.value = targetId
   delete probeResults.value[targetId]
   try {
@@ -156,7 +150,7 @@ async function probeTarget(targetId: string, provider: string, baseUrl: string, 
       provider,
       base_url: baseUrl.trim(),
       api_key: apiKey.trim(),
-      model: modelId.trim() || 'deepseek-chat',
+      model: modelId.trim(),
     })
     probeResults.value[targetId] = { ok: true, msg: res.message || `${res.latency_ms}ms OK` }
     if (res.model_health) {
@@ -278,17 +272,6 @@ function movePoolNode(index: number, delta: number) {
 
 function removePoolNode(id: string) {
   poolEntries.value = poolEntries.value.filter((x) => x.id !== id)
-}
-
-function useOfficialFlashPreset() {
-  deepseekBaseUrl.value = 'https://api.deepseek.com/v1'
-  if (!aiModel.value.trim()) aiModel.value = 'deepseek-chat'
-}
-
-function useRelayPreset() {
-  if (!deepseekBaseUrl.value || deepseekBaseUrl.value.includes('api.deepseek.com')) {
-    deepseekBaseUrl.value = 'https://your-relay.example.com/v1'
-  }
 }
 
 async function handleTestPush() {
@@ -434,32 +417,14 @@ async function handleImportBackup(e: Event) {
               {{ probeResults.primary.msg }}
             </div>
 
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="text-[11px] text-slate-400">接口快速预设:</span>
-              <button
-                type="button"
-                @click="useOfficialFlashPreset"
-                class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
-              >
-                DeepSeek 官方 (deepseek-chat)
-              </button>
-              <button
-                type="button"
-                @click="useRelayPreset"
-                class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
-              >
-                中转站 /v1 地址
-              </button>
-            </div>
-
             <label class="flex flex-col gap-1 text-xs text-slate-300">
               <span>主力 API Key (官方或中转站令牌)</span>
-              <input v-model="deepseekKey" type="password" placeholder="sk-..." class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              <input v-model="deepseekKey" type="password" placeholder="输入 API Key" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
             </label>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>API 地址 (官方或中转站 Base URL)</span>
-                <input v-model="deepseekBaseUrl" type="text" placeholder="https://api.deepseek.com/v1" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                <span>API 地址 (OpenAI 兼容 Base URL)</span>
+                <input v-model="deepseekBaseUrl" type="text" placeholder="填写 Base URL，如 https://.../v1" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
               </label>
               <div class="flex flex-col gap-1 text-xs text-slate-300">
                 <div class="flex items-center justify-between gap-2">
@@ -525,14 +490,47 @@ async function handleImportBackup(e: Event) {
                 </div>
               </div>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>默认人设</span>
-                <CustomSelect v-model="activePersona" :options="personaOptions" aria-label="默认人设" />
+            <div class="pt-3 border-t border-[#fff8ee]/8 flex flex-col gap-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[11px] font-medium text-slate-300">后台记忆提炼与轻量任务模型 (可选独立覆盖，留空自动复用免费池或主力)</span>
+                <button
+                  type="button"
+                  :disabled="fetchingModelsId === 'light'"
+                  @click="fetchModelsForTarget('light', 'openai', lightBaseUrl.trim() || deepseekBaseUrl.trim(), lightApiKey.trim() || deepseekKey.trim())"
+                  class="text-[10.5px] text-[#f2b880] hover:underline cursor-pointer disabled:opacity-45 shrink-0"
+                >
+                  {{ fetchingModelsId === 'light' ? '探测可用模型中...' : '拉取轻量可用模型' }}
+                </button>
               </div>
-              <div class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>额外轻量 Key (可选覆盖)</span>
-                <input v-model="lightApiKey" type="password" placeholder="留空自动走下方免费池" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <label class="flex flex-col gap-1 text-xs text-slate-300">
+                  <span>轻量 Base URL</span>
+                  <input v-model="lightBaseUrl" type="text" placeholder="留空复用主力地址" class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                </label>
+                <label class="flex flex-col gap-1 text-xs text-slate-300">
+                  <span>轻量 API Key</span>
+                  <input v-model="lightApiKey" type="password" placeholder="留空自动走免费池" class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                </label>
+                <label class="flex flex-col gap-1 text-xs text-slate-300">
+                  <span>轻量模型 ID</span>
+                  <input v-model="lightModel" type="text" placeholder="拉取或输入模型 ID" class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                </label>
+              </div>
+              <div v-if="fetchedModelMeta.light && filteredUsableChecks('light').length > 0" class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 rounded-xl border border-[#f2b880]/20 bg-[#050811]/70">
+                <button
+                  v-for="item in filteredUsableChecks('light')"
+                  :key="item.id"
+                  type="button"
+                  @click="lightModel = item.id"
+                  :class="[
+                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-md border font-mono text-[10.5px] cursor-pointer',
+                    lightModel === item.id
+                      ? 'border-[#f2b880] bg-[#f2b880]/20 text-[#f2b880]'
+                      : 'border-[#fff8ee]/12 bg-[#070b18] text-slate-300 hover:border-[#f2b880]/45'
+                  ]"
+                >
+                  <span>{{ item.id }}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -830,8 +828,8 @@ async function handleImportBackup(e: Event) {
               <input v-model="nezhaUrl" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
             </label>
             <label class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>哪吒 SQLite 本机路径 (只读直连)</span>
-              <input v-model="nezhaDbPath" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              <span>哪吒 SQLite 本机路径 (只读直连，可选)</span>
+              <input v-model="nezhaDbPath" type="text" placeholder="留空仅走网页/资产查询，填实际 .db 路径可直连探针" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
             </label>
           </div>
 

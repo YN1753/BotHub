@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -24,49 +25,83 @@ func (e *Engine) emitBotState(botID, state, lastSummary string) {
 	}
 }
 
-func filterToolsForBot(bot *store.Bot) []ToolDefinition {
+func filterToolsForBot(bot *store.Bot, attachedSkills []store.Skill) []ToolDefinition {
 	all := BuiltinTools()
+	var filtered []ToolDefinition
 	if bot == nil {
-		return all
+		filtered = append(filtered, all...)
+	} else {
+		allowed := bot.AllowedToolList()
+		if len(allowed) > 0 {
+			allowSet := make(map[string]bool, len(allowed))
+			for _, name := range allowed {
+				allowSet[strings.TrimSpace(name)] = true
+			}
+			for _, td := range all {
+				if allowSet[td.Function.Name] {
+					filtered = append(filtered, td)
+				}
+			}
+		}
 	}
-	allowed := bot.AllowedToolList()
-	if len(allowed) == 0 {
-		return nil
-	}
-	allowSet := make(map[string]bool, len(allowed))
-	for _, name := range allowed {
-		allowSet[strings.TrimSpace(name)] = true
-	}
-	filtered := make([]ToolDefinition, 0, len(allowed))
-	for _, td := range all {
-		if allowSet[td.Function.Name] {
-			filtered = append(filtered, td)
+	for _, sk := range attachedSkills {
+		if sk.Enabled && sk.Kind == "webhook" {
+			filtered = append(filtered, CompileSkillTool(sk))
 		}
 	}
 	return filtered
 }
 
-func buildBotSystemPrompt(bot *store.Bot, memories []store.AgentMemory) string {
+func buildBotSystemPrompt(bot *store.Bot, attachedSkills []store.Skill, memories []store.AgentMemory, inGroup bool) string {
 	var sb strings.Builder
-	sb.WriteString(strings.TrimSpace(bot.SystemPrompt))
-	sb.WriteString("\n\n[专属身份与行为准则]\n")
-	sb.WriteString(fmt.Sprintf("- 你的身份：%s (%s)\n", bot.Name, bot.RoleTitle))
-	sb.WriteString("- 当前平台为 Vesper BotHub（零 Docker 单二进制架构 + SQLite WAL）。\n")
-	sb.WriteString("- 严格禁止在任何回复中使用 Emoji 表情或装饰性特殊符号。\n")
-	sb.WriteString("- 如果用户询问系统资产、定时任务、哪吒节点、实时网页或历史偏好，请优先调用绑定工具获取真实数据，不要凭空编造。\n")
+	if prompt := strings.TrimSpace(bot.SystemPrompt); prompt != "" {
+		sb.WriteString(prompt)
+		sb.WriteString("\n\n")
+	}
 
-	scopedMemories := make([]store.AgentMemory, 0, len(memories))
-	botScope := "bot:" + bot.ID
-	for _, m := range memories {
-		sc := strings.TrimSpace(m.Scope)
-		if sc == "" || sc == "global" || sc == botScope {
-			scopedMemories = append(scopedMemories, m)
+	mode := store.NormalizeBotMode(bot.BotMode)
+	sb.WriteString("[人格定位与交流方式]\n")
+	sb.WriteString(fmt.Sprintf("- 你的名字：%s；定位：%s\n", bot.Name, bot.RoleTitle))
+	if traits := strings.TrimSpace(bot.Traits); traits != "" {
+		sb.WriteString(fmt.Sprintf("- 性格与说话风格：%s\n", traits))
+	}
+
+	switch mode {
+	case store.BotModeCompanion:
+		sb.WriteString("- 互动准则：你是一个真实、有温度、有自己性格特点的聊天伙伴。像老朋友或正常人类那样自然说话——有情绪共鸣、懂得接梗和轻松吐槽，回复节奏像真人日常聊天，不要端着公文腔、不要强行分条说教或推销建议。\n")
+		sb.WriteString("- 记忆自然化：你记住过往细节是为了像真朋友一样自然延续话题，不要机械背诵记忆条目标题。\n")
+	case store.BotModeWorker:
+		sb.WriteString("- 工作准则：你是干练务实的专业执行者。涉及实时状态、资产、任务或外部技能时，优先调用手头工具查证后再作答，先给明确结论与可执行结果，绝不编造数据。\n")
+	default:
+		sb.WriteString("- 互动与执行准则：日常对话自然真诚、像真人般有温度；当需要查证数据、记录重要约定或执行任务时，主动调用已授权的工具与技能完成。\n")
+	}
+
+	if inGroup {
+		sb.WriteString("- 群聊协作规范：你正与其他成员同在一个协同群聊里。自然接续前序成员或用户的上下文，重点给出你独特视角的补充或行动，避免重复已经说过的客套话。\n")
+	}
+	sb.WriteString("- 格式约束：严禁使用任何 Emoji 表情或装饰性特殊符号。\n")
+
+	var promptSkills []store.Skill
+	for _, sk := range attachedSkills {
+		if sk.Enabled && sk.Kind == "prompt" && strings.TrimSpace(sk.Instruction) != "" {
+			promptSkills = append(promptSkills, sk)
 		}
 	}
-	if len(scopedMemories) > 0 {
-		sb.WriteString("\n[长期记忆库背景]\n")
-		for _, m := range scopedMemories {
-			sb.WriteString(fmt.Sprintf("- (%s) %s: %s\n", m.Category, m.FactKey, m.Content))
+	if len(promptSkills) > 0 {
+		sb.WriteString("\n[已装备专属技能规范]\n")
+		for _, sk := range promptSkills {
+			sb.WriteString(fmt.Sprintf("- 技能「%s」: %s\n", sk.Name, strings.TrimSpace(sk.Instruction)))
+		}
+	}
+
+	if len(memories) > 0 {
+		sb.WriteString("\n[关于此段关系/作用域的长期记忆]\n")
+		for _, m := range memories {
+			pinTag := ""
+			if m.Pinned {
+				pinTag = "[置顶] "
+			}
+			sb.WriteString(fmt.Sprintf("- %s(%s) %s: %s\n", pinTag, m.Category, m.FactKey, m.Content))
 		}
 	}
 	return sb.String()
@@ -105,11 +140,14 @@ func resolveGroupMemberBots(groupBot *store.Bot, allBots []store.Bot) []store.Bo
 }
 
 func selectSmartGroupMembers(members []store.Bot, userMsg string) []store.Bot {
+	return selectSmartGroupMembersWithSkills(members, nil, userMsg)
+}
+
+func selectSmartGroupMembersWithSkills(members []store.Bot, skillMap map[string]store.Skill, userMsg string) []store.Bot {
 	if len(members) <= 1 {
 		return members
 	}
 	lower := strings.ToLower(userMsg)
-	// Explicit collective request triggers all group members
 	for _, kw := range []string{"大家", "全部", "各位", "一起", "全员", "接力", "群策群力"} {
 		if strings.Contains(userMsg, kw) {
 			return members
@@ -140,7 +178,19 @@ func selectSmartGroupMembers(members []store.Bot, userMsg string) []store.Bot {
 				}
 			}
 		}
-		metaText := strings.ToLower(m.Name + " " + m.RoleTitle + " " + m.SystemPrompt)
+		if skillMap != nil {
+			for _, sid := range m.SkillIDList() {
+				if sk, ok := skillMap[sid]; ok && sk.Enabled {
+					skText := strings.ToLower(sk.Name + " " + sk.Description + " " + sk.Slug)
+					for _, kw := range strings.Fields(lower) {
+						if len([]rune(kw)) >= 2 && strings.Contains(skText, kw) {
+							pts += 3
+						}
+					}
+				}
+			}
+		}
+		metaText := strings.ToLower(m.Name + " " + m.RoleTitle + " " + m.SystemPrompt + " " + m.Traits)
 		for _, token := range strings.Fields(lower) {
 			if len([]rune(token)) >= 2 && strings.Contains(metaText, token) {
 				pts += 2
@@ -150,6 +200,10 @@ func selectSmartGroupMembers(members []store.Bot, userMsg string) []store.Bot {
 			if len([]rune(word)) >= 2 && strings.Contains(lower, word) {
 				pts += 2
 			}
+		}
+		// Companion bots get a mild conversational affinity boost on short/casual messages
+		if pts == 0 && len([]rune(strings.TrimSpace(userMsg))) <= 24 && store.NormalizeBotMode(m.BotMode) == store.BotModeCompanion {
+			pts += 1
 		}
 		if pts > 0 {
 			ranked = append(ranked, scored{bot: m, score: pts})
@@ -195,14 +249,24 @@ func (e *Engine) chatStreamForBot(
 		return nil, fmt.Errorf("消息内容不能为空")
 	}
 	replyPreview := notifier.StripEmoji(strings.TrimSpace(req.ReplyPreview))
+	threadID := strings.TrimSpace(req.ThreadID)
 
-	// Ensure timeline anchor session exists cleanly & load prior history
-	history, _ := e.store.ListBotMessages(bot.ID, 40)
+	// Load prior messages strictly scoped to this Bot/Group + Thread
+	history, _ := e.store.ListBotMessagesByThread(bot.ID, threadID, 40)
 
-	// Persist user message once in this Bot's timeline
+	// Auto-title custom topic thread on first user message
+	if threadID != "" {
+		if th, _ := e.store.GetBotThread(bot.ID, threadID); th != nil && (th.Title == "新话题" || th.Title == "新对话" || strings.TrimSpace(th.Title) == "") {
+			th.Title = truncateTitle(userMsg)
+			_ = e.store.SaveBotThread(*th)
+		}
+	}
+
+	// Persist user message once in this Bot/Group's isolated thread timeline
 	userMsgID, err := e.store.AppendAgentMessage(store.AgentMessage{
 		SessionID:    "bot:" + bot.ID,
 		BotID:        bot.ID,
+		ThreadID:     threadID,
 		MsgKind:      "chat",
 		Role:         "user",
 		Content:      userMsg,
@@ -242,6 +306,7 @@ func (e *Engine) chatStreamForBot(
 				sysMsg := store.AgentMessage{
 					SessionID: "bot:" + bot.ID,
 					BotID:     bot.ID,
+					ThreadID:  threadID,
 					MsgKind:   "system",
 					Role:      "system",
 					Content:   notice,
@@ -256,6 +321,12 @@ func (e *Engine) chatStreamForBot(
 			return e.runTeamRoomHandoff(ctx, req, bot, mentioned, memberSet, history, promptMsg, baseURL, apiKey, emit)
 		}
 
+		allSkills, _ := e.store.ListSkills()
+		skillMap := make(map[string]store.Skill, len(allSkills))
+		for _, sk := range allSkills {
+			skillMap[sk.ID] = sk
+		}
+
 		var targets []store.Bot
 		allowAutoRelay := false
 		switch strings.TrimSpace(bot.GroupMode) {
@@ -266,7 +337,7 @@ func (e *Engine) chatStreamForBot(
 				targets = members[:1]
 			}
 		default: // "smart"
-			targets = selectSmartGroupMembers(members, userMsg)
+			targets = selectSmartGroupMembersWithSkills(members, skillMap, userMsg)
 			allowAutoRelay = len(targets) == 1 && len(members) > 1
 		}
 		if len(targets) > 0 {
@@ -289,6 +360,7 @@ func (e *Engine) chatStreamForBot(
 			sysMsg := store.AgentMessage{
 				SessionID: "bot:" + bot.ID,
 				BotID:     bot.ID,
+				ThreadID:  threadID,
 				MsgKind:   "system",
 				Role:      "system",
 				Content:   notice,
@@ -409,6 +481,7 @@ func (e *Engine) runTeamRoomHandoffWithRelay(
 	lastResponder := executeList[len(executeList)-1]
 	finalResp := &ChatResponse{
 		BotID:            roomBot.ID,
+		ThreadID:         strings.TrimSpace(req.ThreadID),
 		SenderBotID:      lastResponder.ID,
 		SessionID:        "bot:" + roomBot.ID,
 		Model:            executeList[0].Model,
@@ -453,13 +526,28 @@ func (e *Engine) runSingleBotTurn(
 		thinkFlag = &v
 	}
 
-	e.emitBotState(actingBot.ID, store.BotStateThinking, "正在思考处理...")
+	threadID := strings.TrimSpace(req.ThreadID)
+	statusHint := "正在思考..."
+	if store.NormalizeBotMode(actingBot.BotMode) == store.BotModeCompanion {
+		statusHint = "正在输入..."
+	}
+	e.emitBotState(actingBot.ID, store.BotStateThinking, statusHint)
 	defer func() {
 		_ = e.store.ClearBotUnread(timelineBotID)
 	}()
 
-	memories, _ := e.store.ListAgentMemories("", 40)
-	sysPrompt := buildBotSystemPrompt(actingBot, memories)
+	// Load strictly scoped memories (never leaking unrelated Bot private memories)
+	memScopes := []string{"bot:" + timelineBotID}
+	if actingBot.ID != "" && actingBot.ID != timelineBotID {
+		memScopes = append(memScopes, "bot:"+actingBot.ID)
+	}
+	if actingBot.MemoryPolicy != store.MemoryPolicyIsolated {
+		memScopes = append(memScopes, "global")
+	}
+	memories, _ := e.store.ListScopedMemories(memScopes, "", 40)
+
+	attachedSkills, _ := e.store.GetSkillsByIDs(actingBot.SkillIDList())
+	sysPrompt := buildBotSystemPrompt(actingBot, attachedSkills, memories, timelineBotID != actingBot.ID)
 
 	messages := make([]apiMessage, 0, len(history)+8)
 	messages = append(messages, apiMessage{
@@ -502,7 +590,13 @@ func (e *Engine) runSingleBotTurn(
 	}
 	messages = append(messages, apiMessage{Role: "user", Content: userMsg})
 
-	tools := filterToolsForBot(actingBot)
+	tools := filterToolsForBot(actingBot, attachedSkills)
+	toolCtx := WithToolScope(ctx, ToolScope{
+		BotID:         actingBot.ID,
+		TimelineBotID: timelineBotID,
+		ThreadID:      threadID,
+		MemoryPolicy:  actingBot.MemoryPolicy,
+	})
 	var totalReasoning strings.Builder
 	var finalContent strings.Builder
 	traces := make([]ToolTrace, 0)
@@ -543,6 +637,7 @@ func (e *Engine) runSingleBotTurn(
 			_, _ = e.store.AppendAgentMessage(store.AgentMessage{
 				SessionID:        "bot:" + timelineBotID,
 				BotID:            timelineBotID,
+				ThreadID:         threadID,
 				SenderBotID:      actingBot.ID,
 				MsgKind:          "chat",
 				Role:             "assistant",
@@ -558,6 +653,7 @@ func (e *Engine) runSingleBotTurn(
 		_, _ = e.store.AppendAgentMessage(store.AgentMessage{
 			SessionID:        "bot:" + timelineBotID,
 			BotID:            timelineBotID,
+			ThreadID:         threadID,
 			SenderBotID:      actingBot.ID,
 			MsgKind:          "chat",
 			Role:             "assistant",
@@ -586,12 +682,40 @@ func (e *Engine) runSingleBotTurn(
 					"sender_bot_id": actingBot.ID,
 				})
 			}
-			toolOutput, toolErr := e.ExecuteTool(ctx, tc.Function.Name, tc.Function.Arguments)
+			toolStart := time.Now()
+			toolOutput, toolErr := e.ExecuteTool(toolCtx, tc.Function.Name, tc.Function.Arguments)
+			toolDurationMs := time.Since(toolStart).Milliseconds()
+			execStatus := "ok"
 			if toolErr != nil {
+				execStatus = "error"
 				errPayload, _ := json.Marshal(map[string]any{"ok": false, "error": toolErr.Error()})
 				toolOutput = string(errPayload)
 			}
 			toolOutput = notifier.StripEmoji(toolOutput)
+
+			execType := "tool"
+			if strings.HasPrefix(tc.Function.Name, "skill_") {
+				execType = "skill"
+			}
+			inSummary := tc.Function.Arguments
+			if len([]rune(inSummary)) > 160 {
+				inSummary = string([]rune(inSummary)[:160]) + "..."
+			}
+			outSummary := toolOutput
+			if len([]rune(outSummary)) > 200 {
+				outSummary = string([]rune(outSummary)[:200]) + "..."
+			}
+			e.store.RecordBotExecution(store.BotExecutionLog{
+				BotID:         timelineBotID,
+				ThreadID:      threadID,
+				ExecType:      execType,
+				Name:          tc.Function.Name,
+				InputSummary:  inSummary,
+				OutputSummary: outSummary,
+				Status:        execStatus,
+				DurationMs:    toolDurationMs,
+			})
+
 			traces = append(traces, ToolTrace{
 				ID:        tc.ID,
 				Name:      tc.Function.Name,
@@ -609,6 +733,7 @@ func (e *Engine) runSingleBotTurn(
 			_, _ = e.store.AppendAgentMessage(store.AgentMessage{
 				SessionID:   "bot:" + timelineBotID,
 				BotID:       timelineBotID,
+				ThreadID:    threadID,
 				SenderBotID: actingBot.ID,
 				MsgKind:     "chat",
 				Role:        "tool",
@@ -626,8 +751,21 @@ func (e *Engine) runSingleBotTurn(
 	preview := truncateTitle(finalContent.String())
 	e.emitBotState(actingBot.ID, store.BotStateIdle, preview)
 
+	// Background scoped memory distillation for both Companion & Worker Bots
+	rememberedInTurn := false
+	for _, tr := range traces {
+		if tr.Name == "remember_fact" {
+			rememberedInTurn = true
+			break
+		}
+	}
+	if !rememberedInTurn && strings.TrimSpace(finalContent.String()) != "" {
+		go e.distillMemoryWithScope("bot:"+timelineBotID, actingBot.BotMode, userMsg, finalContent.String())
+	}
+
 	resp := &ChatResponse{
 		BotID:            timelineBotID,
+		ThreadID:         threadID,
 		SenderBotID:      actingBot.ID,
 		SessionID:        "bot:" + timelineBotID,
 		Persona:          actingBot.ID,
