@@ -129,7 +129,7 @@ func (s *Scheduler) RunNow(ctx context.Context, taskID string) (modules.RunResul
 	return s.execute(ctx, taskID, "manual")
 }
 
-func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (modules.RunResult, error) {
+func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (res modules.RunResult, runErr error) {
 	s.mu.Lock()
 	if s.running[taskID] {
 		s.mu.Unlock()
@@ -139,6 +139,10 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (mo
 	s.mu.Unlock()
 
 	defer func() {
+		if r := recover(); r != nil {
+			runErr = fmt.Errorf("task %s panic: %v", taskID, r)
+			log.Printf("[scheduler] %v", runErr)
+		}
 		s.mu.Lock()
 		delete(s.running, taskID)
 		s.mu.Unlock()
@@ -173,7 +177,7 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (mo
 	}
 
 	start := time.Now()
-	res, runErr := runner.RunWithTask(ctx, *task)
+	res, runErr = runner.RunWithTask(ctx, *task)
 	durationMs := time.Since(start).Milliseconds()
 
 	status := "success"
@@ -212,11 +216,17 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (mo
 		}
 		_ = s.store.SetBotState(botID, finalState, cleanSummary)
 		_ = s.store.IncrementBotUnread(botID, cleanSummary)
+		updatedBot, _ := s.store.GetBot(botID)
+		unread := 0
+		if updatedBot != nil {
+			unread = updatedBot.UnreadCount
+		}
 		if s.hub != nil {
 			s.hub.PublishEvent("bot_message", msg)
 			s.hub.PublishEvent("bot_state", map[string]any{
 				"bot_id":       botID,
 				"state":        finalState,
+				"unread_count": unread,
 				"last_summary": cleanSummary,
 			})
 		}

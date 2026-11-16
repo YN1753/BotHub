@@ -8,10 +8,123 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
+
+type ModelHealthStats struct {
+	TargetID      string `json:"target_id"`
+	SuccessCount  int64  `json:"success_count"`
+	FailCount     int64  `json:"fail_count"`
+	LastLatencyMs int64  `json:"last_latency_ms"`
+	LastError     string `json:"last_error,omitempty"`
+	CooldownSec   int64  `json:"cooldown_sec"`
+	cooldownUntil time.Time
+}
+
+type ModelHealthTracker struct {
+	mu    sync.Mutex
+	stats map[string]*ModelHealthStats
+}
+
+func newModelHealthTracker() *ModelHealthTracker {
+	return &ModelHealthTracker{
+		stats: make(map[string]*ModelHealthStats),
+	}
+}
+
+func (t *ModelHealthTracker) recordSuccess(targetID string, latencyMs int64) {
+	if t == nil || targetID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	s, ok := t.stats[targetID]
+	if !ok {
+		s = &ModelHealthStats{TargetID: targetID}
+		t.stats[targetID] = s
+	}
+	s.SuccessCount++
+	s.LastLatencyMs = latencyMs
+	s.LastError = ""
+	s.cooldownUntil = time.Time{}
+	s.CooldownSec = 0
+}
+
+func (t *ModelHealthTracker) recordFailure(targetID, errMsg string, isRateLimit bool) {
+	if t == nil || targetID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	s, ok := t.stats[targetID]
+	if !ok {
+		s = &ModelHealthStats{TargetID: targetID}
+		t.stats[targetID] = s
+	}
+	s.FailCount++
+	s.LastError = strings.TrimSpace(errMsg)
+	cool := 30 * time.Second
+	if isRateLimit {
+		cool = 60 * time.Second
+	}
+	s.cooldownUntil = time.Now().Add(cool)
+}
+
+func (t *ModelHealthTracker) isCooling(targetID string) bool {
+	if t == nil || targetID == "" {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	s, ok := t.stats[targetID]
+	if !ok {
+		return false
+	}
+	return time.Now().Before(s.cooldownUntil)
+}
+
+func (t *ModelHealthTracker) prioritizeHealthy(targets []ModelTarget) []ModelTarget {
+	if t == nil || len(targets) <= 1 {
+		return targets
+	}
+	healthy := make([]ModelTarget, 0, len(targets))
+	cooling := make([]ModelTarget, 0)
+	for _, tgt := range targets {
+		if t.isCooling(tgt.ID) {
+			cooling = append(cooling, tgt)
+		} else {
+			healthy = append(healthy, tgt)
+		}
+	}
+	return append(healthy, cooling...)
+}
+
+func (t *ModelHealthTracker) Snapshot() map[string]ModelHealthStats {
+	out := make(map[string]ModelHealthStats)
+	if t == nil {
+		return out
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := time.Now()
+	for id, s := range t.stats {
+		cp := *s
+		if now.Before(s.cooldownUntil) {
+			cp.CooldownSec = int64(time.Until(s.cooldownUntil).Seconds()) + 1
+		} else {
+			cp.CooldownSec = 0
+		}
+		out[id] = cp
+	}
+	return out
+}
+
+func (e *Engine) GetModelHealth() map[string]ModelHealthStats {
+	return e.health.Snapshot()
+}
 
 type ModelTarget struct {
 	ID            string
@@ -104,6 +217,7 @@ func (e *Engine) ResolveChatTargets(requestedModel string) ([]ModelTarget, error
 
 	if reqM == "free-pool" {
 		if len(poolTargets) > 0 {
+			poolTargets = e.health.prioritizeHealthy(poolTargets)
 			if primary.APIKey != "" && allowFallback {
 				return append(poolTargets, primary), nil
 			}
@@ -141,11 +255,13 @@ func (e *Engine) ResolveChatTargets(requestedModel string) ([]ModelTarget, error
 		}
 		out := []ModelTarget{pinned}
 		if allowFallback {
+			var backupPool []ModelTarget
 			for _, pt := range poolTargets {
 				if pt.ID != pinned.ID {
-					out = append(out, pt)
+					backupPool = append(backupPool, pt)
 				}
 			}
+			out = append(out, e.health.prioritizeHealthy(backupPool)...)
 			if primary.APIKey != "" {
 				out = append(out, primary)
 			}
@@ -164,19 +280,24 @@ func (e *Engine) ResolveChatTargets(requestedModel string) ([]ModelTarget, error
 	if primary.APIKey != "" {
 		out := []ModelTarget{primary}
 		if allowFallback && len(poolTargets) > 0 {
-			out = append(out, poolTargets...)
+			out = append(out, e.health.prioritizeHealthy(poolTargets)...)
 		}
 		return out, nil
 	}
 
 	if len(poolTargets) > 0 {
-		return poolTargets, nil
+		return e.health.prioritizeHealthy(poolTargets), nil
 	}
 	return nil, fmt.Errorf("尚未配置主力 DeepSeek / 中转站 API Key，且免费模型池暂无可用 Key，请先在「设置 -> AI 大脑设置」中配置")
 }
 
 // ProbeModelTarget executes a lightweight non-streaming connectivity test against a target provider.
 func (e *Engine) ProbeModelTarget(ctx context.Context, baseURL, apiKey, model, provider string) (int64, string, error) {
+	return e.ProbeModelTargetWithID(ctx, provider, baseURL, apiKey, model, provider)
+}
+
+// ProbeModelTargetWithID probes a target and updates health telemetry under the given targetID.
+func (e *Engine) ProbeModelTargetWithID(ctx context.Context, targetID, baseURL, apiKey, model, provider string) (int64, string, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	apiKey = strings.TrimSpace(apiKey)
 	model = strings.TrimSpace(model)
@@ -214,14 +335,23 @@ func (e *Engine) ProbeModelTarget(ctx context.Context, baseURL, apiKey, model, p
 
 	resp, err := e.httpClient.Do(req)
 	elapsed := time.Since(start).Milliseconds()
+	healthID := strings.TrimSpace(targetID)
+	if healthID == "" {
+		healthID = provider
+	} else if healthID != "primary" && !strings.HasPrefix(healthID, "pool:") {
+		healthID = "pool:" + healthID
+	}
 	if err != nil {
+		e.health.recordFailure(healthID, err.Error(), false)
 		return elapsed, "", fmt.Errorf("连接失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return elapsed, "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		errText := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		e.health.recordFailure(healthID, errText, resp.StatusCode == http.StatusTooManyRequests)
+		return elapsed, "", fmt.Errorf("%s", errText)
 	}
 	var parsed struct {
 		Choices []struct {
@@ -231,7 +361,9 @@ func (e *Engine) ProbeModelTarget(ctx context.Context, baseURL, apiKey, model, p
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil || len(parsed.Choices) == 0 {
+		e.health.recordFailure(healthID, "接口返回非标准 OpenAI 格式", false)
 		return elapsed, "", fmt.Errorf("接口返回非标准 OpenAI 格式")
 	}
+	e.health.recordSuccess(healthID, elapsed)
 	return elapsed, strings.TrimSpace(parsed.Choices[0].Message.Content), nil
 }

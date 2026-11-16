@@ -120,8 +120,23 @@ async function saveAllConfig() {
   }
 }
 
+const probingAll = ref(false)
+
+function healthForTarget(key: string) {
+  return store.state.modelHealth?.[key]
+}
+
+function healthBadgeText(key: string): string {
+  const h = healthForTarget(key)
+  if (!h) return ''
+  if (h.cooldown_sec > 0) return `冷却中 ${h.cooldown_sec}s`
+  if (h.success_count > 0) return `成功 ${h.success_count} · ${h.last_latency_ms}ms`
+  if (h.fail_count > 0) return `异常 (${h.fail_count})`
+  return ''
+}
+
 async function probeTarget(targetId: string, provider: string, baseUrl: string, apiKey: string, modelId: string) {
-  if (probingId.value) return
+  if (probingId.value && !probingAll.value) return
   probingId.value = targetId
   delete probeResults.value[targetId]
   try {
@@ -133,11 +148,32 @@ async function probeTarget(targetId: string, provider: string, baseUrl: string, 
       model: modelId.trim() || 'deepseek-flash',
     })
     probeResults.value[targetId] = { ok: true, msg: res.message || `${res.latency_ms}ms OK` }
+    if (res.model_health) {
+      store.state.modelHealth = res.model_health
+    }
   } catch (err: any) {
     probeResults.value[targetId] = { ok: false, msg: err.message || '连接失败' }
   } finally {
-    probingId.value = ''
+    if (!probingAll.value) probingId.value = ''
   }
+}
+
+async function probeAllEnabledPool() {
+  if (probingAll.value || probingId.value) return
+  const active = poolEntries.value.filter((e) => e.enabled && e.api_key.trim() !== '')
+  if (active.length === 0) {
+    store.notify('请至少为一个启用中的免费节点填入 API Key')
+    return
+  }
+  probingAll.value = true
+  let okCount = 0
+  for (const entry of active) {
+    await probeTarget(entry.id, entry.provider, entry.base_url, entry.api_key, entry.model)
+    if (probeResults.value[entry.id]?.ok) okCount++
+  }
+  probingId.value = ''
+  probingAll.value = false
+  store.notify(`全池测速完成：${okCount}/${active.length} 节点连通`)
 }
 
 function addCustomPoolNode() {
@@ -374,13 +410,23 @@ async function handleImportBackup(e: Event) {
                 <div class="text-xs font-semibold text-emerald-300">免费 AI 模型池 (Google AI Studio / 硅基流动 / 智谱等)</div>
                 <p class="text-[11px] text-slate-400 mt-0.5">按优先级自动轮询容灾：遇到限流或主力未填 Key 时无缝切换下一个可用免费节点</p>
               </div>
-              <button
-                type="button"
-                @click="addCustomPoolNode"
-                class="min-h-[30px] px-2.5 rounded-lg border border-emerald-400/35 bg-emerald-400/10 hover:bg-emerald-400/18 text-[11px] text-emerald-300 cursor-pointer shrink-0"
-              >
-                + 自定义节点
-              </button>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  :disabled="probingAll"
+                  @click="probeAllEnabledPool"
+                  class="min-h-[30px] px-2.5 rounded-lg border border-[#f2b880]/35 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-[11px] text-[#f2b880] cursor-pointer disabled:opacity-45"
+                >
+                  {{ probingAll ? '全池测速中...' : '一键全池测速' }}
+                </button>
+                <button
+                  type="button"
+                  @click="addCustomPoolNode"
+                  class="min-h-[30px] px-2.5 rounded-lg border border-emerald-400/35 bg-emerald-400/10 hover:bg-emerald-400/18 text-[11px] text-emerald-300 cursor-pointer shrink-0"
+                >
+                  + 自定义节点
+                </button>
+              </div>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -421,6 +467,19 @@ async function handleImportBackup(e: Event) {
                     <span class="text-xs font-semibold text-white truncate">{{ entry.name }}</span>
                     <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#fff8ee]/[0.05] text-slate-400 shrink-0">
                       {{ entry.model }}
+                    </span>
+                    <span
+                      v-if="healthBadgeText('pool:' + entry.id)"
+                      :class="[
+                        'hidden sm:inline-flex font-mono text-[9.5px] px-1.5 py-0.5 rounded border shrink-0',
+                        (healthForTarget('pool:' + entry.id)?.cooldown_sec || 0) > 0
+                          ? 'border-amber-400/35 bg-amber-400/10 text-amber-300'
+                          : (healthForTarget('pool:' + entry.id)?.success_count || 0) > 0
+                            ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                            : 'border-rose-400/30 bg-rose-500/10 text-rose-300'
+                      ]"
+                    >
+                      {{ healthBadgeText('pool:' + entry.id) }}
                     </span>
                   </button>
 

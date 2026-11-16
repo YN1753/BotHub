@@ -35,7 +35,7 @@ function resolveGroupMembers(b: Bot): Bot[] {
 
 interface SearchEntry {
   key: string
-  category: '会话' | '快捷操作' | '资产' | '例程'
+  category: '会话' | '快捷操作' | '资产' | '例程' | '记忆'
   title: string
   subtitle: string
   bot?: Bot
@@ -141,6 +141,18 @@ const entries = computed<SearchEntry[]>(() => {
         const res = await BotHubApi.runTask(t.id)
         store.notify(res.summary || '任务执行完成')
         await store.loadDashboard(false)
+      },
+    })
+  })
+
+  store.state.memories.forEach((m) => {
+    list.push({
+      key: `mem_${m.id}`,
+      category: '记忆',
+      title: m.fact_key,
+      subtitle: `${m.category} · ${m.content}`,
+      run: () => {
+        store.state.showMemoriesModal = true
       },
     })
   })

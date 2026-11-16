@@ -577,10 +577,16 @@ func (s *Server) handleForwardBotMessage(w http.ResponseWriter, r *http.Request)
 	}
 	fwdMsg.ID = id
 	_ = s.store.IncrementBotUnread(targetBot.ID, fmt.Sprintf("收到来自「%s」的转发消息", fromName))
+	updatedTarget, _ := s.store.GetBot(targetBot.ID)
+	unread := 0
+	if updatedTarget != nil {
+		unread = updatedTarget.UnreadCount
+	}
 	if s.push != nil && s.push.Hub() != nil {
 		s.push.Hub().PublishEvent("bot_message", fwdMsg)
 		s.push.Hub().PublishEvent("bot_state", map[string]any{
 			"bot_id":       targetBot.ID,
+			"unread_count": unread,
 			"last_summary": fmt.Sprintf("收到来自「%s」的转发消息", fromName),
 		})
 	}

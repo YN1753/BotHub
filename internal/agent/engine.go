@@ -25,6 +25,7 @@ type Engine struct {
 	scheduler             TaskController
 	hub                   *pushstream.Hub
 	httpClient            *http.Client
+	health                *ModelHealthTracker
 	allowLocalhostForTest bool
 }
 
@@ -36,6 +37,7 @@ func NewEngine(st *store.Store, sched TaskController) *Engine {
 	return &Engine{
 		store:     st,
 		scheduler: sched,
+		health:    newModelHealthTracker(),
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -72,6 +74,7 @@ type ChatResponse struct {
 	SenderBotID      string      `json:"sender_bot_id,omitempty"`
 	Persona          string      `json:"persona"`
 	Model            string      `json:"model"`
+	ProviderLabel    string      `json:"provider_label,omitempty"`
 	ReasoningContent string      `json:"reasoning_content,omitempty"`
 	Content          string      `json:"content"`
 	ToolTraces       []ToolTrace `json:"tool_traces,omitempty"`
@@ -398,7 +401,7 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 
 	const maxRounds = 5
 	for round := 0; round < maxRounds; round++ {
-		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(ctx, targets, messages, tools, req.EnableThinking, func(deltaReasoning, deltaContent string) {
+		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(ctx, targets, messages, tools, req.EnableThinking, emit, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
 				clean := notifier.StripEmoji(deltaReasoning)
 				totalReasoning.WriteString(clean)
@@ -576,10 +579,18 @@ func (e *Engine) streamRoundWithFailover(
 	messages []apiMessage,
 	tools []ToolDefinition,
 	enableThinking *bool,
+	emit func(event string, data any),
 	onDelta func(deltaReasoning, deltaContent string),
 ) (string, string, []apiToolCall, *TokenUsage, ModelTarget, error) {
 	var lastErr error
-	for _, target := range targets {
+	for idx, target := range targets {
+		if idx > 0 && emit != nil {
+			emit("model_switch", map[string]any{
+				"from_label": targets[idx-1].Label,
+				"to_label":   target.Label,
+				"to_model":   target.Model,
+			})
+		}
 		var thinkingCfg *thinkingConfig
 		if target.AllowThinking {
 			enabled := true
@@ -593,6 +604,7 @@ func (e *Engine) streamRoundWithFailover(
 			}
 		}
 
+		turnStart := time.Now()
 		emittedAny := false
 		rReasoning, rContent, tcs, usage, err := e.streamSingleRoundWithProvider(
 			ctx, target.Provider, target.BaseURL, target.APIKey, target.Model,
@@ -607,9 +619,12 @@ func (e *Engine) streamRoundWithFailover(
 			},
 		)
 		if err == nil {
+			e.health.recordSuccess(target.ID, time.Since(turnStart).Milliseconds())
 			return rReasoning, rContent, tcs, usage, target, nil
 		}
 		lastErr = err
+		is429 := strings.Contains(err.Error(), "(429)") || strings.Contains(strings.ToLower(err.Error()), "rate")
+		e.health.recordFailure(target.ID, err.Error(), is429)
 		if emittedAny || ctx.Err() != nil {
 			return "", "", nil, nil, target, err
 		}

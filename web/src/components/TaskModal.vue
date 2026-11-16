@@ -230,9 +230,17 @@ async function handleDelete() {
       <div class="modal-section flex flex-col gap-3">
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <span class="text-xs font-semibold text-[#f2b880]">触发频率与时间窗</span>
-          <span class="inline-flex items-center gap-1.5 font-mono text-[11px] px-2.5 py-0.5 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f7cba0]">
-            {{ describeCron(computedCron) }} ({{ computedCron }})
-          </span>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span
+              v-if="(store.state.editingTask as any)?.next_run_at"
+              class="font-mono text-[10.5px] px-2 py-0.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
+            >
+              下次: {{ (store.state.editingTask as any).next_run_at }}
+            </span>
+            <span class="inline-flex items-center gap-1.5 font-mono text-[11px] px-2.5 py-0.5 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f7cba0]">
+              {{ describeCron(computedCron) }} ({{ computedCron }})
+            </span>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">

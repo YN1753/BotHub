@@ -7,6 +7,7 @@ import BotAvatar from './BotAvatar.vue'
 const store = useAppStore()
 const passwordId = useId()
 const password = ref('')
+const showPassword = ref(false)
 const loading = ref(false)
 const errorMsg = ref('')
 
@@ -36,22 +37,32 @@ async function handleSubmit() {
           <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880]" aria-hidden="true" />
           <span>VESPER BOTHUB</span>
         </div>
-        <BotAvatar avatar-style="cyan" state="idle" size="lg" />
+        <BotAvatar avatar-style="butler:gold" :state="loading ? 'working' : password ? 'thinking' : 'idle'" size="lg" />
       </div>
       <h1 class="text-2xl font-semibold text-white mb-1 tracking-tight">星穹 GrokBot 中枢</h1>
       <p class="font-mono text-xs text-slate-400 mb-6">bot.starryheavens.uk · 请输入管理密钥</p>
 
       <form class="flex flex-col gap-3" @submit.prevent="handleSubmit">
         <label :for="passwordId" class="sr-only">访问密钥</label>
-        <input
-          :id="passwordId"
-          v-model="password"
-          type="password"
-          placeholder="输入访问密钥..."
-          autocomplete="current-password"
-          required
-          class="w-full min-h-[44px] rounded-xl border border-[#fff8ee]/12 bg-[#070a14]/85 px-3.5 py-2.5 font-mono text-sm text-white placeholder-slate-500 focus:border-[#f2b880]/60"
-        />
+        <div class="relative">
+          <input
+            :id="passwordId"
+            v-model="password"
+            :type="showPassword ? 'text' : 'password'"
+            placeholder="输入访问密钥..."
+            autocomplete="current-password"
+            required
+            class="w-full min-h-[44px] rounded-xl border border-[#fff8ee]/12 bg-[#070a14]/85 pl-3.5 pr-12 py-2.5 font-mono text-sm text-white placeholder-slate-500 focus:border-[#f2b880]/60"
+          />
+          <button
+            type="button"
+            @click="showPassword = !showPassword"
+            :aria-label="showPassword ? '隐藏密钥' : '显示密钥'"
+            class="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-lg text-[11px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer"
+          >
+            {{ showPassword ? '隐藏' : '显示' }}
+          </button>
+        </div>
         <button
           type="submit"
           :disabled="loading"

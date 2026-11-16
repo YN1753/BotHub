@@ -140,3 +140,98 @@ func TestFreeModelPoolRoutingFailoverAndFlashOnlyNormalization(t *testing.T) {
 		t.Fatalf("unexpected relay probe request: model=%q auth=%q", relayUsedModel, relayAuth)
 	}
 }
+
+func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
+	tmpDir := t.TempDir()
+	st, err := store.Open(filepath.Join(tmpDir, "health_test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	var hitCounts = map[string]int{}
+	s1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hitCounts["google"]++
+		http.Error(w, `{"error":"rate limit"}`, http.StatusTooManyRequests)
+	}))
+	defer s1.Close()
+
+	s2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hitCounts["sf"]++
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		for _, c := range []string{
+			`data: {"choices":[{"delta":{"role":"assistant","content":"节点二正常响应。"}}]}`,
+			`data: [DONE]`,
+		} {
+			fmt.Fprintln(w, c)
+			fmt.Fprintln(w)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer s2.Close()
+
+	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "")
+	pool := st.GetModelPool()
+	for i := range pool {
+		if pool[i].ID == "google_ai_studio" {
+			pool[i].BaseURL = s1.URL
+			pool[i].APIKey = "AIzaTestKey"
+			pool[i].Priority = 10
+		} else if pool[i].ID == "siliconflow_free" {
+			pool[i].BaseURL = s2.URL
+			pool[i].APIKey = "sk-sf-key"
+			pool[i].Priority = 20
+		}
+	}
+	_ = st.SaveModelPool(pool)
+
+	eng := NewEngine(st, &fakeTaskController{st: st})
+
+	var events []string
+	_, err = eng.ChatStream(context.Background(), ChatRequest{
+		BotID:   "butler",
+		Message: "第一次提问",
+		Model:   "free-pool",
+	}, func(event string, _ any) {
+		events = append(events, event)
+	})
+	if err != nil {
+		t.Fatalf("first turn failed: %v", err)
+	}
+	if !strings.Contains(strings.Join(events, ","), "model_switch") {
+		t.Fatalf("expected model_switch SSE event during failover, got: %v", events)
+	}
+
+	// Second turn should skip cooled google_ai_studio and hit s2 directly!
+	_, err = eng.ChatStream(context.Background(), ChatRequest{
+		BotID:   "butler",
+		Message: "第二次提问",
+		Model:   "free-pool",
+	}, nil)
+	if err != nil {
+		t.Fatalf("second turn failed: %v", err)
+	}
+	if hitCounts["google"] != 1 || hitCounts["sf"] != 2 {
+		t.Fatalf("expected google called once (then cooled) and sf called twice, got %+v", hitCounts)
+	}
+
+	snap := eng.GetModelHealth()
+	if snap["pool:google_ai_studio"].CooldownSec <= 0 || snap["pool:siliconflow_free"].SuccessCount != 2 {
+		t.Fatalf("unexpected health snapshot: %+v", snap)
+	}
+
+	msgs, _ := st.ListBotMessages("butler", 10)
+	foundModelUsed := false
+	for _, m := range msgs {
+		if m.Role == "assistant" && m.ModelUsed == "Qwen/Qwen2.5-7B-Instruct" {
+			foundModelUsed = true
+		}
+	}
+	if !foundModelUsed {
+		t.Fatalf("expected persisted model_used=Qwen/Qwen2.5-7B-Instruct in agent_messages, got %+v", msgs)
+	}
+}
+

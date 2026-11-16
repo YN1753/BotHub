@@ -225,6 +225,7 @@ CREATE TABLE IF NOT EXISTS bots (
 		`ALTER TABLE bots ADD COLUMN announcement TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE agent_messages ADD COLUMN reply_to_id INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE agent_messages ADD COLUMN reply_preview TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE agent_messages ADD COLUMN model_used TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range alters {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {

@@ -28,6 +28,7 @@ type AgentMessage struct {
 	ToolCallID       string `json:"tool_call_id,omitempty"` // For role="tool"
 	ReplyToID        int64  `json:"reply_to_id,omitempty"`
 	ReplyPreview     string `json:"reply_preview,omitempty"`
+	ModelUsed        string `json:"model_used,omitempty"`
 	CreatedAt        string `json:"created_at"`
 }
 
@@ -115,9 +116,9 @@ func (s *Store) AppendAgentMessage(msg AgentMessage) (int64, error) {
 	if msg.MsgKind == "" {
 		msg.MsgKind = "chat"
 	}
-	res, err := s.db.Exec(`INSERT INTO agent_messages (session_id, bot_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		msg.SessionID, msg.BotID, msg.SenderBotID, msg.MsgKind, msg.Role, msg.Content, msg.ReasoningContent, msg.ToolCalls, msg.ToolCallID, msg.ReplyToID, msg.ReplyPreview, msg.CreatedAt)
+	res, err := s.db.Exec(`INSERT INTO agent_messages (session_id, bot_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, model_used, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		msg.SessionID, msg.BotID, msg.SenderBotID, msg.MsgKind, msg.Role, msg.Content, msg.ReasoningContent, msg.ToolCalls, msg.ToolCallID, msg.ReplyToID, msg.ReplyPreview, msg.ModelUsed, msg.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -132,9 +133,9 @@ func (s *Store) ListAgentMessages(sessionID string, limit int) ([]AgentMessage, 
 		limit = 60
 	}
 	rows, err := s.db.Query(`
-		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, COALESCE(reply_to_id,0), COALESCE(reply_preview,''), created_at
+		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, COALESCE(reply_to_id,0), COALESCE(reply_preview,''), COALESCE(model_used,''), created_at
 		FROM (
-			SELECT id, session_id, bot_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, created_at
+			SELECT id, session_id, bot_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, model_used, created_at
 			FROM agent_messages WHERE session_id = ? ORDER BY id DESC LIMIT ?
 		) sub ORDER BY id ASC`, sessionID, limit)
 	if err != nil {
@@ -145,7 +146,7 @@ func (s *Store) ListAgentMessages(sessionID string, limit int) ([]AgentMessage, 
 	var list []AgentMessage
 	for rows.Next() {
 		var m AgentMessage
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.BotID, &m.SenderBotID, &m.MsgKind, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.ReplyToID, &m.ReplyPreview, &m.CreatedAt); err == nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.BotID, &m.SenderBotID, &m.MsgKind, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.ReplyToID, &m.ReplyPreview, &m.ModelUsed, &m.CreatedAt); err == nil {
 			list = append(list, m)
 		}
 	}
@@ -157,9 +158,9 @@ func (s *Store) ListBotMessages(botID string, limit int) ([]AgentMessage, error)
 		limit = 80
 	}
 	rows, err := s.db.Query(`
-		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, COALESCE(reply_to_id,0), COALESCE(reply_preview,''), created_at
+		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, COALESCE(reply_to_id,0), COALESCE(reply_preview,''), COALESCE(model_used,''), created_at
 		FROM (
-			SELECT id, session_id, bot_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, created_at
+			SELECT id, session_id, bot_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, model_used, created_at
 			FROM agent_messages WHERE bot_id = ? ORDER BY id DESC LIMIT ?
 		) sub ORDER BY id ASC`, botID, limit)
 	if err != nil {
@@ -170,7 +171,7 @@ func (s *Store) ListBotMessages(botID string, limit int) ([]AgentMessage, error)
 	var list []AgentMessage
 	for rows.Next() {
 		var m AgentMessage
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.BotID, &m.SenderBotID, &m.MsgKind, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.ReplyToID, &m.ReplyPreview, &m.CreatedAt); err == nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.BotID, &m.SenderBotID, &m.MsgKind, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.ReplyToID, &m.ReplyPreview, &m.ModelUsed, &m.CreatedAt); err == nil {
 			list = append(list, m)
 		}
 	}

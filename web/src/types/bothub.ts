@@ -51,6 +51,7 @@ export interface AgentMessage {
   tool_call_id?: string
   reply_to_id?: number
   reply_preview?: string
+  model_used?: string
   created_at: string
 }
 
@@ -164,6 +165,15 @@ export interface ModelPoolEntry {
   note: string
 }
 
+export interface ModelHealthStats {
+  target_id: string
+  success_count: number
+  fail_count: number
+  last_latency_ms: number
+  last_error?: string
+  cooldown_sec: number
+}
+
 export interface DashboardPayload {
   version: string
   commit: string
@@ -173,6 +183,7 @@ export interface DashboardPayload {
   tasks: Task[]
   bots: Bot[]
   model_pool?: ModelPoolEntry[]
+  model_health?: Record<string, ModelHealthStats>
   templates: TaskTemplate[]
   asset_templates: AssetTemplate[]
   agent_memories: AgentMemory[]

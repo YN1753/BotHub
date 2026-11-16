@@ -510,7 +510,7 @@ func (e *Engine) runSingleBotTurn(
 
 	const maxRounds = 5
 	for round := 0; round < maxRounds; round++ {
-		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(ctx, targets, messages, tools, thinkFlag, func(deltaReasoning, deltaContent string) {
+		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(ctx, targets, messages, tools, thinkFlag, emit, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
 				clean := notifier.StripEmoji(deltaReasoning)
 				totalReasoning.WriteString(clean)
@@ -548,6 +548,7 @@ func (e *Engine) runSingleBotTurn(
 				Content:          notifier.StripEmoji(roundContent),
 				ReasoningContent: notifier.StripEmoji(totalReasoning.String()),
 				ToolCalls:        "[]",
+				ModelUsed:        activeTarget.Model,
 			})
 			break
 		}
@@ -562,6 +563,7 @@ func (e *Engine) runSingleBotTurn(
 			Content:          notifier.StripEmoji(roundContent),
 			ReasoningContent: notifier.StripEmoji(roundReasoning),
 			ToolCalls:        string(tcBytes),
+			ModelUsed:        activeTarget.Model,
 		})
 		messages = append(messages, apiMessage{
 			Role:             "assistant",
@@ -629,6 +631,7 @@ func (e *Engine) runSingleBotTurn(
 		SessionID:        "bot:" + timelineBotID,
 		Persona:          actingBot.ID,
 		Model:            activeTarget.Model,
+		ProviderLabel:    activeTarget.Label,
 		ReasoningContent: totalReasoning.String(),
 		Content:          finalContent.String(),
 		ToolTraces:       traces,

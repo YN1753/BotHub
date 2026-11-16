@@ -134,6 +134,16 @@ function closeModal() {
   store.state.editingAsset = undefined
 }
 
+function extendDueDate(months: number) {
+  dueMode.value = 'date'
+  const base = new Date(`${dueYear.value}-${dueMonth.value}-${dueDay.value}T00:00:00`)
+  const target = Number.isNaN(base.getTime()) ? new Date() : base
+  target.setMonth(target.getMonth() + months)
+  dueYear.value = String(target.getFullYear())
+  dueMonth.value = String(target.getMonth() + 1).padStart(2, '0')
+  dueDay.value = String(target.getDate()).padStart(2, '0')
+}
+
 async function handleSubmit() {
   if (!name.value.trim() || saving.value) return
   saving.value = true
@@ -241,18 +251,26 @@ async function handleDelete() {
             <CustomSelect v-model="warnDays" :options="WARN_OPTIONS" aria-label="临期预警梯度" />
           </div>
 
-          <div v-if="dueMode === 'date'" class="sm:col-span-2 grid grid-cols-3 gap-2.5">
-            <div class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>到期年份</span>
-              <CustomSelect v-model="dueYear" :options="YEAR_OPTIONS" aria-label="到期年份" />
+          <div v-if="dueMode === 'date'" class="sm:col-span-2 flex flex-col gap-2">
+            <div class="grid grid-cols-3 gap-2.5">
+              <div class="flex flex-col gap-1 text-xs text-slate-300">
+                <span>到期年份</span>
+                <CustomSelect v-model="dueYear" :options="YEAR_OPTIONS" aria-label="到期年份" />
+              </div>
+              <div class="flex flex-col gap-1 text-xs text-slate-300">
+                <span>到期月份</span>
+                <CustomSelect v-model="dueMonth" :options="MONTH_OPTIONS" aria-label="到期月份" />
+              </div>
+              <div class="flex flex-col gap-1 text-xs text-slate-300">
+                <span>到期日期</span>
+                <CustomSelect v-model="dueDay" :options="DAY_OPTIONS" aria-label="到期日期" />
+              </div>
             </div>
-            <div class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>到期月份</span>
-              <CustomSelect v-model="dueMonth" :options="MONTH_OPTIONS" aria-label="到期月份" />
-            </div>
-            <div class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>到期日期</span>
-              <CustomSelect v-model="dueDay" :options="DAY_OPTIONS" aria-label="到期日期" />
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-[11px] text-slate-500">一键顺延:</span>
+              <button type="button" @click="extendDueDate(1)" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">+1 个月</button>
+              <button type="button" @click="extendDueDate(3)" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">+1 季度</button>
+              <button type="button" @click="extendDueDate(12)" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">+1 年</button>
             </div>
           </div>
 

@@ -46,10 +46,13 @@ export const BotHubApi = {
     api_key: string
     model: string
   }) =>
-    apiRequest<{ ok: boolean; latency_ms: number; reply: string; message: string }>(
-      '/api/v2/model-pool/test',
-      { method: 'POST', body: JSON.stringify(payload) }
-    ),
+    apiRequest<{
+      ok: boolean
+      latency_ms: number
+      reply: string
+      model_health?: Record<string, any>
+      message: string
+    }>('/api/v2/model-pool/test', { method: 'POST', body: JSON.stringify(payload) }),
   testPush: () => apiRequest<{ ok: boolean; message: string }>('/api/test-push', { method: 'POST' }),
   rotateAppToken: () =>
     apiRequest<{ ok: boolean; token: string; message: string }>('/api/v2/auth/token/rotate', {

@@ -6,6 +6,7 @@ import type {
   Asset,
   AssetTemplate,
   Bot,
+  ModelHealthStats,
   ModelPoolEntry,
   NotificationItem,
   PushLog,
@@ -43,7 +44,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.8.0',
+  version: 'v2.9.0',
   uptimeSec: 0,
   serverNow: '--',
   stats: {
@@ -57,6 +58,7 @@ const state = reactive({
   },
   bots: [] as Bot[],
   modelPool: [] as ModelPoolEntry[],
+  modelHealth: {} as Record<string, ModelHealthStats>,
   assets: [] as Asset[],
   tasks: [] as Task[],
   templates: [] as TaskTemplate[],
@@ -142,7 +144,7 @@ function mapServerMessage(m: AgentMessage, fallbackBot?: Bot): ChatMessageUI {
     senderName: sender?.name || 'BotHub',
     roleTitle: sender?.role_title || '',
     avatarStyle: sender?.avatar_style || 'cyan',
-    model: sender?.model || 'deepseek-flash',
+    model: m.model_used || sender?.model || 'deepseek-flash',
     msgKind: kind,
     createdAt: m.created_at,
     content: m.content || '',
@@ -226,6 +228,7 @@ export function useAppStore() {
       state.stats = data.stats || state.stats
       state.bots = data.bots || []
       state.modelPool = data.model_pool || []
+      state.modelHealth = data.model_health || {}
       state.assets = data.assets || []
       state.tasks = data.tasks || []
       state.templates = data.templates || []

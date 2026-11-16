@@ -865,12 +865,15 @@ async function sendPrompt(overrideText?: string) {
             streamStatus.value = '正在生成回复...'
             activeTurn.content += payload.delta || ''
             scrollToBottom()
+          } else if (currentEvent === 'model_switch') {
+            streamStatus.value = `${payload.from_label || '当前节点'} 限流或异常，已自动切换至 ${payload.to_label || payload.to_model}`
           } else if (currentEvent === 'error') {
             activeTurn.statusText = '异常中断'
             activeTurn.errorText = payload.error || '未知流式错误'
             activeTurn.streaming = false
           } else if (currentEvent === 'done') {
             activeTurn.streaming = false
+            if (payload.model) activeTurn.model = payload.model
             activeTurn.statusText =
               payload.usage && payload.usage.total_tokens
                 ? `${payload.usage.prompt_tokens}+${payload.usage.completion_tokens} Tokens`
@@ -922,7 +925,7 @@ async function sendPrompt(overrideText?: string) {
               senderName: sender?.name || 'BotHub',
               roleTitle: sender?.role_title || '',
               avatarStyle: sender?.avatar_style || 'cyan',
-              model: sender?.model || 'deepseek-flash',
+              model: m.model_used || sender?.model || 'deepseek-flash',
               msgKind: kind,
               createdAt: m.created_at,
               content: m.content || '',
@@ -1093,7 +1096,7 @@ function stateBadgeClass(state?: string): string {
               {{ botStateLabel(bot?.state) }}
             </span>
           </div>
-          <p class="text-xs text-slate-400/90 truncate">{{ bot?.role_title }}</p>
+          <p class="hidden sm:block text-xs text-slate-400/90 truncate">{{ bot?.role_title }}</p>
         </div>
       </div>
 
@@ -1483,6 +1486,12 @@ function stateBadgeClass(state?: string): string {
                       </span>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
+                      <span
+                        v-if="m.model && !m.streaming"
+                        class="hidden sm:inline-flex font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#fff8ee]/[0.04] text-slate-400"
+                      >
+                        {{ m.model }}
+                      </span>
                       <button
                         v-if="isGroupBot && m.senderBotId && m.senderBotId !== bot?.id"
                         type="button"
@@ -1816,7 +1825,7 @@ function stateBadgeClass(state?: string): string {
 
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
-                <div class="w-44 sm:w-56 shrink-0">
+                <div class="flex-1 min-w-[140px] max-w-[230px] sm:flex-none sm:w-56 shrink-0">
                   <CustomSelect v-model="selectedModel" :options="store.modelOptions.value" compact aria-label="选择推理模型" />
                 </div>
                 <button

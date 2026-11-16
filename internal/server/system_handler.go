@@ -76,6 +76,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	notifications, _ := s.store.ListNotifications(0, 40, false)
 	bots, _ := s.store.ListBots()
 	modelPool := store.MaskModelPool(s.store.GetModelPool())
+	var modelHealth any
+	if s.agent != nil {
+		modelHealth = s.agent.GetModelHealth()
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":         s.version,
@@ -85,6 +89,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"tasks":           tasks,
 		"bots":            bots,
 		"model_pool":      modelPool,
+		"model_health":    modelHealth,
 		"templates":       modules.BuiltinTemplates(),
 		"asset_templates": modules.BuiltinAssetTemplates(),
 		"personas":        agent.BuiltinPersonas(),
@@ -340,16 +345,17 @@ func (s *Server) handleTestModelTarget(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 22*time.Second)
 	defer cancel()
 
-	latencyMs, preview, err := s.agent.ProbeModelTarget(ctx, req.BaseURL, apiKey, req.Model, req.Provider)
+	latencyMs, preview, err := s.agent.ProbeModelTargetWithID(ctx, req.TargetID, req.BaseURL, apiKey, req.Model, req.Provider)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":         true,
-		"latency_ms": latencyMs,
-		"reply":      preview,
-		"message":    fmt.Sprintf("连接成功 (%dms)", latencyMs),
+		"ok":           true,
+		"latency_ms":   latencyMs,
+		"reply":        preview,
+		"model_health": s.agent.GetModelHealth(),
+		"message":      fmt.Sprintf("连接成功 (%dms)", latencyMs),
 	})
 }
 
