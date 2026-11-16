@@ -13,6 +13,7 @@ import LogsModal from './components/LogsModal.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import AssetModal from './components/AssetModal.vue'
 import TaskModal from './components/TaskModal.vue'
+import QuickSwitcherModal from './components/QuickSwitcherModal.vue'
 
 const store = useAppStore()
 const mobileSidebarOpen = ref(false)
@@ -24,6 +25,13 @@ function toggleDesktopSidebar() {
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    if (store.state.authenticated) {
+      store.state.showQuickSwitcher = !store.state.showQuickSwitcher
+    }
+    return
+  }
   if (e.key === 'Escape' && mobileSidebarOpen.value) {
     mobileSidebarOpen.value = false
   }
@@ -106,6 +114,7 @@ onBeforeUnmount(() => {
     <SettingsModal />
     <AssetModal />
     <TaskModal />
+    <QuickSwitcherModal />
 
     <!-- Non-intrusive Top Toast Banner -->
     <Transition

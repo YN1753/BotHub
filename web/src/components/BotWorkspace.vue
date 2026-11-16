@@ -2,14 +2,17 @@
 import { ref, computed, watch, nextTick, useId, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore, type ChatMessageUI } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { botStateLabel, describeCron, formatTime } from '../utils/format'
+import { botStateLabel, describeCron, formatTime, formatTimelineDivider, groupModeLabel } from '../utils/format'
 import { renderSafeMarkdown } from '../utils/markdown'
 import { applySiblingStaggerFallback, isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
+import type { Bot } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
+import BotGroupAvatar from './BotGroupAvatar.vue'
 import BotAvatarPicker from './BotAvatarPicker.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
+import GroupDrawer from './GroupDrawer.vue'
 
 defineProps<{
   desktopCollapsed?: boolean
@@ -47,6 +50,28 @@ let lastCompositionEndAt: number | null = null
 let abortCtrl: AbortController | null = null
 let lastPrompt = ''
 
+// Quote-Reply, @mention & /slash command state
+const replyTarget = ref<{ serverId: number; senderName: string; preview: string } | null>(null)
+const mentionOpen = ref(false)
+const mentionQuery = ref('')
+const mentionAnchorIdx = ref(-1)
+const mentionHighlight = ref(0)
+
+const slashOpen = ref(false)
+const slashHighlight = ref(0)
+
+const announcementDismissed = ref(false)
+const relaySteps = ref<Array<{ id: string; name: string; status: 'done' | 'active'; guest?: boolean }>>([])
+
+const SLASH_COMMANDS = [
+  { cmd: '/assets', title: '资产全面审计', desc: '盘点 VPS、域名与订阅到期风险', prompt: '请调用工具盘点当前全部数字资产与临期风险并给出续费建议。' },
+  { cmd: '/nezha', title: '探针节点巡检', desc: '查看哪吒节点在线率与负载情况', prompt: '请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线与健康状态。' },
+  { cmd: '/radar', title: '前沿开源雷达', desc: '汇总近期高价值技术趋势', prompt: '请检索并梳理今天最值得关注的 GitHub 与 Hacker News 开源技术动态。' },
+  { cmd: '/tasks', title: '调度队列核查', desc: '检查各自动化例程状态与下次触发时间', prompt: '请核查当前所有自动化调度任务的运行状态与上次执行摘要。' },
+  { cmd: '/invite', title: '拉人进群 / 群设置', desc: '打开右侧群成员与协同策略抽屉', action: 'open_drawer' },
+  { cmd: '/clear', title: '清空当前对话', desc: '清空当前频道聊天时间线', action: 'clear_timeline' },
+]
+
 // Config Editor local state
 const cfgName = ref('')
 const cfgRole = ref('')
@@ -56,6 +81,7 @@ const cfgAvatar = ref('butler:gold')
 const cfgThinking = ref(true)
 const cfgTools = ref<string[]>([])
 const cfgMembers = ref<string[]>([])
+const cfgGroupMode = ref('smart')
 const savingProfile = ref(false)
 
 const VIEW_TABS = [
@@ -116,6 +142,9 @@ watch(
     cfgModel.value = b.model || 'deepseek-flash'
     cfgAvatar.value = b.avatar_style || 'cyan'
     cfgThinking.value = b.enable_thinking !== false
+    cfgGroupMode.value = b.group_mode || 'smart'
+    announcementDismissed.value = false
+    replyTarget.value = null
     try {
       const arr = JSON.parse(b.allowed_tools || '[]')
       cfgTools.value = Array.isArray(arr) ? arr : []
@@ -128,6 +157,20 @@ watch(
     } catch {
       cfgMembers.value = []
     }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => store.state.pendingDraftPrompt,
+  (draft) => {
+    if (!draft) return
+    inputPrompt.value = draft
+    store.state.pendingDraftPrompt = ''
+    nextTick(() => {
+      autoResizeTextarea()
+      textareaRef.value?.focus()
+    })
   },
   { immediate: true }
 )
@@ -145,6 +188,70 @@ const groupMembers = computed(() => {
   const resolved = ids.map((id) => map.get(id)).filter((x): x is NonNullable<typeof x> => Boolean(x))
   return resolved.length > 0 ? resolved : availableSpecialistBots.value
 })
+
+const mentionCandidates = computed(() => {
+  const q = mentionQuery.value.toLowerCase()
+  const memberIds = new Set(groupMembers.value.map((m) => m.id))
+  const sorted = [...availableSpecialistBots.value].sort((a, b) => {
+    const aIn = isGroupBot.value ? (memberIds.has(a.id) ? 0 : 1) : a.id === bot.value?.id ? 0 : 1
+    const bIn = isGroupBot.value ? (memberIds.has(b.id) ? 0 : 1) : b.id === bot.value?.id ? 0 : 1
+    return aIn - bIn
+  })
+  return sorted
+    .filter((sp) => !q || `${sp.name} ${sp.id} ${sp.role_title}`.toLowerCase().includes(q))
+    .map((sp) => ({
+      bot: sp,
+      inRoom: isGroupBot.value ? memberIds.has(sp.id) : sp.id === bot.value?.id,
+    }))
+})
+
+const filteredSlashCommands = computed(() => {
+  const val = inputPrompt.value.trim().toLowerCase()
+  if (!val.startsWith('/')) return []
+  return SLASH_COMMANDS.filter((c) => c.cmd.includes(val) || c.title.toLowerCase().includes(val.slice(1)))
+})
+
+function shouldShowTimestamp(idx: number): boolean {
+  const list = store.state.timeline
+  const cur = list[idx]
+  if (!cur?.createdAt) return false
+  if (idx === 0) return true
+  const prev = list[idx - 1]
+  if (!prev?.createdAt) return false
+  const tCur = new Date(cur.createdAt).getTime()
+  const tPrev = new Date(prev.createdAt).getTime()
+  if (Number.isNaN(tCur) || Number.isNaN(tPrev)) return false
+  return tCur - tPrev > 5 * 60 * 1000
+}
+
+function setReplyQuote(msg: ChatMessageUI) {
+  const clean = msg.content.replace(/\s+/g, ' ').trim()
+  const snippet = clean.length > 72 ? `${clean.slice(0, 72)}...` : clean
+  replyTarget.value = {
+    serverId: msg.serverId || 0,
+    senderName: msg.role === 'user' ? '管理员' : msg.senderName,
+    preview: `${msg.role === 'user' ? '管理员' : msg.senderName}: ${snippet}`,
+  }
+  nextTick(() => textareaRef.value?.focus())
+}
+
+async function saveMessageAsMemory(msg: ChatMessageUI) {
+  const content = msg.content.replace(/\s+/g, ' ').trim().slice(0, 260)
+  if (!content) return
+  try {
+    const key = `${msg.senderBotId || 'bot'}_note_${Date.now().toString(36)}`
+    await BotHubApi.saveMemory({
+      scope: `bot:${bot.value?.id || 'butler'}`,
+      category: 'insight',
+      fact_key: key,
+      content,
+    })
+    store.notify('已提炼并存入专属长期记忆库')
+    await store.loadDashboard(false)
+  } catch (err: any) {
+    store.notify(err.message || '保存记忆失败')
+  }
+}
 
 function toggleCfgMember(id: string) {
   if (cfgMembers.value.includes(id)) {
@@ -225,7 +332,131 @@ function handleCompositionEnd(e: CompositionEvent) {
   lastCompositionEndAt = e.timeStamp
 }
 
+function syncMentionAndSlash() {
+  const el = textareaRef.value
+  const val = inputPrompt.value
+  const pos = el?.selectionStart ?? val.length
+
+  if (val.startsWith('/') && !val.includes('\n') && !val.includes(' ')) {
+    slashOpen.value = filteredSlashCommands.value.length > 0
+    slashHighlight.value = 0
+  } else {
+    slashOpen.value = false
+  }
+
+  const beforeCaret = val.slice(0, pos)
+  const match = beforeCaret.match(/(?:^|\s)@([^\s@]*)$/)
+  if (match) {
+    mentionQuery.value = match[1] || ''
+    mentionAnchorIdx.value = beforeCaret.lastIndexOf('@')
+    mentionHighlight.value = 0
+    mentionOpen.value = mentionCandidates.value.length > 0
+  } else {
+    mentionOpen.value = false
+  }
+}
+
+function handleComposerInput() {
+  autoResizeTextarea()
+  syncMentionAndSlash()
+}
+
+function pickMentionCandidate(sp: Bot) {
+  const val = inputPrompt.value
+  const pos = textareaRef.value?.selectionStart ?? val.length
+  const anchor = mentionAnchorIdx.value >= 0 ? mentionAnchorIdx.value : val.lastIndexOf('@', pos)
+  if (anchor >= 0) {
+    const before = val.slice(0, anchor)
+    const after = val.slice(pos)
+    inputPrompt.value = `${before}@${sp.name} ${after}`
+  } else {
+    appendMention(`@${sp.name} `)
+  }
+  mentionOpen.value = false
+  nextTick(() => {
+    autoResizeTextarea()
+    textareaRef.value?.focus()
+  })
+}
+
+async function inviteFromMentionAndPick(sp: Bot) {
+  if (isGroupBot.value && bot.value) {
+    try {
+      await BotHubApi.updateGroupMembers(bot.value.id, 'add', [sp.id])
+      await store.loadDashboard(false)
+      store.notify(`已将「${sp.name}」正式拉入当前群聊`)
+    } catch {
+      // fallback to temp mention
+    }
+  }
+  pickMentionCandidate(sp)
+}
+
+function pickSlashCommand(item: (typeof SLASH_COMMANDS)[number]) {
+  slashOpen.value = false
+  inputPrompt.value = ''
+  if (item.action === 'open_drawer') {
+    store.state.showGroupDrawer = true
+    return
+  }
+  if (item.action === 'clear_timeline') {
+    clearTimeline()
+    return
+  }
+  if (item.prompt) {
+    sendPrompt(item.prompt)
+  }
+}
+
 function handleComposerKeydown(e: KeyboardEvent) {
+  if (mentionOpen.value && mentionCandidates.value.length > 0) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      mentionHighlight.value = (mentionHighlight.value + 1) % mentionCandidates.value.length
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      mentionHighlight.value = (mentionHighlight.value - 1 + mentionCandidates.value.length) % mentionCandidates.value.length
+      return
+    }
+    if ((e.key === 'Enter' || e.key === 'Tab') && !isImeComposingEnter(e, lastCompositionEndAt)) {
+      e.preventDefault()
+      const picked = mentionCandidates.value[mentionHighlight.value]
+      if (picked) pickMentionCandidate(picked.bot)
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      mentionOpen.value = false
+      return
+    }
+  }
+
+  if (slashOpen.value && filteredSlashCommands.value.length > 0) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      slashHighlight.value = (slashHighlight.value + 1) % filteredSlashCommands.value.length
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      slashHighlight.value = (slashHighlight.value - 1 + filteredSlashCommands.value.length) % filteredSlashCommands.value.length
+      return
+    }
+    if ((e.key === 'Enter' || e.key === 'Tab') && !isImeComposingEnter(e, lastCompositionEndAt)) {
+      e.preventDefault()
+      const picked = filteredSlashCommands.value[slashHighlight.value]
+      if (picked) pickSlashCommand(picked)
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      slashOpen.value = false
+      return
+    }
+  }
+
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     if (isImeComposingEnter(e, lastCompositionEndAt)) return
@@ -234,10 +465,14 @@ function handleComposerKeydown(e: KeyboardEvent) {
 }
 
 watch(inputPrompt, (val) => {
-  if (!val && !supportsFieldSizing) {
-    nextTick(() => {
-      if (textareaRef.value) textareaRef.value.style.height = ''
-    })
+  if (!val) {
+    mentionOpen.value = false
+    slashOpen.value = false
+    if (!supportsFieldSizing) {
+      nextTick(() => {
+        if (textareaRef.value) textareaRef.value.style.height = ''
+      })
+    }
   }
 })
 
@@ -359,8 +594,13 @@ async function sendPrompt(overrideText?: string) {
 
   const curBot = bot.value
   const botId = curBot?.id || 'butler'
+  const quote = replyTarget.value
   lastPrompt = msg
   if (!overrideText) inputPrompt.value = ''
+  mentionOpen.value = false
+  slashOpen.value = false
+  replyTarget.value = null
+  relaySteps.value = []
 
   store.state.isStreaming = true
   abortCtrl = new AbortController()
@@ -378,15 +618,18 @@ async function sendPrompt(overrideText?: string) {
     content: msg,
     reasoning: '',
     tools: [],
+    replyToId: quote?.serverId,
+    replyPreview: quote?.preview,
     statusText: '已发送',
   })
 
-  const createTurn = (bId: string, bName: string, style: string): ChatMessageUI => {
+  const createTurn = (bId: string, bName: string, style: string, roleTitle = '', isTempGuest = false): ChatMessageUI => {
     const turn: ChatMessageUI = {
       localId: `a_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       role: 'assistant',
       senderBotId: bId,
       senderName: bName,
+      roleTitle,
       avatarStyle: style,
       model: selectedModel.value,
       msgKind: 'chat',
@@ -394,6 +637,7 @@ async function sendPrompt(overrideText?: string) {
       content: '',
       reasoning: '',
       tools: [],
+      isTempGuest,
       statusText: '思考与生成中...',
       streaming: true,
     }
@@ -401,7 +645,7 @@ async function sendPrompt(overrideText?: string) {
     return store.state.timeline[store.state.timeline.length - 1]
   }
 
-  let activeTurn = createTurn(botId, curBot?.name || 'BotHub', curBot?.avatar_style || 'cyan')
+  let activeTurn = createTurn(botId, curBot?.name || 'BotHub', curBot?.avatar_style || 'cyan', curBot?.role_title || '')
   scrollToBottom(true)
 
   try {
@@ -415,6 +659,8 @@ async function sendPrompt(overrideText?: string) {
         message: msg,
         model: selectedModel.value,
         enable_thinking: enableThinking.value,
+        reply_to_id: quote?.serverId || 0,
+        reply_preview: quote?.preview || '',
       }),
     })
     if (!res.ok) {
@@ -447,21 +693,53 @@ async function sendPrompt(overrideText?: string) {
             continue
           }
 
-          if (currentEvent === 'bot_turn') {
+          if (currentEvent === 'system_notice') {
+            const idx = store.state.timeline.indexOf(activeTurn)
+            const sysItem: ChatMessageUI = {
+              localId: `srv_${payload.id || Date.now()}`,
+              serverId: payload.id,
+              role: 'system',
+              senderBotId: botId,
+              senderName: '系统动态',
+              avatarStyle: curBot?.avatar_style || 'cyan',
+              model: selectedModel.value,
+              msgKind: 'system',
+              createdAt: payload.created_at || new Date().toISOString(),
+              content: payload.content || '',
+              reasoning: '',
+              tools: [],
+              statusText: '',
+            }
+            if (idx >= 0) store.state.timeline.splice(idx, 0, sysItem)
+            else store.state.timeline.push(sysItem)
+          } else if (currentEvent === 'bot_turn') {
+            relaySteps.value.forEach((s) => {
+              s.status = 'done'
+            })
+            relaySteps.value.push({
+              id: payload.sender_bot_id,
+              name: payload.sender_name,
+              status: 'active',
+              guest: Boolean(payload.is_temp_guest),
+            })
             if (Number(payload.step) > 1) {
               activeTurn.statusText = '已完成'
               activeTurn.streaming = false
               activeTurn = createTurn(
                 payload.sender_bot_id,
                 payload.sender_name,
-                payload.avatar_style || 'cyan'
+                payload.avatar_style || 'cyan',
+                payload.role_title || '',
+                Boolean(payload.is_temp_guest)
               )
             } else {
               activeTurn.senderBotId = payload.sender_bot_id
               activeTurn.senderName = payload.sender_name
+              activeTurn.roleTitle = payload.role_title || ''
               activeTurn.avatarStyle = payload.avatar_style || 'cyan'
+              activeTurn.isTempGuest = Boolean(payload.is_temp_guest)
             }
-            streamStatus.value = `群聊接力 (${payload.step}/${payload.total_steps}): ${payload.sender_name}`
+            streamStatus.value = `协同接力 (${payload.step}/${payload.total_steps}): ${payload.sender_name}`
           } else if (currentEvent === 'reasoning') {
             streamStatus.value = '深度思考中...'
             activeTurn.reasoning += payload.delta || ''
@@ -501,9 +779,60 @@ async function sendPrompt(overrideText?: string) {
     }
 
     activeTurn.streaming = false
+    relaySteps.value.forEach((s) => {
+      s.status = 'done'
+    })
+    window.setTimeout(() => {
+      if (!store.state.isStreaming) relaySteps.value = []
+    }, 1600)
     if (activeTurn.statusText === '思考与生成中...') activeTurn.statusText = '已完成'
     streamStatus.value = '就绪'
     await store.loadDashboard(false)
+    // Reload synced server IDs quietly so reply/delete have accurate IDs
+    if (curBot?.id === store.state.activeBotId) {
+      const synced = await BotHubApi.getBotMessages(curBot.id).catch(() => null)
+      if (synced?.messages && !store.state.isStreaming) {
+        const srvMsgs = synced.messages.filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'system')
+        if (srvMsgs.length >= store.state.timeline.length) {
+          store.state.timeline = srvMsgs.map((m) => {
+            const sender = store.state.bots.find((b) => b.id === (m.sender_bot_id || m.bot_id)) || curBot
+            let parsedTools: ChatMessageUI['tools'] = []
+            try {
+              const raw = JSON.parse(m.tool_calls || '[]')
+              if (Array.isArray(raw)) {
+                parsedTools = raw.map((tc: any, idx: number) => ({
+                  id: tc.id || `tool_${idx}`,
+                  name: tc.function?.name || 'tool',
+                  arguments: tc.function?.arguments || '{}',
+                  done: true,
+                }))
+              }
+            } catch {
+              parsedTools = []
+            }
+            const kind = m.msg_kind === 'system' || m.role === 'system' ? 'system' : m.msg_kind === 'routine' ? 'routine' : 'chat'
+            return {
+              localId: `srv_${m.id}`,
+              serverId: m.id,
+              role: kind === 'system' ? 'system' : m.role === 'user' ? 'user' : 'assistant',
+              senderBotId: m.sender_bot_id || m.bot_id || sender?.id || 'butler',
+              senderName: sender?.name || 'BotHub',
+              roleTitle: sender?.role_title || '',
+              avatarStyle: sender?.avatar_style || 'cyan',
+              model: sender?.model || 'deepseek-flash',
+              msgKind: kind,
+              createdAt: m.created_at,
+              content: m.content || '',
+              reasoning: m.reasoning_content || '',
+              tools: parsedTools,
+              replyToId: m.reply_to_id || undefined,
+              replyPreview: m.reply_preview || undefined,
+              statusText: kind === 'routine' ? '例程主动汇报' : '已完成',
+            }
+          })
+        }
+      }
+    }
   } catch (err: any) {
     activeTurn.streaming = false
     if (err.name === 'AbortError') {
@@ -576,6 +905,7 @@ async function saveBotProfile() {
       system_prompt: cfgPrompt.value.trim(),
       allowed_tools: JSON.stringify(cfgTools.value),
       member_ids: JSON.stringify(cfgMembers.value),
+      group_mode: cfgGroupMode.value,
       is_pinned: bot.value.is_pinned,
     })
     store.notify('Bot 人设与工具权限已更新')
@@ -636,10 +966,23 @@ function stateBadgeClass(state?: string): string {
             <polyline points="13 9 16 12 13 15" />
           </svg>
         </button>
-        <BotAvatar :avatar-style="bot?.avatar_style" :state="bot?.state" size="md" />
+        <BotGroupAvatar
+          v-if="isGroupBot"
+          :members="groupMembers"
+          :fallback-style="bot?.avatar_style"
+          :state="bot?.state"
+          size="md"
+        />
+        <BotAvatar v-else :avatar-style="bot?.avatar_style" :state="bot?.state" size="md" />
         <div class="min-w-0">
           <div class="flex items-center gap-2">
             <h1 class="text-sm md:text-base font-semibold text-white truncate">{{ bot?.name || '长庚执更' }}</h1>
+            <span
+              v-if="isGroupBot"
+              class="hidden sm:inline-flex font-mono text-[10px] px-2 py-0.5 rounded-full border border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] text-slate-300 leading-none shrink-0"
+            >
+              {{ groupModeLabel(bot?.group_mode) }}
+            </span>
             <span
               v-if="bot?.state && bot.state !== 'idle'"
               :class="['font-mono text-[10px] px-2 py-0.5 rounded-full border leading-none shrink-0', stateBadgeClass(bot?.state)]"
@@ -654,6 +997,22 @@ function stateBadgeClass(state?: string): string {
       <div class="flex items-center gap-2 max-w-full ml-auto">
         <!-- Gliding Physics Segmented Control -->
         <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="Bot 子视图" />
+
+        <!-- QQ/WeChat Member / Invite Pill -->
+        <button
+          type="button"
+          @click="store.state.showGroupDrawer = true"
+          :title="isGroupBot ? '查看群成员与拉人管理' : '临时拉人发起协同群聊'"
+          class="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 hover:bg-[#f2b880]/18 hover:border-[#f2b880]/55 text-xs font-medium text-[#f7cba0] cursor-pointer shrink-0"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="8.5" cy="7" r="4" />
+            <line x1="20" y1="8" x2="20" y2="14" />
+            <line x1="23" y1="11" x2="17" y2="11" />
+          </svg>
+          <span class="hidden sm:inline">{{ isGroupBot ? `群成员 (${groupMembers.length})` : '拉人建群' }}</span>
+        </button>
 
         <!-- Native Top-Layer Popover + Anchor Positioned More Actions -->
         <div class="relative shrink-0">
@@ -720,6 +1079,34 @@ function stateBadgeClass(state?: string): string {
       enter-to-class="opacity-100 translate-y-0"
     >
       <div v-show="store.state.botView === 'stream'" class="flex-1 min-h-0 flex flex-col">
+        <!-- Pinned Group Announcement Banner (QQ/WeChat style) -->
+        <div
+          v-if="isGroupBot && bot?.announcement && !announcementDismissed"
+          class="px-4 md:px-6 py-2 border-b border-[#f2b880]/15 bg-[#f2b880]/[0.05] flex items-center justify-between gap-3 shrink-0"
+        >
+          <button
+            type="button"
+            @click="store.state.showGroupDrawer = true"
+            class="flex items-center gap-2 min-w-0 text-left text-xs text-slate-300 hover:text-white cursor-pointer"
+          >
+            <span class="px-1.5 py-0.5 rounded bg-[#f2b880]/20 text-[#f2b880] font-mono text-[10px] font-semibold shrink-0">
+              群公告
+            </span>
+            <span class="truncate">{{ bot.announcement }}</span>
+          </button>
+          <button
+            type="button"
+            aria-label="暂时收起群公告"
+            @click="announcementDismissed = true"
+            class="w-6 h-6 rounded-full inline-flex items-center justify-center text-slate-500 hover:text-white cursor-pointer shrink-0"
+          >
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
         <div class="relative flex-1 min-h-0 flex flex-col">
           <div
             ref="scrollContainerRef"
@@ -733,7 +1120,15 @@ function stateBadgeClass(state?: string): string {
               class="m-auto max-w-[780px] w-full text-center py-6 px-2 flex flex-col items-center gap-3.5"
             >
               <div class="relative inline-flex items-center justify-center mb-1">
+                <BotGroupAvatar
+                  v-if="isGroupBot"
+                  :members="groupMembers"
+                  :fallback-style="bot?.avatar_style"
+                  :state="bot?.state || 'idle'"
+                  size="xl"
+                />
                 <BotAvatar
+                  v-else
                   :avatar-style="bot?.avatar_style"
                   :state="bot?.state || 'idle'"
                   size="xl"
@@ -794,14 +1189,57 @@ function stateBadgeClass(state?: string): string {
             </div>
 
             <!-- Messages -->
-            <template v-for="m in store.state.timeline" :key="m.localId">
+            <template v-for="(m, idx) in store.state.timeline" :key="m.localId">
+              <!-- QQ/WeChat 5-Minute Time Cluster Divider -->
+              <div
+                v-if="shouldShowTimestamp(idx)"
+                class="flex justify-center py-0.5 select-none"
+              >
+                <span class="px-2.5 py-0.5 rounded-full bg-[#fff8ee]/[0.03] text-[10.5px] font-mono text-slate-500">
+                  {{ formatTimelineDivider(m.createdAt) }}
+                </span>
+              </div>
+
+              <!-- QQ/WeChat Centered System Dynamic Pill (Invite / Remove / Adhoc / Context Sync) -->
+              <div
+                v-if="m.role === 'system' || m.msgKind === 'system'"
+                class="msg-enter max-w-[680px] mx-auto flex justify-center my-0.5"
+              >
+                <div class="px-3.5 py-1 rounded-2xl border border-[#fff8ee]/8 bg-[#fff8ee]/[0.04] text-[11.5px] text-slate-400 text-center whitespace-pre-line leading-relaxed">
+                  {{ m.content }}
+                </div>
+              </div>
+
               <!-- User Message Pill -->
-              <div v-if="m.role === 'user'" class="msg-enter max-w-[820px] w-full mx-auto flex justify-end">
+              <div v-else-if="m.role === 'user'" class="msg-enter reveal-host max-w-[820px] w-full mx-auto flex flex-col items-end gap-1">
                 <div
                   :title="formatTime(m.createdAt)"
                   class="max-w-[85%] sm:max-w-[74%] rounded-2xl rounded-tr-sm px-4 py-2.5 bg-[#f2b880]/14 border border-[#f2b880]/28 text-sm text-slate-100 leading-relaxed whitespace-pre-wrap"
                 >
+                  <div
+                    v-if="m.replyPreview"
+                    class="mb-2 pl-2.5 border-l-2 border-[#f2b880]/70 text-xs text-slate-300/85 bg-[#050811]/35 rounded-r-lg py-1 pr-2 line-clamp-2"
+                  >
+                    {{ m.replyPreview }}
+                  </div>
                   {{ m.content }}
+                </div>
+                <div class="reveal-actions flex items-center gap-1.5 px-1">
+                  <button
+                    type="button"
+                    @click="setReplyQuote(m)"
+                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
+                  >
+                    引用
+                  </button>
+                  <button
+                    v-if="m.serverId"
+                    type="button"
+                    @click="store.deleteSingleMessage(m)"
+                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-rose-300 cursor-pointer"
+                  >
+                    删除
+                  </button>
                 </div>
               </div>
 
@@ -815,18 +1253,47 @@ function stateBadgeClass(state?: string): string {
                       : 'py-1'
                   ]"
                 >
-                  <!-- Quiet editorial sender header -->
+                  <!-- Quiet editorial sender header with clickable @Bot & Role Tag -->
                   <div class="flex items-center justify-between gap-2 text-xs text-slate-400">
                     <div class="flex items-center gap-2 min-w-0">
-                      <BotAvatar :avatar-style="m.avatarStyle" :state="m.streaming ? 'working' : (m.msgKind === 'routine' ? 'done' : 'idle')" size="sm" />
-                      <span class="text-[#f2b880] font-medium truncate">{{ m.senderName }}</span>
+                      <button
+                        type="button"
+                        @click="appendMention(`@${m.senderName} `)"
+                        :title="`点击 @${m.senderName}`"
+                        class="inline-flex items-center gap-2 min-w-0 cursor-pointer group/sender"
+                      >
+                        <BotAvatar :avatar-style="m.avatarStyle" :state="m.streaming ? 'working' : (m.msgKind === 'routine' ? 'done' : 'idle')" size="sm" :interactive="false" />
+                        <span class="text-[#f2b880] group-hover/sender:underline font-medium truncate">{{ m.senderName }}</span>
+                      </button>
+                      <span
+                        v-if="m.roleTitle && isGroupBot"
+                        class="hidden sm:inline-flex font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#fff8ee]/[0.05] text-slate-400 truncate max-w-[160px]"
+                      >
+                        {{ m.roleTitle }}
+                      </span>
+                      <span
+                        v-if="m.isTempGuest"
+                        class="font-mono text-[10px] px-1.5 py-0.5 rounded border border-emerald-400/30 bg-emerald-400/10 text-emerald-300 shrink-0"
+                      >
+                        临时支援
+                      </span>
                       <span v-if="m.msgKind === 'routine'" class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#f2b880]/12 text-[#f2b880] shrink-0">
                         例程汇报
                       </span>
                     </div>
-                    <span :class="['font-mono text-[11px] shrink-0', m.errorText ? 'text-rose-400' : 'text-slate-500']">
-                      {{ m.statusText }}
-                    </span>
+                    <div class="flex items-center gap-2 shrink-0">
+                      <button
+                        v-if="isGroupBot && m.senderBotId && m.senderBotId !== bot?.id"
+                        type="button"
+                        @click="store.jumpToBot(m.senderBotId)"
+                        class="reveal-actions font-mono text-[10px] px-1.5 py-0.5 rounded border border-[#fff8ee]/12 text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                      >
+                        私聊TA
+                      </button>
+                      <span :class="['font-mono text-[11px]', m.errorText ? 'text-rose-400' : 'text-slate-500']">
+                        {{ m.statusText }}
+                      </span>
+                    </div>
                   </div>
 
                   <!-- Calm Thinking Waveform (before first token arrives) -->
@@ -895,7 +1362,21 @@ function stateBadgeClass(state?: string): string {
                   <div v-else-if="m.errorText" class="text-sm text-rose-400">[调用失败] {{ m.errorText }}</div>
 
                   <!-- Quiet Footer Actions (hover / keyboard / touch) -->
-                  <div v-if="!m.streaming && m.content" class="reveal-actions flex items-center gap-2 pt-1">
+                  <div v-if="!m.streaming && m.content" class="reveal-actions flex items-center flex-wrap gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      @click="setReplyQuote(m)"
+                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                    >
+                      引用
+                    </button>
+                    <button
+                      type="button"
+                      @click="saveMessageAsMemory(m)"
+                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-emerald-300 hover:border-emerald-400/40 cursor-pointer"
+                    >
+                      存为记忆
+                    </button>
                     <button
                       type="button"
                       @click="copyMessageContent(m.content)"
@@ -910,6 +1391,14 @@ function stateBadgeClass(state?: string): string {
                       class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
                     >
                       重新生成
+                    </button>
+                    <button
+                      v-if="m.serverId"
+                      type="button"
+                      @click="store.deleteSingleMessage(m)"
+                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-500 hover:text-rose-300 hover:border-rose-400/40 cursor-pointer"
+                    >
+                      删除
                     </button>
                   </div>
                 </div>
@@ -940,8 +1429,116 @@ function stateBadgeClass(state?: string): string {
           </Transition>
         </div>
 
-        <!-- Floating Composer Dock -->
-        <div class="px-3 sm:px-6 pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] sm:pb-5">
+        <!-- Floating Composer Dock + Popovers -->
+        <div class="relative px-3 sm:px-6 pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] sm:pb-5">
+          <!-- Live Multi-Bot Relay Strip during Group Collaboration -->
+          <div
+            v-if="relaySteps.length > 0"
+            class="max-w-[820px] w-full mx-auto mb-2 px-3 py-1.5 rounded-full border border-[#f2b880]/25 bg-[#080d1c]/90 backdrop-blur-md flex items-center gap-2 overflow-x-auto no-scrollbar text-[11px]"
+          >
+            <span class="font-mono text-slate-400 shrink-0">协同接力:</span>
+            <template v-for="(step, sidx) in relaySteps" :key="step.id + sidx">
+              <span v-if="sidx > 0" class="text-slate-600 shrink-0">-></span>
+              <span
+                :class="[
+                  'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full shrink-0',
+                  step.status === 'active'
+                    ? 'bg-[#f2b880]/15 text-[#f2b880] font-medium'
+                    : 'bg-emerald-400/10 text-emerald-300'
+                ]"
+              >
+                <span :class="['w-1.5 h-1.5 rounded-full', step.status === 'active' ? 'bg-[#f2b880] animate-pulse' : 'bg-emerald-400']" />
+                <span>{{ step.name }}</span>
+                <span v-if="step.guest" class="text-[9.5px] opacity-80">(外援)</span>
+              </span>
+            </template>
+          </div>
+
+          <!-- Interactive @Mention Autocomplete Popover -->
+          <Transition
+            enter-active-class="transition duration-150 ease-out"
+            enter-from-class="opacity-0 translate-y-2 scale-95"
+            enter-to-class="opacity-100 translate-y-0 scale-100"
+          >
+            <div
+              v-if="mentionOpen && mentionCandidates.length > 0"
+              class="max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 bg-[#090e1e]/96 backdrop-blur-2xl shadow-2xl p-1.5 flex flex-col gap-0.5 max-h-60 overflow-y-auto"
+            >
+              <div class="px-2.5 py-1 flex items-center justify-between text-[10.5px] font-mono text-slate-400">
+                <span>选择要 @点名 或临时支援的 Bot</span>
+                <span>Enter 确认 · Esc 关闭</span>
+              </div>
+              <div
+                v-for="(item, idx) in mentionCandidates"
+                :key="item.bot.id"
+                :class="[
+                  'flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl transition-colors',
+                  idx === mentionHighlight ? 'bg-[#f2b880]/16' : 'hover:bg-white/[0.04]'
+                ]"
+              >
+                <button
+                  type="button"
+                  @click="pickMentionCandidate(item.bot)"
+                  class="flex-1 min-w-0 flex items-center gap-2.5 text-left cursor-pointer"
+                >
+                  <BotAvatar :avatar-style="item.bot.avatar_style" :state="item.bot.state" size="sm" :interactive="false" />
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-xs font-semibold text-white truncate">@{{ item.bot.name }}</span>
+                      <span
+                        :class="[
+                          'px-1.5 py-0.5 rounded font-mono text-[9.5px] leading-none',
+                          item.inRoom ? 'bg-[#f2b880]/15 text-[#f2b880]' : 'bg-emerald-400/12 text-emerald-300'
+                        ]"
+                      >
+                        {{ item.inRoom ? (isGroupBot ? '群内成员' : '当前Bot') : '临时召唤外援' }}
+                      </span>
+                    </div>
+                    <div class="text-[10.5px] text-slate-400 truncate">{{ item.bot.role_title }}</div>
+                  </div>
+                </button>
+                <button
+                  v-if="isGroupBot && !item.inRoom"
+                  type="button"
+                  @click="inviteFromMentionAndPick(item.bot)"
+                  class="px-2 py-1 rounded-lg border border-[#f2b880]/40 bg-[#f2b880]/12 text-[10.5px] font-medium text-[#f2b880] hover:bg-[#f2b880]/22 shrink-0 cursor-pointer"
+                >
+                  拉群并@
+                </button>
+              </div>
+            </div>
+          </Transition>
+
+          <!-- Interactive /Slash Command Palette -->
+          <Transition
+            enter-active-class="transition duration-150 ease-out"
+            enter-from-class="opacity-0 translate-y-2 scale-95"
+            enter-to-class="opacity-100 translate-y-0 scale-100"
+          >
+            <div
+              v-if="slashOpen && filteredSlashCommands.length > 0"
+              class="max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 bg-[#090e1e]/96 backdrop-blur-2xl shadow-2xl p-1.5 flex flex-col gap-0.5"
+            >
+              <div class="px-2.5 py-1 text-[10.5px] font-mono text-slate-400">快捷斜杠指令 (Enter 执行)</div>
+              <button
+                v-for="(cmd, idx) in filteredSlashCommands"
+                :key="cmd.cmd"
+                type="button"
+                @click="pickSlashCommand(cmd)"
+                :class="[
+                  'w-full flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-left cursor-pointer transition-colors',
+                  idx === slashHighlight ? 'bg-[#f2b880]/16 text-white' : 'text-slate-300 hover:bg-white/[0.04]'
+                ]"
+              >
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="font-mono text-xs font-semibold text-[#f2b880] w-16 shrink-0">{{ cmd.cmd }}</span>
+                  <span class="text-xs font-medium truncate">{{ cmd.title }}</span>
+                </div>
+                <span class="text-[11px] text-slate-400 truncate">{{ cmd.desc }}</span>
+              </button>
+            </div>
+          </Transition>
+
           <div
             v-if="isGroupBot && groupMembers.length > 0"
             class="max-w-[820px] w-full mx-auto mb-2 flex items-center gap-1.5 flex-wrap"
@@ -954,8 +1551,15 @@ function stateBadgeClass(state?: string): string {
               @click="appendMention(`@${member.name} `)"
               class="min-h-[36px] sm:min-h-[28px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border border-[#fff8ee]/12 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer"
             >
-              <BotAvatar :avatar-style="member.avatar_style" :state="member.state" size="sm" />
+              <BotAvatar :avatar-style="member.avatar_style" :state="member.state" size="sm" :interactive="false" />
               <span>@{{ member.name }}</span>
+            </button>
+            <button
+              type="button"
+              @click="store.state.showGroupDrawer = true"
+              class="min-h-[36px] sm:min-h-[28px] inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border border-dashed border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/10 cursor-pointer"
+            >
+              <span>+ 拉人</span>
             </button>
           </div>
 
@@ -967,14 +1571,36 @@ function stateBadgeClass(state?: string): string {
               store.state.isStreaming ? 'is-streaming' : ''
             ]"
           >
+            <!-- Quote-Reply Preview Bar inside Composer -->
+            <div
+              v-if="replyTarget"
+              class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl border border-[#f2b880]/25 bg-[#f2b880]/[0.06] text-xs"
+            >
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-0.5 h-4 rounded-full bg-[#f2b880] shrink-0" />
+                <span class="text-slate-300 truncate">{{ replyTarget.preview }}</span>
+              </div>
+              <button
+                type="button"
+                aria-label="取消引用"
+                @click="replyTarget = null"
+                class="w-5 h-5 rounded-full inline-flex items-center justify-center text-slate-400 hover:text-white cursor-pointer shrink-0"
+              >
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
             <label :for="composerId" class="sr-only">向当前专属 Bot 下达指令</label>
             <textarea
               :id="composerId"
               ref="textareaRef"
               v-model="inputPrompt"
               rows="1"
-              placeholder="向当前专属 Bot 下达指令（Enter 发送，Shift+Enter 换行）..."
-              @input="autoResizeTextarea"
+              placeholder="输入指令，@ 召唤任何 Bot，/ 呼出快捷指令（Enter 发送）..."
+              @input="handleComposerInput"
               @compositionend="handleCompositionEnd"
               @keydown="handleComposerKeydown"
               class="auto-size-textarea w-full bg-transparent border-0 text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none min-h-[24px] max-h-[160px] overflow-y-auto leading-relaxed"
@@ -1147,7 +1773,21 @@ function stateBadgeClass(state?: string): string {
               </div>
 
               <!-- Group Member Selector when viewing a group chat -->
-              <div v-if="isGroupBot" class="md:col-span-2 flex flex-col gap-2 text-xs text-slate-300">
+              <div v-if="isGroupBot" class="md:col-span-2 flex flex-col gap-2.5 text-xs text-slate-300">
+                <div class="flex items-center justify-between gap-2">
+                  <span>群协同策略</span>
+                </div>
+                <SegmentedTabs
+                  v-model="cfgGroupMode"
+                  :items="[
+                    { id: 'smart', label: '智能协同' },
+                    { id: 'sequential', label: '全员接力' },
+                    { id: 'mention_only', label: '仅 @点名' },
+                  ]"
+                  variant="subtle"
+                  aria-label="群协同策略"
+                />
+
                 <span>群聊协同成员 ({{ cfgMembers.length }} 位)</span>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
@@ -1258,5 +1898,7 @@ function stateBadgeClass(state?: string): string {
         </div>
       </div>
     </Transition>
+
+    <GroupDrawer />
   </section>
 </template>

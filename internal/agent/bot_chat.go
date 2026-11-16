@@ -104,6 +104,79 @@ func resolveGroupMemberBots(groupBot *store.Bot, allBots []store.Bot) []store.Bo
 	return members
 }
 
+func selectSmartGroupMembers(members []store.Bot, userMsg string) []store.Bot {
+	if len(members) <= 1 {
+		return members
+	}
+	lower := strings.ToLower(userMsg)
+	// Explicit "all" collaboration request triggers all group members
+	for _, kw := range []string{"大家", "全部", "各位", "一起", "全员", "接力", "群策群力"} {
+		if strings.Contains(userMsg, kw) {
+			return members
+		}
+	}
+	type rule struct {
+		botID    string
+		keywords []string
+	}
+	rules := []rule{
+		{botID: "sentinel", keywords: []string{"探针", "哪吒", "vps", "节点", "服务器", "cpu", "内存", "负载", "掉线", "宕机", "告警", "延迟", "ssh", "nezha"}},
+		{botID: "butler", keywords: []string{"资产", "域名", "到期", "续费", "账单", "晨报", "定时", "例程", "cron", "日程", "会员", "cloudflare"}},
+		{botID: "radar", keywords: []string{"github", "开源", "趋势", "雷达", "新闻", "前沿", "hn", "hacker", "技术", "搜索", "网页", "url", "推荐"}},
+		{botID: "grok", keywords: []string{"架构", "锐评", "审查", "评审", "对比", "为什么", "设计", "优化", "方案", "分析", "总结"}},
+	}
+
+	picked := make([]store.Bot, 0, 2)
+	seen := make(map[string]bool)
+	memberMap := make(map[string]store.Bot, len(members))
+	for _, m := range members {
+		memberMap[m.ID] = m
+	}
+
+	for _, r := range rules {
+		sp, exists := memberMap[r.botID]
+		if !exists || seen[sp.ID] {
+			continue
+		}
+		for _, kw := range r.keywords {
+			if strings.Contains(lower, kw) {
+				seen[sp.ID] = true
+				picked = append(picked, sp)
+				break
+			}
+		}
+		if len(picked) >= 2 {
+			break
+		}
+	}
+	// Also score custom specialist bots by matching role_title / name words
+	if len(picked) == 0 {
+		for _, m := range members {
+			roleTokens := strings.Fields(strings.ToLower(m.RoleTitle + " " + m.Name))
+			for _, tk := range roleTokens {
+				if len([]rune(tk)) >= 2 && strings.Contains(lower, tk) {
+					picked = append(picked, m)
+					seen[m.ID] = true
+					break
+				}
+			}
+			if len(picked) >= 2 {
+				break
+			}
+		}
+	}
+	if len(picked) > 0 {
+		return picked
+	}
+	// Default smart lead: prefer grok or butler if in room, else first member
+	for _, preferred := range []string{"grok", "butler"} {
+		if sp, ok := memberMap[preferred]; ok {
+			return []store.Bot{sp}
+		}
+	}
+	return members[:1]
+}
+
 func (e *Engine) chatStreamForBot(
 	ctx context.Context,
 	req ChatRequest,
@@ -120,35 +193,114 @@ func (e *Engine) chatStreamForBot(
 	if userMsg == "" {
 		return nil, fmt.Errorf("消息内容不能为空")
 	}
+	replyPreview := notifier.StripEmoji(strings.TrimSpace(req.ReplyPreview))
 
 	// Ensure timeline anchor session exists cleanly & load prior history
 	history, _ := e.store.ListBotMessages(bot.ID, 40)
 
 	// Persist user message once in this Bot's timeline
-	if _, err := e.store.AppendAgentMessage(store.AgentMessage{
-		SessionID: "bot:" + bot.ID,
-		BotID:     bot.ID,
-		MsgKind:   "chat",
-		Role:      "user",
-		Content:   userMsg,
-	}); err != nil {
+	userMsgID, err := e.store.AppendAgentMessage(store.AgentMessage{
+		SessionID:    "bot:" + bot.ID,
+		BotID:        bot.ID,
+		MsgKind:      "chat",
+		Role:         "user",
+		Content:      userMsg,
+		ReplyToID:    req.ReplyToID,
+		ReplyPreview: replyPreview,
+	})
+	if err != nil {
 		return nil, fmt.Errorf("记录消息失败: %w", err)
 	}
+	_ = userMsgID
 
-	// Multi-bot group chat (@mention targets, or sequential all-member collaboration when no @ specified)
+	promptMsg := userMsg
+	if replyPreview != "" {
+		promptMsg = fmt.Sprintf("[用户正在引用以下历史消息进行回复]\n> %s\n\n用户当前指令：%s", replyPreview, userMsg)
+	}
+
+	allBots, _ := e.store.ListBots()
+	mentioned := e.resolveMentionedBots(userMsg, allBots)
+
+	// Multi-bot group chat (@mention targets including outside temporary guests, or collaboration mode routing)
 	if bot.IsGroup || bot.ID == "team_room" {
-		allBots, _ := e.store.ListBots()
-		mentioned := e.resolveMentionedBots(userMsg, allBots)
-		if len(mentioned) > 0 {
-			return e.runTeamRoomHandoff(ctx, req, bot, mentioned, history, userMsg, baseURL, apiKey, emit)
-		}
 		members := resolveGroupMemberBots(bot, allBots)
-		if len(members) > 0 {
-			return e.runTeamRoomHandoff(ctx, req, bot, members, history, userMsg, baseURL, apiKey, emit)
+		memberSet := make(map[string]bool, len(members))
+		for _, m := range members {
+			memberSet[m.ID] = true
+		}
+
+		if len(mentioned) > 0 {
+			var guests []string
+			for _, sp := range mentioned {
+				if !memberSet[sp.ID] {
+					guests = append(guests, sp.Name)
+				}
+			}
+			if len(guests) > 0 {
+				notice := fmt.Sprintf("已临时呼叫「%s」支援本轮群聊讨论", strings.Join(guests, "、"))
+				sysMsg := store.AgentMessage{
+					SessionID: "bot:" + bot.ID,
+					BotID:     bot.ID,
+					MsgKind:   "system",
+					Role:      "system",
+					Content:   notice,
+				}
+				if id, err := e.store.AppendAgentMessage(sysMsg); err == nil {
+					sysMsg.ID = id
+					if emit != nil {
+						emit("system_notice", sysMsg)
+					}
+				}
+			}
+			return e.runTeamRoomHandoff(ctx, req, bot, mentioned, memberSet, history, promptMsg, baseURL, apiKey, emit)
+		}
+
+		var targets []store.Bot
+		switch strings.TrimSpace(bot.GroupMode) {
+		case "sequential":
+			targets = members
+		case "mention_only":
+			if len(members) > 0 {
+				targets = members[:1]
+			}
+		default: // "smart"
+			targets = selectSmartGroupMembers(members, userMsg)
+		}
+		if len(targets) > 0 {
+			return e.runTeamRoomHandoff(ctx, req, bot, targets, memberSet, history, promptMsg, baseURL, apiKey, emit)
 		}
 	}
 
-	return e.runSingleBotTurn(ctx, req, bot, bot.ID, history, userMsg, baseURL, apiKey, emit)
+	// 1v1 DM chat also supports temporary @Bot guest summon
+	if len(mentioned) > 0 {
+		var external []store.Bot
+		var guestNames []string
+		for _, sp := range mentioned {
+			if sp.ID != bot.ID {
+				external = append(external, sp)
+				guestNames = append(guestNames, sp.Name)
+			}
+		}
+		if len(external) > 0 {
+			notice := fmt.Sprintf("已临时邀请「%s」协同回答本轮指令", strings.Join(guestNames, "、"))
+			sysMsg := store.AgentMessage{
+				SessionID: "bot:" + bot.ID,
+				BotID:     bot.ID,
+				MsgKind:   "system",
+				Role:      "system",
+				Content:   notice,
+			}
+			if id, err := e.store.AppendAgentMessage(sysMsg); err == nil {
+				sysMsg.ID = id
+				if emit != nil {
+					emit("system_notice", sysMsg)
+				}
+			}
+			return e.runTeamRoomHandoff(ctx, req, bot, mentioned, map[string]bool{bot.ID: true}, history, promptMsg, baseURL, apiKey, emit)
+		}
+	}
+
+	return e.runSingleBotTurn(ctx, req, bot, bot.ID, history, promptMsg, baseURL, apiKey, emit)
 }
 
 func (e *Engine) runTeamRoomHandoff(
@@ -156,6 +308,7 @@ func (e *Engine) runTeamRoomHandoff(
 	req ChatRequest,
 	roomBot *store.Bot,
 	specialists []store.Bot,
+	memberSet map[string]bool,
 	roomHistory []store.AgentMessage,
 	userMsg, baseURL, apiKey string,
 	emit func(event string, data any),
@@ -167,7 +320,6 @@ func (e *Engine) runTeamRoomHandoff(
 	hasUsage := false
 
 	e.emitBotState(roomBot.ID, store.BotStateWorking, "多 Bot 协同处理中...")
-	defer e.emitBotState(roomBot.ID, store.BotStateIdle, "")
 
 	for i, sp := range specialists {
 		if emit != nil {
@@ -175,7 +327,9 @@ func (e *Engine) runTeamRoomHandoff(
 				"bot_id":        roomBot.ID,
 				"sender_bot_id": sp.ID,
 				"sender_name":   sp.Name,
+				"role_title":    sp.RoleTitle,
 				"avatar_style":  sp.AvatarStyle,
+				"is_temp_guest": memberSet != nil && !memberSet[sp.ID],
 				"step":          i + 1,
 				"total_steps":   len(specialists),
 			})
@@ -188,6 +342,7 @@ func (e *Engine) runTeamRoomHandoff(
 		spCopy := sp
 		resp, err := e.runSingleBotTurn(ctx, req, &spCopy, roomBot.ID, roomHistory, turnPrompt, baseURL, apiKey, emit)
 		if err != nil {
+			e.emitBotState(roomBot.ID, store.BotStateBlocked, err.Error())
 			return nil, err
 		}
 		if combinedContent.Len() > 0 {
@@ -205,6 +360,8 @@ func (e *Engine) runTeamRoomHandoff(
 			totalUsage.TotalTokens += resp.Usage.TotalTokens
 		}
 	}
+
+	e.emitBotState(roomBot.ID, store.BotStateIdle, truncateTitle(combinedContent.String()))
 
 	finalResp := &ChatResponse{
 		BotID:            roomBot.ID,
@@ -267,8 +424,16 @@ func (e *Engine) runSingleBotTurn(
 	})
 	for _, m := range history {
 		switch m.Role {
+		case "system":
+			if strings.TrimSpace(m.Content) != "" {
+				messages = append(messages, apiMessage{Role: "user", Content: "[群聊系统动态] " + m.Content})
+			}
 		case "user":
-			messages = append(messages, apiMessage{Role: "user", Content: m.Content})
+			content := m.Content
+			if strings.TrimSpace(m.ReplyPreview) != "" {
+				content = fmt.Sprintf("[引用历史消息: %s]\n%s", m.ReplyPreview, content)
+			}
+			messages = append(messages, apiMessage{Role: "user", Content: content})
 		case "assistant":
 			msg := apiMessage{Role: "assistant", Content: m.Content}
 			if m.ToolCalls != "" && m.ToolCalls != "[]" {

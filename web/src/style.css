@@ -755,6 +755,14 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
   .bot-avatar-blocked .bot-head {
     animation: botAlertShake 2.4s ease-in-out infinite;
   }
+
+  /* Curious hover & playful reaction */
+  .bot-avatar-interactive {
+    transition: transform 240ms var(--ease-spring), filter 200ms ease-out;
+  }
+  .bot-avatar-interactive:hover {
+    transform: scale(1.08) rotate(-4deg);
+  }
 }
 
 @keyframes botBreath {

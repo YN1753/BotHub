@@ -17,16 +17,21 @@ export type BotSubView = 'stream' | 'routines' | 'config' | 'activity'
 
 export interface ChatMessageUI {
   localId: string
-  role: 'user' | 'assistant'
+  serverId?: number
+  role: 'user' | 'assistant' | 'system'
   senderBotId: string
   senderName: string
+  roleTitle?: string
   avatarStyle: string
   model: string
-  msgKind: 'chat' | 'routine'
+  msgKind: 'chat' | 'routine' | 'system'
   createdAt: string
   content: string
   reasoning: string
   tools: Array<{ id: string; name: string; arguments: string; result?: string; done: boolean }>
+  replyToId?: number
+  replyPreview?: string
+  isTempGuest?: boolean
   statusText: string
   usageText?: string
   errorText?: string
@@ -36,7 +41,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.4.0',
+  version: 'v2.6.0',
   uptimeSec: 0,
   serverNow: '--',
   stats: {
@@ -65,13 +70,16 @@ const state = reactive({
   timeline: [] as ChatMessageUI[],
   isStreaming: false,
 
-  // Modals
+  // Modals & Drawers
   showInboxModal: false,
   showMemoriesModal: false,
   showLogsModal: false,
   showSettingsModal: false,
   showCreateBotModal: false,
+  showGroupDrawer: false,
+  showQuickSwitcher: false,
   createModalMode: 'bot' as 'bot' | 'group',
+  pendingDraftPrompt: '',
   editingAsset: undefined as Asset | null | undefined, // undefined = closed, null = new
   editingTask: undefined as Task | Partial<Task> | null | undefined,
 
@@ -109,19 +117,27 @@ function mapServerMessage(m: AgentMessage, fallbackBot?: Bot): ChatMessageUI {
   } catch {
     parsedTools = []
   }
+  const kind = m.msg_kind === 'system' || m.role === 'system' ? 'system' : m.msg_kind === 'routine' ? 'routine' : 'chat'
+  const role: ChatMessageUI['role'] =
+    kind === 'system' ? 'system' : m.role === 'user' ? 'user' : 'assistant'
+
   return {
     localId: `srv_${m.id}`,
-    role: m.role === 'user' ? 'user' : 'assistant',
+    serverId: m.id,
+    role,
     senderBotId: m.sender_bot_id || m.bot_id || sender?.id || 'butler',
     senderName: sender?.name || 'BotHub',
+    roleTitle: sender?.role_title || '',
     avatarStyle: sender?.avatar_style || 'cyan',
     model: sender?.model || 'deepseek-flash',
-    msgKind: m.msg_kind === 'routine' ? 'routine' : 'chat',
+    msgKind: kind,
     createdAt: m.created_at,
     content: m.content || '',
     reasoning: m.reasoning_content || '',
     tools: parsedTools,
-    statusText: m.msg_kind === 'routine' ? '例程主动汇报' : '已完成',
+    replyToId: m.reply_to_id || undefined,
+    replyPreview: m.reply_preview || undefined,
+    statusText: kind === 'routine' ? '例程主动汇报' : '已完成',
   }
 }
 
@@ -208,11 +224,42 @@ export function useAppStore() {
     try {
       const res = await BotHubApi.getBotMessages(botId)
       state.timeline = (res.messages || [])
-        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'system')
         .map((m) => mapServerMessage(m, res.bot || bot))
     } catch (err: any) {
       notify(err.message || '加载 Bot 对话流失败')
     }
+  }
+
+  async function jumpToBot(botId: string, draftPrompt?: string) {
+    state.botView = 'stream'
+    state.showInboxModal = false
+    state.showGroupDrawer = false
+    state.showQuickSwitcher = false
+    await selectBot(botId)
+    if (draftPrompt) {
+      state.pendingDraftPrompt = draftPrompt
+    }
+  }
+
+  async function togglePinBot(targetBot: Bot) {
+    try {
+      const nextPinned = !targetBot.is_pinned
+      await BotHubApi.updateBot(targetBot.id, { is_pinned: nextPinned })
+      targetBot.is_pinned = nextPinned
+      notify(nextPinned ? `已置顶「${targetBot.name}」` : `已取消置顶「${targetBot.name}」`)
+      await loadDashboard(false)
+    } catch (err: any) {
+      notify(err.message || '更新置顶状态失败')
+    }
+  }
+
+  async function deleteSingleMessage(msg: ChatMessageUI) {
+    if (msg.serverId && activeBot.value) {
+      await BotHubApi.deleteBotMessage(activeBot.value.id, msg.serverId)
+    }
+    state.timeline = state.timeline.filter((x) => x.localId !== msg.localId)
+    notify('已删除该条消息')
   }
 
   async function clearActiveBotTimeline() {
@@ -279,8 +326,10 @@ export function useAppStore() {
       try {
         const msg = JSON.parse(ev.data) as AgentMessage
         if (!msg?.bot_id) return
-        if (msg.bot_id === state.activeBotId && !state.isStreaming) {
-          state.timeline.push(mapServerMessage(msg))
+        if (msg.bot_id === state.activeBotId && (!state.isStreaming || msg.role === 'system')) {
+          if (!state.timeline.some((t) => msg.id && t.serverId === msg.id)) {
+            state.timeline.push(mapServerMessage(msg))
+          }
         } else {
           const target = state.bots.find((b) => b.id === msg.bot_id)
           if (target) target.unread_count = (target.unread_count || 0) + 1
@@ -313,6 +362,9 @@ export function useAppStore() {
     logout,
     loadDashboard,
     selectBot,
+    jumpToBot,
+    togglePinBot,
+    deleteSingleMessage,
     clearActiveBotTimeline,
   }
 }

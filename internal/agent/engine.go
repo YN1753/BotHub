@@ -49,6 +49,8 @@ type ChatRequest struct {
 	Persona        string `json:"persona"`
 	Model          string `json:"model"`
 	EnableThinking *bool  `json:"enable_thinking,omitempty"`
+	ReplyToID      int64  `json:"reply_to_id,omitempty"`
+	ReplyPreview   string `json:"reply_preview,omitempty"`
 }
 
 type ToolTrace struct {

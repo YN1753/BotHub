@@ -77,9 +77,25 @@ export const BotHubApi = {
     ),
   clearBotMessages: (id: string) =>
     apiRequest(`/api/v2/bots/${encodeURIComponent(id)}/messages`, { method: 'DELETE' }),
+  deleteBotMessage: (botId: string, msgId: number) =>
+    apiRequest(`/api/v2/bots/${encodeURIComponent(botId)}/messages/${encodeURIComponent(String(msgId))}`, {
+      method: 'DELETE',
+    }),
+  updateGroupMembers: (id: string, action: 'add' | 'remove' | 'set', bot_ids: string[]) =>
+    apiRequest<{ ok: boolean; bot: Bot; system_message?: AgentMessage }>(
+      `/api/v2/bots/${encodeURIComponent(id)}/members`,
+      { method: 'POST', body: JSON.stringify({ action, bot_ids }) }
+    ),
+  createAdhocGroup: (payload: {
+    source_bot_id?: string
+    member_ids: string[]
+    name?: string
+    group_mode?: string
+    carry_context?: boolean
+  }) => apiRequest<{ ok: boolean; bot: Bot }>('/api/v2/bots/adhoc-group', { method: 'POST', body: JSON.stringify(payload) }),
 
   // Memories
-  saveMemory: (payload: Pick<AgentMemory, 'category' | 'fact_key' | 'content'>) =>
+  saveMemory: (payload: Pick<AgentMemory, 'category' | 'fact_key' | 'content'> & { scope?: string }) =>
     apiRequest('/api/agent/memories', { method: 'POST', body: JSON.stringify(payload) }),
   deleteMemory: (id: number) =>
     apiRequest(`/api/agent/memories/${encodeURIComponent(String(id))}`, { method: 'DELETE' }),

@@ -17,6 +17,8 @@ export interface Bot {
   is_builtin: boolean
   is_group?: boolean
   member_ids?: string
+  group_mode?: 'smart' | 'sequential' | 'mention_only' | string
+  announcement?: string
   sort_order: number
   last_summary: string
   created_at: string
@@ -41,12 +43,14 @@ export interface AgentMessage {
   session_id: string
   bot_id?: string
   sender_bot_id?: string
-  msg_kind?: 'chat' | 'routine' | string
-  role: 'user' | 'assistant' | 'tool' | string
+  msg_kind?: 'chat' | 'routine' | 'system' | string
+  role: 'user' | 'assistant' | 'tool' | 'system' | string
   content: string
   reasoning_content?: string
   tool_calls?: string
   tool_call_id?: string
+  reply_to_id?: number
+  reply_preview?: string
   created_at: string
 }
 

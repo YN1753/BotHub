@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
-import { botStateLabel, shortVersion } from '../utils/format'
+import { botStateLabel, formatChatTime, shortVersion } from '../utils/format'
 import { applySiblingStaggerFallback } from '../utils/topLayer'
+import type { Bot } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
+import BotGroupAvatar from './BotGroupAvatar.vue'
 
 defineProps<{
   mobileOpen: boolean
@@ -26,6 +28,31 @@ const filteredBots = computed(() => {
     `${b.name} ${b.role_title} ${b.last_summary}`.toLowerCase().includes(q)
   )
 })
+
+const specialistMap = computed(() => {
+  const m = new Map<string, Bot>()
+  store.state.bots.forEach((b) => {
+    if (!b.is_group && b.id !== 'team_room') m.set(b.id, b)
+  })
+  return m
+})
+
+function resolveGroupMembers(b: Bot): Bot[] {
+  try {
+    const ids = JSON.parse(b.member_ids || '[]')
+    if (Array.isArray(ids)) {
+      const resolved = ids.map((id: string) => specialistMap.value.get(id)).filter((x): x is Bot => Boolean(x))
+      if (resolved.length > 0) return resolved
+    }
+  } catch {
+    // ignore
+  }
+  return Array.from(specialistMap.value.values()).slice(0, 4)
+}
+
+function isGroup(b: Bot): boolean {
+  return Boolean(b.is_group || b.id === 'team_room')
+}
 
 function stateDotClass(state: string): string {
   if (state === 'thinking') return 'bg-amber-400 animate-pulse'
@@ -190,9 +217,19 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
           </button>
         </nav>
 
-        <!-- Roster Header -->
+        <!-- Roster Header + Quick Search / Cmd+K -->
         <div class="pt-2 border-t border-[#fff8ee]/8 flex items-center justify-between gap-2">
-          <span class="font-mono text-[10.5px] tracking-wider text-slate-500">BOT 名录 ({{ filteredBots.length }})</span>
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="font-mono text-[10.5px] tracking-wider text-slate-500">会话 ({{ filteredBots.length }})</span>
+            <button
+              type="button"
+              @click="store.state.showQuickSwitcher = true; emit('closeMobile')"
+              title="全局搜索与快速跳转 (Cmd/Ctrl + K)"
+              class="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-[#fff8ee]/10 bg-[#fff8ee]/[0.03] hover:border-[#f2b880]/40 hover:text-[#f2b880] font-mono text-[10px] text-slate-400 cursor-pointer"
+            >
+              <span>Cmd+K</span>
+            </button>
+          </div>
           <input
             v-model="searchQuery"
             type="search"
@@ -221,50 +258,93 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
           </button>
         </div>
 
-        <button
+        <div
           v-for="b in filteredBots"
           :key="b.id"
-          type="button"
-          @click="handlePickBot(b.id)"
-          :aria-current="store.state.activeBotId === b.id && store.state.workspace === 'bots' ? 'true' : undefined"
           :class="[
-            'group stagger-item relative w-full min-h-[52px] flex items-center gap-2.5 px-2.5 py-2 rounded-xl border text-left cursor-pointer',
+            'group stagger-item relative w-full min-h-[56px] flex items-center gap-2.5 px-2.5 py-2 rounded-xl border transition-colors',
             store.state.activeBotId === b.id && store.state.workspace === 'bots'
               ? 'bg-[#f2b880]/12 border-[#f2b880]/25 border-l-[3px] border-l-[#f2b880]'
               : 'border-transparent hover:bg-white/[0.04]'
           ]"
         >
-          <BotAvatar :avatar-style="b.avatar_style" :state="b.state" size="md" />
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center justify-between gap-1.5">
-              <div class="flex items-center gap-1.5 min-w-0">
-                <span class="text-[13px] font-semibold text-slate-100 truncate">{{ b.name }}</span>
-                <span
-                  v-if="b.is_group || b.id === 'team_room'"
-                  class="px-1.5 py-0.5 rounded bg-[#fff8ee]/8 text-[9.5px] font-mono text-slate-300 leading-none shrink-0"
-                >
-                  群聊
-                </span>
+          <button
+            type="button"
+            @click="handlePickBot(b.id)"
+            :aria-current="store.state.activeBotId === b.id && store.state.workspace === 'bots' ? 'true' : undefined"
+            class="flex-1 min-w-0 flex items-center gap-2.5 text-left cursor-pointer"
+          >
+            <BotGroupAvatar
+              v-if="isGroup(b)"
+              :members="resolveGroupMembers(b)"
+              :fallback-style="b.avatar_style"
+              :state="b.state"
+              size="md"
+            />
+            <BotAvatar v-else :avatar-style="b.avatar_style" :state="b.state" size="md" />
+
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-1.5">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span class="text-[13px] font-semibold text-slate-100 truncate">{{ b.name }}</span>
+                  <span
+                    v-if="isGroup(b)"
+                    class="px-1.5 py-0.5 rounded bg-[#fff8ee]/8 text-[9.5px] font-mono text-slate-300 leading-none shrink-0"
+                  >
+                    群聊
+                  </span>
+                  <span
+                    v-if="b.is_pinned"
+                    class="w-1.5 h-1.5 rounded-full bg-[#f2b880]/75 shrink-0"
+                    title="已置顶"
+                    aria-hidden="true"
+                  />
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span
+                    v-if="b.unread_count > 0"
+                    class="px-1.5 py-0.5 rounded-full bg-[#f2b880] text-[#070a13] font-mono text-[10px] font-bold leading-none"
+                  >
+                    {{ b.unread_count > 99 ? '99+' : b.unread_count }}
+                  </span>
+                  <span
+                    v-else-if="b.state !== 'idle'"
+                    class="inline-flex items-center gap-1 font-mono text-[10px] text-[#f2b880]"
+                  >
+                    <span :class="['w-1.5 h-1.5 rounded-full', stateDotClass(b.state)]" aria-hidden="true" />
+                    <span>{{ botStateLabel(b.state) }}</span>
+                  </span>
+                  <span v-else class="font-mono text-[10px] text-slate-500">
+                    {{ formatChatTime(b.updated_at) }}
+                  </span>
+                </div>
               </div>
-              <span
-                v-if="b.unread_count > 0"
-                class="px-1.5 py-0.5 rounded-full bg-[#f2b880] text-[#070a13] font-mono text-[10px] font-bold leading-none shrink-0"
-              >
-                {{ b.unread_count > 99 ? '99+' : b.unread_count }}
-              </span>
-              <span
-                v-else-if="b.state !== 'idle'"
-                class="inline-flex items-center gap-1 font-mono text-[10px] text-slate-300 shrink-0"
-              >
-                <span :class="['w-1.5 h-1.5 rounded-full', stateDotClass(b.state)]" aria-hidden="true" />
-                <span>{{ botStateLabel(b.state) }}</span>
-              </span>
+              <div class="text-[11px] text-slate-400/90 truncate mt-0.5">
+                <span v-if="b.state === 'thinking' || b.state === 'working'" class="text-[#f2b880]">正在输入: </span>
+                <span>{{ b.last_summary || b.role_title }}</span>
+              </div>
             </div>
-            <div class="text-[11px] text-slate-400/90 truncate mt-0.5">
-              {{ b.last_summary || b.role_title }}
-            </div>
-          </div>
-        </button>
+          </button>
+
+          <!-- Subtle hover Pin toggle button -->
+          <button
+            type="button"
+            :title="b.is_pinned ? '取消置顶' : '置顶会话'"
+            :aria-label="b.is_pinned ? '取消置顶' : '置顶会话'"
+            @click.stop="store.togglePinBot(b)"
+            :class="[
+              'shrink-0 w-7 h-7 rounded-lg inline-flex items-center justify-center transition-opacity cursor-pointer',
+              b.is_pinned
+                ? 'text-[#f2b880] opacity-75 hover:opacity-100 hover:bg-[#f2b880]/15'
+                : 'text-slate-500 opacity-0 group-hover:opacity-100 hover:text-[#f2b880] hover:bg-white/[0.06]'
+            ]"
+          >
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 17v5" />
+              <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <!-- Minimal 3-Tool Footer -->

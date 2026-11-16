@@ -122,6 +122,7 @@ func (s *Server) handleListAgentMemories(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleSaveAgentMemory(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Scope    string `json:"scope"`
 		Category string `json:"category"`
 		FactKey  string `json:"fact_key"`
 		Content  string `json:"content"`
@@ -133,11 +134,12 @@ func (s *Server) handleSaveAgentMemory(w http.ResponseWriter, r *http.Request) {
 	key := notifier.StripEmoji(strings.TrimSpace(req.FactKey))
 	content := notifier.StripEmoji(strings.TrimSpace(req.Content))
 	cat := notifier.StripEmoji(strings.TrimSpace(req.Category))
+	scope := notifier.StripEmoji(strings.TrimSpace(req.Scope))
 	if key == "" || content == "" {
 		writeError(w, http.StatusBadRequest, "记忆键名与内容不能为空")
 		return
 	}
-	if err := s.store.SaveAgentMemory(cat, key, content); err != nil {
+	if err := s.store.SaveAgentMemoryWithScope(scope, cat, key, content); err != nil {
 		writeError(w, http.StatusInternalServerError, "保存记忆失败: "+err.Error())
 		return
 	}

@@ -41,6 +41,16 @@ function closeModal() {
   store.state.showInboxModal = false
 }
 
+async function askBotAnalyze(n: { id: number; source: string; title: string; summary: string }) {
+  await markRead(n.id)
+  const s = n.source.toLowerCase()
+  let targetBotId = 'team_room'
+  if (s.includes('nezha') || s.includes('alert') || s.includes('webhook')) targetBotId = 'sentinel'
+  else if (s.includes('radar') || s.includes('bili')) targetBotId = 'radar'
+  else if (s.includes('morning') || s.includes('asset')) targetBotId = 'butler'
+  await store.jumpToBot(targetBotId, `请深度分析这条系统情报并给出建议：\n标题：${n.title}\n摘要：${n.summary}`)
+}
+
 async function markRead(id: number) {
   const item = store.state.notifications.find((n) => n.id === id)
   if (!item || item.read_at) return
@@ -141,15 +151,24 @@ watch(
           <span class="font-mono tabular-nums text-[11px] text-slate-400 shrink-0">{{ formatTime(n.created_at) }}</span>
         </div>
         <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">{{ n.summary }}</p>
-        <details class="vesper-details mt-2" @toggle="(e: any) => e.target?.open && markRead(n.id)">
-          <summary class="cursor-pointer inline-flex items-center gap-1 font-mono text-[11px] text-[#f2b880] select-none">
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron shrink-0">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-            <span>展开全文</span>
-          </summary>
-          <div class="mt-2 pt-2 border-t border-[#fff8ee]/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
-        </details>
+        <div class="mt-2 flex items-center justify-between gap-2 flex-wrap">
+          <details class="vesper-details flex-1 min-w-0" @toggle="(e: any) => e.target?.open && markRead(n.id)">
+            <summary class="cursor-pointer inline-flex items-center gap-1 font-mono text-[11px] text-[#f2b880] select-none">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron shrink-0">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              <span>展开全文</span>
+            </summary>
+            <div class="mt-2 pt-2 border-t border-[#fff8ee]/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
+          </details>
+          <button
+            type="button"
+            @click="askBotAnalyze(n)"
+            class="min-h-[32px] sm:min-h-[26px] px-2.5 py-0.5 rounded-lg border border-[#f2b880]/30 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-[11px] text-[#f2b880] cursor-pointer shrink-0 self-start"
+          >
+            让 Bot 分析 ->
+          </button>
+        </div>
       </article>
     </div>
   </BaseModal>

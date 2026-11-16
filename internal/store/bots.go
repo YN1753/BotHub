@@ -29,7 +29,9 @@ type Bot struct {
 	IsPinned       bool   `json:"is_pinned"`
 	IsBuiltin      bool   `json:"is_builtin"`
 	IsGroup        bool   `json:"is_group"`
-	MemberIDs      string `json:"member_ids"` // JSON string array of Bot IDs when IsGroup=true
+	MemberIDs      string `json:"member_ids"`   // JSON string array of Bot IDs when IsGroup=true
+	GroupMode      string `json:"group_mode"`   // smart | sequential | mention_only
+	Announcement   string `json:"announcement"` // Pinned group notice banner
 	SortOrder      int    `json:"sort_order"`
 	LastSummary    string `json:"last_summary"`
 	CreatedAt      string `json:"created_at"`
@@ -65,6 +67,8 @@ func DefaultBots(now string) []Bot {
 			IsBuiltin:      true,
 			IsGroup:        true,
 			MemberIDs:      `["butler","sentinel","radar","grok"]`,
+			GroupMode:      "smart",
+			Announcement:   "欢迎来到中枢指挥群：支持 @指定 Bot 接力、右侧一键拉人调整成员，或直接下达指令由协同官智能调度。",
 			SortOrder:      1,
 			LastSummary:    "输入 @Bot名称 可点名接力协同",
 			CreatedAt:      now,
@@ -142,7 +146,7 @@ func DefaultBots(now string) []Bot {
 }
 
 func (s *Store) ListBots() ([]Bot, error) {
-	rows, err := s.db.Query(`SELECT id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, sort_order, last_summary, created_at, updated_at
+	rows, err := s.db.Query(`SELECT id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, COALESCE(group_mode,'smart'), COALESCE(announcement,''), sort_order, last_summary, created_at, updated_at
 		FROM bots ORDER BY is_pinned DESC, sort_order ASC, updated_at DESC`)
 	if err != nil {
 		return nil, err
@@ -153,11 +157,14 @@ func (s *Store) ListBots() ([]Bot, error) {
 	for rows.Next() {
 		var b Bot
 		var et, pin, builtin, isGroup int
-		if err := rows.Scan(&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt, &b.Model, &et, &b.AllowedTools, &b.State, &b.UnreadCount, &pin, &builtin, &isGroup, &b.MemberIDs, &b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt); err == nil {
+		if err := rows.Scan(&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt, &b.Model, &et, &b.AllowedTools, &b.State, &b.UnreadCount, &pin, &builtin, &isGroup, &b.MemberIDs, &b.GroupMode, &b.Announcement, &b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt); err == nil {
 			b.EnableThinking = et == 1
 			b.IsPinned = pin == 1
 			b.IsBuiltin = builtin == 1
 			b.IsGroup = isGroup == 1 || b.ID == "team_room"
+			if strings.TrimSpace(b.GroupMode) == "" {
+				b.GroupMode = "smart"
+			}
 			list = append(list, b)
 		}
 	}
@@ -167,9 +174,9 @@ func (s *Store) ListBots() ([]Bot, error) {
 func (s *Store) GetBot(id string) (*Bot, error) {
 	var b Bot
 	var et, pin, builtin, isGroup int
-	err := s.db.QueryRow(`SELECT id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, sort_order, last_summary, created_at, updated_at
+	err := s.db.QueryRow(`SELECT id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, COALESCE(group_mode,'smart'), COALESCE(announcement,''), sort_order, last_summary, created_at, updated_at
 		FROM bots WHERE id = ?`, strings.TrimSpace(id)).
-		Scan(&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt, &b.Model, &et, &b.AllowedTools, &b.State, &b.UnreadCount, &pin, &builtin, &isGroup, &b.MemberIDs, &b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt)
+		Scan(&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt, &b.Model, &et, &b.AllowedTools, &b.State, &b.UnreadCount, &pin, &builtin, &isGroup, &b.MemberIDs, &b.GroupMode, &b.Announcement, &b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -180,6 +187,9 @@ func (s *Store) GetBot(id string) (*Bot, error) {
 	b.IsPinned = pin == 1
 	b.IsBuiltin = builtin == 1
 	b.IsGroup = isGroup == 1 || b.ID == "team_room"
+	if strings.TrimSpace(b.GroupMode) == "" {
+		b.GroupMode = "smart"
+	}
 	return &b, nil
 }
 
@@ -201,6 +211,9 @@ func (s *Store) SaveBot(b Bot) error {
 	if strings.TrimSpace(b.MemberIDs) == "" {
 		b.MemberIDs = "[]"
 	}
+	if strings.TrimSpace(b.GroupMode) == "" {
+		b.GroupMode = "smart"
+	}
 	if b.State == "" {
 		b.State = BotStateIdle
 	}
@@ -220,8 +233,8 @@ func (s *Store) SaveBot(b Bot) error {
 	if b.IsGroup {
 		isGroup = 1
 	}
-	_, err := s.db.Exec(`INSERT INTO bots (id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, sort_order, last_summary, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO bots (id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, is_group, member_ids, group_mode, announcement, sort_order, last_summary, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			role_title = excluded.role_title,
@@ -234,10 +247,12 @@ func (s *Store) SaveBot(b Bot) error {
 			is_pinned = excluded.is_pinned,
 			is_group = excluded.is_group,
 			member_ids = excluded.member_ids,
+			group_mode = excluded.group_mode,
+			announcement = excluded.announcement,
 			sort_order = excluded.sort_order,
 			last_summary = excluded.last_summary,
 			updated_at = excluded.updated_at`,
-		b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.Model, et, b.AllowedTools, b.State, b.UnreadCount, pin, builtin, isGroup, b.MemberIDs, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
+		b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.Model, et, b.AllowedTools, b.State, b.UnreadCount, pin, builtin, isGroup, b.MemberIDs, b.GroupMode, b.Announcement, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
 	return err
 }
 

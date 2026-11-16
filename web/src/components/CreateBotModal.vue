@@ -45,7 +45,58 @@ const groupName = ref('')
 const groupDesc = ref('')
 const groupAvatar = ref('swarm:indigo')
 const groupMembers = ref<string[]>([])
+const groupMode = ref<'smart' | 'sequential' | 'mention_only'>('smart')
+const groupAnnouncement = ref('')
 const saving = ref(false)
+
+const BOT_PRESETS = [
+  {
+    name: '架构审计官',
+    roleTitle: '高密度代码评审与系统架构顾问',
+    avatarStyle: 'critic:violet',
+    model: 'deepseek-v4-pro',
+    enableThinking: true,
+    tools: ['read_url', 'web_search', 'remember_fact', 'recall_memory'],
+    systemPrompt: '你是架构审计官，擅长一针见血指出代码隐患、并发竞态、性能瓶颈与过度设计，输出可执行重构方案，严禁使用 Emoji。',
+  },
+  {
+    name: '云成本精算师',
+    roleTitle: '账单追踪与资源优化管家',
+    avatarStyle: 'butler:gold',
+    model: 'deepseek-flash',
+    enableThinking: true,
+    tools: ['manage_assets', 'manage_tasks', 'remember_fact', 'recall_memory'],
+    systemPrompt: '你是云成本精算师，擅长评估 VPS 性价比、域名/会员续费优先级，帮助用户砍掉冗余开支并守护临期资产，严禁使用 Emoji。',
+  },
+  {
+    name: '安全巡检猎手',
+    roleTitle: '漏洞情报与节点防线哨兵',
+    avatarStyle: 'sentinel:amber',
+    model: 'deepseek-v4-pro',
+    enableThinking: true,
+    tools: ['query_nezha_nodes', 'read_url', 'web_search', 'recall_memory'],
+    systemPrompt: '你是安全巡检猎手，聚焦端口暴露、异常负载、CVE 漏洞核查与零信任加固建议，回复直接给出可验证命令，严禁使用 Emoji。',
+  },
+  {
+    name: '技术编译官',
+    roleTitle: '英文文档与论文结构化精读',
+    avatarStyle: 'visor:indigo',
+    model: 'deepseek-flash',
+    enableThinking: false,
+    tools: ['read_url', 'web_search', 'remember_fact'],
+    systemPrompt: '你是技术编译官，擅长把长篇英文技术博客、RFC 或 GitHub Release 提炼为高信息密度中文要点卡片，严禁使用 Emoji。',
+  },
+]
+
+function applyBotPreset(preset: (typeof BOT_PRESETS)[number]) {
+  name.value = preset.name
+  roleTitle.value = preset.roleTitle
+  avatarStyle.value = preset.avatarStyle
+  model.value = preset.model
+  enableThinking.value = preset.enableThinking
+  allowedTools.value = [...preset.tools]
+  systemPrompt.value = preset.systemPrompt
+}
 
 const TOOL_CATALOG = [
   { id: 'read_url', label: '网页抓取' },
@@ -110,12 +161,16 @@ async function handleSubmit() {
         enable_thinking: true,
         is_group: true,
         member_ids: JSON.stringify(groupMembers.value),
+        group_mode: groupMode.value,
+        announcement: groupAnnouncement.value.trim(),
         allowed_tools: '["read_url","web_search","query_nezha_nodes","manage_assets","manage_tasks","remember_fact","recall_memory"]',
         system_prompt: groupDesc.value.trim() || '你是群聊协同协调官，整合各位成员观点并输出精确决策。',
       })
       store.notify('多 Bot 协同群聊创建成功')
       groupName.value = ''
       groupDesc.value = ''
+      groupAnnouncement.value = ''
+      groupMode.value = 'smart'
       closeModal()
       await store.loadDashboard(false)
       if (res.bot?.id) {
@@ -184,6 +239,31 @@ async function handleSubmit() {
       >
         <!-- Mode 1: Single Specialist Bot -->
         <div v-if="mode === 'bot'" key="bot" class="flex flex-col gap-3.5">
+          <!-- One-Click Persona Presets Gallery -->
+          <div class="modal-section flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-xs font-medium text-slate-200">一键人设模板</span>
+              <span class="font-mono text-[10.5px] text-slate-500">点击自动填充形象与提示词</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="preset in BOT_PRESETS"
+                :key="preset.name"
+                type="button"
+                @click="applyBotPreset(preset)"
+                :class="[
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs cursor-pointer transition-colors',
+                  name === preset.name
+                    ? 'border-[#f2b880]/60 bg-[#f2b880]/15 text-[#f7cba0]'
+                    : 'border-[#fff8ee]/12 bg-[#050811]/70 text-slate-300 hover:border-[#f2b880]/40 hover:text-white'
+                ]"
+              >
+                <BotAvatar :avatar-style="preset.avatarStyle" state="idle" size="xs" :interactive="false" />
+                <span>{{ preset.name }}</span>
+              </button>
+            </div>
+          </div>
+
           <BotAvatarPicker v-model="avatarStyle" :preview-name="name || '新专属 Bot'" />
 
           <div class="modal-section grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -264,6 +344,28 @@ async function handleSubmit() {
                 v-model="groupDesc"
                 type="text"
                 placeholder="如：探针异常排查与架构评估"
+                class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
+              />
+            </label>
+            <div class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
+              <span>默认协同策略</span>
+              <SegmentedTabs
+                v-model="groupMode"
+                :items="[
+                  { id: 'smart', label: '智能协同' },
+                  { id: 'sequential', label: '全员接力' },
+                  { id: 'mention_only', label: '仅 @点名' },
+                ]"
+                variant="subtle"
+                aria-label="群协同策略"
+              />
+            </div>
+            <label class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
+              <span>初始群公告（可选，置顶显示在对话流顶部）</span>
+              <input
+                v-model="groupAnnouncement"
+                type="text"
+                placeholder="如：优先调用探针与资产工具核验事实后再讨论"
                 class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
               />
             </label>

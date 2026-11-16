@@ -198,6 +198,8 @@ CREATE TABLE IF NOT EXISTS bots (
 	is_builtin INTEGER NOT NULL DEFAULT 0,
 	is_group INTEGER NOT NULL DEFAULT 0,
 	member_ids TEXT NOT NULL DEFAULT '[]',
+	group_mode TEXT NOT NULL DEFAULT 'smart',
+	announcement TEXT NOT NULL DEFAULT '',
 	sort_order INTEGER NOT NULL DEFAULT 100,
 	last_summary TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL,
@@ -216,6 +218,10 @@ CREATE TABLE IF NOT EXISTS bots (
 		`ALTER TABLE agent_memories ADD COLUMN scope TEXT NOT NULL DEFAULT 'global'`,
 		`ALTER TABLE bots ADD COLUMN is_group INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE bots ADD COLUMN member_ids TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE bots ADD COLUMN group_mode TEXT NOT NULL DEFAULT 'smart'`,
+		`ALTER TABLE bots ADD COLUMN announcement TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE agent_messages ADD COLUMN reply_to_id INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE agent_messages ADD COLUMN reply_preview TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range alters {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {

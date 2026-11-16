@@ -90,3 +90,45 @@ export function botStateLabel(state?: string): string {
   }
   return map[String(state || 'idle')] || '待命'
 }
+
+export function groupModeLabel(mode?: string): string {
+  if (mode === 'sequential') return '全员接力'
+  if (mode === 'mention_only') return '仅 @点名'
+  return '智能协同'
+}
+
+export function formatChatTime(str?: string): string {
+  if (!str) return ''
+  const d = new Date(str)
+  if (Number.isNaN(d.getTime())) return ''
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const targetDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const diffDays = Math.round((today - targetDay) / 86400000)
+
+  if (diffDays === 0) return hm
+  if (diffDays === 1) return `昨天 ${hm}`
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}`
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+}
+
+export function formatTimelineDivider(str?: string): string {
+  if (!str) return ''
+  const d = new Date(str)
+  if (Number.isNaN(d.getTime())) return ''
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const targetDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const diffDays = Math.round((today - targetDay) / 86400000)
+
+  if (diffDays === 0) return `今天 ${hm}`
+  if (diffDays === 1) return `昨天 ${hm}`
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${hm}`
+}

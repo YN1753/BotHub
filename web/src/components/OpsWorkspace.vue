@@ -6,6 +6,7 @@ import { describeCron, formatDateOnly } from '../utils/format'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import type { Asset } from '../types/bothub'
 import SegmentedTabs from './SegmentedTabs.vue'
+import BotAvatar from './BotAvatar.vue'
 
 defineProps<{
   desktopCollapsed?: boolean
@@ -95,6 +96,11 @@ async function handleSyncAssets() {
   } finally {
     syncing.value = false
   }
+}
+
+function taskBot(botId?: string) {
+  const id = botId || 'butler'
+  return store.state.bots.find((b) => b.id === id)
 }
 
 async function runTaskNow(id: string) {
@@ -375,20 +381,30 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
               <div class="font-mono text-[11px] text-slate-400 truncate rounded-lg bg-[#050811]/60 border border-[#fff8ee]/6 px-2.5 py-1.5">
                 最近摘要: {{ t.last_run?.summary || '等待执行' }}
               </div>
-              <div class="flex items-center gap-2 pt-0.5">
+              <div class="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    @click="runTaskNow(t.id)"
+                    class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg bg-[#f2b880]/15 border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/25 text-xs cursor-pointer"
+                  >
+                    立即执行
+                  </button>
+                  <button
+                    type="button"
+                    @click="store.state.editingTask = t"
+                    class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg border border-[#fff8ee]/12 text-slate-300 hover:bg-white/5 text-xs cursor-pointer"
+                  >
+                    编辑配置
+                  </button>
+                </div>
                 <button
                   type="button"
-                  @click="runTaskNow(t.id)"
-                  class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg bg-[#f2b880]/15 border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/25 text-xs cursor-pointer"
+                  @click="store.jumpToBot(t.bot_id || 'butler')"
+                  class="min-h-[36px] sm:min-h-[28px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#fff8ee]/10 bg-[#050811]/70 hover:border-[#f2b880]/40 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
                 >
-                  立即执行
-                </button>
-                <button
-                  type="button"
-                  @click="store.state.editingTask = t"
-                  class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg border border-[#fff8ee]/12 text-slate-300 hover:bg-white/5 text-xs cursor-pointer"
-                >
-                  编辑配置
+                  <BotAvatar :avatar-style="taskBot(t.bot_id)?.avatar_style" :state="taskBot(t.bot_id)?.state" size="xs" :interactive="false" />
+                  <span>{{ taskBot(t.bot_id)?.name || (t.bot_id || 'butler') }}</span>
                 </button>
               </div>
             </article>

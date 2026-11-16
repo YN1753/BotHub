@@ -113,10 +113,13 @@ func (s *Server) Handler() http.Handler {
 	// BotHub v2 Persistent Bots (GrokBot Model)
 	mux.HandleFunc("GET /api/v2/bots", s.requireAuth(s.handleListBots))
 	mux.HandleFunc("POST /api/v2/bots", s.requireAuth(s.handleCreateBot))
+	mux.HandleFunc("POST /api/v2/bots/adhoc-group", s.requireAuth(s.handleCreateAdhocGroup))
 	mux.HandleFunc("POST /api/v2/bots/{id}", s.requireAuth(s.handleUpdateBot))
+	mux.HandleFunc("POST /api/v2/bots/{id}/members", s.requireAuth(s.handleUpdateGroupMembers))
 	mux.HandleFunc("DELETE /api/v2/bots/{id}", s.requireAuth(s.handleDeleteBot))
 	mux.HandleFunc("GET /api/v2/bots/{id}/messages", s.requireAuth(s.handleGetBotMessages))
 	mux.HandleFunc("DELETE /api/v2/bots/{id}/messages", s.requireAuth(s.handleClearBotMessages))
+	mux.HandleFunc("DELETE /api/v2/bots/{id}/messages/{msgId}", s.requireAuth(s.handleDeleteBotMessage))
 
 	// BotHub v2 Native Push Stream, Inbox & Webhooks
 	mux.HandleFunc("GET /api/v2/app/version", s.handleV2AppVersion)

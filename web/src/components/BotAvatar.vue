@@ -1,19 +1,33 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { getColorPalette, parseAvatarStyle } from '../utils/botLook'
 
 const props = withDefaults(
   defineProps<{
     avatarStyle?: string
     state?: string
-    size?: 'sm' | 'md' | 'lg' | 'xl'
+    size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+    interactive?: boolean
   }>(),
   {
     avatarStyle: 'cyan',
     state: 'idle',
     size: 'md',
+    interactive: true,
   }
 )
+
+const isWinking = ref(false)
+let winkTimer: number | null = null
+
+function triggerWink() {
+  if (!props.interactive) return
+  isWinking.value = true
+  if (winkTimer !== null) window.clearTimeout(winkTimer)
+  winkTimer = window.setTimeout(() => {
+    isWinking.value = false
+  }, 850)
+}
 
 const parsed = computed(() => parseAvatarStyle(props.avatarStyle))
 const archetype = computed(() => parsed.value.shape)
@@ -27,6 +41,7 @@ const ringColor = computed(() => {
 })
 
 const sizeClass = computed(() => {
+  if (props.size === 'xs') return 'w-3.5 h-3.5'
   if (props.size === 'sm') return 'w-7 h-7'
   if (props.size === 'lg') return 'w-11 h-11'
   if (props.size === 'xl') return 'w-20 h-20'
@@ -37,11 +52,13 @@ const sizeClass = computed(() => {
 <template>
   <div
     :style="{ '--bot-glow': palette.glow }"
+    @click="triggerWink"
     :class="[
       'bot-avatar-root shrink-0 relative inline-flex items-center justify-center select-none',
       sizeClass,
-      `bot-avatar-${state}`,
-      `bot-kind-${archetype}`
+      `bot-avatar-${isWinking ? 'done' : state}`,
+      `bot-kind-${archetype}`,
+      interactive ? 'bot-avatar-interactive' : ''
     ]"
   >
     <!-- Soft ambient aura behind hero/large avatars -->
@@ -128,14 +145,14 @@ const sizeClass = computed(() => {
         <!-- Facial Expression Layer -->
         <g class="bot-eyes">
           <!-- Blocked / Alert expression -->
-          <template v-if="state === 'blocked'">
+          <template v-if="state === 'blocked' && !isWinking">
             <path d="M16 19.5 L20 22.5 L16 25.5" :stroke="ringColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
             <path d="M32 19.5 L28 22.5 L32 25.5" :stroke="ringColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
             <path d="M19 29 Q24 26.5 29 29" :stroke="ringColor" stroke-width="1.6" stroke-linecap="round" />
           </template>
 
-          <!-- Done / Happy crescent expression -->
-          <template v-else-if="state === 'done'">
+          <!-- Done / Wink Happy crescent expression -->
+          <template v-else-if="state === 'done' || isWinking">
             <path d="M15.5 22.5 Q18.5 19 21.5 22.5" :stroke="palette.eye" stroke-width="2.2" stroke-linecap="round" />
             <path d="M26.5 22.5 Q29.5 19 32.5 22.5" :stroke="palette.eye" stroke-width="2.2" stroke-linecap="round" />
             <path d="M20 27.2 Q24 30 28 27.2" :stroke="ringColor" stroke-width="1.7" stroke-linecap="round" />
