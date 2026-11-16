@@ -27,21 +27,102 @@
   <!-- Main App Shell -->
   <div id="dashboard-view" class="app-shell hidden">
     <header class="topbar glass-card">
-      <div class="topbar-brand">
-        <h1 class="serif-title">Vesper BotHub</h1>
-        <span class="topbar-sub mono">bot.starryheavens.uk</span>
+      <div class="topbar-left">
+        <div class="topbar-brand">
+          <h1 class="serif-title">Vesper BotHub</h1>
+          <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v2.2.0</span></span>
+        </div>
+        <nav class="topbar-nav" aria-label="主工作区切换">
+          <button type="button" class="topbar-nav-btn workspace-tab-btn active" data-workspace="agent">智能对话</button>
+          <button type="button" class="topbar-nav-btn workspace-tab-btn" data-workspace="ops">资产与调度</button>
+        </nav>
       </div>
       <div class="topbar-actions">
-        <span class="stat-pill mono"><span class="dot dot-live"></span><span id="version-label">v2.2.0</span></span>
-        <button id="open-inbox-btn" class="btn btn-ghost" type="button">情报收件箱 <span id="inbox-unread-badge" class="unread-badge hidden">0</span></button>
-        <button id="open-memories-btn" class="btn btn-ghost" type="button">长期记忆</button>
-        <button id="open-logs-btn" class="btn btn-ghost" type="button">推送流水</button>
-        <button id="open-settings-btn" class="btn btn-ghost" type="button">系统设置</button>
-        <button id="refresh-btn" class="btn btn-ghost" type="button">刷新</button>
-        <button id="logout-btn" class="btn btn-ghost" type="button">退出</button>
+        <button id="open-inbox-btn" class="btn btn-ghost btn-sm" type="button">情报收件箱 <span id="inbox-unread-badge" class="unread-badge hidden">0</span></button>
+        <button id="open-memories-btn" class="btn btn-ghost btn-sm" type="button">长期记忆</button>
+        <button id="open-logs-btn" class="btn btn-ghost btn-sm" type="button">推送流水</button>
+        <button id="open-settings-btn" class="btn btn-ghost btn-sm" type="button">系统设置</button>
+        <button id="refresh-btn" class="btn btn-ghost btn-sm" type="button">刷新</button>
+        <button id="logout-btn" class="btn btn-ghost btn-sm" type="button">退出</button>
       </div>
     </header>
 
+    <!-- Workspace 1: QQ / WeChat Style Two-Column IM Shell -->
+    <section id="workspace-agent" class="agent-workspace">
+      <div class="glass-card agent-shell im-shell">
+        <!-- Left Session Sidebar -->
+        <aside class="im-sidebar">
+          <div class="im-sidebar-head">
+            <input id="agent-session-search" type="search" class="glass-input im-search-input" placeholder="搜索会话..." />
+            <button type="button" class="btn btn-primary btn-sm" id="agent-new-session-btn">+ 新对话</button>
+          </div>
+          <div id="agent-session-list" class="im-session-list"></div>
+          <input type="hidden" id="agent-session-id" value="" />
+        </aside>
+
+        <!-- Right Main Chat Stage -->
+        <div class="im-chat-main">
+          <div class="im-chat-header">
+            <div class="im-chat-title-wrap">
+              <strong id="agent-active-title" class="im-chat-title">新对话</strong>
+              <span id="agent-active-sub" class="mono im-chat-sub">长庚执更 · DeepSeek 智能中枢</span>
+            </div>
+            <div class="im-chat-controls">
+              <div class="im-compact-select">
+                <div id="mount-agent-persona" class="v-select-mount"></div>
+                <input type="hidden" id="agent-persona" value="grok" />
+              </div>
+              <div class="im-compact-select">
+                <div id="mount-agent-model" class="v-select-mount"></div>
+                <input type="hidden" id="agent-model" value="deepseek-flash" />
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm" id="agent-export-session-btn">导出</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="agent-delete-session-btn">清空</button>
+            </div>
+          </div>
+
+          <div id="agent-chat-messages" class="agent-messages-viewport">
+            <div class="agent-empty-state" id="agent-empty-state">
+              <div class="brand-badge mono">DEEPSEEK AGENT ENGINE</div>
+              <h3 class="serif-title">长庚执更 · 智能决策与运维中枢</h3>
+              <p class="section-hint">像日常聊天一样直接发消息，支持哪吒探针直连排查、数字资产盘点、网页正文总结与跨会话长期记忆。</p>
+            </div>
+          </div>
+
+          <div class="im-composer-wrap">
+            <div class="agent-quick-bar" id="agent-quick-prompts">
+              <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请调用工具盘点我当前的全部数字资产与算力节点，并按到期风险给出锐评。">盘点资产与风险</button>
+              <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请调用 query_nezha_nodes 检查哪吒监控面板节点的在线状态与配置详情。">哪吒节点脉搏</button>
+              <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请查看当前所有自动化调度任务的运行状态，并告诉我下次触发时间。">调度任务状态</button>
+              <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请检索长期记忆库中已保存的偏好与基建事实，总结你对我当前系统的了解。">长期记忆摘要</button>
+            </div>
+
+            <form id="agent-chat-form" class="agent-composer">
+              <textarea
+                id="agent-chat-input"
+                class="glass-input agent-textarea"
+                rows="2"
+                placeholder="输入消息（Enter 发送，Shift+Enter 换行）..."
+                required
+              ></textarea>
+              <div class="agent-composer-actions">
+                <div class="agent-composer-left">
+                  <button type="button" class="pill-btn thinking-toggle-pill active" id="agent-thinking-toggle" title="DeepSeek Flash 思考模式开关">深度思考: 开</button>
+                  <span id="agent-stream-status" class="mono section-hint">就绪</span>
+                </div>
+                <div class="agent-composer-right">
+                  <button type="button" class="btn btn-danger btn-sm hidden" id="agent-stop-btn">停止生成</button>
+                  <button type="submit" class="btn btn-primary" id="agent-send-btn">发送</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Workspace 2: Asset Watcher & Tasks Engine -->
+    <div id="workspace-ops" class="hidden">
     <!-- Metrics Bar -->
     <section class="metrics-grid">
       <article class="glass-card metric-card">
@@ -62,87 +143,6 @@
         <span class="metric-sub-link mono">点击查看流水</span>
       </article>
     </section>
-
-    <!-- Primary Workspace Switcher -->
-    <nav class="workspace-tabs glass-card" aria-label="主工作区切换">
-      <button type="button" class="workspace-tab-btn active" data-workspace="agent">
-        <span class="workspace-tab-title">DeepSeek 智能中枢</span>
-        <span class="workspace-tab-sub mono">SSE 流式推理 · 工具调用 · 长期记忆</span>
-      </button>
-      <button type="button" class="workspace-tab-btn" data-workspace="ops">
-        <span class="workspace-tab-title">资产守望与调度引擎</span>
-        <span class="workspace-tab-sub mono">VPS / 域名 / 订阅台账 · 定时任务</span>
-      </button>
-    </nav>
-
-    <!-- Workspace 1: DeepSeek Agent Hub -->
-    <section id="workspace-agent" class="section-block agent-workspace">
-      <div class="glass-card agent-shell">
-        <div class="agent-toolbar">
-          <div class="agent-toolbar-group">
-            <div class="agent-control-item agent-session-select-wrap">
-              <label class="mono">当前会话</label>
-              <div id="mount-agent-session" class="v-select-mount"></div>
-              <input type="hidden" id="agent-session-id" value="" />
-            </div>
-            <div class="agent-control-item">
-              <label class="mono">中枢人设</label>
-              <div id="mount-agent-persona" class="v-select-mount"></div>
-              <input type="hidden" id="agent-persona" value="grok" />
-            </div>
-            <div class="agent-control-item">
-              <label class="mono">推理模型</label>
-              <div id="mount-agent-model" class="v-select-mount"></div>
-              <input type="hidden" id="agent-model" value="deepseek-flash" />
-            </div>
-          </div>
-          <div class="agent-toolbar-actions">
-            <button type="button" class="btn btn-ghost btn-sm" id="agent-export-session-btn">导出会话</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="agent-new-session-btn">+ 新对话</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="agent-delete-session-btn">清空当前会话</button>
-          </div>
-        </div>
-
-        <div class="agent-quick-bar" id="agent-quick-prompts">
-          <span class="quick-bar-label mono">快捷指令:</span>
-          <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请调用工具盘点我当前的全部数字资产与算力节点，并按到期风险给出锐评。">盘点全部资产与到期风险</button>
-          <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请调用 query_nezha_nodes 检查哪吒监控面板节点的在线状态与配置详情。">探查哪吒节点脉搏</button>
-          <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请查看当前所有自动化调度任务的运行状态，并告诉我下次触发时间。">检查调度任务状态</button>
-          <button type="button" class="pill-btn agent-prompt-pill" data-prompt="请检索长期记忆库中已保存的偏好与基建事实，总结你对我当前系统的了解。">检视长期记忆库</button>
-        </div>
-
-        <div id="agent-chat-messages" class="agent-messages-viewport">
-          <div class="agent-empty-state" id="agent-empty-state">
-            <div class="brand-badge mono">DEEPSEEK AGENT ENGINE</div>
-            <h3 class="serif-title">长庚执更 · 智能决策与运维中枢</h3>
-            <p class="section-hint">支持 DeepSeek Reasoner 深度思考流、哪吒探针直连查询、资产与调度任务直接管控、网页正文抓取及跨会话 SQLite 长期记忆。</p>
-          </div>
-        </div>
-
-        <form id="agent-chat-form" class="agent-composer">
-          <textarea
-            id="agent-chat-input"
-            class="glass-input agent-textarea"
-            rows="2"
-            placeholder="输入指令或问题（支持 Enter 发送，Shift+Enter 换行）..."
-            required
-          ></textarea>
-          <div class="agent-composer-actions">
-            <div class="agent-composer-left">
-              <button type="button" class="pill-btn thinking-toggle-pill active" id="agent-thinking-toggle" title="DeepSeek Flash 思考模式开关">深度思考: 开</button>
-              <span id="agent-stream-status" class="mono section-hint">就绪</span>
-            </div>
-            <div class="agent-composer-right">
-              <button type="button" class="btn btn-danger btn-sm hidden" id="agent-stop-btn">停止生成</button>
-              <button type="submit" class="btn btn-primary" id="agent-send-btn">发送指令</button>
-            </div>
-          </div>
-        </form>
-      </div>
-    </section>
-
-    <!-- Workspace 2: Asset Watcher & Tasks Engine -->
-    <div id="workspace-ops" class="hidden">
     <!-- Asset Watcher -->
     <section class="section-block">
       <div class="section-head">

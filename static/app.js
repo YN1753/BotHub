@@ -822,7 +822,10 @@
       this.logoutBtn = document.getElementById("logout-btn");
 
       this.bus.on("data:loaded", (state) => {
-        if (this.verLabel) this.verLabel.textContent = state.version;
+        if (this.verLabel) {
+          const shortVer = String(state.version || "v2.2.0").replace(/-[0-9a-f]{12,40}$/i, "");
+          this.verLabel.textContent = shortVer;
+        }
         this.renderUptime(state.uptimeSec);
       });
 
@@ -2850,12 +2853,21 @@
   // --- DeepSeek Agent Hub Component ---
   class AgentHubComponent extends BaseComponent {
     init() {
-      this.sessionMount = document.getElementById("mount-agent-session");
+      this.sessionListEl = document.getElementById("agent-session-list");
+      this.sessionSearchEl = document.getElementById("agent-session-search");
+      this.activeTitleEl = document.getElementById("agent-active-title");
+      this.activeSubEl = document.getElementById("agent-active-sub");
       this.sessionHidden = document.getElementById("agent-session-id");
       this.personaMount = document.getElementById("mount-agent-persona");
       this.personaHidden = document.getElementById("agent-persona");
       this.modelMount = document.getElementById("mount-agent-model");
       this.modelHidden = document.getElementById("agent-model");
+
+      this.sessionSearchQuery = "";
+      this.sessionSearchEl?.addEventListener("input", () => {
+        this.sessionSearchQuery = (this.sessionSearchEl.value || "").trim().toLowerCase();
+        this.syncSessionSelect(this.store.state.agentSessions || []);
+      });
 
       this.exportSessionBtn = document.getElementById("agent-export-session-btn");
       this.newSessionBtn = document.getElementById("agent-new-session-btn");
@@ -3014,27 +3026,70 @@
     }
 
     syncSessionSelect(sessions) {
-      if (!this.sessionSelect) return;
+      if (!this.sessionListEl) return;
       const cur = this.sessionHidden?.value || "";
-      const opts = [{ value: "", label: "新对话 (点击直接提问)" }];
-      sessions.forEach((s) => {
-        opts.push({
-          value: s.id,
-          label: `${s.title || s.id} (${Utils.formatTime(s.updated_at)})`,
+      const filtered = (sessions || []).filter((s) => {
+        if (!this.sessionSearchQuery) return true;
+        return `${s.title || ""} ${s.persona || ""} ${s.model || ""}`.toLowerCase().includes(this.sessionSearchQuery);
+      });
+
+      if (!filtered.length) {
+        this.sessionListEl.innerHTML = `<div class="empty-state" style="padding:20px 10px; font-size:12px;">${(sessions || []).length ? "无匹配会话" : "暂无历史会话，直接发消息开始"}</div>`;
+        return;
+      }
+
+      this.sessionListEl.innerHTML = filtered.map((s) => {
+        const isActive = s.id === cur;
+        const avatarChar = s.persona === "butler" ? "执" : (s.persona === "architect" ? "架" : "G");
+        const title = s.title || s.id;
+        return `
+          <div class="im-session-item ${isActive ? "active" : ""}" data-sid="${Utils.esc(s.id)}">
+            <div class="im-session-avatar">${Utils.esc(avatarChar)}</div>
+            <div class="im-session-info">
+              <div class="im-session-title">${Utils.esc(title)}</div>
+              <div class="im-session-meta mono">${Utils.esc(s.model || "deepseek-flash")} · ${Utils.esc(Utils.formatTime(s.updated_at))}</div>
+            </div>
+            <button type="button" class="im-session-del" data-del-sid="${Utils.esc(s.id)}" title="删除会话">x</button>
+          </div>
+        `;
+      }).join("");
+
+      this.sessionListEl.querySelectorAll(".im-session-item").forEach((row) => {
+        row.addEventListener("click", (e) => {
+          if (e.target.closest(".im-session-del") || this.isStreaming) return;
+          const sid = row.dataset.sid || "";
+          if (!sid) return;
+          if (this.sessionHidden) this.sessionHidden.value = sid;
+          this.syncSessionSelect(this.store.state.agentSessions || []);
+          this.loadHistory(sid);
         });
       });
-      const validVal = opts.some((o) => o.value === cur) ? cur : "";
-      if (this.sessionHidden) this.sessionHidden.value = validVal;
-      this.sessionSelect.setOptions(opts, validVal);
+
+      this.sessionListEl.querySelectorAll(".im-session-del").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          if (this.isStreaming) return;
+          const sid = btn.dataset.delSid || "";
+          if (!sid) return;
+          await this.store.deleteAgentSession(sid);
+          if (this.sessionHidden && this.sessionHidden.value === sid) {
+            this.sessionHidden.value = "";
+            this.clearMessagesUI();
+          }
+        });
+      });
     }
 
     clearMessagesUI() {
+      if (this.activeTitleEl) this.activeTitleEl.textContent = "新对话";
+      if (this.activeSubEl) this.activeSubEl.textContent = "长庚执更 · DeepSeek 智能中枢";
       if (!this.messagesEl) return;
       this.messagesEl.innerHTML = "";
       if (this.emptyEl) {
         this.emptyEl.classList.remove("hidden");
         this.messagesEl.appendChild(this.emptyEl);
       }
+      this.syncSessionSelect(this.store.state.agentSessions || []);
     }
 
     async loadHistory(sessionId) {
@@ -3043,6 +3098,8 @@
         const sess = data.session;
         const msgs = data.messages || [];
         if (sess) {
+          if (this.activeTitleEl) this.activeTitleEl.textContent = sess.title || "历史会话";
+          if (this.activeSubEl) this.activeSubEl.textContent = `${sess.persona || "grok"} · ${sess.model || "deepseek-flash"}`;
           if (this.personaHidden) this.personaHidden.value = sess.persona || "grok";
           this.personaSelect?.setValue(sess.persona || "grok", false);
           if (this.modelHidden) this.modelHidden.value = sess.model || "deepseek-flash";
@@ -3090,16 +3147,19 @@
       if (this.emptyEl && this.emptyEl.parentNode === this.messagesEl) {
         this.emptyEl.remove();
       }
-      const div = document.createElement("div");
-      div.className = "agent-msg agent-msg-user";
-      div.innerHTML = `
-        <div class="agent-msg-meta mono">
-          <span>管理员指令</span>
-          <span>${Utils.esc(timeStr ? Utils.formatTime(timeStr) : "刚刚")}</span>
+      const row = document.createElement("div");
+      row.className = "agent-msg-row agent-msg-row-user";
+      row.innerHTML = `
+        <div class="im-avatar im-avatar-user">我</div>
+        <div class="agent-msg agent-msg-user">
+          <div class="agent-msg-meta mono">
+            <span>管理员</span>
+            <span>${Utils.esc(timeStr ? Utils.formatTime(timeStr) : "刚刚")}</span>
+          </div>
+          <div class="agent-msg-content">${Utils.esc(text)}</div>
         </div>
-        <div class="agent-msg-content">${Utils.esc(text)}</div>
       `;
-      this.messagesEl?.appendChild(div);
+      this.messagesEl?.appendChild(row);
       this.scrollToBottom();
     }
 
@@ -3108,25 +3168,30 @@
         this.emptyEl.remove();
       }
       const personaLabel = persona === "butler" ? "长庚执更管家" : (persona === "architect" ? "系统架构师" : "Grok 锐评中枢");
-      const div = document.createElement("div");
-      div.className = "agent-msg agent-msg-assistant";
-      div.innerHTML = `
-        <div class="agent-msg-meta mono">
-          <span class="text-cyan">${Utils.esc(personaLabel)} · ${Utils.esc(model)}</span>
-          <span class="agent-msg-state">生成中...</span>
-        </div>
-        <details class="agent-reasoning-box hidden" open>
-          <summary class="mono">深度思考过程 (Reasoning Chain)</summary>
-          <div class="agent-reasoning-body mono"></div>
-        </details>
-        <div class="agent-tools-list"></div>
-        <div class="agent-msg-content"></div>
-        <div class="agent-msg-actions hidden">
-          <button type="button" class="agent-msg-action-btn agent-copy-btn">复制全文</button>
-          <button type="button" class="agent-msg-action-btn agent-retry-btn">重新生成</button>
+      const avatarChar = persona === "butler" ? "执" : (persona === "architect" ? "架" : "G");
+      const row = document.createElement("div");
+      row.className = "agent-msg-row agent-msg-row-assistant";
+      row.innerHTML = `
+        <div class="im-avatar im-avatar-ai">${Utils.esc(avatarChar)}</div>
+        <div class="agent-msg agent-msg-assistant">
+          <div class="agent-msg-meta mono">
+            <span class="text-cyan">${Utils.esc(personaLabel)} · ${Utils.esc(model)}</span>
+            <span class="agent-msg-state">生成中...</span>
+          </div>
+          <details class="agent-reasoning-box hidden" open>
+            <summary class="mono">深度思考过程 (Reasoning Chain)</summary>
+            <div class="agent-reasoning-body mono"></div>
+          </details>
+          <div class="agent-tools-list"></div>
+          <div class="agent-msg-content"></div>
+          <div class="agent-msg-actions hidden">
+            <button type="button" class="agent-msg-action-btn agent-copy-btn">复制全文</button>
+            <button type="button" class="agent-msg-action-btn agent-retry-btn">重新生成</button>
+          </div>
         </div>
       `;
-      this.messagesEl?.appendChild(div);
+      this.messagesEl?.appendChild(row);
+      const div = row.querySelector(".agent-msg");
 
       const stateSpan = div.querySelector(".agent-msg-state");
       const reasonDetails = div.querySelector(".agent-reasoning-box");
@@ -3361,6 +3426,9 @@
       if (event === "session") {
         if (payload.session_id && this.sessionHidden) {
           this.sessionHidden.value = payload.session_id;
+        }
+        if (payload.title && this.activeTitleEl) {
+          this.activeTitleEl.textContent = payload.title;
         }
       } else if (event === "reasoning") {
         if (this.statusEl) this.statusEl.textContent = "深度思考中 (Reasoner)...";
