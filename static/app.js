@@ -133,6 +133,42 @@
       return `<div class="md-body">${html.join("")}</div>`;
     },
 
+    botStateLabel(state) {
+      const map = {
+        idle: "待命",
+        thinking: "思考中",
+        working: "执行中",
+        done: "新汇报",
+        blocked: "告警",
+      };
+      return map[String(state || "idle")] || "待命";
+    },
+
+    renderBotAvatarSVG(style = "cyan", state = "idle", isLarge = false) {
+      const palettes = {
+        cyan: { ring: "#38bdf8", fill: "rgba(56, 189, 248, 0.16)", eye: "#e0f2fe" },
+        indigo: { ring: "#818cf8", fill: "rgba(129, 140, 248, 0.18)", eye: "#e0e7ff" },
+        amber: { ring: "#fbbf24", fill: "rgba(251, 191, 36, 0.16)", eye: "#fef3c7" },
+        emerald: { ring: "#34d399", fill: "rgba(52, 211, 153, 0.16)", eye: "#d1fae5" },
+        violet: { ring: "#c084fc", fill: "rgba(192, 132, 252, 0.16)", eye: "#f3e8ff" },
+      };
+      const pal = palettes[style] || palettes.cyan;
+      const stateColor = state === "blocked" ? "#ef4444" : (state === "done" ? "#34d399" : (state === "thinking" ? "#fbbf24" : pal.ring));
+      const st = String(state || "idle");
+      return `
+        <div class="bot-svg-avatar ${isLarge ? "lg" : ""} state-${Utils.esc(st)}">
+          <svg viewBox="0 0 44 44" fill="none">
+            <circle cx="22" cy="22" r="19" fill="${pal.fill}" stroke="${stateColor}" stroke-width="2" class="bot-ring" />
+            <g class="bot-eyes">
+              <circle cx="16.5" cy="21" r="2.6" fill="${pal.eye}" />
+              <circle cx="27.5" cy="21" r="2.6" fill="${pal.eye}" />
+              <path d="M16 28.5 Q22 31.5 28 28.5" stroke="${stateColor}" stroke-width="1.8" stroke-linecap="round" opacity="0.85" />
+            </g>
+          </svg>
+        </div>
+      `;
+    },
+
     formatTime(str) {
       if (!str) return "--";
       const d = new Date(str);
@@ -467,6 +503,7 @@
         personas: [],
         agentSessions: [],
         agentMemories: [],
+        bots: [],
         notifications: [],
         unreadCount: 0,
         configs: {},
@@ -525,6 +562,7 @@
         this.state.personas = data.personas || [];
         this.state.agentSessions = data.agent_sessions || [];
         this.state.agentMemories = data.agent_memories || [];
+        this.state.bots = data.bots || [];
         this.state.notifications = data.notifications || [];
         this.state.unreadCount = Number(data.stats?.unread_notifications) || this.state.notifications.filter((n) => !n.read_at).length;
         this.state.configs = data.configs || {};
@@ -575,6 +613,37 @@
         }
       });
 
+      es.addEventListener("bot_state", (ev) => {
+        try {
+          const patch = JSON.parse(ev.data);
+          if (!patch || !patch.bot_id) return;
+          const target = this.state.bots.find((b) => b.id === patch.bot_id);
+          if (target) {
+            if (patch.state) target.state = patch.state;
+            if (patch.last_summary !== undefined && patch.last_summary !== "") target.last_summary = patch.last_summary;
+            if (patch.unread_count !== undefined) target.unread_count = patch.unread_count;
+            this.bus.emit("bots:updated", this.state);
+          }
+        } catch {
+          // ignore malformed bot_state
+        }
+      });
+
+      es.addEventListener("bot_message", (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (!msg || !msg.bot_id) return;
+          this.bus.emit("bot:incoming-message", msg);
+          const target = this.state.bots.find((b) => b.id === msg.bot_id);
+          if (target) {
+            target.unread_count = (target.unread_count || 0) + 1;
+            this.bus.emit("bots:updated", this.state);
+          }
+        } catch {
+          // ignore malformed bot_message
+        }
+      });
+
       es.onerror = () => {
         // EventSource automatically reconnects; close only if logged out
         if (!this.state.authenticated) {
@@ -615,6 +684,35 @@
       this.bus.emit("toast", res.message || "已生成全新 App Bearer Token");
       await this.loadDashboard();
       return res;
+    }
+
+    async loadBotMessages(botId) {
+      return this.api.request(`/api/v2/bots/${encodeURIComponent(botId)}/messages`);
+    }
+
+    async clearBotMessages(botId) {
+      await this.api.request(`/api/v2/bots/${encodeURIComponent(botId)}/messages`, { method: "DELETE" });
+      this.bus.emit("toast", "当前 Bot 对话流已清空");
+    }
+
+    async createBot(payload) {
+      const res = await this.api.request("/api/v2/bots", { method: "POST", body: JSON.stringify(payload) });
+      this.bus.emit("toast", "专属 Bot 创建成功");
+      await this.loadDashboard();
+      return res.bot;
+    }
+
+    async updateBot(id, payload) {
+      const res = await this.api.request(`/api/v2/bots/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify(payload) });
+      this.bus.emit("toast", "Bot 配置与权限已更新");
+      await this.loadDashboard();
+      return res.bot;
+    }
+
+    async deleteBot(id) {
+      await this.api.request(`/api/v2/bots/${encodeURIComponent(id)}`, { method: "DELETE" });
+      this.bus.emit("toast", "已注销自定义 Bot");
+      await this.loadDashboard();
     }
 
     async saveAsset(payload, isNew) {
@@ -2413,6 +2511,7 @@
           id: finalID,
           name: this.nameInput.value.trim(),
           type: taskType,
+          bot_id: this.pendingBotId || "butler",
           cron_expr: this.cronHidden?.value.trim() || "0 8 * * *",
           enabled: this.enabledHidden ? this.enabledHidden.value === "true" : true,
           description: derivedDesc,
@@ -2631,7 +2730,8 @@
     }
 
     open(item) {
-      const isNew = !item;
+      const isNew = !item || !item.id;
+      this.pendingBotId = item?.bot_id || "butler";
       // Reset pills active states
       document.querySelectorAll(".sched-pill").forEach((b) => b.classList.remove("active"));
 
@@ -2850,36 +2950,142 @@
     }
   }
 
-  // --- DeepSeek Agent Hub Component ---
+  // --- GrokBot Persistent Team Hub Component ---
   class AgentHubComponent extends BaseComponent {
     init() {
-      this.sessionListEl = document.getElementById("agent-session-list");
-      this.sessionSearchEl = document.getElementById("agent-session-search");
-      this.activeTitleEl = document.getElementById("agent-active-title");
-      this.activeSubEl = document.getElementById("agent-active-sub");
-      this.sessionHidden = document.getElementById("agent-session-id");
-      this.personaMount = document.getElementById("mount-agent-persona");
-      this.personaHidden = document.getElementById("agent-persona");
+      this.rosterListEl = document.getElementById("bot-roster-list");
+      this.rosterSearchEl = document.getElementById("bot-roster-search");
+      this.activeBotIdHidden = document.getElementById("active-bot-id");
+      this.activeAvatarMount = document.getElementById("active-bot-avatar");
+      this.activeNameEl = document.getElementById("active-bot-name");
+      this.activeRoleEl = document.getElementById("active-bot-role");
+      this.activeStatePill = document.getElementById("active-bot-state-badge");
+
+      this.viewTabs = document.querySelectorAll(".bot-view-tab");
+      this.panes = {
+        stream: document.getElementById("bot-pane-stream"),
+        routines: document.getElementById("bot-pane-routines"),
+        config: document.getElementById("bot-pane-config"),
+        activity: document.getElementById("bot-pane-activity"),
+      };
+      this.activeView = "stream";
+
       this.modelMount = document.getElementById("mount-agent-model");
       this.modelHidden = document.getElementById("agent-model");
+      this.exportBtn = document.getElementById("agent-export-session-btn");
+      this.clearBtn = document.getElementById("agent-delete-session-btn");
+      this.messagesEl = document.getElementById("agent-chat-messages");
+      this.emptyEl = document.getElementById("agent-empty-state");
+      this.emptyGreetingEl = document.getElementById("empty-bot-greeting");
+      this.emptyDescEl = document.getElementById("empty-bot-desc");
+      this.mentionBar = document.getElementById("team-mention-bar");
+      this.form = document.getElementById("agent-chat-form");
+      this.input = document.getElementById("agent-chat-input");
+      this.sendBtn = document.getElementById("agent-send-btn");
+      this.stopBtn = document.getElementById("agent-stop-btn");
+      this.thinkingBtn = document.getElementById("agent-thinking-toggle");
+      this.statusEl = document.getElementById("agent-stream-status");
 
-      this.sessionSearchQuery = "";
-      this.sessionSearchEl?.addEventListener("input", () => {
-        this.sessionSearchQuery = (this.sessionSearchEl.value || "").trim().toLowerCase();
-        this.syncSessionSelect(this.store.state.agentSessions || []);
+      // Sub-view 2..4 elements
+      this.routinesListEl = document.getElementById("bot-routines-list");
+      this.addRoutineBtn = document.getElementById("bot-add-routine-btn");
+      this.cfgForm = document.getElementById("bot-profile-form");
+      this.cfgName = document.getElementById("bot-cfg-name");
+      this.cfgRole = document.getElementById("bot-cfg-role");
+      this.cfgPrompt = document.getElementById("bot-cfg-prompt");
+      this.cfgModelMount = document.getElementById("mount-bot-cfg-model");
+      this.cfgModelHidden = document.getElementById("bot-cfg-model");
+      this.cfgAvatarMount = document.getElementById("mount-bot-cfg-avatar");
+      this.cfgAvatarHidden = document.getElementById("bot-cfg-avatar");
+      this.cfgToolsGrid = document.getElementById("bot-cfg-tools-grid");
+      this.cfgThinking = document.getElementById("bot-cfg-thinking");
+      this.cfgDeleteBtn = document.getElementById("bot-cfg-delete-btn");
+      this.scopedMemoriesEl = document.getElementById("bot-scoped-memories");
+      this.activityListEl = document.getElementById("bot-activity-list");
+
+      this.rosterQuery = "";
+      this.isStreaming = false;
+      this.enableThinking = true;
+      this.abortController = null;
+      this.lastUserPrompt = "";
+      this.loadedInitialBot = false;
+
+      const modelOpts = [
+        { value: "deepseek-flash", label: "DeepSeek Flash (主力)" },
+        { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro (深度)" },
+      ];
+      if (this.modelMount) {
+        this.modelSelect = new CustomSelect(this.modelMount, {
+          options: modelOpts,
+          value: "deepseek-flash",
+          onChange: (val) => {
+            if (this.modelHidden) this.modelHidden.value = val;
+          },
+        });
+      }
+      if (this.cfgModelMount) {
+        this.cfgModelSelect = new CustomSelect(this.cfgModelMount, {
+          options: modelOpts,
+          value: "deepseek-flash",
+          onChange: (val) => {
+            if (this.cfgModelHidden) this.cfgModelHidden.value = val;
+          },
+        });
+      }
+      if (this.cfgAvatarMount) {
+        this.cfgAvatarSelect = new CustomSelect(this.cfgAvatarMount, {
+          options: [
+            { value: "cyan", label: "天穹青 (Cyan)" },
+            { value: "indigo", label: "暮光靛 (Indigo)" },
+            { value: "amber", label: "琥珀金 (Amber)" },
+            { value: "emerald", label: "翡翠绿 (Emerald)" },
+            { value: "violet", label: "星云紫 (Violet)" },
+          ],
+          value: "cyan",
+          onChange: (val) => {
+            if (this.cfgAvatarHidden) this.cfgAvatarHidden.value = val;
+          },
+        });
+      }
+
+      this.rosterSearchEl?.addEventListener("input", () => {
+        this.rosterQuery = (this.rosterSearchEl.value || "").trim().toLowerCase();
+        this.renderRoster();
       });
 
-      this.exportSessionBtn = document.getElementById("agent-export-session-btn");
-      this.newSessionBtn = document.getElementById("agent-new-session-btn");
-      this.deleteSessionBtn = document.getElementById("agent-delete-session-btn");
+      this.viewTabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          this.switchBotView(tab.dataset.botView || "stream");
+        });
+      });
 
-      this.exportSessionBtn?.addEventListener("click", () => {
+      this.thinkingBtn?.addEventListener("click", () => {
+        this.enableThinking = !this.enableThinking;
+        this.thinkingBtn.classList.toggle("active", this.enableThinking);
+        this.thinkingBtn.textContent = this.enableThinking ? "深度思考: 开" : "深度思考: 关";
+      });
+
+      this.stopBtn?.addEventListener("click", () => {
+        if (this.abortController) this.abortController.abort();
+      });
+
+      document.querySelectorAll(".team-mention-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          if (!this.input) return;
+          const m = chip.dataset.mention || "";
+          this.input.value = `${this.input.value}${this.input.value && !this.input.value.endsWith(" ") ? " " : ""}${m}`;
+          this.input.focus();
+        });
+      });
+
+      this.exportBtn?.addEventListener("click", () => {
+        const bot = this.getActiveBot();
         const msgs = this.messagesEl?.querySelectorAll(".agent-msg");
         if (!msgs || !msgs.length) {
-          this.bus.emit("toast", "当前会话暂无内容可导出");
+          this.bus.emit("toast", "当前 Bot 时间线暂无消息可导出");
           return;
         }
-        const parts = [`# Vesper BotHub 会话导出\n\n- 导出时间: ${new Date().toISOString()}\n`];
+        const parts = [`# Vesper GrokBot · ${bot?.name || "Bot"} 对话流导出\n\n- 导出时间: ${new Date().toISOString()}\n`];
         msgs.forEach((node) => {
           const isUser = node.classList.contains("agent-msg-user");
           const meta = node.querySelector(".agent-msg-meta")?.innerText?.replace(/\s+/g, " ").trim() || "";
@@ -2893,98 +3099,52 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `bothub_chat_${Date.now()}.md`;
+        a.download = `bothub_${bot?.id || "bot"}_${Date.now()}.md`;
         a.click();
         URL.revokeObjectURL(url);
-        this.bus.emit("toast", "会话已导出为 Markdown");
-      });
-      this.messagesEl = document.getElementById("agent-chat-messages");
-      this.emptyEl = document.getElementById("agent-empty-state");
-      this.form = document.getElementById("agent-chat-form");
-      this.input = document.getElementById("agent-chat-input");
-      this.sendBtn = document.getElementById("agent-send-btn");
-      this.stopBtn = document.getElementById("agent-stop-btn");
-      this.thinkingBtn = document.getElementById("agent-thinking-toggle");
-      this.statusEl = document.getElementById("agent-stream-status");
-
-      this.isStreaming = false;
-      this.enableThinking = true;
-      this.abortController = null;
-      this.lastUserPrompt = "";
-      this.initializedDefaults = false;
-
-      this.thinkingBtn?.addEventListener("click", () => {
-        this.enableThinking = !this.enableThinking;
-        this.thinkingBtn.classList.toggle("active", this.enableThinking);
-        this.thinkingBtn.textContent = this.enableThinking ? "深度思考: 开" : "深度思考: 关";
+        this.bus.emit("toast", "已导出为 Markdown");
       });
 
-      this.stopBtn?.addEventListener("click", () => {
-        if (this.abortController) {
-          this.abortController.abort();
-        }
-      });
-
-      if (this.sessionMount) {
-        this.sessionSelect = new CustomSelect(this.sessionMount, {
-          options: [{ value: "", label: "新对话 (尚未开始)" }],
-          value: "",
-          onChange: (sid) => {
-            if (this.sessionHidden) this.sessionHidden.value = sid;
-            if (sid) {
-              this.loadHistory(sid);
-            } else {
-              this.clearMessagesUI();
-            }
-          },
-        });
-      }
-
-      if (this.personaMount) {
-        this.personaSelect = new CustomSelect(this.personaMount, {
-          options: [
-            { value: "grok", label: "Grok 锐评模式 (高密度犀利结论)" },
-            { value: "butler", label: "执更管家模式 (运维巡检与账单)" },
-            { value: "architect", label: "架构师模式 (系统设计与根因分析)" },
-          ],
-          value: "grok",
-          onChange: (val) => {
-            if (this.personaHidden) this.personaHidden.value = val;
-          },
-        });
-      }
-
-      if (this.modelMount) {
-        this.modelSelect = new CustomSelect(this.modelMount, {
-          options: [
-            { value: "deepseek-flash", label: "DeepSeek Flash (默认主力 · 支持思考)" },
-            { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro (深度主力推理)" },
-          ],
-          value: "deepseek-flash",
-          onChange: (val) => {
-            if (this.modelHidden) this.modelHidden.value = val;
-          },
-        });
-      }
-
-      this.newSessionBtn?.addEventListener("click", () => {
+      this.clearBtn?.addEventListener("click", async () => {
         if (this.isStreaming) return;
-        if (this.sessionHidden) this.sessionHidden.value = "";
-        this.sessionSelect?.setValue("", false);
-        this.clearMessagesUI();
-        this.input?.focus();
+        const bot = this.getActiveBot();
+        if (!bot) return;
+        if (!confirm(`确定清空 [${bot.name}] 的对话时间线吗？`)) return;
+        await this.store.clearBotMessages(bot.id);
+        this.clearMessagesUI(bot);
       });
 
-      this.deleteSessionBtn?.addEventListener("click", async () => {
-        if (this.isStreaming) return;
-        const sid = this.sessionHidden?.value || "";
-        if (!sid) {
-          this.clearMessagesUI();
-          return;
-        }
-        await this.store.deleteAgentSession(sid);
-        if (this.sessionHidden) this.sessionHidden.value = "";
-        this.clearMessagesUI();
+      this.addRoutineBtn?.addEventListener("click", () => {
+        const bot = this.getActiveBot();
+        this.bus.emit("modal:open-task", { bot_id: bot?.id || "butler" });
+      });
+
+      this.cfgForm?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const bot = this.getActiveBot();
+        if (!bot) return;
+        const selectedTools = [];
+        this.cfgToolsGrid?.querySelectorAll("input[type='checkbox']:checked").forEach((chk) => {
+          selectedTools.push(chk.value);
+        });
+        await this.store.updateBot(bot.id, {
+          name: (this.cfgName?.value || "").trim(),
+          role_title: (this.cfgRole?.value || "").trim(),
+          avatar_style: this.cfgAvatarHidden?.value || bot.avatar_style,
+          model: this.cfgModelHidden?.value || bot.model,
+          enable_thinking: !!this.cfgThinking?.checked,
+          system_prompt: (this.cfgPrompt?.value || "").trim(),
+          allowed_tools: JSON.stringify(selectedTools),
+          is_pinned: bot.is_pinned,
+        });
+      });
+
+      this.cfgDeleteBtn?.addEventListener("click", async () => {
+        const bot = this.getActiveBot();
+        if (!bot || bot.is_builtin) return;
+        if (!confirm(`确定注销自定义 Bot [${bot.name}] 吗？其专属聊天流将一并移除。`)) return;
+        await this.store.deleteBot(bot.id);
+        this.selectBot("butler");
       });
 
       document.querySelectorAll(".agent-prompt-pill").forEach((btn) => {
@@ -3011,135 +3171,314 @@
       });
 
       this.bus.on("data:loaded", (state) => {
-        const cfgs = state.configs || {};
-        if (!this.initializedDefaults) {
-          const defPersona = cfgs["active_persona"] || "grok";
-          const defModel = cfgs["ai_model"] || "deepseek-flash";
-          if (this.personaHidden) this.personaHidden.value = defPersona;
-          this.personaSelect?.setValue(defPersona, false);
-          if (this.modelHidden) this.modelHidden.value = defModel;
-          this.modelSelect?.setValue(defModel, false);
-          this.initializedDefaults = true;
+        const bots = state.bots || [];
+        if (!this.loadedInitialBot && bots.length > 0) {
+          const saved = localStorage.getItem("bothub_active_bot") || "butler";
+          const initialId = bots.some((b) => b.id === saved) ? saved : bots[0].id;
+          this.loadedInitialBot = true;
+          this.selectBot(initialId);
+          return;
         }
-        this.syncSessionSelect(state.agentSessions || []);
+        this.renderRoster();
+        this.renderActiveBotHeader();
+        this.renderBotSubpanes();
+      });
+
+      this.bus.on("bots:updated", () => {
+        this.renderRoster();
+        this.renderActiveBotHeader();
+      });
+
+      this.bus.on("bot:incoming-message", (msg) => {
+        const activeId = this.activeBotIdHidden?.value || "";
+        if (msg.bot_id === activeId && !this.isStreaming) {
+          const senderBot = (this.store.state.bots || []).find((b) => b.id === (msg.sender_bot_id || msg.bot_id));
+          const b = this.createAssistantBubble(senderBot, msg.msg_kind === "routine", msg.created_at);
+          if (msg.reasoning_content) b.setReasoning(msg.reasoning_content);
+          b.setContent(msg.content || "");
+        }
+      });
+
+      this.bus.on("bot:open-created", (bot) => {
+        if (bot && bot.id) {
+          this.selectBot(bot.id);
+        }
       });
     }
 
-    syncSessionSelect(sessions) {
-      if (!this.sessionListEl) return;
-      const cur = this.sessionHidden?.value || "";
-      const filtered = (sessions || []).filter((s) => {
-        if (!this.sessionSearchQuery) return true;
-        return `${s.title || ""} ${s.persona || ""} ${s.model || ""}`.toLowerCase().includes(this.sessionSearchQuery);
-      });
+    getActiveBot() {
+      const id = this.activeBotIdHidden?.value || "butler";
+      const bots = this.store.state.bots || [];
+      return bots.find((b) => b.id === id) || bots[0] || null;
+    }
 
+    switchBotView(view) {
+      this.activeView = view;
+      this.viewTabs.forEach((t) => t.classList.toggle("active", t.dataset.botView === view));
+      Object.entries(this.panes).forEach(([k, el]) => {
+        if (el) el.classList.toggle("hidden", k !== view);
+      });
+      this.renderBotSubpanes();
+    }
+
+    renderRoster() {
+      if (!this.rosterListEl) return;
+      const bots = this.store.state.bots || [];
+      const curId = this.activeBotIdHidden?.value || "";
+      const filtered = bots.filter((b) => {
+        if (!this.rosterQuery) return true;
+        return `${b.name} ${b.role_title} ${b.last_summary}`.toLowerCase().includes(this.rosterQuery);
+      });
       if (!filtered.length) {
-        this.sessionListEl.innerHTML = `<div class="empty-state" style="padding:20px 10px; font-size:12px;">${(sessions || []).length ? "无匹配会话" : "暂无历史会话，直接发消息开始"}</div>`;
+        this.rosterListEl.innerHTML = `<div class="empty-state" style="padding:18px 10px; font-size:12px;">无匹配的专属 Bot</div>`;
         return;
       }
 
-      this.sessionListEl.innerHTML = filtered.map((s) => {
-        const isActive = s.id === cur;
-        const avatarChar = s.persona === "butler" ? "执" : (s.persona === "architect" ? "架" : "G");
-        const title = s.title || s.id;
+      this.rosterListEl.innerHTML = filtered.map((b) => {
+        const active = b.id === curId;
+        const unread = Number(b.unread_count || 0);
+        const st = b.state || "idle";
         return `
-          <div class="im-session-item ${isActive ? "active" : ""}" data-sid="${Utils.esc(s.id)}">
-            <div class="im-session-avatar">${Utils.esc(avatarChar)}</div>
-            <div class="im-session-info">
-              <div class="im-session-title">${Utils.esc(title)}</div>
-              <div class="im-session-meta mono">${Utils.esc(s.model || "deepseek-flash")} · ${Utils.esc(Utils.formatTime(s.updated_at))}</div>
+          <div class="bot-roster-item ${active ? "active" : ""}" data-bot-id="${Utils.esc(b.id)}">
+            ${Utils.renderBotAvatarSVG(b.avatar_style, st, false)}
+            <div class="bot-roster-info">
+              <div class="bot-roster-top">
+                <span class="bot-roster-name">${Utils.esc(b.name)}</span>
+                ${unread > 0
+                  ? `<span class="unread-badge">${unread > 99 ? "99+" : unread}</span>`
+                  : `<span class="bot-state-pill mono state-${Utils.esc(st)}">${Utils.esc(Utils.botStateLabel(st))}</span>`
+                }
+              </div>
+              <div class="bot-roster-sub">${Utils.esc(b.last_summary || b.role_title)}</div>
             </div>
-            <button type="button" class="im-session-del" data-del-sid="${Utils.esc(s.id)}" title="删除会话">x</button>
           </div>
         `;
       }).join("");
 
-      this.sessionListEl.querySelectorAll(".im-session-item").forEach((row) => {
-        row.addEventListener("click", (e) => {
-          if (e.target.closest(".im-session-del") || this.isStreaming) return;
-          const sid = row.dataset.sid || "";
-          if (!sid) return;
-          if (this.sessionHidden) this.sessionHidden.value = sid;
-          this.syncSessionSelect(this.store.state.agentSessions || []);
-          this.loadHistory(sid);
-        });
-      });
-
-      this.sessionListEl.querySelectorAll(".im-session-del").forEach((btn) => {
-        btn.addEventListener("click", async (e) => {
-          e.stopPropagation();
+      this.rosterListEl.querySelectorAll(".bot-roster-item").forEach((el) => {
+        el.addEventListener("click", () => {
           if (this.isStreaming) return;
-          const sid = btn.dataset.delSid || "";
-          if (!sid) return;
-          await this.store.deleteAgentSession(sid);
-          if (this.sessionHidden && this.sessionHidden.value === sid) {
-            this.sessionHidden.value = "";
-            this.clearMessagesUI();
-          }
+          const bid = el.dataset.botId;
+          if (!bid) return;
+          // Ensure workspace switches to Bot team view
+          document.querySelector('.workspace-tab-btn[data-workspace="agent"]')?.click();
+          this.selectBot(bid);
         });
       });
     }
 
-    clearMessagesUI() {
-      if (this.activeTitleEl) this.activeTitleEl.textContent = "新对话";
-      if (this.activeSubEl) this.activeSubEl.textContent = "长庚执更 · DeepSeek 智能中枢";
+    renderActiveBotHeader() {
+      const bot = this.getActiveBot();
+      if (!bot) return;
+      if (this.activeAvatarMount) {
+        this.activeAvatarMount.innerHTML = Utils.renderBotAvatarSVG(bot.avatar_style, bot.state || "idle", true);
+      }
+      if (this.activeNameEl) this.activeNameEl.textContent = bot.name;
+      if (this.activeRoleEl) this.activeRoleEl.textContent = bot.role_title;
+      if (this.activeStatePill) {
+        const st = bot.state || "idle";
+        this.activeStatePill.className = `bot-state-pill mono state-${st}`;
+        this.activeStatePill.textContent = Utils.botStateLabel(st);
+      }
+      if (this.mentionBar) {
+        this.mentionBar.classList.toggle("hidden", bot.id !== "team_room");
+      }
+    }
+
+    async selectBot(botId) {
+      if (this.activeBotIdHidden) this.activeBotIdHidden.value = botId;
+      localStorage.setItem("bothub_active_bot", botId);
+      const bot = this.getActiveBot();
+      if (bot) {
+        bot.unread_count = 0;
+        if (this.modelHidden) this.modelHidden.value = bot.model || "deepseek-flash";
+        this.modelSelect?.setValue(bot.model || "deepseek-flash", false);
+        this.enableThinking = bot.enable_thinking !== false;
+        if (this.thinkingBtn) {
+          this.thinkingBtn.classList.toggle("active", this.enableThinking);
+          this.thinkingBtn.textContent = this.enableThinking ? "深度思考: 开" : "深度思考: 关";
+        }
+      }
+      this.renderRoster();
+      this.renderActiveBotHeader();
+      this.renderBotSubpanes();
+      await this.loadBotTimeline(botId);
+    }
+
+    renderBotSubpanes() {
+      const bot = this.getActiveBot();
+      if (!bot) return;
+
+      // Routines Tab
+      if (this.routinesListEl) {
+        const tasks = (this.store.state.tasks || []).filter((t) => (t.bot_id || "butler") === bot.id);
+        if (!tasks.length) {
+          this.routinesListEl.innerHTML = `<div class="empty-state">当前 Bot 尚未绑定自动化例程，可点击右上角新增</div>`;
+        } else {
+          this.routinesListEl.innerHTML = tasks.map((t) => `
+            <article class="glass-card module-card">
+              <div class="module-head">
+                <div>
+                  <strong>${Utils.esc(t.name)}</strong>
+                  <div class="mono" style="font-size:11px; color:var(--text-muted); margin-top:2px;">${Utils.esc(Utils.describeCron(t.cron_expr))}</div>
+                </div>
+                <span class="cat-badge ${t.enabled ? "cat-compute" : "cat-life"} mono">${t.enabled ? "运行中" : "已暂停"}</span>
+              </div>
+              <p class="section-hint">${Utils.esc(t.description || "自动定时例程")}</p>
+              <div class="module-meta mono">最近结果: ${Utils.esc(t.last_run?.summary || "等待首次执行")}</div>
+              <div class="module-actions" style="display:flex; gap:8px; margin-top:8px;">
+                <button type="button" class="btn btn-primary btn-sm bot-run-task-btn" data-tid="${Utils.esc(t.id)}">立即执行一次</button>
+                <button type="button" class="btn btn-ghost btn-sm bot-edit-task-btn" data-tid="${Utils.esc(t.id)}">配置参数</button>
+              </div>
+            </article>
+          `).join("");
+
+          this.routinesListEl.querySelectorAll(".bot-run-task-btn").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              btn.disabled = true;
+              try {
+                await this.store.runTask(btn.dataset.tid);
+              } finally {
+                btn.disabled = false;
+              }
+            });
+          });
+          this.routinesListEl.querySelectorAll(".bot-edit-task-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const t = (this.store.state.tasks || []).find((x) => x.id === btn.dataset.tid);
+              if (t) this.bus.emit("modal:open-task", t);
+            });
+          });
+        }
+      }
+
+      // Config & Tools Tab
+      if (this.cfgForm) {
+        if (this.cfgName) this.cfgName.value = bot.name || "";
+        if (this.cfgRole) this.cfgRole.value = bot.role_title || "";
+        if (this.cfgPrompt) this.cfgPrompt.value = bot.system_prompt || "";
+        if (this.cfgModelHidden) this.cfgModelHidden.value = bot.model || "deepseek-flash";
+        this.cfgModelSelect?.setValue(bot.model || "deepseek-flash", false);
+        if (this.cfgAvatarHidden) this.cfgAvatarHidden.value = bot.avatar_style || "cyan";
+        this.cfgAvatarSelect?.setValue(bot.avatar_style || "cyan", false);
+        if (this.cfgThinking) this.cfgThinking.checked = bot.enable_thinking !== false;
+        this.cfgDeleteBtn?.classList.toggle("hidden", !!bot.is_builtin);
+
+        if (this.cfgToolsGrid) {
+          let allowed = [];
+          try { allowed = JSON.parse(bot.allowed_tools || "[]"); } catch { allowed = []; }
+          const catalog = [
+            { id: "read_url", label: "read_url (网页抓取与摘要)" },
+            { id: "web_search", label: "web_search (开源雷达搜索)" },
+            { id: "query_nezha_nodes", label: "query_nezha_nodes (哪吒探针直连)" },
+            { id: "manage_assets", label: "manage_assets (数字资产台账)" },
+            { id: "manage_tasks", label: "manage_tasks (调度例程管控)" },
+            { id: "remember_fact", label: "remember_fact (写入长期记忆)" },
+            { id: "recall_memory", label: "recall_memory (检索长期记忆)" },
+          ];
+          this.cfgToolsGrid.innerHTML = catalog.map((tool) => `
+            <label class="bot-tool-chk mono">
+              <input type="checkbox" value="${tool.id}" ${allowed.includes(tool.id) ? "checked" : ""} />
+              <span>${tool.label}</span>
+            </label>
+          `).join("");
+        }
+
+        if (this.scopedMemoriesEl) {
+          const botScope = `bot:${bot.id}`;
+          const mems = (this.store.state.agentMemories || []).filter((m) => !m.scope || m.scope === "global" || m.scope === botScope);
+          this.scopedMemoriesEl.innerHTML = mems.length
+            ? mems.map((m) => `
+                <article class="log-item">
+                  <div class="log-top">
+                    <strong class="mono text-cyan">${Utils.esc(m.fact_key)}</strong>
+                    <span class="mono" style="font-size:11px; color:var(--text-muted);">${Utils.esc(m.scope || "global")} · ${Utils.esc(m.category)}</span>
+                  </div>
+                  <div style="font-size:12.5px; margin-top:4px;">${Utils.esc(m.content)}</div>
+                </article>
+              `).join("")
+            : `<div class="empty-state">暂无关联长期记忆</div>`;
+        }
+      }
+
+      // Activity Tab
+      if (this.activityListEl) {
+        const tasks = (this.store.state.tasks || []).filter((t) => (t.bot_id || "butler") === bot.id && t.last_run);
+        const notifs = (this.store.state.notifications || []).filter((n) => {
+          if (bot.id === "sentinel") return n.source?.includes("nezha");
+          if (bot.id === "radar") return n.source?.includes("radar");
+          if (bot.id === "butler") return n.source?.includes("morning") || n.source?.includes("asset");
+          return false;
+        }).slice(0, 10);
+
+        const cards = [];
+        tasks.forEach((t) => {
+          cards.push(`
+            <article class="log-item">
+              <div class="log-top">
+                <strong>例程执行 · ${Utils.esc(t.name)}</strong>
+                <span class="mono" style="font-size:11px; color:var(--text-muted);">${Utils.esc(Utils.formatTime(t.last_run.started_at))} · ${Utils.esc(t.last_run.duration_ms)}ms</span>
+              </div>
+              <div style="font-size:12.5px; margin-top:4px; color:var(--text-sub);">${Utils.esc(t.last_run.summary)}</div>
+            </article>
+          `);
+        });
+        notifs.forEach((n) => {
+          cards.push(`
+            <article class="log-item">
+              <div class="log-top">
+                <strong>推送投递 · ${Utils.esc(n.title)}</strong>
+                <span class="mono" style="font-size:11px; color:var(--text-muted);">${Utils.esc(Utils.formatTime(n.created_at))}</span>
+              </div>
+              <div style="font-size:12.5px; margin-top:4px; color:var(--text-sub);">${Utils.esc(n.summary)}</div>
+            </article>
+          `);
+        });
+        this.activityListEl.innerHTML = cards.length ? cards.join("") : `<div class="empty-state">暂无后台运行脉搏记录</div>`;
+      }
+    }
+
+    clearMessagesUI(bot) {
+      const b = bot || this.getActiveBot();
+      if (this.emptyGreetingEl && b) this.emptyGreetingEl.textContent = `${b.name} 随时待命`;
+      if (this.emptyDescEl && b) this.emptyDescEl.textContent = `${b.role_title} · 定时例程产出与告警均会主动投递至此对话流`;
       if (!this.messagesEl) return;
       this.messagesEl.innerHTML = "";
       if (this.emptyEl) {
         this.emptyEl.classList.remove("hidden");
         this.messagesEl.appendChild(this.emptyEl);
       }
-      this.syncSessionSelect(this.store.state.agentSessions || []);
     }
 
-    async loadHistory(sessionId) {
+    async loadBotTimeline(botId) {
+      const bot = this.getActiveBot();
       try {
-        const data = await this.store.loadAgentSession(sessionId);
-        const sess = data.session;
+        const data = await this.store.loadBotMessages(botId);
         const msgs = data.messages || [];
-        if (sess) {
-          if (this.activeTitleEl) this.activeTitleEl.textContent = sess.title || "历史会话";
-          if (this.activeSubEl) this.activeSubEl.textContent = `${sess.persona || "grok"} · ${sess.model || "deepseek-flash"}`;
-          if (this.personaHidden) this.personaHidden.value = sess.persona || "grok";
-          this.personaSelect?.setValue(sess.persona || "grok", false);
-          if (this.modelHidden) this.modelHidden.value = sess.model || "deepseek-flash";
-          this.modelSelect?.setValue(sess.model || "deepseek-flash", false);
-        }
-
         if (!this.messagesEl) return;
         this.messagesEl.innerHTML = "";
         if (!msgs.length) {
-          this.clearMessagesUI();
+          this.clearMessagesUI(bot);
           return;
         }
-
         msgs.forEach((m) => {
           if (m.role === "user") {
             this.appendUserBubble(m.content, m.created_at);
           } else if (m.role === "assistant") {
             let tcs = [];
-            try {
-              tcs = JSON.parse(m.tool_calls || "[]");
-            } catch {
-              tcs = [];
-            }
+            try { tcs = JSON.parse(m.tool_calls || "[]"); } catch { tcs = []; }
             if (m.content || m.reasoning_content || tcs.length) {
-              const bubble = this.createAssistantBubble(sess?.persona || "grok", sess?.model || "deepseek-flash");
-              if (m.reasoning_content) {
-                bubble.setReasoning(m.reasoning_content);
-              }
-              tcs.forEach((tc) => {
-                bubble.addToolCall(tc.id || "tool", tc.function?.name || "tool", tc.function?.arguments || "{}");
-              });
-              if (m.content) {
-                bubble.setContent(m.content);
-              }
+              const senderBot = (this.store.state.bots || []).find((b) => b.id === (m.sender_bot_id || botId)) || bot;
+              const bubble = this.createAssistantBubble(senderBot, m.msg_kind === "routine", m.created_at);
+              if (m.reasoning_content) bubble.setReasoning(m.reasoning_content);
+              tcs.forEach((tc) => bubble.addToolCall(tc.id || "tool", tc.function?.name || "tool", tc.function?.arguments || "{}"));
+              if (m.content) bubble.setContent(m.content);
             }
           }
         });
         this.scrollToBottom();
       } catch (err) {
-        this.bus.emit("toast", "加载会话历史失败: " + err.message);
+        this.bus.emit("toast", "加载 Bot 对话流失败: " + err.message);
       }
     }
 
@@ -3150,8 +3489,7 @@
       const row = document.createElement("div");
       row.className = "agent-msg-row agent-msg-row-user";
       row.innerHTML = `
-        <div class="im-avatar im-avatar-user" title="${Utils.esc(timeStr ? Utils.formatTime(timeStr) : "刚刚")}">我</div>
-        <div class="agent-msg agent-msg-user">
+        <div class="agent-msg agent-msg-user" title="${Utils.esc(timeStr ? Utils.formatTime(timeStr) : "刚刚")}">
           <div class="agent-msg-content">${Utils.esc(text)}</div>
         </div>
       `;
@@ -3159,20 +3497,24 @@
       this.scrollToBottom();
     }
 
-    createAssistantBubble(persona, model) {
+    createAssistantBubble(bot, isRoutine = false, timeStr = "") {
       if (this.emptyEl && this.emptyEl.parentNode === this.messagesEl) {
         this.emptyEl.remove();
       }
-      const personaLabel = persona === "butler" ? "长庚执更管家" : (persona === "architect" ? "系统架构师" : "Grok 锐评中枢");
-      const avatarChar = persona === "butler" ? "执" : (persona === "architect" ? "架" : "G");
+      const bName = bot?.name || "BotHub";
+      const bModel = bot?.model || this.modelHidden?.value || "deepseek-flash";
       const row = document.createElement("div");
       row.className = "agent-msg-row agent-msg-row-assistant";
       row.innerHTML = `
-        <div class="im-avatar im-avatar-ai">${Utils.esc(avatarChar)}</div>
-        <div class="agent-msg agent-msg-assistant">
+        <div class="agent-msg agent-msg-assistant ${isRoutine ? "msg-kind-routine-card" : ""}">
           <div class="agent-msg-meta mono">
-            <span class="text-cyan">${Utils.esc(personaLabel)} · ${Utils.esc(model)}</span>
-            <span class="agent-msg-state">生成中...</span>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              ${Utils.renderBotAvatarSVG(bot?.avatar_style || "cyan", isRoutine ? "done" : "idle", false)}
+              <span class="text-cyan" style="font-weight:600;">${Utils.esc(bName)}</span>
+              <span>· ${Utils.esc(bModel)}</span>
+              ${isRoutine ? '<span class="bot-routine-badge">例程主动汇报</span>' : ""}
+            </div>
+            <span class="agent-msg-state">${isRoutine ? Utils.esc(Utils.formatTime(timeStr)) : "思考与生成中..."}</span>
           </div>
           <details class="agent-reasoning-box hidden" open>
             <summary class="mono">深度思考过程 (Reasoning Chain)</summary>
@@ -3188,7 +3530,6 @@
       `;
       this.messagesEl?.appendChild(row);
       const div = row.querySelector(".agent-msg");
-
       const stateSpan = div.querySelector(".agent-msg-state");
       const reasonDetails = div.querySelector(".agent-reasoning-box");
       const reasonBody = div.querySelector(".agent-reasoning-body");
@@ -3213,7 +3554,7 @@
               btn.textContent = "已复制";
               setTimeout(() => { btn.textContent = "复制代码"; }, 1500);
             } catch {
-              this.bus.emit("toast", "复制失败，请手动复制");
+              this.bus.emit("toast", "复制失败");
             }
           });
         });
@@ -3222,7 +3563,7 @@
       copyBtn?.addEventListener("click", async () => {
         try {
           await navigator.clipboard.writeText(contentBuf);
-          this.bus.emit("toast", "已复制回复全文");
+          this.bus.emit("toast", "已复制全文");
         } catch {
           this.bus.emit("toast", "复制失败");
         }
@@ -3269,9 +3610,7 @@
           const statusTag = item.querySelector(".tool-status-tag");
           if (statusTag) statusTag.textContent = "已完成";
           const detail = item.querySelector(".agent-tool-detail");
-          if (detail) {
-            detail.textContent += `\n返回: ${result}`;
-          }
+          if (detail) detail.textContent += `\n返回: ${result}`;
         },
         appendContent: (delta) => {
           contentBuf += delta;
@@ -3281,27 +3620,21 @@
         setContent: (full) => {
           contentBuf = full;
           renderContentMarkdown(full);
-          if (stateSpan) stateSpan.textContent = "已完成";
+          if (stateSpan && !isRoutine) stateSpan.textContent = timeStr ? Utils.formatTime(timeStr) : "已完成";
           actionsBar?.classList.remove("hidden");
         },
         markDone: (usage) => {
-          if (stateSpan) {
+          if (stateSpan && !isRoutine) {
             stateSpan.textContent = usage && usage.total_tokens
               ? `已完成 (${usage.prompt_tokens}+${usage.completion_tokens} Tokens)`
               : "已完成";
           }
-          if (reasonBuf) {
-            reasonDetails?.removeAttribute("open");
-          }
-          if (contentBuf) {
-            actionsBar?.classList.remove("hidden");
-          }
+          if (reasonBuf) reasonDetails?.removeAttribute("open");
+          if (contentBuf) actionsBar?.classList.remove("hidden");
         },
         markAborted: () => {
           if (stateSpan) stateSpan.textContent = "已手动停止";
-          if (contentBuf) {
-            actionsBar?.classList.remove("hidden");
-          }
+          if (contentBuf) actionsBar?.classList.remove("hidden");
         },
         markError: (errMsg) => {
           if (stateSpan) {
@@ -3326,22 +3659,20 @@
       const msg = (this.input?.value || "").trim();
       if (!msg) return;
 
-      const sessionId = this.sessionHidden?.value || "";
-      const persona = this.personaHidden?.value || "grok";
-      const model = this.modelHidden?.value || "deepseek-flash";
+      const bot = this.getActiveBot();
+      const botId = bot?.id || "butler";
+      const model = this.modelHidden?.value || bot?.model || "deepseek-flash";
 
       this.lastUserPrompt = msg;
       this.input.value = "";
       this.isStreaming = true;
       this.abortController = new AbortController();
-      if (this.sendBtn) {
-        this.sendBtn.disabled = true;
-      }
+      if (this.sendBtn) this.sendBtn.disabled = true;
       this.stopBtn?.classList.remove("hidden");
-      if (this.statusEl) this.statusEl.textContent = "正在连接 DeepSeek 流式通道...";
+      if (this.statusEl) this.statusEl.textContent = `正在连线 [${bot?.name || botId}]...`;
 
       this.appendUserBubble(msg);
-      const assistantUI = this.createAssistantBubble(persona, model);
+      let currentBubble = this.createAssistantBubble(bot, false);
 
       try {
         const res = await fetch("/api/agent/chat", {
@@ -3350,14 +3681,12 @@
           signal: this.abortController.signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            session_id: sessionId,
+            bot_id: botId,
             message: msg,
-            persona,
             model,
             enable_thinking: this.enableThinking,
           }),
         });
-
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.error || `HTTP ${res.status}`);
@@ -3372,7 +3701,6 @@
           const { value, done } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
-
           const lines = buffer.split("\n");
           buffer = lines.pop() || "";
 
@@ -3382,27 +3710,41 @@
             if (line.startsWith("event:")) {
               currentEvent = line.slice(6).trim();
             } else if (line.startsWith("data:")) {
-              const jsonStr = line.slice(5).trim();
               let payload = {};
-              try {
-                payload = JSON.parse(jsonStr);
-              } catch {
-                continue;
+              try { payload = JSON.parse(line.slice(5).trim()); } catch { continue; }
+              if (currentEvent === "bot_turn") {
+                if (Number(payload.step) > 1) {
+                  currentBubble.markDone();
+                  const nextBot = (this.store.state.bots || []).find((x) => x.id === payload.sender_bot_id) || {
+                    name: payload.sender_name,
+                    avatar_style: payload.avatar_style,
+                    model,
+                  };
+                  currentBubble = this.createAssistantBubble(nextBot, false);
+                } else {
+                  const spBot = (this.store.state.bots || []).find((x) => x.id === payload.sender_bot_id);
+                  if (spBot) {
+                    const metaName = currentBubble;
+                    void metaName;
+                  }
+                }
+                if (this.statusEl) this.statusEl.textContent = `群聊接力 (${payload.step}/${payload.total_steps}): ${payload.sender_name}...`;
+              } else {
+                this.handleSSEEvent(currentEvent, payload, currentBubble);
               }
-              this.handleSSEEvent(currentEvent, payload, assistantUI);
             }
           }
         }
-        assistantUI.markDone();
+        currentBubble.markDone();
         if (this.statusEl) this.statusEl.textContent = "就绪";
         await this.store.loadDashboard();
       } catch (err) {
         if (err.name === "AbortError") {
-          assistantUI.markAborted();
+          currentBubble.markAborted();
           if (this.statusEl) this.statusEl.textContent = "已手动停止";
           this.bus.emit("toast", "已停止生成");
         } else {
-          assistantUI.markError(err.message);
+          currentBubble.markError(err.message);
           if (this.statusEl) this.statusEl.textContent = "发生错误";
           this.bus.emit("toast", err.message);
         }
@@ -3410,22 +3752,13 @@
         this.isStreaming = false;
         this.abortController = null;
         this.stopBtn?.classList.add("hidden");
-        if (this.sendBtn) {
-          this.sendBtn.disabled = false;
-        }
+        if (this.sendBtn) this.sendBtn.disabled = false;
       }
     }
 
     handleSSEEvent(event, payload, assistantUI) {
-      if (event === "session") {
-        if (payload.session_id && this.sessionHidden) {
-          this.sessionHidden.value = payload.session_id;
-        }
-        if (payload.title && this.activeTitleEl) {
-          this.activeTitleEl.textContent = payload.title;
-        }
-      } else if (event === "reasoning") {
-        if (this.statusEl) this.statusEl.textContent = "深度思考中 (Reasoner)...";
+      if (event === "reasoning") {
+        if (this.statusEl) this.statusEl.textContent = "深度思考中...";
         assistantUI.appendReasoning(payload.delta || "");
       } else if (event === "tool_start") {
         if (this.statusEl) this.statusEl.textContent = `执行工具: ${payload.name}...`;
@@ -3440,6 +3773,72 @@
       } else if (event === "done") {
         assistantUI.markDone(payload.usage);
       }
+    }
+  }
+
+  // --- Create Custom Bot Modal Component ---
+  class BotCreateModalComponent extends BaseComponent {
+    init() {
+      this.overlay = document.getElementById("bot-create-modal-overlay");
+      this.openBtn = document.getElementById("create-bot-btn");
+      this.closeBtn = document.getElementById("close-bot-create-modal-btn");
+      this.cancelBtn = document.getElementById("cancel-bot-create-btn");
+      this.form = document.getElementById("bot-create-form");
+      this.nameInput = document.getElementById("new-bot-name");
+      this.roleInput = document.getElementById("new-bot-role");
+      this.promptInput = document.getElementById("new-bot-prompt");
+      this.avatarMount = document.getElementById("mount-new-bot-avatar");
+      this.avatarHidden = document.getElementById("new-bot-avatar");
+      this.modelMount = document.getElementById("mount-new-bot-model");
+      this.modelHidden = document.getElementById("new-bot-model");
+
+      if (this.avatarMount) {
+        new CustomSelect(this.avatarMount, {
+          options: [
+            { value: "cyan", label: "天穹青 (Cyan)" },
+            { value: "indigo", label: "暮光靛 (Indigo)" },
+            { value: "amber", label: "琥珀金 (Amber)" },
+            { value: "emerald", label: "翡翠绿 (Emerald)" },
+            { value: "violet", label: "星云紫 (Violet)" },
+          ],
+          value: "cyan",
+          onChange: (val) => { if (this.avatarHidden) this.avatarHidden.value = val; },
+        });
+      }
+
+      if (this.modelMount) {
+        new CustomSelect(this.modelMount, {
+          options: [
+            { value: "deepseek-flash", label: "DeepSeek Flash (主力)" },
+            { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro (深度)" },
+          ],
+          value: "deepseek-flash",
+          onChange: (val) => { if (this.modelHidden) this.modelHidden.value = val; },
+        });
+      }
+
+      this.openBtn?.addEventListener("click", () => this.overlay?.classList.remove("hidden"));
+      this.closeBtn?.addEventListener("click", () => this.overlay?.classList.add("hidden"));
+      this.cancelBtn?.addEventListener("click", () => this.overlay?.classList.add("hidden"));
+      this.overlay?.addEventListener("click", (e) => {
+        if (e.target === this.overlay) this.overlay.classList.add("hidden");
+      });
+
+      this.form?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const created = await this.store.createBot({
+          name: (this.nameInput?.value || "").trim(),
+          role_title: (this.roleInput?.value || "").trim(),
+          avatar_style: this.avatarHidden?.value || "cyan",
+          model: this.modelHidden?.value || "deepseek-flash",
+          enable_thinking: true,
+          allowed_tools: `["read_url","web_search","query_nezha_nodes","manage_assets","manage_tasks","remember_fact","recall_memory"]`,
+          system_prompt: (this.promptInput?.value || "").trim(),
+        });
+        this.form.reset();
+        this.overlay?.classList.add("hidden");
+        if (created) this.bus.emit("bot:open-created", created);
+      });
     }
   }
 
@@ -3687,6 +4086,7 @@
       new MetricsComponent(".metrics-grid", store, bus),
       new WorkspaceSwitcherComponent(".grok-sidebar", store, bus),
       new AgentHubComponent("#workspace-agent", store, bus),
+      new BotCreateModalComponent("#bot-create-modal-overlay", store, bus),
       new AgentMemoriesModalComponent("#memories-modal-overlay", store, bus),
       new InboxModalComponent("#inbox-modal-overlay", store, bus),
       new AssetsSectionComponent("#assets-grid", store, bus),

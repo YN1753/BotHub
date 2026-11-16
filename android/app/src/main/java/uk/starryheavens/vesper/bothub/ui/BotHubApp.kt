@@ -82,6 +82,7 @@ import okhttp3.Call
 import uk.starryheavens.vesper.bothub.data.AgentSessionSummary
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
+import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.NotificationItem
 import uk.starryheavens.vesper.bothub.data.TaskItem
@@ -94,7 +95,8 @@ data class ChatTurnUi(
     val model: String,
     val reasoning: String = "",
     val tools: List<String> = emptyList(),
-    val content: String = ""
+    val content: String = "",
+    val msgKind: String = "chat"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -115,7 +117,9 @@ fun BotHubApp(
     var showSettingsSheet by remember { mutableStateOf(prefs.bearerToken.isEmpty()) }
     var selectedNotification by remember { mutableStateOf<NotificationItem?>(null) }
 
-    // Agent State
+    // Persistent GrokBot Team State
+    var bots by remember { mutableStateOf<List<BotItem>>(emptyList()) }
+    var activeBotId by remember { mutableStateOf("butler") }
     var sessionId by remember { mutableStateOf("") }
     var activePersona by remember { mutableStateOf(prefs.activePersona) }
     var activeModel by remember { mutableStateOf(prefs.activeModel) }
@@ -133,6 +137,34 @@ fun BotHubApp(
     var dashboard by remember { mutableStateOf<DashboardSnapshot?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
 
+    fun loadBotTimeline(botId: String) {
+        if (isStreaming || prefs.bearerToken.isEmpty()) return
+        scope.launch {
+            api.fetchBotMessages(botId).onSuccess { msgs ->
+                val target = bots.find { it.id == botId }
+                if (target != null) {
+                    activeModel = target.model
+                    enableThinking = target.enableThinking
+                }
+                chatMessages.clear()
+                msgs.forEach { m ->
+                    val senderName = bots.find { it.id == m.senderBotId }?.name ?: target?.name ?: botId
+                    chatMessages.add(
+                        ChatTurnUi(
+                            id = "botmsg_${m.id}",
+                            role = m.role,
+                            persona = senderName,
+                            model = target?.model ?: activeModel,
+                            reasoning = m.reasoningContent,
+                            content = m.content,
+                            msgKind = m.msgKind
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     fun refreshAll() {
         if (prefs.bearerToken.isEmpty()) return
         scope.launch {
@@ -147,6 +179,15 @@ fun BotHubApp(
             }
             api.fetchDashboard().onSuccess { snap ->
                 dashboard = snap
+            }
+            api.fetchBots().onSuccess { list ->
+                val firstLoad = bots.isEmpty()
+                bots = list
+                if (firstLoad && list.isNotEmpty() && chatMessages.isEmpty()) {
+                    val chosen = list.find { it.id == activeBotId } ?: list.first()
+                    activeBotId = chosen.id
+                    loadBotTimeline(chosen.id)
+                }
             }
             api.fetchAgentSessions().onSuccess { sess ->
                 agentSessions = sess
@@ -216,6 +257,7 @@ fun BotHubApp(
         activeChatJob = scope.launch {
             api.streamChat(
                 sessionId = sessionId,
+                botId = activeBotId,
                 message = clean,
                 persona = activePersona,
                 model = activeModel,
@@ -367,6 +409,12 @@ fun BotHubApp(
                 activePersona = activePersona,
                 activeModel = activeModel,
                 enableThinking = enableThinking,
+                bots = bots,
+                activeBotId = activeBotId,
+                onSelectBot = { bid ->
+                    activeBotId = bid
+                    loadBotTimeline(bid)
+                },
                 onPersonaChange = {
                     activePersona = it
                     prefs.activePersona = it
@@ -760,6 +808,9 @@ private fun AgentTabScreen(
     activePersona: String,
     activeModel: String,
     enableThinking: Boolean,
+    bots: List<BotItem>,
+    activeBotId: String,
+    onSelectBot: (String) -> Unit,
     onPersonaChange: (String) -> Unit,
     onModelChange: (String) -> Unit,
     onThinkingChange: (Boolean) -> Unit,
@@ -775,7 +826,32 @@ private fun AgentTabScreen(
     onQuickPrompt: (String) -> Unit
 ) {
     Column(modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        // Persona & Model Filter Chips
+        // Persistent GrokBot Team Roster Strip
+        if (bots.isNotEmpty()) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(bots, key = { it.id }) { b ->
+                    val stateSuffix = when (b.state) {
+                        "thinking" -> " [思考]"
+                        "working" -> " [执行]"
+                        "blocked" -> " [告警]"
+                        "done" -> if (b.unreadCount > 0) " (${b.unreadCount})" else " [新]"
+                        else -> if (b.unreadCount > 0) " (${b.unreadCount})" else ""
+                    }
+                    FilterChip(
+                        selected = activeBotId == b.id,
+                        onClick = { onSelectBot(b.id) },
+                        label = { Text("${b.name}$stateSuffix") },
+                        modifier = Modifier.sizeIn(minHeight = 48.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        // Model & Thinking Toggle Chips
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()

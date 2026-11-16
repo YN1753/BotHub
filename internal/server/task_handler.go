@@ -90,6 +90,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Name != "" { existing.Name = strings.TrimSpace(req.Name) }
+	if req.BotID != "" { existing.BotID = strings.TrimSpace(req.BotID) }
 	if req.Description != "" { existing.Description = strings.TrimSpace(req.Description) }
 	if req.CronExpr != "" {
 		trimmed := strings.TrimSpace(req.CronExpr)

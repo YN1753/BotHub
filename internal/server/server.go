@@ -40,11 +40,16 @@ func New(
 		return nil, fmt.Errorf("mount static fs: %w", err)
 	}
 
+	eng := agent.NewEngine(st, sched)
+	if push != nil {
+		eng.SetHub(push.Hub())
+	}
+
 	return &Server{
 		store:     st,
 		scheduler: sched,
 		push:      push,
-		agent:     agent.NewEngine(st, sched),
+		agent:     eng,
 		staticFS:  sub,
 		startedAt: time.Now(),
 		version:   version,
@@ -104,6 +109,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agent/memories", s.requireAuth(s.handleListAgentMemories))
 	mux.HandleFunc("POST /api/agent/memories", s.requireAuth(s.handleSaveAgentMemory))
 	mux.HandleFunc("DELETE /api/agent/memories/{id}", s.requireAuth(s.handleDeleteAgentMemory))
+
+	// BotHub v2 Persistent Bots (GrokBot Model)
+	mux.HandleFunc("GET /api/v2/bots", s.requireAuth(s.handleListBots))
+	mux.HandleFunc("POST /api/v2/bots", s.requireAuth(s.handleCreateBot))
+	mux.HandleFunc("POST /api/v2/bots/{id}", s.requireAuth(s.handleUpdateBot))
+	mux.HandleFunc("DELETE /api/v2/bots/{id}", s.requireAuth(s.handleDeleteBot))
+	mux.HandleFunc("GET /api/v2/bots/{id}/messages", s.requireAuth(s.handleGetBotMessages))
+	mux.HandleFunc("DELETE /api/v2/bots/{id}/messages", s.requireAuth(s.handleClearBotMessages))
 
 	// BotHub v2 Native Push Stream, Inbox & Webhooks
 	mux.HandleFunc("GET /api/v2/app/version", s.handleV2AppVersion)

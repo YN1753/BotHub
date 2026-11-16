@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
+	"github.com/YN1753/vesper/bothub/internal/pushstream"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
@@ -22,8 +23,13 @@ import (
 type Engine struct {
 	store                 *store.Store
 	scheduler             TaskController
+	hub                   *pushstream.Hub
 	httpClient            *http.Client
 	allowLocalhostForTest bool
+}
+
+func (e *Engine) SetHub(hub *pushstream.Hub) {
+	e.hub = hub
 }
 
 func NewEngine(st *store.Store, sched TaskController) *Engine {
@@ -38,6 +44,7 @@ func NewEngine(st *store.Store, sched TaskController) *Engine {
 
 type ChatRequest struct {
 	SessionID      string `json:"session_id"`
+	BotID          string `json:"bot_id,omitempty"`
 	Message        string `json:"message"`
 	Persona        string `json:"persona"`
 	Model          string `json:"model"`
@@ -59,6 +66,8 @@ type TokenUsage struct {
 
 type ChatResponse struct {
 	SessionID        string      `json:"session_id"`
+	BotID            string      `json:"bot_id,omitempty"`
+	SenderBotID      string      `json:"sender_bot_id,omitempty"`
 	Persona          string      `json:"persona"`
 	Model            string      `json:"model"`
 	ReasoningContent string      `json:"reasoning_content,omitempty"`
@@ -245,6 +254,10 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
 		baseURL = store.DefaultDeepSeekBaseURL
+	}
+
+	if strings.TrimSpace(req.BotID) != "" {
+		return e.chatStreamForBot(ctx, req, baseURL, apiKey, emit)
 	}
 
 	model := strings.TrimSpace(req.Model)

@@ -75,6 +75,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	sessions, _ := s.store.ListAgentSessions(30)
 	memories, _ := s.store.ListAgentMemories("", 50)
 	notifications, _ := s.store.ListNotifications(0, 40, false)
+	bots, _ := s.store.ListBots()
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":         s.version,
@@ -82,6 +83,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"build_time":      s.buildTime,
 		"modules":         tasks, // 兼容前端历史模块字段
 		"tasks":           tasks,
+		"bots":            bots,
 		"templates":       modules.BuiltinTemplates(),
 		"asset_templates": modules.BuiltinAssetTemplates(),
 		"personas":        agent.BuiltinPersonas(),

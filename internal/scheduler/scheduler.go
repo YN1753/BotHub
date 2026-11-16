@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/modules"
+	"github.com/YN1753/vesper/bothub/internal/notifier"
+	"github.com/YN1753/vesper/bothub/internal/pushstream"
 	"github.com/YN1753/vesper/bothub/internal/store"
 	"github.com/robfig/cron/v3"
 )
@@ -16,6 +19,7 @@ type TaskStatus struct {
 	ID          string           `json:"id"`
 	Name        string           `json:"name"`
 	Type        string           `json:"type"`
+	BotID       string           `json:"bot_id"`
 	Description string           `json:"description"`
 	CronExpr    string           `json:"cron_expr"`
 	Enabled     bool             `json:"enabled"`
@@ -33,11 +37,16 @@ type ModuleStatus = TaskStatus
 type Scheduler struct {
 	store    *store.Store
 	registry *modules.Registry
+	hub      *pushstream.Hub
 	cron     *cron.Cron
 	entries  map[string]cron.EntryID
 	running  map[string]bool
 	mu       sync.Mutex
 	loc      *time.Location
+}
+
+func (s *Scheduler) SetHub(hub *pushstream.Hub) {
+	s.hub = hub
 }
 
 // NewWithRegistry creates a Scheduler backed by a dynamic module Registry.
@@ -150,6 +159,19 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (mo
 		log.Printf("[scheduler] failed to record start for %s: %v", taskID, err)
 	}
 
+	botID := strings.TrimSpace(task.BotID)
+	if botID != "" {
+		workLabel := "正在执行例程: " + task.Name
+		_ = s.store.SetBotState(botID, store.BotStateWorking, workLabel)
+		if s.hub != nil {
+			s.hub.PublishEvent("bot_state", map[string]any{
+				"bot_id":       botID,
+				"state":        store.BotStateWorking,
+				"last_summary": workLabel,
+			})
+		}
+	}
+
 	start := time.Now()
 	res, runErr := runner.RunWithTask(ctx, *task)
 	durationMs := time.Since(start).Milliseconds()
@@ -165,6 +187,38 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (mo
 	if runID > 0 {
 		if err := s.store.FinishModuleRun(runID, status, summary, res.ItemsPushed, durationMs); err != nil {
 			log.Printf("[scheduler] failed to record finish for %s: %v", taskID, err)
+		}
+	}
+
+	if botID != "" {
+		cleanSummary := notifier.StripEmoji(summary)
+		finalState := store.BotStateDone
+		if runErr != nil {
+			finalState = store.BotStateBlocked
+		}
+		report := fmt.Sprintf("### 例程主动汇报: %s\n\n- **执行状态**: %s (%dms)\n- **结果摘要**: %s",
+			task.Name, status, durationMs, cleanSummary)
+		msg := store.AgentMessage{
+			SessionID:   "bot:" + botID,
+			BotID:       botID,
+			SenderBotID: botID,
+			MsgKind:     "routine",
+			Role:        "assistant",
+			Content:     report,
+		}
+		if msgID, aErr := s.store.AppendAgentMessage(msg); aErr == nil {
+			msg.ID = msgID
+			msg.CreatedAt = store.NowShanghai()
+		}
+		_ = s.store.SetBotState(botID, finalState, cleanSummary)
+		_ = s.store.IncrementBotUnread(botID, cleanSummary)
+		if s.hub != nil {
+			s.hub.PublishEvent("bot_message", msg)
+			s.hub.PublishEvent("bot_state", map[string]any{
+				"bot_id":       botID,
+				"state":        finalState,
+				"last_summary": cleanSummary,
+			})
 		}
 	}
 
@@ -204,6 +258,7 @@ func (s *Scheduler) Status() ([]TaskStatus, error) {
 			ID:          t.ID,
 			Name:        t.Name,
 			Type:        t.Type,
+			BotID:       t.BotID,
 			Description: t.Description,
 			CronExpr:    t.CronExpr,
 			Enabled:     t.Enabled,

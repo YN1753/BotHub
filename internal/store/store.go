@@ -191,9 +191,45 @@ CREATE TABLE IF NOT EXISTS notifications (
 	read_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_id ON notifications(id DESC);
-CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read_at, id DESC);`
-	_, err := s.db.Exec(schema)
-	return err
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read_at, id DESC);
+
+CREATE TABLE IF NOT EXISTS bots (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	role_title TEXT NOT NULL,
+	avatar_style TEXT NOT NULL DEFAULT 'cyan',
+	system_prompt TEXT NOT NULL,
+	model TEXT NOT NULL DEFAULT 'deepseek-flash',
+	enable_thinking INTEGER NOT NULL DEFAULT 1,
+	allowed_tools TEXT NOT NULL DEFAULT '[]',
+	state TEXT NOT NULL DEFAULT 'idle',
+	unread_count INTEGER NOT NULL DEFAULT 0,
+	is_pinned INTEGER NOT NULL DEFAULT 0,
+	is_builtin INTEGER NOT NULL DEFAULT 0,
+	sort_order INTEGER NOT NULL DEFAULT 100,
+	last_summary TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+
+	// Safe incremental column migrations for existing databases
+	alters := []string{
+		`ALTER TABLE tasks ADD COLUMN bot_id TEXT NOT NULL DEFAULT 'butler'`,
+		`ALTER TABLE agent_messages ADD COLUMN bot_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE agent_messages ADD COLUMN sender_bot_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE agent_messages ADD COLUMN msg_kind TEXT NOT NULL DEFAULT 'chat'`,
+		`ALTER TABLE agent_memories ADD COLUMN scope TEXT NOT NULL DEFAULT 'global'`,
+	}
+	for _, stmt := range alters {
+		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return err
+		}
+	}
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot ON agent_messages(bot_id, id ASC)`)
+	return nil
 }
 
 func (s *Store) seedDefaults() error {
@@ -331,6 +367,7 @@ func (s *Store) seedDefaults() error {
 				ID:          "morning",
 				Name:        "每日晨报小秘书",
 				Type:        "morning",
+				BotID:       "butler",
 				Description: "汇总目标城市气象建议、每日格言、节点脉搏与临期资产",
 				CronExpr:    "0 8 * * *",
 				Enabled:     true,
@@ -342,6 +379,7 @@ func (s *Store) seedDefaults() error {
 				ID:          "radar",
 				Name:        "全网开源技术雷达",
 				Type:        "radar",
+				BotID:       "radar",
 				Description: "抓取 GitHub Trending 与 Hacker News 热门高分条目，自动排版去重推送",
 				CronExpr:    "0 12,20 * * *",
 				Enabled:     true,
@@ -353,6 +391,7 @@ func (s *Store) seedDefaults() error {
 				ID:          "asset_watcher",
 				Name:        "数字资产与会员守望",
 				Type:        "asset_watcher",
+				BotID:       "butler",
 				Description: "自动嗅探域名到期、B站大会员与VPS扣费周期，触发临期防扣款强提醒",
 				CronExpr:    "0 3 * * *",
 				Enabled:     true,
@@ -365,6 +404,27 @@ func (s *Store) seedDefaults() error {
 			_ = s.SaveTask(t)
 		}
 	}
+
+	// Seed default persistent GrokBot teammates if missing (safe on existing upgrades)
+	for _, b := range DefaultBots(now) {
+		et := 0
+		if b.EnableThinking {
+			et = 1
+		}
+		pin := 0
+		if b.IsPinned {
+			pin = 1
+		}
+		builtin := 0
+		if b.IsBuiltin {
+			builtin = 1
+		}
+		_, _ = s.db.Exec(`INSERT OR IGNORE INTO bots (id, name, role_title, avatar_style, system_prompt, model, enable_thinking, allowed_tools, state, unread_count, is_pinned, is_builtin, sort_order, last_summary, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+			b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.Model, et, b.AllowedTools, b.State, pin, builtin, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
+	}
+	// Backfill task bot_id mappings on upgraded databases
+	_, _ = s.db.Exec(`UPDATE tasks SET bot_id = 'radar' WHERE type = 'radar' AND (bot_id = '' OR bot_id = 'butler')`)
 	return nil
 }
 

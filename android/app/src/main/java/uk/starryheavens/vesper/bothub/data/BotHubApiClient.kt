@@ -54,11 +54,25 @@ data class AgentSessionSummary(
     val updatedAt: String
 )
 
+data class BotItem(
+    val id: String,
+    val name: String,
+    val roleTitle: String,
+    val avatarStyle: String,
+    val model: String,
+    val enableThinking: Boolean,
+    val state: String,
+    val unreadCount: Int,
+    val lastSummary: String
+)
+
 data class AgentHistoryMessage(
     val id: Long,
     val role: String,
     val content: String,
-    val reasoningContent: String
+    val reasoningContent: String,
+    val msgKind: String = "chat",
+    val senderBotId: String = ""
 )
 
 data class DashboardSnapshot(
@@ -307,6 +321,64 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun fetchBots(): Result<List<BotItem>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = authRequestBuilder("/api/v2/bots").get().build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("获取 Bot 名录失败 (${resp.code})")
+                val raw = resp.body?.string().orEmpty()
+                val arr = JSONObject(raw).optJSONArray("bots") ?: JSONArray()
+                val list = mutableListOf<BotItem>()
+                for (i in 0 until arr.length()) {
+                    val b = arr.getJSONObject(i)
+                    list.add(
+                        BotItem(
+                            id = b.optString("id"),
+                            name = b.optString("name"),
+                            roleTitle = b.optString("role_title"),
+                            avatarStyle = b.optString("avatar_style", "cyan"),
+                            model = b.optString("model", "deepseek-flash"),
+                            enableThinking = b.optBoolean("enable_thinking", true),
+                            state = b.optString("state", "idle"),
+                            unreadCount = b.optInt("unread_count", 0),
+                            lastSummary = b.optString("last_summary", "")
+                        )
+                    )
+                }
+                list
+            }
+        }
+    }
+
+    suspend fun fetchBotMessages(botId: String): Result<List<AgentHistoryMessage>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = authRequestBuilder("/api/v2/bots/$botId/messages").get().build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("加载 Bot 对话流失败 (${resp.code})")
+                val raw = resp.body?.string().orEmpty()
+                val arr = JSONObject(raw).optJSONArray("messages") ?: JSONArray()
+                val list = mutableListOf<AgentHistoryMessage>()
+                for (i in 0 until arr.length()) {
+                    val m = arr.getJSONObject(i)
+                    val role = m.optString("role")
+                    if (role == "user" || role == "assistant") {
+                        list.add(
+                            AgentHistoryMessage(
+                                id = m.optLong("id"),
+                                role = role,
+                                content = m.optString("content", ""),
+                                reasoningContent = m.optString("reasoning_content", ""),
+                                msgKind = m.optString("msg_kind", "chat"),
+                                senderBotId = m.optString("sender_bot_id", "")
+                            )
+                        )
+                    }
+                }
+                list
+            }
+        }
+    }
+
     suspend fun testHealth(serverUrlOverride: String? = null): Result<Pair<Long, String>> = withContext(Dispatchers.IO) {
         runCatching {
             val base = (serverUrlOverride ?: prefs.serverUrl).trim().trimEnd('/')
@@ -324,6 +396,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
 
     suspend fun streamChat(
         sessionId: String,
+        botId: String = "",
         message: String,
         persona: String,
         model: String,
@@ -338,6 +411,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         runCatching {
             val payload = JSONObject()
                 .put("session_id", sessionId)
+                .put("bot_id", botId)
                 .put("message", message)
                 .put("persona", persona)
                 .put("model", model)

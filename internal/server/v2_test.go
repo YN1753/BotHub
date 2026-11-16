@@ -221,3 +221,84 @@ func TestAuthTokenAutoGenerateAndRotate(t *testing.T) {
 		t.Fatalf("did not expect recovery notice to trigger AI triage")
 	}
 }
+
+func TestGrokBotRosterAndTimelineLifecycle(t *testing.T) {
+	s, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// 1. Default 5 bots must be seeded
+	reqList := httptest.NewRequest(http.MethodGet, "/api/v2/bots", nil)
+	recList := httptest.NewRecorder()
+	s.handleListBots(recList, reqList)
+	if recList.Code != http.StatusOK {
+		t.Fatalf("list bots failed: %d", recList.Code)
+	}
+	var listResp struct {
+		OK   bool        `json:"ok"`
+		Bots []store.Bot `json:"bots"`
+	}
+	if err := json.Unmarshal(recList.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("unmarshal bots: %v", err)
+	}
+	if len(listResp.Bots) < 5 {
+		t.Fatalf("expected at least 5 default bots, got %d", len(listResp.Bots))
+	}
+
+	// 2. Create custom bot, update it, verify messages & unread clear
+	createBody := `{"name":"财务复盘专员","role_title":"月度账单核查","avatar_style":"emerald","system_prompt":"负责预算核对"}`
+	reqCreate := httptest.NewRequest(http.MethodPost, "/api/v2/bots", strings.NewReader(createBody))
+	recCreate := httptest.NewRecorder()
+	s.handleCreateBot(recCreate, reqCreate)
+	if recCreate.Code != http.StatusOK {
+		t.Fatalf("create bot failed: %d: %s", recCreate.Code, recCreate.Body.String())
+	}
+	var createdResp struct {
+		Bot store.Bot `json:"bot"`
+	}
+	_ = json.Unmarshal(recCreate.Body.Bytes(), &createdResp)
+	customID := createdResp.Bot.ID
+	if customID == "" {
+		t.Fatalf("expected custom bot ID")
+	}
+
+	// Simulate proactive routine message posted to custom bot
+	_, _ = s.store.AppendAgentMessage(store.AgentMessage{
+		SessionID:   "bot:" + customID,
+		BotID:       customID,
+		SenderBotID: customID,
+		MsgKind:     "routine",
+		Role:        "assistant",
+		Content:     "本月服务器预算核对完成，一切正常。",
+	})
+	_ = s.store.IncrementBotUnread(customID, "预算核对完成")
+
+	// Reading bot messages should return the proactive report and reset unread_count to 0
+	reqMsgs := httptest.NewRequest(http.MethodGet, "/api/v2/bots/"+customID+"/messages", nil)
+	reqMsgs.SetPathValue("id", customID)
+	recMsgs := httptest.NewRecorder()
+	s.handleGetBotMessages(recMsgs, reqMsgs)
+	if recMsgs.Code != http.StatusOK || !strings.Contains(recMsgs.Body.String(), "预算核对完成") {
+		t.Fatalf("get bot messages failed: %d: %s", recMsgs.Code, recMsgs.Body.String())
+	}
+	botAfter, _ := s.store.GetBot(customID)
+	if botAfter.UnreadCount != 0 {
+		t.Fatalf("expected unread_count cleared to 0, got %d", botAfter.UnreadCount)
+	}
+
+	// Built-in bot cannot be deleted; custom bot can be deleted
+	reqDelBuiltin := httptest.NewRequest(http.MethodDelete, "/api/v2/bots/butler", nil)
+	reqDelBuiltin.SetPathValue("id", "butler")
+	recDelBuiltin := httptest.NewRecorder()
+	s.handleDeleteBot(recDelBuiltin, reqDelBuiltin)
+	if recDelBuiltin.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when deleting builtin bot, got %d", recDelBuiltin.Code)
+	}
+
+	reqDelCustom := httptest.NewRequest(http.MethodDelete, "/api/v2/bots/"+customID, nil)
+	reqDelCustom.SetPathValue("id", customID)
+	recDelCustom := httptest.NewRecorder()
+	s.handleDeleteBot(recDelCustom, reqDelCustom)
+	if recDelCustom.Code != http.StatusOK {
+		t.Fatalf("expected 200 deleting custom bot, got %d", recDelCustom.Code)
+	}
+}

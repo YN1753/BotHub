@@ -22,7 +22,7 @@ import (
 
 // Injected during build via -ldflags
 var (
-	Version   = "v2.2.0"
+	Version   = "v2.3.0"
 	Commit    = "dev"
 	BuildTime = "local"
 )
@@ -55,6 +55,7 @@ func main() {
 	registry := modules.NewDefaultRegistry(st, pushClient)
 
 	sched := scheduler.NewWithRegistry(st, registry)
+	sched.SetHub(pushClient.Hub())
 	if err := sched.Start(); err != nil {
 		log.Fatalf("[bothub] failed to start scheduler: %v", err)
 	}

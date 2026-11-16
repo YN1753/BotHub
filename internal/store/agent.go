@@ -18,7 +18,10 @@ type AgentSession struct {
 type AgentMessage struct {
 	ID               int64  `json:"id"`
 	SessionID        string `json:"session_id"`
-	Role             string `json:"role"` // "user", "assistant", "tool"
+	BotID            string `json:"bot_id,omitempty"`
+	SenderBotID      string `json:"sender_bot_id,omitempty"`
+	MsgKind          string `json:"msg_kind,omitempty"` // "chat" | "routine"
+	Role             string `json:"role"`               // "user", "assistant", "tool"
 	Content          string `json:"content"`
 	ReasoningContent string `json:"reasoning_content,omitempty"`
 	ToolCalls        string `json:"tool_calls,omitempty"`   // JSON array of tool calls
@@ -28,7 +31,8 @@ type AgentMessage struct {
 
 type AgentMemory struct {
 	ID        int64  `json:"id"`
-	Category  string `json:"category"` // e.g. "preference", "infra", "habit", "general"
+	Scope     string `json:"scope,omitempty"` // "global" or "bot:<id>"
+	Category  string `json:"category"`        // e.g. "preference", "infra", "habit", "general"
 	FactKey   string `json:"fact_key"`
 	Content   string `json:"content"`
 	CreatedAt string `json:"created_at"`
@@ -106,13 +110,18 @@ func (s *Store) AppendAgentMessage(msg AgentMessage) (int64, error) {
 	if msg.CreatedAt == "" {
 		msg.CreatedAt = now
 	}
-	res, err := s.db.Exec(`INSERT INTO agent_messages (session_id, role, content, reasoning_content, tool_calls, tool_call_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		msg.SessionID, msg.Role, msg.Content, msg.ReasoningContent, msg.ToolCalls, msg.ToolCallID, msg.CreatedAt)
+	if msg.MsgKind == "" {
+		msg.MsgKind = "chat"
+	}
+	res, err := s.db.Exec(`INSERT INTO agent_messages (session_id, bot_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		msg.SessionID, msg.BotID, msg.SenderBotID, msg.MsgKind, msg.Role, msg.Content, msg.ReasoningContent, msg.ToolCalls, msg.ToolCallID, msg.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
-	_, _ = s.db.Exec(`UPDATE agent_sessions SET updated_at = ? WHERE id = ?`, now, msg.SessionID)
+	if msg.SessionID != "" {
+		_, _ = s.db.Exec(`UPDATE agent_sessions SET updated_at = ? WHERE id = ?`, now, msg.SessionID)
+	}
 	return res.LastInsertId()
 }
 
@@ -121,9 +130,9 @@ func (s *Store) ListAgentMessages(sessionID string, limit int) ([]AgentMessage, 
 		limit = 60
 	}
 	rows, err := s.db.Query(`
-		SELECT id, session_id, role, content, reasoning_content, tool_calls, tool_call_id, created_at
+		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, created_at
 		FROM (
-			SELECT id, session_id, role, content, reasoning_content, tool_calls, tool_call_id, created_at
+			SELECT id, session_id, bot_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, created_at
 			FROM agent_messages WHERE session_id = ? ORDER BY id DESC LIMIT ?
 		) sub ORDER BY id ASC`, sessionID, limit)
 	if err != nil {
@@ -134,15 +143,53 @@ func (s *Store) ListAgentMessages(sessionID string, limit int) ([]AgentMessage, 
 	var list []AgentMessage
 	for rows.Next() {
 		var m AgentMessage
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.CreatedAt); err == nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.BotID, &m.SenderBotID, &m.MsgKind, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.CreatedAt); err == nil {
 			list = append(list, m)
 		}
 	}
 	return list, rows.Err()
 }
 
+func (s *Store) ListBotMessages(botID string, limit int) ([]AgentMessage, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 80
+	}
+	rows, err := s.db.Query(`
+		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, created_at
+		FROM (
+			SELECT id, session_id, bot_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, created_at
+			FROM agent_messages WHERE bot_id = ? ORDER BY id DESC LIMIT ?
+		) sub ORDER BY id ASC`, botID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []AgentMessage
+	for rows.Next() {
+		var m AgentMessage
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.BotID, &m.SenderBotID, &m.MsgKind, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.CreatedAt); err == nil {
+			list = append(list, m)
+		}
+	}
+	return list, rows.Err()
+}
+
+func (s *Store) ClearBotMessages(botID string) error {
+	_, err := s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ?`, botID)
+	return err
+}
+
 func (s *Store) SaveAgentMemory(category, factKey, content string) error {
+	return s.SaveAgentMemoryWithScope("global", category, factKey, content)
+}
+
+func (s *Store) SaveAgentMemoryWithScope(scope, category, factKey, content string) error {
 	now := NowShanghai()
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		scope = "global"
+	}
 	category = strings.TrimSpace(category)
 	if category == "" {
 		category = "general"
@@ -153,13 +200,14 @@ func (s *Store) SaveAgentMemory(category, factKey, content string) error {
 		return errors.New("fact_key and content are required")
 	}
 
-	_, err := s.db.Exec(`INSERT INTO agent_memories (category, fact_key, content, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO agent_memories (scope, category, fact_key, content, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(fact_key) DO UPDATE SET
+			scope = excluded.scope,
 			category = excluded.category,
 			content = excluded.content,
 			updated_at = excluded.updated_at`,
-		category, factKey, content, now, now)
+		scope, category, factKey, content, now, now)
 	return err
 }
 
@@ -171,11 +219,11 @@ func (s *Store) ListAgentMemories(query string, limit int) ([]AgentMemory, error
 	var rows *sql.Rows
 	var err error
 	if q == "" {
-		rows, err = s.db.Query(`SELECT id, category, fact_key, content, created_at, updated_at FROM agent_memories ORDER BY updated_at DESC, id DESC LIMIT ?`, limit)
+		rows, err = s.db.Query(`SELECT id, COALESCE(scope,'global'), category, fact_key, content, created_at, updated_at FROM agent_memories ORDER BY updated_at DESC, id DESC LIMIT ?`, limit)
 	} else {
 		like := "%" + q + "%"
-		rows, err = s.db.Query(`SELECT id, category, fact_key, content, created_at, updated_at FROM agent_memories WHERE fact_key LIKE ? OR content LIKE ? OR category LIKE ? ORDER BY updated_at DESC, id DESC LIMIT ?`,
-			like, like, like, limit)
+		rows, err = s.db.Query(`SELECT id, COALESCE(scope,'global'), category, fact_key, content, created_at, updated_at FROM agent_memories WHERE fact_key LIKE ? OR content LIKE ? OR category LIKE ? OR scope LIKE ? ORDER BY updated_at DESC, id DESC LIMIT ?`,
+			like, like, like, like, limit)
 	}
 	if err != nil {
 		return nil, err
@@ -185,7 +233,7 @@ func (s *Store) ListAgentMemories(query string, limit int) ([]AgentMemory, error
 	var list []AgentMemory
 	for rows.Next() {
 		var mem AgentMemory
-		if err := rows.Scan(&mem.ID, &mem.Category, &mem.FactKey, &mem.Content, &mem.CreatedAt, &mem.UpdatedAt); err == nil {
+		if err := rows.Scan(&mem.ID, &mem.Scope, &mem.Category, &mem.FactKey, &mem.Content, &mem.CreatedAt, &mem.UpdatedAt); err == nil {
 			list = append(list, mem)
 		}
 	}
