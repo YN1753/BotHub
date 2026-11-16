@@ -25,7 +25,7 @@ async function handleSubmit() {
 <template>
   <main class="relative z-10 min-h-dvh flex items-center justify-center p-4">
     <section class="aero-glass w-full max-w-md rounded-2xl p-7 shadow-2xl">
-      <div class="inline-flex items-center px-2.5 py-1 rounded-full border border-sky-400/30 bg-sky-400/10 text-sky-300 font-mono text-[11px] tracking-wider mb-3">
+      <div class="inline-flex items-center px-2.5 py-1 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880] font-mono text-[11px] tracking-wider mb-3">
         VESPER BOTHUB
       </div>
       <h1 class="text-2xl font-semibold text-white mb-1">星穹 GrokBot 中枢</h1>
@@ -38,12 +38,12 @@ async function handleSubmit() {
           placeholder="输入访问密钥..."
           autocomplete="current-password"
           required
-          class="w-full rounded-xl border border-slate-400/20 bg-[#070c1a]/85 px-3.5 py-2.5 font-mono text-sm text-white placeholder-slate-500 focus:border-sky-400/60 focus:outline-none focus:ring-2 focus:ring-sky-400/30"
+          class="w-full min-h-[44px] rounded-xl border border-[#fff8ee]/12 bg-[#070a14]/85 px-3.5 py-2.5 font-mono text-sm text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none focus:ring-2 focus:ring-[#f2b880]/30"
         />
         <button
           type="submit"
           :disabled="loading"
-          class="w-full min-h-[44px] rounded-xl bg-sky-500 hover:bg-sky-400 active:scale-[0.99] text-slate-950 font-semibold text-sm transition cursor-pointer disabled:opacity-50"
+          class="w-full min-h-[44px] rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] active:scale-[0.99] text-[#070a13] font-semibold text-sm transition cursor-pointer disabled:opacity-50"
         >
           {{ loading ? '验证中...' : '解锁控制台' }}
         </button>

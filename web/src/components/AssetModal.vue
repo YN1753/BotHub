@@ -194,13 +194,14 @@ async function handleDelete() {
 <template>
   <div
     v-if="isOpen"
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm"
+    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-sm"
     @click.self="closeModal"
   >
-    <div class="aero-glass w-full max-w-2xl max-h-[88vh] rounded-2xl p-5 flex flex-col gap-4 shadow-2xl">
-      <div class="flex items-center justify-between">
+    <div class="aero-glass w-full sm:max-w-2xl max-h-[90dvh] sm:max-h-[88vh] rounded-t-2xl rounded-b-none sm:rounded-2xl p-4 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-4 shadow-2xl">
+      <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto -mt-1 shrink-0" />
+      <div class="flex items-center justify-between gap-2">
         <h3 class="text-lg font-semibold text-white">{{ isNew ? '登记新数字资产' : '编辑数字资产配置' }}</h3>
-        <button type="button" @click="closeModal" class="px-2.5 py-1 rounded-lg border border-slate-400/20 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">
+        <button type="button" @click="closeModal" class="min-h-[40px] sm:min-h-[32px] px-3 py-1 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">
           关闭
         </button>
       </div>
@@ -213,11 +214,11 @@ async function handleDelete() {
           </div>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>资产名称</span>
-            <input v-model="name" type="text" required placeholder="如：CloudCone LA" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 text-sm text-white" />
+            <input v-model="name" type="text" required placeholder="如：CloudCone LA" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
           </label>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>配置规格 / 描述</span>
-            <input v-model="spec" type="text" placeholder="如：2C 2G · 110G SSD" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 text-sm text-white" />
+            <input v-model="spec" type="text" placeholder="如：2C 2G · 110G SSD" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
           </label>
           <div class="flex flex-col gap-1 text-xs text-slate-300">
             <span>当前状态</span>
@@ -225,7 +226,7 @@ async function handleDelete() {
           </div>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>费用金额</span>
-            <input v-model="amount" type="text" placeholder="如：$21.66 或 148元" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 text-sm text-white" />
+            <input v-model="amount" type="text" placeholder="如：$21.66 或 148元" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
           </label>
           <div class="flex flex-col gap-1 text-xs text-slate-300">
             <span>付款周期</span>
@@ -261,7 +262,7 @@ async function handleDelete() {
           </div>
 
           <template v-if="currentTemplateFields.length > 0">
-            <div class="sm:col-span-2 pt-2 border-t border-white/10 text-xs font-semibold text-slate-200">
+            <div class="sm:col-span-2 pt-2 border-t border-[#fff8ee]/10 text-xs font-semibold text-slate-200">
               分类专有嗅探参数
             </div>
             <label
@@ -274,27 +275,27 @@ async function handleDelete() {
                 v-model="extraValues[f.key]"
                 type="text"
                 :placeholder="f.placeholder || ''"
-                class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white"
+                class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none"
               />
             </label>
           </template>
         </div>
 
-        <div class="flex items-center justify-between pt-3 border-t border-white/10">
+        <div class="flex items-center justify-between pt-3 border-t border-[#fff8ee]/10">
           <button
             v-if="!isNew"
             type="button"
             @click="handleDelete"
-            class="px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 cursor-pointer"
+            class="min-h-[40px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 cursor-pointer"
           >
             下架并删除
           </button>
           <span v-else />
           <div class="flex gap-2">
-            <button type="button" @click="closeModal" class="px-4 py-2 rounded-xl border border-slate-400/20 text-xs text-slate-300 cursor-pointer">
+            <button type="button" @click="closeModal" class="min-h-[40px] sm:min-h-[34px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">
               取消
             </button>
-            <button type="submit" :disabled="saving" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs cursor-pointer disabled:opacity-50">
+            <button type="submit" :disabled="saving" class="min-h-[40px] sm:min-h-[34px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50 transition">
               保存资产
             </button>
           </div>

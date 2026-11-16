@@ -10,7 +10,7 @@ export function renderSafeMarkdown(raw: string): string {
     const safeLang = escapeHtml(lang || 'text')
     const safeCode = escapeHtml(code.replace(/\n$/, ''))
     codeBlocks.push(
-      `<div class="md-code-wrap"><div class="md-code-head"><span class="font-mono">${safeLang}</span><button type="button" class="md-copy-code-btn px-2 py-0.5 rounded border border-slate-600/40 text-slate-300 hover:text-white text-[11px] cursor-pointer">复制代码</button></div><pre><code>${safeCode}</code></pre></div>`
+      `<div class="md-code-wrap"><div class="md-code-head"><span class="font-mono uppercase tracking-wider text-[10.5px] text-[#f2b880]/90">${safeLang}</span><button type="button" class="md-copy-code-btn min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/15 bg-[#0d1222]/80 text-slate-300 hover:border-[#f2b880]/50 hover:text-[#f2b880] text-[11px] transition cursor-pointer">复制代码</button></div><pre><code>${safeCode}</code></pre></div>`
     )
     return `\n@@CODEBLOCK_${idx}@@\n`
   })

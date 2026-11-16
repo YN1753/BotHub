@@ -16,11 +16,11 @@ const props = withDefaults(
 
 const palette = computed(() => {
   const map: Record<string, { ring: string; fill: string; eye: string }> = {
-    cyan: { ring: '#38bdf8', fill: 'rgba(56, 189, 248, 0.16)', eye: '#e0f2fe' },
-    indigo: { ring: '#818cf8', fill: 'rgba(129, 140, 248, 0.18)', eye: '#e0e7ff' },
+    cyan: { ring: '#f2b880', fill: 'rgba(242, 184, 128, 0.15)', eye: '#fbf3e8' },
+    indigo: { ring: '#a5b4fc', fill: 'rgba(165, 180, 252, 0.16)', eye: '#eef2ff' },
     amber: { ring: '#fbbf24', fill: 'rgba(251, 191, 36, 0.16)', eye: '#fef3c7' },
     emerald: { ring: '#34d399', fill: 'rgba(52, 211, 153, 0.16)', eye: '#d1fae5' },
-    violet: { ring: '#c084fc', fill: 'rgba(192, 132, 252, 0.16)', eye: '#f3e8ff' },
+    violet: { ring: '#d8b4fe', fill: 'rgba(216, 180, 254, 0.16)', eye: '#faf5ff' },
   }
   return map[props.avatarStyle] || map.cyan
 })

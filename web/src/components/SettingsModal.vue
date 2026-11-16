@@ -147,6 +147,12 @@ function handleExportBackup() {
   window.open('/api/system/export', '_blank')
 }
 
+async function handleLogout() {
+  if (!window.confirm('确定退出当前 Vesper BotHub 控制台会话吗？')) return
+  store.state.showSettingsModal = false
+  await store.logout()
+}
+
 async function handleImportBackup(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
@@ -172,22 +178,23 @@ async function handleImportBackup(e: Event) {
 <template>
   <div
     v-if="store.state.showSettingsModal"
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm"
+    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-sm"
     @click.self="store.state.showSettingsModal = false"
   >
-    <div class="aero-glass w-full max-w-2xl max-h-[88vh] rounded-2xl p-5 flex flex-col gap-4 shadow-2xl">
-      <div class="flex items-center justify-between">
+    <div class="aero-glass w-full sm:max-w-2xl max-h-[90dvh] sm:max-h-[88vh] rounded-t-2xl rounded-b-none sm:rounded-2xl p-4 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-4 shadow-2xl">
+      <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto -mt-1 shrink-0" />
+      <div class="flex items-center justify-between gap-2">
         <h3 class="text-lg font-semibold text-white">系统设置与全局凭据</h3>
         <button
           type="button"
           @click="store.state.showSettingsModal = false"
-          class="px-2.5 py-1 rounded-lg border border-slate-400/20 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+          class="min-h-[40px] sm:min-h-[32px] px-3 py-1 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
         >
           关闭
         </button>
       </div>
 
-      <div class="flex flex-wrap gap-1.5 border-b border-white/10 pb-2.5">
+      <div class="flex gap-1.5 border-b border-[#fff8ee]/10 pb-2.5 overflow-x-auto no-scrollbar">
         <button
           v-for="tab in [
             { id: 'ai', label: 'AI 大脑设置' },
@@ -199,10 +206,10 @@ async function handleImportBackup(e: Event) {
           type="button"
           @click="activeTab = tab.id as any"
           :class="[
-            'px-3 py-1.5 rounded-lg text-xs border transition cursor-pointer',
+            'min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg text-xs border transition cursor-pointer whitespace-nowrap shrink-0',
             activeTab === tab.id
-              ? 'border-sky-400/55 bg-sky-400/15 text-sky-300 font-medium'
-              : 'border-slate-400/20 text-slate-300 hover:bg-white/5'
+              ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880] font-medium'
+              : 'border-[#fff8ee]/14 text-slate-300 hover:bg-white/5'
           ]"
         >
           {{ tab.label }}
@@ -214,11 +221,11 @@ async function handleImportBackup(e: Event) {
         <form v-if="activeTab === 'ai'" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>DeepSeek API Key</span>
-            <input v-model="deepseekKey" type="password" placeholder="sk-..." class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white focus:border-sky-400/60 focus:outline-none" />
+            <input v-model="deepseekKey" type="password" placeholder="sk-..." class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
           </label>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>API 接口地址 (Base URL)</span>
-            <input v-model="deepseekBaseUrl" type="text" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white focus:border-sky-400/60 focus:outline-none" />
+            <input v-model="deepseekBaseUrl" type="text" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
           </label>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div class="flex flex-col gap-1 text-xs text-slate-300">
@@ -231,27 +238,27 @@ async function handleImportBackup(e: Event) {
             </div>
           </div>
 
-          <div class="pt-3 mt-1 border-t border-white/10">
+          <div class="pt-3 mt-1 border-t border-[#fff8ee]/10">
             <h4 class="text-sm font-semibold text-white">第二套轻量省钱模型配置 (可选)</h4>
             <p class="text-[11px] text-slate-400 mt-0.5">用于 read_url 摘要、后台记忆提炼及晨报/雷达批处理；留空自动回退主模型</p>
           </div>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>轻量模型 Base URL</span>
-            <input v-model="lightBaseUrl" type="text" placeholder="如 https://api.siliconflow.cn/v1" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white focus:border-sky-400/60 focus:outline-none" />
+            <input v-model="lightBaseUrl" type="text" placeholder="如 https://api.siliconflow.cn/v1" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
           </label>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label class="flex flex-col gap-1 text-xs text-slate-300">
               <span>轻量模型 API Key</span>
-              <input v-model="lightApiKey" type="password" placeholder="留空则回退主 Key" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white focus:border-sky-400/60 focus:outline-none" />
+              <input v-model="lightApiKey" type="password" placeholder="留空则回退主 Key" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
             </label>
             <label class="flex flex-col gap-1 text-xs text-slate-300">
               <span>轻量模型 ID</span>
-              <input v-model="lightModel" type="text" placeholder="如 deepseek-flash" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white focus:border-sky-400/60 focus:outline-none" />
+              <input v-model="lightModel" type="text" placeholder="如 deepseek-flash" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
             </label>
           </div>
 
           <div class="flex justify-end pt-2">
-            <button type="submit" :disabled="saving" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs cursor-pointer">
+            <button type="submit" :disabled="saving" class="min-h-[40px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer transition">
               保存 AI 大脑设置
             </button>
           </div>
@@ -267,34 +274,34 @@ async function handleImportBackup(e: Event) {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label class="flex flex-col gap-1 text-xs text-slate-300">
                 <span>企业微信 CorpID</span>
-                <input v-model="wecomCorpId" type="text" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white" />
+                <input v-model="wecomCorpId" type="text" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
               </label>
               <label class="flex flex-col gap-1 text-xs text-slate-300">
                 <span>应用 AgentID</span>
-                <input v-model="wecomAgentId" type="text" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white" />
+                <input v-model="wecomAgentId" type="text" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
               </label>
               <label class="flex flex-col gap-1 text-xs text-slate-300">
                 <span>应用 Secret</span>
-                <input v-model="wecomSecret" type="password" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white" />
+                <input v-model="wecomSecret" type="password" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
               </label>
               <label class="flex flex-col gap-1 text-xs text-slate-300">
                 <span>接收成员 (ToUser)</span>
-                <input v-model="wecomToUser" type="text" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white" />
+                <input v-model="wecomToUser" type="text" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
               </label>
             </div>
           </template>
           <template v-else>
             <label class="flex flex-col gap-1 text-xs text-slate-300">
               <span>PushPlus Token</span>
-              <input v-model="pushplusToken" type="password" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white" />
+              <input v-model="pushplusToken" type="password" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
             </label>
           </template>
 
           <div class="flex items-center justify-end gap-2 pt-2">
-            <button type="button" @click="handleTestPush" class="px-3.5 py-2 rounded-xl border border-slate-400/25 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
+            <button type="button" @click="handleTestPush" class="min-h-[40px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
               发送测试消息
             </button>
-            <button type="submit" :disabled="saving" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs cursor-pointer">
+            <button type="submit" :disabled="saving" class="min-h-[40px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer transition">
               保存通道设置
             </button>
           </div>
@@ -304,26 +311,26 @@ async function handleImportBackup(e: Event) {
         <form v-if="activeTab === 'integrations'" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>哪吒监控面板地址</span>
-            <input v-model="nezhaUrl" type="text" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white" />
+            <input v-model="nezhaUrl" type="text" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
           </label>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>哪吒 SQLite 本机路径 (只读直连)</span>
-            <input v-model="nezhaDbPath" type="text" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white" />
+            <input v-model="nezhaDbPath" type="text" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
           </label>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>Android 原生客户端令牌 (App Bearer Token)</span>
-            <input v-model="appBearerToken" type="password" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white" />
+            <input v-model="appBearerToken" type="password" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
           </label>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>Cloudflare API Token</span>
-            <input v-model="cfApiToken" type="password" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white" />
+            <input v-model="cfApiToken" type="password" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
           </label>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>哔哩哔哩 SESSDATA</span>
-            <input v-model="biliSessdata" type="password" class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white" />
+            <input v-model="biliSessdata" type="password" class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
           </label>
           <div class="flex justify-end pt-2">
-            <button type="submit" :disabled="saving" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs cursor-pointer">
+            <button type="submit" :disabled="saving" class="min-h-[40px] sm:min-h-[36px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer transition">
               保存巡检凭据
             </button>
           </div>
@@ -333,28 +340,42 @@ async function handleImportBackup(e: Event) {
         <div v-if="activeTab === 'security'" class="flex flex-col gap-5">
           <form @submit.prevent="handleUpdatePassword" class="flex flex-col gap-2">
             <h4 class="text-sm font-semibold text-white">修改控制台访问密钥</h4>
-            <div class="flex gap-2">
-              <input v-model="newPassword" type="password" minlength="6" placeholder="输入新密钥 (至少6位)" required class="flex-1 rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 font-mono text-sm text-white" />
-              <button type="submit" class="px-4 py-2 rounded-xl border border-slate-400/25 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
+            <div class="flex flex-col sm:flex-row gap-2">
+              <input v-model="newPassword" type="password" minlength="6" placeholder="输入新密钥 (至少6位)" required class="flex-1 min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 focus:outline-none" />
+              <button type="submit" class="min-h-[40px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
                 更新密钥
               </button>
             </div>
           </form>
 
-          <div class="pt-4 border-t border-white/10 flex flex-col gap-2.5">
+          <div class="pt-4 border-t border-[#fff8ee]/10 flex flex-col gap-2.5">
             <h4 class="text-sm font-semibold text-white">系统数据备份与令牌轮换</h4>
             <div class="flex flex-wrap gap-2.5">
-              <button type="button" @click="handleExportBackup" class="px-3.5 py-2 rounded-xl border border-slate-400/25 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
+              <button type="button" @click="handleExportBackup" class="min-h-[40px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer">
                 导出配置备份 (JSON)
               </button>
-              <label class="px-3.5 py-2 rounded-xl border border-slate-400/25 text-xs text-slate-200 hover:bg-white/5 cursor-pointer inline-flex items-center">
+              <label class="min-h-[40px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer inline-flex items-center">
                 导入恢复备份
                 <input type="file" accept=".json" class="hidden" @change="handleImportBackup" />
               </label>
-              <button type="button" @click="handleRotateToken" class="px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer">
+              <button type="button" @click="handleRotateToken" class="min-h-[40px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer">
                 重置移动端 App Token
               </button>
             </div>
+          </div>
+
+          <div class="pt-4 border-t border-[#fff8ee]/10 flex items-center justify-between gap-3">
+            <div>
+              <h4 class="text-sm font-semibold text-white">当前会话安全</h4>
+              <p class="text-[11px] text-slate-400">退出后将清除本机控制台登录 Cookie</p>
+            </div>
+            <button
+              type="button"
+              @click="handleLogout"
+              class="min-h-[40px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-rose-400/45 bg-rose-500/15 text-xs font-medium text-rose-300 hover:bg-rose-500/25 cursor-pointer shrink-0 transition"
+            >
+              退出登录
+            </button>
           </div>
         </div>
       </div>

@@ -8,11 +8,12 @@ const store = useAppStore()
 <template>
   <div
     v-if="store.state.showLogsModal"
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm"
+    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-sm"
     @click.self="store.state.showLogsModal = false"
   >
-    <div class="aero-glass w-full max-w-2xl max-h-[85vh] rounded-2xl p-5 flex flex-col gap-4 shadow-2xl">
-      <div class="flex items-center justify-between">
+    <div class="aero-glass w-full sm:max-w-2xl max-h-[90dvh] sm:max-h-[85vh] rounded-t-2xl rounded-b-none sm:rounded-2xl p-4 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-4 shadow-2xl">
+      <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto -mt-1 shrink-0" />
+      <div class="flex items-center justify-between gap-2">
         <div>
           <h3 class="text-lg font-semibold text-white">外部通道推送历史流水</h3>
           <p class="text-xs text-slate-400">企业微信与 PushPlus 投递记录 (实时审计)</p>
@@ -20,7 +21,7 @@ const store = useAppStore()
         <button
           type="button"
           @click="store.state.showLogsModal = false"
-          class="px-2.5 py-1 rounded-lg border border-slate-400/20 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+          class="min-h-[40px] sm:min-h-[32px] px-3 py-1 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer shrink-0"
         >
           关闭
         </button>
@@ -33,7 +34,7 @@ const store = useAppStore()
         <article
           v-for="log in store.state.pushLogs"
           :key="log.id"
-          class="rounded-xl border border-slate-400/15 bg-[#080d1c]/80 p-3.5"
+          class="rounded-xl border border-[#fff8ee]/11 bg-[#070a16]/80 p-3.5"
         >
           <div class="flex items-center justify-between gap-2 flex-wrap">
             <div class="flex items-center gap-2">

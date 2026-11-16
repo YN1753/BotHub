@@ -49,8 +49,8 @@ onBeforeUnmount(() => document.removeEventListener('click', handleOutside))
       @click="open = !open"
       :class="[
         'w-full flex items-center justify-between gap-2 rounded-xl border transition-colors text-left cursor-pointer',
-        'bg-[#0a1020]/80 border-slate-400/20 hover:border-sky-400/45 text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60',
-        compact ? 'px-3 py-1.5 text-xs min-h-[34px]' : 'px-3.5 py-2 text-sm min-h-[40px]'
+        'bg-[#080c19]/85 border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f2b880]/50',
+        compact ? 'px-3 py-1.5 text-xs min-h-[40px] sm:min-h-[34px]' : 'px-3.5 py-2 text-sm min-h-[42px]'
       ]"
     >
       <span class="truncate">{{ currentLabel }}</span>
@@ -69,7 +69,7 @@ onBeforeUnmount(() => document.removeEventListener('click', handleOutside))
 
     <div
       v-if="open"
-      class="absolute z-50 mt-1.5 w-full min-w-[170px] max-h-60 overflow-y-auto rounded-xl border border-slate-400/25 bg-[#0a1020]/95 backdrop-blur-xl shadow-2xl p-1"
+      class="absolute z-50 mt-1.5 w-full min-w-[170px] max-h-60 overflow-y-auto rounded-xl border border-[#fff8ee]/15 bg-[#090d1b]/95 backdrop-blur-xl shadow-2xl p-1"
     >
       <button
         v-for="opt in options"
@@ -77,9 +77,9 @@ onBeforeUnmount(() => document.removeEventListener('click', handleOutside))
         type="button"
         @click="selectOption(opt.value)"
         :class="[
-          'w-full text-left px-3 py-2 rounded-lg text-xs sm:text-sm transition-colors cursor-pointer',
+          'w-full text-left px-3 min-h-[40px] sm:min-h-[34px] rounded-lg text-xs sm:text-sm transition-colors cursor-pointer flex items-center',
           opt.value === modelValue
-            ? 'bg-sky-500/20 text-sky-300 font-medium'
+            ? 'bg-[#f2b880]/20 text-[#f2b880] font-medium'
             : 'text-slate-300 hover:bg-white/5 hover:text-white'
         ]"
       >

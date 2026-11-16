@@ -66,34 +66,35 @@ async function toggleDesktopNotify() {
 <template>
   <div
     v-if="store.state.showInboxModal"
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm"
+    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-sm"
     @click.self="store.state.showInboxModal = false"
   >
-    <div class="aero-glass w-full max-w-3xl max-h-[85vh] rounded-2xl p-5 flex flex-col gap-4 shadow-2xl">
+    <div class="aero-glass w-full sm:max-w-3xl max-h-[90dvh] sm:max-h-[85vh] rounded-t-2xl rounded-b-none sm:rounded-2xl p-4 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-4 shadow-2xl">
+      <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto -mt-1 shrink-0" />
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 class="text-lg font-semibold text-white">原生情报收件箱 (Inbox)</h3>
           <p class="text-xs text-slate-400">实时接收 AI 晨报、前沿雷达、资产到期提醒与哪吒探针告警</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             @click="toggleDesktopNotify"
-            class="px-2.5 py-1.5 rounded-lg border border-slate-400/20 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+            class="min-h-[40px] sm:min-h-[32px] px-2.5 py-1.5 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
           >
             桌面弹窗: {{ desktopNotify ? '开' : '关' }}
           </button>
           <button
             type="button"
             @click="markAllRead"
-            class="px-2.5 py-1.5 rounded-lg border border-slate-400/20 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+            class="min-h-[40px] sm:min-h-[32px] px-2.5 py-1.5 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
           >
             全部已读
           </button>
           <button
             type="button"
             @click="store.state.showInboxModal = false"
-            class="px-2.5 py-1.5 rounded-lg border border-slate-400/20 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+            class="min-h-[40px] sm:min-h-[32px] px-2.5 py-1.5 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
           >
             关闭
           </button>
@@ -113,10 +114,10 @@ async function toggleDesktopNotify() {
           type="button"
           @click="activeFilter = f.id as any"
           :class="[
-            'px-3 py-1 rounded-full text-xs border transition cursor-pointer',
+            'min-h-[40px] sm:min-h-[32px] px-3 py-1 rounded-full text-xs border transition cursor-pointer',
             activeFilter === f.id
-              ? 'border-sky-400/55 bg-sky-400/15 text-sky-300'
-              : 'border-slate-400/20 text-slate-300 hover:bg-white/5'
+              ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880] font-medium'
+              : 'border-[#fff8ee]/14 text-slate-300 hover:bg-white/5'
           ]"
         >
           {{ f.label }}
@@ -131,24 +132,24 @@ async function toggleDesktopNotify() {
           v-for="n in filtered"
           :key="n.id"
           :class="[
-            'rounded-xl border bg-[#080d1c]/80 p-3.5',
-            !n.read_at ? 'border-l-4 border-l-amber-400 border-slate-400/20' : 'border-slate-400/15'
+            'rounded-xl border bg-[#070a16]/80 p-3.5',
+            !n.read_at ? 'border-l-4 border-l-[#f2b880] border-[#fff8ee]/14' : 'border-[#fff8ee]/11'
           ]"
         >
           <div class="flex items-start justify-between gap-2 flex-wrap">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-sky-400/30 bg-sky-400/10 text-sky-300">
+              <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880]">
                 {{ n.source }}
               </span>
               <strong class="text-sm text-white">{{ n.title }}</strong>
-              <span v-if="!n.read_at" class="font-mono text-[11px] text-amber-300">[未读]</span>
+              <span v-if="!n.read_at" class="font-mono text-[11px] text-[#f2b880]">[未读]</span>
             </div>
             <span class="font-mono text-[11px] text-slate-400">{{ formatTime(n.created_at) }}</span>
           </div>
           <p class="text-xs text-slate-400 mt-1">{{ n.summary }}</p>
           <details class="mt-2" @toggle="(e: any) => e.target?.open && markRead(n.id)">
-            <summary class="cursor-pointer font-mono text-[11px] text-sky-400 select-none">展开全文</summary>
-            <div class="mt-2 pt-2 border-t border-white/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
+            <summary class="cursor-pointer font-mono text-[11px] text-[#f2b880] select-none">展开全文</summary>
+            <div class="mt-2 pt-2 border-t border-[#fff8ee]/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
           </details>
         </article>
       </div>

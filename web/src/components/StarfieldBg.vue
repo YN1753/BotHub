@@ -54,7 +54,7 @@ onMounted(() => {
       if (s.y > h) s.y = 0
       ctx.beginPath()
       ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
-      ctx.fillStyle = `rgba(210, 225, 255, ${s.a})`
+      ctx.fillStyle = `rgba(255, 238, 214, ${s.a})`
       ctx.fill()
     }
     rafId = window.requestAnimationFrame(draw)

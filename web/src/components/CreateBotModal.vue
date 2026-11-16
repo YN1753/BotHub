@@ -13,11 +13,11 @@ const systemPrompt = ref('')
 const saving = ref(false)
 
 const AVATAR_OPTIONS = [
-  { value: 'cyan', label: '天穹青 (Cyan)' },
-  { value: 'indigo', label: '暮光靛 (Indigo)' },
-  { value: 'amber', label: '琥珀金 (Amber)' },
-  { value: 'emerald', label: '翡翠绿 (Emerald)' },
-  { value: 'violet', label: '星云紫 (Violet)' },
+  { value: 'cyan', label: '暮光暖金 (Vesper Gold)' },
+  { value: 'indigo', label: '深空靛蓝 (Deep Indigo)' },
+  { value: 'amber', label: '炽焰琥珀 (Warm Amber)' },
+  { value: 'emerald', label: '星野翠绿 (Emerald)' },
+  { value: 'violet', label: '星云暮紫 (Nebula Violet)' },
 ]
 
 const MODEL_OPTIONS = [
@@ -58,22 +58,23 @@ async function handleSubmit() {
 <template>
   <div
     v-if="store.state.showCreateBotModal"
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm"
+    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-sm"
     @click.self="store.state.showCreateBotModal = false"
   >
-    <div class="aero-glass w-full max-w-lg rounded-2xl p-6 shadow-2xl">
-      <div class="flex items-center justify-between mb-4">
+    <div class="aero-glass w-full sm:max-w-lg max-h-[90dvh] sm:max-h-[86vh] rounded-t-2xl rounded-b-none sm:rounded-2xl p-4 sm:p-6 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-4 shadow-2xl">
+      <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto -mt-1 shrink-0" />
+      <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold text-white">招募全新专属 Bot 成员</h3>
         <button
           type="button"
           @click="store.state.showCreateBotModal = false"
-          class="px-2.5 py-1 rounded-lg border border-slate-400/20 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+          class="min-h-[40px] sm:min-h-[32px] px-3 py-1 rounded-lg border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
         >
           关闭
         </button>
       </div>
 
-      <form @submit.prevent="handleSubmit" class="flex flex-col gap-3.5">
+      <form @submit.prevent="handleSubmit" class="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3.5">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <label class="flex flex-col gap-1.5 text-xs text-slate-300">
             <span>Bot 名称</span>
@@ -82,7 +83,7 @@ async function handleSubmit() {
               type="text"
               placeholder="如：财务核对专员"
               required
-              class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 text-sm text-white focus:border-sky-400/60 focus:outline-none"
+              class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none"
             />
           </label>
           <label class="flex flex-col gap-1.5 text-xs text-slate-300">
@@ -92,7 +93,7 @@ async function handleSubmit() {
               type="text"
               placeholder="如：云账单追踪与续费评估"
               required
-              class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 text-sm text-white focus:border-sky-400/60 focus:outline-none"
+              class="min-h-[40px] rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none"
             />
           </label>
           <div class="flex flex-col gap-1.5 text-xs text-slate-300">
@@ -111,7 +112,7 @@ async function handleSubmit() {
             v-model="systemPrompt"
             rows="3"
             placeholder="描述它的工作风格、输出格式与关注重点..."
-            class="rounded-xl border border-slate-400/20 bg-[#080d1c] px-3 py-2 text-sm text-white focus:border-sky-400/60 focus:outline-none"
+            class="rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 focus:outline-none"
           />
         </label>
 
@@ -119,14 +120,14 @@ async function handleSubmit() {
           <button
             type="button"
             @click="store.state.showCreateBotModal = false"
-            class="px-4 py-2 rounded-xl border border-slate-400/20 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+            class="min-h-[40px] sm:min-h-[34px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
           >
             取消
           </button>
           <button
             type="submit"
             :disabled="saving"
-            class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs cursor-pointer disabled:opacity-50"
+            class="min-h-[40px] sm:min-h-[34px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50 transition"
           >
             {{ saving ? '创建中...' : '创建并激活 Bot' }}
           </button>

@@ -16,6 +16,12 @@ import TaskModal from './components/TaskModal.vue'
 
 const store = useAppStore()
 const mobileSidebarOpen = ref(false)
+const desktopCollapsed = ref(localStorage.getItem('bothub_sidebar_collapsed') === '1')
+
+function toggleDesktopSidebar() {
+  desktopCollapsed.value = !desktopCollapsed.value
+  localStorage.setItem('bothub_sidebar_collapsed', desktopCollapsed.value ? '1' : '0')
+}
 
 onMounted(() => {
   store.checkAuth()
@@ -42,16 +48,25 @@ onMounted(() => {
       v-else
       class="relative z-10 h-dvh w-full flex overflow-hidden bg-[#050811]/70 backdrop-blur-lg"
     >
-      <Sidebar :mobile-open="mobileSidebarOpen" @close-mobile="mobileSidebarOpen = false" />
+      <Sidebar
+        :mobile-open="mobileSidebarOpen"
+        :desktop-collapsed="desktopCollapsed"
+        @close-mobile="mobileSidebarOpen = false"
+        @toggle-desktop-collapse="toggleDesktopSidebar"
+      />
 
       <main class="flex-1 min-w-0 min-h-0 flex flex-col">
         <BotWorkspace
           v-if="store.state.workspace === 'bots'"
+          :desktop-collapsed="desktopCollapsed"
           @open-mobile-menu="mobileSidebarOpen = true"
+          @toggle-desktop-sidebar="toggleDesktopSidebar"
         />
         <OpsWorkspace
           v-else
+          :desktop-collapsed="desktopCollapsed"
           @open-mobile-menu="mobileSidebarOpen = true"
+          @toggle-desktop-sidebar="toggleDesktopSidebar"
         />
       </main>
     </div>
@@ -76,7 +91,7 @@ onMounted(() => {
     >
       <div
         v-if="store.state.toastMessage"
-        class="fixed bottom-5 right-5 z-[60] max-w-sm rounded-xl border border-sky-400/40 bg-[#0a1122]/95 px-4 py-2.5 text-xs text-slate-100 shadow-2xl backdrop-blur-xl"
+        class="fixed bottom-5 right-5 z-[60] max-w-sm rounded-xl border border-[#f2b880]/40 bg-[#090d1a]/95 px-4 py-2.5 text-xs text-slate-100 shadow-2xl backdrop-blur-xl"
       >
         {{ store.state.toastMessage }}
       </div>
