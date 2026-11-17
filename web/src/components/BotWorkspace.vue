@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, useId, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore, mapServerMessages, type ChatMessageUI } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { botStateLabel, describeCron, formatDurationMs, formatTime, formatTimelineDivider, groupModeLabel } from '../utils/format'
+import { botStateLabel, describeCron, formatDurationMs, formatTime, formatTimelineDivider, groupModeLabel, triggerBlobDownload } from '../utils/format'
 import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
 import { applySiblingStaggerFallback, isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
 import { groupAvailableTools, formatToolDisplayName, shortToolLabel } from '../utils/toolMeta'
@@ -1554,12 +1554,7 @@ function exportTimelineMarkdown() {
     if (m.content) parts.push(`\n${m.content}\n`)
   }
   const blob = new Blob([parts.join('')], { type: 'text/markdown;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `bothub_${bot.value?.id || 'bot'}_${Date.now()}.md`
-  a.click()
-  URL.revokeObjectURL(url)
+  triggerBlobDownload(blob, `bothub_${bot.value?.id || 'bot'}_${Date.now()}.md`)
   store.notify('已导出为结构化 Markdown')
 }
 

@@ -23,8 +23,8 @@ func TestSPAFallback404AndCacheHeadersAndCSP(t *testing.T) {
 
 	handler := withSecurityHeaders(s.spaFileServer())
 
-	// 1. Missing assets & extensions must return 404 instead of 200 HTML
-	for _, p := range []string{"/assets/nonexist.js", "/favicon.ico", "/apple-touch-icon.png", "/robots.txt"} {
+	// 1. Missing assets, directory paths (/assets, /assets/), & extensions must return 404 instead of 200 HTML/dir listing
+	for _, p := range []string{"/assets/", "/assets", "/assets/nonexist.js", "/favicon.ico", "/apple-touch-icon.png", "/robots.txt"} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, p, nil)
 		handler.ServeHTTP(rec, req)
@@ -42,8 +42,9 @@ func TestSPAFallback404AndCacheHeadersAndCSP(t *testing.T) {
 	if cc := recSpa.Header().Get("Cache-Control"); cc != "no-cache" {
 		t.Fatalf("expected no-cache for SPA HTML, got %q", cc)
 	}
-	if csp := recSpa.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'self'") {
-		t.Fatalf("expected CSP header, got %q", csp)
+	csp := recSpa.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "default-src 'self'") || !strings.Contains(csp, "object-src 'none'") || !strings.Contains(csp, "form-action 'self'") {
+		t.Fatalf("expected tightened CSP header, got %q", csp)
 	}
 	if pp := recSpa.Header().Get("Permissions-Policy"); !strings.Contains(pp, "camera=()") {
 		t.Fatalf("expected Permissions-Policy header, got %q", pp)

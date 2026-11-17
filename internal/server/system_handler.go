@@ -192,6 +192,7 @@ type BackupData struct {
 }
 
 func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(5 * time.Minute))
 	assets, err := s.store.ListAssets()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "导出资产失败: "+err.Error())
@@ -466,19 +467,28 @@ func (s *Server) spaFileServer() http.Handler {
 			cleanPath = "index.html"
 		}
 		if f, err := s.staticFS.Open(cleanPath); err == nil {
+			fi, statErr := f.Stat()
 			_ = f.Close()
-			if strings.HasSuffix(cleanPath, ".html") {
-				w.Header().Set("Cache-Control", "no-cache")
-			} else if strings.HasPrefix(cleanPath, "assets/") {
-				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			if statErr == nil && fi.IsDir() {
+				// Prevent directory listing on /assets/ or arbitrary folders
+				if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/assets") {
+					http.NotFound(w, r)
+					return
+				}
 			} else {
-				w.Header().Set("Cache-Control", "public, max-age=86400")
+				if strings.HasSuffix(cleanPath, ".html") {
+					w.Header().Set("Cache-Control", "no-cache")
+				} else if strings.HasPrefix(cleanPath, "assets/") {
+					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				} else {
+					w.Header().Set("Cache-Control", "public, max-age=86400")
+				}
+				fileServer.ServeHTTP(w, r)
+				return
 			}
-			fileServer.ServeHTTP(w, r)
-			return
 		}
 		// Never masquerade missing API routes, hashed asset bundles, or non-HTML asset files as 200 index.html
-		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/assets/") {
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/assets") {
 			http.NotFound(w, r)
 			return
 		}

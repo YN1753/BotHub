@@ -9,7 +9,7 @@ const passwordId = useId()
 const hostLabel = typeof window !== 'undefined' && window.location.host ? window.location.host : 'Vesper BotHub'
 const password = ref('')
 const showPassword = ref(false)
-const rememberDevice = ref(true)
+const rememberDevice = ref(false)
 const capsLockOn = ref(false)
 const loading = ref(false)
 const errorMsg = ref('')

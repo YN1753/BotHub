@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
-import { formatTime } from '../utils/format'
+import { formatTime, triggerBlobDownload } from '../utils/format'
 import type { TodoItem, WorkNote, WorkspaceBriefing } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
@@ -412,12 +412,7 @@ async function copyNoteMarkdown(n: WorkNote) {
 
 function downloadNoteMarkdown(n: WorkNote) {
   const blob = new Blob([`# ${n.title}\n\n${n.content}\n`], { type: 'text/markdown;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${n.title.replace(/[^\w\u4e00-\u9fa5-]+/g, '_')}.md`
-  a.click()
-  URL.revokeObjectURL(url)
+  triggerBlobDownload(blob, `${n.title.replace(/[^\w\u4e00-\u9fa5-]+/g, '_')}.md`)
 }
 
 async function refineNoteWithBot(n: WorkNote) {

@@ -59,6 +59,19 @@ export function shortVersion(ver: string): string {
   return String(ver || '').replace(/-[0-9a-f]{12,40}$/i, '')
 }
 
+// Append anchor to document.body & defer revokeObjectURL so Safari downloads trigger reliably
+export function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 export function describeCron(expr?: string): string {
   const trimmed = String(expr || '').trim()
   if (!trimmed) return '未指定调度策略'

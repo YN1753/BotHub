@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { describeCron, formatDateOnly } from '../utils/format'
+import { describeCron, formatDateOnly, triggerBlobDownload } from '../utils/format'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import type { Asset } from '../types/bothub'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -204,12 +204,7 @@ function exportAssetsCsv() {
     .map((cols) => cols.map((c) => `"${String(c ?? '').replaceAll('"', '""')}"`).join(','))
     .join('\n')
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `bothub_assets_${Date.now()}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+  triggerBlobDownload(blob, `bothub_assets_${Date.now()}.csv`)
   store.notify(`已导出 ${filteredAssets.value.length} 项数字资产`)
 }
 

@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { formatTime } from '../utils/format'
+import { formatTime, triggerBlobDownload } from '../utils/format'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import type { AgentMemory } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
@@ -273,12 +273,7 @@ function exportVisibleMemoriesMarkdown() {
     )
   }
   const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/markdown;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `bothub_memories_${Date.now()}.md`
-  a.click()
-  URL.revokeObjectURL(url)
+  triggerBlobDownload(blob, `bothub_memories_${Date.now()}.md`)
   store.notify('已导出记忆清单 Markdown')
 }
 

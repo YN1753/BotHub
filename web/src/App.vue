@@ -1,24 +1,74 @@
 <script setup lang="ts">
-import { ref, reactive, watch, defineAsyncComponent, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, watch, defineAsyncComponent, h, onMounted, onBeforeUnmount, type AsyncComponentLoader, type Component } from 'vue'
 import { useAppStore } from './stores/useAppStore'
 import StarfieldBg from './components/StarfieldBg.vue'
 import LoginGate from './components/LoginGate.vue'
 import Sidebar from './components/Sidebar.vue'
 import BotWorkspace from './components/BotWorkspace.vue'
 
+const AsyncLoadingFallback: Component = {
+  render: () =>
+    h(
+      'div',
+      {
+        class:
+          'fixed bottom-5 right-5 z-[70] inline-flex items-center gap-2 rounded-full border border-[#f2b880]/40 bg-[#0a0f1f]/95 px-3.5 py-2 text-xs text-[#f7cba0] shadow-2xl backdrop-blur-xl',
+        role: 'status',
+      },
+      [
+        h('span', { class: 'w-2 h-2 rounded-full bg-[#f2b880] animate-pulse' }),
+        h('span', '正在加载模块...'),
+      ]
+    ),
+}
+
+const AsyncErrorFallback: Component = {
+  render: () =>
+    h(
+      'div',
+      {
+        class:
+          'fixed bottom-5 right-5 z-[70] inline-flex items-center gap-2.5 rounded-xl border border-rose-400/50 bg-[#120912]/95 px-3.5 py-2 text-xs text-rose-200 shadow-2xl backdrop-blur-xl',
+        role: 'alert',
+      },
+      [
+        h('span', '模块加载失败，请刷新重试'),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'px-2 py-0.5 rounded bg-rose-500/25 border border-rose-400/45 text-rose-100 cursor-pointer',
+            onClick: () => window.location.reload(),
+          },
+          '刷新页面'
+        ),
+      ]
+    ),
+}
+
+function lazyChunk(loader: AsyncComponentLoader) {
+  return defineAsyncComponent({
+    loader,
+    delay: 180,
+    timeout: 15_000,
+    loadingComponent: AsyncLoadingFallback,
+    errorComponent: AsyncErrorFallback,
+  })
+}
+
 // On-demand route/modal code-splitting to shrink cold-boot bundle substantially
-const OpsWorkspace = defineAsyncComponent(() => import('./components/OpsWorkspace.vue'))
-const CreateBotModal = defineAsyncComponent(() => import('./components/CreateBotModal.vue'))
-const InboxModal = defineAsyncComponent(() => import('./components/InboxModal.vue'))
-const WorkhubModal = defineAsyncComponent(() => import('./components/WorkhubModal.vue'))
-const MemoriesModal = defineAsyncComponent(() => import('./components/MemoriesModal.vue'))
-const SkillsModal = defineAsyncComponent(() => import('./components/SkillsModal.vue'))
-const LogsModal = defineAsyncComponent(() => import('./components/LogsModal.vue'))
-const SettingsModal = defineAsyncComponent(() => import('./components/SettingsModal.vue'))
-const AssetModal = defineAsyncComponent(() => import('./components/AssetModal.vue'))
-const TaskModal = defineAsyncComponent(() => import('./components/TaskModal.vue'))
-const QuickSwitcherModal = defineAsyncComponent(() => import('./components/QuickSwitcherModal.vue'))
-const ForwardModal = defineAsyncComponent(() => import('./components/ForwardModal.vue'))
+const OpsWorkspace = lazyChunk(() => import('./components/OpsWorkspace.vue'))
+const CreateBotModal = lazyChunk(() => import('./components/CreateBotModal.vue'))
+const InboxModal = lazyChunk(() => import('./components/InboxModal.vue'))
+const WorkhubModal = lazyChunk(() => import('./components/WorkhubModal.vue'))
+const MemoriesModal = lazyChunk(() => import('./components/MemoriesModal.vue'))
+const SkillsModal = lazyChunk(() => import('./components/SkillsModal.vue'))
+const LogsModal = lazyChunk(() => import('./components/LogsModal.vue'))
+const SettingsModal = lazyChunk(() => import('./components/SettingsModal.vue'))
+const AssetModal = lazyChunk(() => import('./components/AssetModal.vue'))
+const TaskModal = lazyChunk(() => import('./components/TaskModal.vue'))
+const QuickSwitcherModal = lazyChunk(() => import('./components/QuickSwitcherModal.vue'))
+const ForwardModal = lazyChunk(() => import('./components/ForwardModal.vue'))
 
 const store = useAppStore()
 const mobileSidebarOpen = ref(false)

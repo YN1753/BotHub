@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
-import { formatTime } from '../utils/format'
+import { formatTime, triggerBlobDownload } from '../utils/format'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -45,12 +45,7 @@ function exportLogsJson() {
     return
   }
   const blob = new Blob([JSON.stringify(filteredLogs.value, null, 2)], { type: 'application/json;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `bothub_push_logs_${Date.now()}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+  triggerBlobDownload(blob, `bothub_push_logs_${Date.now()}.json`)
   store.notify(`已导出 ${filteredLogs.value.length} 条流水记录`)
 }
 

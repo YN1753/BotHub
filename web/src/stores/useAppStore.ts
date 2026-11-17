@@ -58,7 +58,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.23.0',
+  version: 'v2.24.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -334,10 +334,14 @@ export function useAppStore() {
   }
 
   let inflightDashboard: Promise<void> | null = null
+  let pendingDashboard = false
+  let pendingLoadInitial = false
   let dashboardRefreshTimer: number | null = null
 
-  async function loadDashboard(loadInitialBot = false) {
-    if (inflightDashboard && !loadInitialBot) {
+  async function loadDashboard(loadInitialBot = false): Promise<void> {
+    if (inflightDashboard) {
+      pendingDashboard = true
+      if (loadInitialBot) pendingLoadInitial = true
       return inflightDashboard
     }
     const run = (async () => {
@@ -382,6 +386,12 @@ export function useAppStore() {
         notify(err.message || '加载中枢数据失败')
       } finally {
         inflightDashboard = null
+        if (pendingDashboard) {
+          const nextInit = pendingLoadInitial
+          pendingDashboard = false
+          pendingLoadInitial = false
+          void loadDashboard(nextInit)
+        }
       }
     })()
     inflightDashboard = run
