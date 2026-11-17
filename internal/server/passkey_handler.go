@@ -169,7 +169,7 @@ func (s *Server) loadWebAuthnUser() (*bothubWebAuthnUser, string, error) {
 	return &bothubWebAuthnUser{
 		id:          rawID,
 		name:        "admin",
-		displayName: "Vesper BotHub 主理人",
+		displayName: "BotHub 主理人",
 		creds:       creds,
 	}, b64ID, nil
 }
@@ -251,7 +251,7 @@ func (s *Server) newWebAuthnInstance(rpID, origin string) (*webauthn.WebAuthn, e
 	}
 	cfg := &webauthn.Config{
 		RPID:                              rpID,
-		RPDisplayName:                     "Vesper BotHub",
+		RPDisplayName:                     "BotHub",
 		RPOrigins:                         []string{origin},
 		RPOpaqueOrigins:                   opaque,
 		AttestationPreference:             protocol.PreferNoAttestation,

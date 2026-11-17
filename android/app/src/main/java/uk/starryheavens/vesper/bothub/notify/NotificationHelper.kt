@@ -45,7 +45,7 @@ object NotificationHelper {
             "实时推送常驻连接",
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "保持与 Vesper BotHub 的低功耗 SSE 实时连接"
+            description = "保持与 BotHub 的低功耗 SSE 实时连接"
         }
 
         manager.createNotificationChannels(listOf(alertsChannel, dailyChannel, serviceChannel))

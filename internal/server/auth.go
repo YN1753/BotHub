@@ -78,7 +78,7 @@ func (rl *rateLimiter) recordSuccess(ip string) {
 }
 
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"authenticated": s.isAuthenticated(r)})
+	s.handleOIDCStatus(w, r)
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {

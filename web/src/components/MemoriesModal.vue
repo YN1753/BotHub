@@ -281,7 +281,7 @@ function exportVisibleMemoriesMarkdown() {
     return
   }
   const lines: string[] = [
-    `# Vesper BotHub 记忆导出 (${filterScope.value === 'all' ? '全部作用域' : scopeLabel(filterScope.value)})`,
+    `# BotHub 记忆导出 (${filterScope.value === 'all' ? '全部作用域' : scopeLabel(filterScope.value)})`,
     '',
     `共 ${list.length} 条，导出于 ${new Date().toLocaleString()}`,
     '',

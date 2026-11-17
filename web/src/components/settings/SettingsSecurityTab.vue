@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
 import { copyToClipboard } from '../../utils/clipboard'
@@ -21,6 +21,40 @@ const newPassword = ref('')
 const exportingMode = ref<'' | 'full' | 'redacted'>('')
 const revokingDevices = ref(false)
 
+// Vesper Auth OIDC state
+const oidcEnabled = ref(false)
+const oidcIssuer = ref('')
+const oidcClientId = ref('')
+const oidcClientSecret = ref('')
+const oidcAllowedSub = ref('')
+const savingOidc = ref(false)
+
+const oidcCallbackUrl = computed(() => {
+  const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
+  return `${origin}/api/auth/oidc/callback`
+})
+
+const isOidcLive = computed(
+  () => Boolean(store.state.oidcEnabled) || (oidcEnabled.value && Boolean(oidcIssuer.value.trim()) && Boolean(oidcClientId.value.trim()))
+)
+
+function syncOidcFieldsFromStore() {
+  const c = store.state.configs || {}
+  oidcEnabled.value = (c['oidc_enabled'] || '').toLowerCase() === 'true' || Boolean(store.state.oidcEnabled)
+  oidcIssuer.value = c['oidc_issuer'] || ''
+  oidcClientId.value = c['oidc_client_id'] || ''
+  oidcClientSecret.value = c['oidc_client_secret'] || ''
+  oidcAllowedSub.value = c['oidc_allowed_sub'] || ''
+}
+
+watch(
+  () => store.state.configs,
+  () => {
+    syncOidcFieldsFromStore()
+  },
+  { immediate: true }
+)
+
 const passkeySupported = ref(false)
 const passkeyLoading = ref(false)
 const passkeyRegistering = ref(false)
@@ -40,6 +74,35 @@ function formatEpochDate(epochSec?: number): string {
   }
 }
 
+async function handleSaveOidcConfig() {
+  if (savingOidc.value) return
+  savingOidc.value = true
+  try {
+    await BotHubApi.saveConfig({
+      oidc_enabled: oidcEnabled.value ? 'true' : 'false',
+      oidc_issuer: oidcIssuer.value.trim(),
+      oidc_client_id: oidcClientId.value.trim(),
+      oidc_client_secret: oidcClientSecret.value.trim(),
+      oidc_allowed_sub: oidcAllowedSub.value.trim(),
+    })
+    const st = await BotHubApi.authStatus().catch(() => null)
+    if (st) {
+      store.state.oidcEnabled = Boolean(st.oidc_enabled)
+    }
+    await store.loadDashboard(false)
+    store.notify('Vesper Auth 单点登录配置已保存')
+  } catch (err: any) {
+    store.notify(err.message || '保存 OIDC 配置失败')
+  } finally {
+    savingOidc.value = false
+  }
+}
+
+async function copyCallbackUrl() {
+  const ok = await copyToClipboard(oidcCallbackUrl.value)
+  store.notify(ok ? '已复制 OIDC 回调地址' : '复制失败')
+}
+
 async function loadPasskeyList() {
   passkeyLoading.value = true
   try {
@@ -55,6 +118,7 @@ async function loadPasskeyList() {
 }
 
 onMounted(async () => {
+  syncOidcFieldsFromStore()
   const caps = await checkPasskeyCapabilities()
   passkeySupported.value = caps.platformSupported
   await loadPasskeyList()
@@ -114,7 +178,7 @@ async function handleUpdatePassword() {
 }
 
 async function handleRotateToken() {
-  if (!window.confirm('确定轮换底层推送凭证吗？轮换后已连接手机需重新刷脸或一键唤醒绑定。')) return
+  if (!window.confirm('确定轮换底层推送凭证吗？轮换后已连接手机需重新一键绑定。')) return
   try {
     const res = await BotHubApi.rotateAppToken()
     store.notify(res.message || '已轮换底层推送凭证，旧设备连接已断开')
@@ -136,8 +200,8 @@ async function handleExportBackup(maskSecrets = false) {
     const blob = await res.blob()
     const dateTag = formatLocalDate(new Date())
     const filename = maskSecrets
-      ? `vesper_bothub_backup_redacted_${dateTag}.json`
-      : `vesper_bothub_backup_${dateTag}.json`
+      ? `bothub_backup_redacted_${dateTag}.json`
+      : `bothub_backup_${dateTag}.json`
     triggerBlobDownload(blob, filename)
     store.notify(maskSecrets ? '已导出脱敏备份（已隐藏 API Key 与密码）' : '已导出完整灾备配置 JSON')
   } catch (err: any) {
@@ -149,7 +213,7 @@ async function handleExportBackup(maskSecrets = false) {
 
 async function handleRevokeOtherDevices() {
   if (revokingDevices.value) return
-  if (!window.confirm('确定吊销除当前浏览器外所有已登录设备（含勾选“记住此设备”的 30 天会话）吗？')) return
+  if (!window.confirm('确定吊销除当前浏览器外所有已登录设备（含 30 天会话）吗？')) return
   revokingDevices.value = true
   try {
     await store.logoutAllOtherDevices()
@@ -167,7 +231,7 @@ async function copyBuildDiagnostic() {
 }
 
 async function handleLogout() {
-  if (!window.confirm('确定退出当前 Vesper BotHub 控制台会话吗？')) return
+  if (!window.confirm('确定退出当前 BotHub 控制台会话吗？')) return
   emit('close')
   await store.logout()
 }
@@ -206,6 +270,120 @@ async function handleImportBackup(e: Event) {
 
 <template>
   <div class="flex flex-col gap-3.5">
+    <!-- Vesper Auth OIDC + PKCE S256 SSO Configuration -->
+    <form @submit.prevent="handleSaveOidcConfig" class="modal-section flex flex-col gap-3" aria-labelledby="oidc-section-heading">
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h4 id="oidc-section-heading" class="text-xs font-semibold text-[#f2b880]">Vesper Auth 单点登录（OIDC）</h4>
+          <p class="text-[11px] text-slate-400 mt-0.5">
+            基于标准 OAuth 2.0 / OIDC + PKCE (S256)，支持网页端免密单点登录与 Android 客户端一键唤起免输密钥绑定。
+          </p>
+        </div>
+        <span
+          :class="[
+            'font-mono text-[10.5px] px-2.5 py-0.5 rounded-full border shrink-0',
+            isOidcLive
+              ? 'border-emerald-400/35 bg-emerald-500/12 text-emerald-300'
+              : 'border-[#fff8ee]/14 bg-white/[0.04] text-slate-400'
+          ]"
+        >
+          {{ isOidcLive ? '已启用 · Vesper Auth' : '未启用' }}
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <input
+          id="settings-oidc-enabled"
+          v-model="oidcEnabled"
+          name="oidc_enabled"
+          type="checkbox"
+          class="accent-[#f2b880] rounded shrink-0"
+        />
+        <label for="settings-oidc-enabled" class="text-xs text-slate-200 cursor-pointer select-none">
+          启用 Vesper Auth 通行证作为首选登录与手机绑定方式
+        </label>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div class="flex flex-col gap-1">
+          <label for="settings-oidc-issuer" class="text-xs text-slate-300">Issuer 地址</label>
+          <input
+            id="settings-oidc-issuer"
+            v-model="oidcIssuer"
+            name="oidc_issuer"
+            type="url"
+            placeholder="https://auth.starryheavens.uk"
+            autocorrect="off"
+            autocapitalize="none"
+            spellcheck="false"
+            class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label for="settings-oidc-client-id" class="text-xs text-slate-300">Client ID</label>
+          <input
+            id="settings-oidc-client-id"
+            v-model="oidcClientId"
+            name="oidc_client_id"
+            type="text"
+            placeholder="bothub"
+            autocorrect="off"
+            autocapitalize="none"
+            spellcheck="false"
+            class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
+          />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div class="flex flex-col gap-1">
+          <label for="settings-oidc-secret" class="text-xs text-slate-300">Client Secret（已脱敏保护）</label>
+          <SecretInput
+            id="settings-oidc-secret"
+            v-model="oidcClientSecret"
+            name="oidc_client_secret"
+            size="sm"
+            placeholder="保持 **** 不变或输入新密钥"
+            toggle-label="OIDC Client Secret"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label for="settings-oidc-sub" class="text-xs text-slate-300">主理人 Sub 白名单（逗号分隔）</label>
+          <input
+            id="settings-oidc-sub"
+            v-model="oidcAllowedSub"
+            name="oidc_allowed_sub"
+            type="text"
+            placeholder="填写允许登录的 sub 标识"
+            autocorrect="off"
+            autocapitalize="none"
+            spellcheck="false"
+            class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
+          />
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between gap-2 flex-wrap pt-1">
+        <div class="flex items-center gap-2 min-w-0 text-[11px] text-slate-400 font-mono">
+          <span class="truncate">回调地址: {{ oidcCallbackUrl }}</span>
+          <button
+            type="button"
+            @click="copyCallbackUrl"
+            class="px-2 py-0.5 rounded border border-[#fff8ee]/12 text-[10.5px] text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer shrink-0"
+          >
+            复制
+          </button>
+        </div>
+        <button
+          type="submit"
+          :disabled="savingOidc"
+          class="min-h-[40px] sm:min-h-[36px] px-4 py-1.5 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50 shrink-0"
+        >
+          {{ savingOidc ? '保存中...' : '保存 OIDC 设置' }}
+        </button>
+      </div>
+    </form>
+
     <!-- Passkey Biometric Management -->
     <div class="modal-section flex flex-col gap-3">
       <div class="flex items-start justify-between gap-3 flex-wrap">
@@ -281,8 +459,8 @@ async function handleImportBackup(e: Event) {
       </div>
     </div>
 
-    <form @submit.prevent="handleUpdatePassword" class="modal-section flex flex-col gap-2.5">
-      <label for="settings-new-password" class="text-xs font-semibold text-[#f2b880]">兜底访问密码管理</label>
+    <form @submit.prevent="handleUpdatePassword" class="modal-section flex flex-col gap-2.5" aria-labelledby="fallback-password-heading">
+      <label id="fallback-password-heading" for="settings-new-password" class="text-xs font-semibold text-[#f2b880]">兜底访问密码管理</label>
       <div class="flex flex-col sm:flex-row gap-2">
         <SecretInput
           id="settings-new-password"

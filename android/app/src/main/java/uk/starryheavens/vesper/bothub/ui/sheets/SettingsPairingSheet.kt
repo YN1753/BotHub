@@ -73,23 +73,49 @@ fun SettingsPairingSheet(
     val activity = remember(context) { BiometricAuthHelper.findFragmentActivity(context) }
     val scope = rememberCoroutineScope()
 
-    var urlInput by remember(serverUrl) { mutableStateOf(serverUrl) }
+    var urlInput by remember(serverUrl) {
+        mutableStateOf(UrlUtils.normalizeServerUrl(serverUrl, UrlUtils.DEFAULT_SERVER_URL))
+    }
     var passwordInput by remember { mutableStateOf("") }
     var showPasswordFallback by remember { mutableStateOf(false) }
     var showCustomUrlField by remember { mutableStateOf(false) }
+    var oidcAvailable by remember { mutableStateOf(true) }
     var connecting by remember { mutableStateOf(false) }
     var registeringPasskey by remember { mutableStateOf(false) }
     var sheetHint by remember { mutableStateOf("") }
 
+    LaunchedEffect(isPaired, urlInput) {
+        if (!isPaired) {
+            api.fetchOidcStatus(urlInput).onSuccess { enabled ->
+                oidcAvailable = enabled
+            }
+        }
+    }
+
+    fun launchVesperAuthOidcPairing() {
+        val base = UrlUtils.normalizeServerUrl(urlInput, UrlUtils.DEFAULT_SERVER_URL)
+        urlInput = base
+        onServerUrlSaved(base)
+        sheetHint = ""
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("$base/api/auth/oidc/login?platform=android"))
+            )
+        }.onFailure { err ->
+            sheetHint = "无法拉起系统浏览器: ${err.message}"
+        }
+    }
+
     fun launchBrowserAutoPairBridge() {
-        val base = UrlUtils.normalizeServerUrl(urlInput, serverUrl)
+        val base = UrlUtils.normalizeServerUrl(urlInput, UrlUtils.DEFAULT_SERVER_URL)
+        urlInput = base
         onServerUrlSaved(base)
         runCatching {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$base/?auto_pair_app=1")))
         }
     }
 
-    fun runPasskeyConnect(autoTriggered: Boolean) {
+    fun runPasskeyConnect() {
         val act = activity
         if (act == null) {
             showPasswordFallback = true
@@ -119,27 +145,22 @@ fun SettingsPairingSheet(
             if (BiometricAuthHelper.canUseLocalBiometrics(context)) {
                 BiometricAuthHelper.authenticateLocal(
                     activity = act,
-                    title = "无感激活 Vesper 实时通知",
+                    title = "无感激活 BotHub 实时通知",
                     subtitle = "优先前置无感面容识别，不支持面容自动降级指纹",
                     onSuccess = {
-                        launchBrowserAutoPairBridge()
+                        if (oidcAvailable) {
+                            launchVesperAuthOidcPairing()
+                        } else {
+                            launchBrowserAutoPairBridge()
+                        }
                     },
                     onFallbackOrCancel = {
-                        if (!autoTriggered) {
-                            showPasswordFallback = true
-                        }
+                        showPasswordFallback = true
                     }
                 )
-            } else if (!autoTriggered) {
+            } else {
                 showPasswordFallback = true
             }
-        }
-    }
-
-    // Auto-attempt passive Face -> Fingerprint -> Auto-Pair on fresh install
-    LaunchedEffect(Unit) {
-        if (!isPaired && activity != null) {
-            runPasskeyConnect(autoTriggered = true)
         }
     }
 
@@ -168,7 +189,7 @@ fun SettingsPairingSheet(
                 )
                 Column {
                     Text(
-                        text = if (isPaired) "实时通知与生物识别设置" else "无感激活手机实时通知",
+                        text = if (isPaired) "实时通知与生物识别设置" else "一键激活 BotHub 手机通知",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -176,7 +197,7 @@ fun SettingsPairingSheet(
                         text = if (isPaired) {
                             "已连接 ${UrlUtils.formatDisplayHost(serverUrl)} · 无需配置任何 Token"
                         } else {
-                            "优先面容无感识别 -> 指纹 -> 网页一键绑定 / 密码兜底"
+                            "首选 Vesper Auth 单点免密绑定 · 目标 ${UrlUtils.formatDisplayHost(urlInput)}"
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -202,47 +223,48 @@ fun SettingsPairingSheet(
 
             if (!isPaired) {
                 Button(
-                    onClick = { runPasskeyConnect(autoTriggered = false) },
+                    onClick = { launchVesperAuthOidcPairing() },
                     enabled = !connecting,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .sizeIn(minHeight = 48.dp)
+                        .sizeIn(minHeight = 50.dp)
                 ) {
-                    Text(if (connecting) "正在调起面容 / 指纹..." else "面容 / 指纹无感连接")
+                    Text(
+                        text = "使用 Vesper Auth 通行证一键绑定",
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
 
                 OutlinedButton(
-                    onClick = { launchBrowserAutoPairBridge() },
+                    onClick = { runPasskeyConnect() },
                     enabled = !connecting,
                     modifier = Modifier
                         .fillMaxWidth()
                         .sizeIn(minHeight = 48.dp)
                 ) {
-                    Text("从已登录手机浏览器一键自动回跳绑定")
+                    Text(if (connecting) "正在调起面容 / 指纹..." else "面容 / 指纹通行密钥直连")
                 }
 
-                if (!showPasswordFallback) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "改用访问密码连接（兜底）",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .clickable { showPasswordFallback = true }
-                                .padding(vertical = 6.dp)
-                        )
-                        Text(
-                            text = if (showCustomUrlField) "收起服务器地址" else "修改服务器地址",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .clickable { showCustomUrlField = !showCustomUrlField }
-                                .padding(vertical = 6.dp)
-                        )
-                    }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = if (showPasswordFallback) "收起访问密钥表单" else "输入访问密钥绑定",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable { showPasswordFallback = !showPasswordFallback }
+                            .padding(vertical = 6.dp)
+                    )
+                    Text(
+                        text = if (showCustomUrlField) "收起服务器地址" else "修改服务器地址",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .clickable { showCustomUrlField = !showCustomUrlField }
+                            .padding(vertical = 6.dp)
+                    )
                 }
 
                 if (showCustomUrlField) {
@@ -259,7 +281,7 @@ fun SettingsPairingSheet(
                     OutlinedTextField(
                         value = passwordInput,
                         onValueChange = { passwordInput = it },
-                        label = { Text("控制台访问密码（仅首次兜底，无需填 Token）") },
+                        label = { Text("控制台访问密钥（备用兜底）") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -273,7 +295,7 @@ fun SettingsPairingSheet(
                                     passwordInput = ""
                                     onConnected("已连接并自动开启锁屏实时通知")
                                 }.onFailure { err ->
-                                    sheetHint = err.message ?: "密码验证失败"
+                                    sheetHint = err.message ?: "密钥验证失败"
                                 }
                                 connecting = false
                             }
@@ -283,7 +305,7 @@ fun SettingsPairingSheet(
                             .fillMaxWidth()
                             .sizeIn(minHeight = 48.dp)
                     ) {
-                        Text(if (connecting) "验证并开启通知中..." else "验证密码并自动开启通知")
+                        Text(if (connecting) "验证并开启通知中..." else "验证密钥并自动开启通知")
                     }
                 }
             } else {

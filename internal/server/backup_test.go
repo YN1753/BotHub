@@ -32,6 +32,7 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 		agent:    agent.NewEngine(st, nil),
 		limiter:  newRateLimiter(),
 		passkeys: newPasskeyStateStore(),
+		oidc:     newOIDCStateManager(),
 		version:  "v1.6.0",
 		commit:   "test-commit",
 	}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, useId, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, useId, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { trackSpotlight } from '../utils/topLayer'
@@ -10,18 +10,25 @@ import VesperBrandIcon from './ui/VesperBrandIcon.vue'
 const store = useAppStore()
 const headingId = useId()
 const passwordId = useId()
-const hostLabel = typeof window !== 'undefined' && window.location.host ? window.location.host : 'Vesper BotHub'
+const fallbackFormId = useId()
+const hostLabel = typeof window !== 'undefined' && window.location.host ? window.location.host : 'BotHub'
 const password = ref('')
 const showPassword = ref(false)
 const rememberDevice = ref(true)
 const capsLockOn = ref(false)
 const loading = ref(false)
+const oidcRedirecting = ref(false)
 const passkeyLoading = ref(false)
+const oidcEnabled = ref(Boolean(store.state.oidcEnabled))
 const hasPasskeys = ref(false)
 const passkeySupported = ref(false)
-const showPasswordFallback = ref(true)
+const showPasswordFallback = ref(!store.state.oidcEnabled)
 const errorMsg = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
+
+const hasPasswordlessPrimary = computed(
+  () => oidcEnabled.value || (hasPasskeys.value && passkeySupported.value)
+)
 
 let autofillAbort: AbortController | null = null
 
@@ -43,17 +50,30 @@ async function armConditionalAutofill(conditionalOk: boolean) {
 }
 
 onMounted(async () => {
-  const [statusRes, caps] = await Promise.all([
+  const [authRes, statusRes, caps] = await Promise.all([
+    BotHubApi.authStatus().catch(() => ({
+      authenticated: false,
+      oidc_enabled: store.state.oidcEnabled,
+      oidc_provider_name: store.state.oidcProviderName,
+    })),
     BotHubApi.passkeyStatus().catch(() => ({ has_passkeys: false, count: 0, rp_id: '' })),
     checkPasskeyCapabilities(),
   ])
+  oidcEnabled.value = Boolean(authRes.oidc_enabled)
+  store.state.oidcEnabled = oidcEnabled.value
+  if (authRes.oidc_provider_name) {
+    store.state.oidcProviderName = authRes.oidc_provider_name
+  }
   hasPasskeys.value = Boolean(statusRes.has_passkeys)
   passkeySupported.value = caps.platformSupported
 
-  if (hasPasskeys.value && caps.platformSupported) {
+  if (oidcEnabled.value) {
+    showPasswordFallback.value = false
+  } else if (hasPasskeys.value && caps.platformSupported) {
     showPasswordFallback.value = false
     void armConditionalAutofill(caps.conditionalSupported)
   } else {
+    showPasswordFallback.value = true
     inputEl.value?.focus()
   }
 })
@@ -62,8 +82,29 @@ onBeforeUnmount(() => {
   autofillAbort?.abort()
 })
 
+function handleOIDCLogin() {
+  if (oidcRedirecting.value || loading.value || passkeyLoading.value) return
+  autofillAbort?.abort()
+  oidcRedirecting.value = true
+  errorMsg.value = ''
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('auto_pair_app') === '1') {
+    window.location.assign('/api/auth/oidc/login?platform=android')
+  } else {
+    window.location.assign('/api/auth/oidc/login?platform=web')
+  }
+}
+
+async function revealPasswordFallback() {
+  showPasswordFallback.value = !showPasswordFallback.value
+  if (showPasswordFallback.value) {
+    await nextTick()
+    inputEl.value?.focus()
+  }
+}
+
 async function handlePasskeyUnlock() {
-  if (passkeyLoading.value || loading.value) return
+  if (passkeyLoading.value || loading.value || oidcRedirecting.value) return
   autofillAbort?.abort()
   autofillAbort = new AbortController()
   passkeyLoading.value = true
@@ -84,7 +125,7 @@ async function handlePasskeyUnlock() {
 }
 
 async function handleSubmit() {
-  if (!password.value.trim() || loading.value) return
+  if (!password.value.trim() || loading.value || oidcRedirecting.value) return
   autofillAbort?.abort()
   loading.value = true
   errorMsg.value = ''
@@ -110,29 +151,57 @@ async function handleSubmit() {
       <div class="flex items-center justify-between gap-3 mb-4">
         <div class="btn-tactile-gold inline-flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full font-mono text-[11px] tracking-wider">
           <VesperBrandIcon class="w-4 h-4 rounded-[4px]" />
-          <span>VESPER BOTHUB</span>
+          <span>BOTHUB</span>
         </div>
         <BotAvatar
           avatar-style="butler:gold"
-          :state="loading || passkeyLoading ? 'working' : password ? 'thinking' : 'idle'"
+          :state="loading || passkeyLoading || oidcRedirecting ? 'working' : password ? 'thinking' : 'idle'"
           size="lg"
           focusable
         />
       </div>
-      <h1 :id="headingId" class="text-2xl font-semibold text-white mb-1 tracking-tight">星穹 GrokBot 中枢</h1>
+      <h1 :id="headingId" class="text-2xl font-semibold text-white mb-1 tracking-tight">BotHub 智能中枢</h1>
       <p class="font-mono text-xs text-slate-300 mb-6">
-        {{ hostLabel }} · {{ hasPasskeys && passkeySupported ? '支持面容 / 指纹通行密钥解锁' : '身份验证' }}
+        {{ hostLabel }} ·
+        {{
+          oidcEnabled
+            ? '支持 Vesper Auth 单点通行证免密登录'
+            : hasPasskeys && passkeySupported
+            ? '支持面容 / 指纹通行密钥解锁'
+            : '身份验证'
+        }}
       </p>
 
-      <!-- Biometric Passkey Primary Sign-In -->
-      <div v-if="hasPasskeys && passkeySupported" class="flex flex-col gap-3 mb-4">
+      <!-- Priority 1: Vesper Auth OIDC + PKCE S256 Single Sign-On -->
+      <div v-if="oidcEnabled" class="flex flex-col gap-2.5 mb-3">
         <button
           type="button"
-          :disabled="passkeyLoading || loading"
-          @click="handlePasskeyUnlock"
+          :disabled="oidcRedirecting || passkeyLoading || loading"
+          @click="handleOIDCLogin"
           class="btn-jewel w-full min-h-[48px] rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
         >
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            <path d="m9 12 2 2 4-4" />
+          </svg>
+          <span>{{ oidcRedirecting ? '正在跳转 Vesper Auth...' : '使用 Vesper Auth 通行证登录' }}</span>
+        </button>
+      </div>
+
+      <!-- Biometric Passkey Sign-In (Primary when OIDC disabled, Secondary when OIDC enabled) -->
+      <div v-if="hasPasskeys && passkeySupported" class="flex flex-col gap-2.5 mb-3">
+        <button
+          type="button"
+          :disabled="passkeyLoading || loading || oidcRedirecting"
+          @click="handlePasskeyUnlock"
+          :class="[
+            'w-full min-h-[46px] rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50',
+            oidcEnabled
+              ? 'border border-[#f2b880]/40 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-[#ffe2be]'
+              : 'btn-jewel'
+          ]"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
             <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
             <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" />
@@ -145,18 +214,14 @@ async function handleSubmit() {
           </svg>
           <span>{{ passkeyLoading ? '正在调起面容 / 指纹...' : '使用面容 / 指纹无感解锁' }}</span>
         </button>
-
-        <button
-          v-if="!showPasswordFallback"
-          type="button"
-          @click="showPasswordFallback = true"
-          class="text-xs text-slate-400 hover:text-[#f2b880] py-1 cursor-pointer"
-        >
-          改用访问密码解锁
-        </button>
       </div>
 
-      <form v-if="showPasswordFallback" class="flex flex-col gap-3" @submit.prevent="handleSubmit">
+      <form
+        v-if="showPasswordFallback"
+        :id="fallbackFormId"
+        class="flex flex-col gap-3 mt-1"
+        @submit.prevent="handleSubmit"
+      >
         <input
           type="text"
           name="username"
@@ -205,11 +270,29 @@ async function handleSubmit() {
         <button
           type="submit"
           :disabled="loading"
-          class="btn-jewel w-full min-h-[44px] rounded-xl text-sm cursor-pointer disabled:opacity-50"
+          :class="[
+            'w-full min-h-[44px] rounded-xl text-sm cursor-pointer disabled:opacity-50',
+            hasPasswordlessPrimary
+              ? 'border border-[#fff8ee]/18 bg-white/[0.06] hover:bg-white/[0.12] text-white font-medium'
+              : 'btn-jewel'
+          ]"
         >
           {{ loading ? '验证中...' : '解锁控制台' }}
         </button>
       </form>
+
+      <div v-if="hasPasswordlessPrimary" class="mt-3 text-center">
+        <button
+          type="button"
+          :aria-expanded="showPasswordFallback"
+          :aria-controls="fallbackFormId"
+          @click="revealPasswordFallback"
+          class="text-xs text-slate-400 hover:text-[#f2b880] py-1.5 px-2 cursor-pointer"
+        >
+          {{ showPasswordFallback ? '收起访问密钥表单' : '改用访问密钥解锁' }}
+        </button>
+      </div>
+
       <p v-if="errorMsg" role="alert" class="text-xs text-rose-400 mt-2">{{ errorMsg }}</p>
     </section>
   </main>

@@ -94,7 +94,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("[bothub] Vesper BotHub %s (%s) listening on %s (db=%s)", Version, Commit, *addr, *dbPath)
+		log.Printf("[bothub] BotHub %s (%s) listening on %s (db=%s)", Version, Commit, *addr, *dbPath)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("[bothub] http server error: %v", err)
 		}

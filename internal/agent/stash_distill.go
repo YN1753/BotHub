@@ -308,7 +308,7 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 	}
 
 	if e.hasLightTarget() {
-		sysPrompt := `你是 Vesper BotHub 智能收藏与闪念蒸馏器。请阅读输入材料并输出严格合法的 JSON 对象（不要使用 Markdown 代码块包裹，不要输出任何额外说明），格式如下：
+		sysPrompt := `你是 BotHub 智能收藏与闪念蒸馏器。请阅读输入材料并输出严格合法的 JSON 对象（不要使用 Markdown 代码块包裹，不要输出任何额外说明），格式如下：
 {"title":"简明准确的标题（不超过48字）","tldr":"一句话核心结论（不超过70字）","points":["核心干货要点1","核心干货要点2","核心干货要点3"],"tags":["标签1","标签2"]}
 严格规范：
 1. tldr 必须控制在 70 字以内，直击本质结论、核心方案或关键洞察，拒绝空话。

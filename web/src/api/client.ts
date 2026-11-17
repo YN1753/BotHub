@@ -95,7 +95,12 @@ export async function apiRequest<T = any>(
 }
 
 export const BotHubApi = {
-  authStatus: () => apiRequest<{ authenticated: boolean }>('/api/auth/status'),
+  authStatus: () =>
+    apiRequest<{
+      authenticated: boolean
+      oidc_enabled?: boolean
+      oidc_provider_name?: string
+    }>('/api/auth/status'),
   passkeyStatus: () =>
     apiRequest<{ has_passkeys: boolean; count: number; rp_id: string }>('/api/auth/passkey/status'),
   listPasskeys: () =>

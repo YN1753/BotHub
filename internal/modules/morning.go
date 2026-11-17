@@ -87,7 +87,7 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 
 	taskName := task.Name
 	if taskName == "" {
-		taskName = "Vesper 晨间简报"
+		taskName = "BotHub 晨间简报"
 	}
 
 	now := time.Now().In(ShanghaiLocation())
@@ -156,7 +156,7 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 	}
 
 	// Optional AI synthesis when Light/Pool/DeepSeek API Key is configured
-	sysPrompt := "你是 Vesper BotHub 的晨间参谋。请基于提供的今日气象、哪吒节点脉搏、个人待办清单与临期资产原始数据，用不超过 160 字输出「今日执更要点与行动优先级建议」（分 2-3 条简明要点）。严禁输出任何 Emoji 或特殊装饰符号。"
+	sysPrompt := "你是 BotHub 的晨间参谋。请基于提供的今日气象、哪吒节点脉搏、个人待办清单与临期资产原始数据，用不超过 160 字输出「今日执更要点与行动优先级建议」（分 2-3 条简明要点）。严禁输出任何 Emoji 或特殊装饰符号。"
 	if aiInsight, aiErr := summarizeModuleContent(ctx, m.store, m.getSummarizer(), sysPrompt, sb.String()); aiErr == nil && aiInsight != "" {
 		sb.WriteString("#### AI 执更参谋锐评\n")
 		sb.WriteString(aiInsight)
@@ -193,7 +193,7 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 		_ = m.store.MarkStashReviewed(reviewItem.ID)
 	}
 
-	sb.WriteString("---\n*来自 Vesper BotHub 自动化汇报*")
+	sb.WriteString("---\n*来自 BotHub 自动化汇报*")
 
 	title := fmt.Sprintf("%s · %s %s", taskName, dateStr, city)
 	if wErr == nil {

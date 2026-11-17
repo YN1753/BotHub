@@ -26,6 +26,7 @@ type Server struct {
 	buildTime          string
 	limiter            *rateLimiter
 	passkeys           *passkeyStateStore
+	oidc               *oidcStateManager
 	nezhaAlertMu       sync.Mutex
 	nezhaAlertCooldown map[string]time.Time
 }
@@ -63,6 +64,7 @@ func New(
 		buildTime: buildTime,
 		limiter:            newRateLimiter(),
 		passkeys:           newPasskeyStateStore(),
+		oidc:               newOIDCStateManager(),
 		nezhaAlertCooldown: make(map[string]time.Time),
 	}, nil
 }
@@ -86,10 +88,16 @@ func (s *Server) KickPushSubscribers() {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	// Public Health, Digital Asset Links & Auth (Password + Passkeys + One-Tap App Pairing)
+	// Public Health, Digital Asset Links & Auth (OIDC + Passkeys + Password + One-Tap App Pairing)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /.well-known/assetlinks.json", s.handleAssetLinks)
 	mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
+	mux.HandleFunc("GET /api/v2/auth/oidc/status", s.handleOIDCStatus)
+	mux.HandleFunc("GET /api/auth/oidc/login", s.handleOIDCLogin)
+	mux.HandleFunc("GET /api/v2/auth/oidc/login", s.handleOIDCLogin)
+	mux.HandleFunc("GET /api/auth/oidc/callback", s.handleOIDCCallback)
+	mux.HandleFunc("GET /api/v2/auth/oidc/callback", s.handleOIDCCallback)
+	mux.HandleFunc("GET /auth/callback", s.handleOIDCCallback)
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	mux.HandleFunc("POST /api/auth/logout-all", s.requireAuth(s.handleLogoutAllDevices))
@@ -223,10 +231,12 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		w.Header().Set(
-			"Content-Security-Policy",
-			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; form-action 'self'; base-uri 'self'; frame-ancestors 'self'",
-		)
+		if w.Header().Get("Content-Security-Policy") == "" {
+			w.Header().Set(
+				"Content-Security-Policy",
+				"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; form-action 'self'; base-uri 'self'; frame-ancestors 'self'",
+			)
+		}
 		next.ServeHTTP(w, r)
 	})
 }

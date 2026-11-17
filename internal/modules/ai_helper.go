@@ -188,7 +188,7 @@ func summarizeDirect(ctx context.Context, st *store.Store, systemPrompt, userPro
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 		if c.provider == "openrouter" {
 			req.Header.Set("HTTP-Referer", "https://github.com/YN1753/BotHub")
-			req.Header.Set("X-Title", "Vesper BotHub")
+			req.Header.Set("X-Title", "BotHub")
 		}
 
 		resp, err := sharedAIHTTPClient.Do(req)

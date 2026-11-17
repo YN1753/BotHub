@@ -178,7 +178,7 @@ fun StashTabScreen(
                             } else if (query.isNotBlank()) {
                                 "未检索到匹配的收藏条目"
                             } else {
-                                "当前视图暂无收藏条目。在任意 App 点击「系统分享 -> Vesper BotHub」即可半屏无感秒收。"
+                                "当前视图暂无收藏条目。在任意 App 点击「系统分享 -> BotHub」即可半屏无感秒收。"
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(20.dp)

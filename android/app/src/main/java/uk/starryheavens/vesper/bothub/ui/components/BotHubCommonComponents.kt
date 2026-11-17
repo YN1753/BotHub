@@ -114,7 +114,7 @@ fun BotHubTopBar(
                 }
                 Column {
                     Text(
-                        text = "Vesper BotHub",
+                        text = "BotHub",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )

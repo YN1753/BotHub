@@ -16,7 +16,7 @@ func TestSPAFallback404AndCacheHeadersAndCSP(t *testing.T) {
 	defer cleanup()
 
 	s.staticFS = fstest.MapFS{
-		"index.html":            {Data: []byte("<!doctype html><title>Vesper BotHub</title>")},
+		"index.html":            {Data: []byte("<!doctype html><title>BotHub</title>")},
 		"favicon.svg":           {Data: []byte("<svg></svg>")},
 		"assets/app.1234567.js": {Data: []byte("console.log('ok');")},
 	}

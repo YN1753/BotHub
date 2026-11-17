@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Vesper BotHub",
-  "short_name": "Vesper",
-  "description": "Vesper BotHub 智能伙伴工作台与个人中枢",
+  "name": "BotHub",
+  "short_name": "BotHub",
+  "description": "BotHub 智能伙伴工作台与个人中枢",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#050711",

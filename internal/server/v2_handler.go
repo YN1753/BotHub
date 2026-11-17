@@ -311,7 +311,7 @@ func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := store.NowShanghai()
-	markdown := fmt.Sprintf("### %s\n\n- **告警时间**：`%s`\n- **告警来源**：`哪吒探针 Webhook 回环`\n\n%s\n\n---\n*来自 Vesper BotHub*", title, now, content)
+	markdown := fmt.Sprintf("### %s\n\n- **告警时间**：`%s`\n- **告警来源**：`哪吒探针 Webhook 回环`\n\n%s\n\n---\n*来自 BotHub*", title, now, content)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()

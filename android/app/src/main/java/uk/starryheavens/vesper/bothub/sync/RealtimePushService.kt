@@ -29,7 +29,7 @@ class RealtimePushService : Service() {
         NotificationHelper.ensureChannels(this)
         val ongoing = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_SERVICE)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Vesper BotHub 实时通道已连接")
+            .setContentTitle("BotHub 实时通道已连接")
             .setContentText("正在监听自建 SSE 原生推送流与断线补发")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)

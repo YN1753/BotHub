@@ -162,7 +162,7 @@ fun QuickCaptureSheet(
                             seedKey = "quick_capture"
                         )
                         Text(
-                            text = "Vesper 智能收藏与闪念匣",
+                            text = "BotHub 智能收藏与闪念匣",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,

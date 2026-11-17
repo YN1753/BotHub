@@ -144,7 +144,7 @@ watch(
   ([authed, inboxUnread, botUnread, activeName]) => {
     if (typeof document === 'undefined') return
     const total = inboxUnread + botUnread
-    const base = activeName ? `${activeName} · Vesper BotHub` : 'Vesper BotHub'
+    const base = activeName ? `${activeName} · BotHub` : 'BotHub'
     document.title = authed && total > 0 ? `(${total}) ${base}` : base
   },
   { immediate: true }
@@ -207,7 +207,7 @@ onBeforeUnmount(() => {
       <span class="thinking-dots inline-flex items-center gap-1" aria-hidden="true">
         <span /><span /><span />
       </span>
-      <span>正在连接 Vesper BotHub 中枢...</span>
+      <span>正在连接 BotHub 中枢...</span>
     </div>
 
     <!-- Auth Gate -->

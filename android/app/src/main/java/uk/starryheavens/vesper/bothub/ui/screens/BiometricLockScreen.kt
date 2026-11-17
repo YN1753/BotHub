@@ -65,7 +65,7 @@ fun BiometricLockScreen(
         }
         BiometricAuthHelper.authenticateLocal(
             activity = act,
-            title = "解锁 Vesper BotHub",
+            title = "解锁 BotHub",
             subtitle = "优先无感面容识别，不支持面容自动降级指纹或密码",
             onSuccess = onBiometricUnlocked,
             onFallbackOrCancel = { showPassUnlock = true }
@@ -101,7 +101,7 @@ fun BiometricLockScreen(
                 ) {
                     VesperBrandEmblem(size = 18.dp)
                     Text(
-                        text = "VESPER BOTHUB",
+                        text = "BOTHUB",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -120,7 +120,7 @@ fun BiometricLockScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Vesper BotHub 生物识别保护",
+                text = "BotHub 生物识别保护",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )

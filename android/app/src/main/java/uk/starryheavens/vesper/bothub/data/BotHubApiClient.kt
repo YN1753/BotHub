@@ -120,6 +120,17 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun fetchOidcStatus(serverUrl: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanUrl = UrlUtils.normalizeServerUrl(serverUrl, prefs.serverUrl)
+            val req = requestBuilder("/api/v2/auth/oidc/status", baseUrlOverride = cleanUrl, includeAuth = false)
+                .get()
+                .build()
+            val json = executeJson(req, "查询单点登录状态失败")
+            json.optBoolean("oidc_enabled", false)
+        }
+    }
+
     suspend fun fetchPasskeyStatus(serverUrl: String): Result<Boolean> = withContext(Dispatchers.IO) {
         runCatching {
             val cleanUrl = UrlUtils.normalizeServerUrl(serverUrl, prefs.serverUrl)

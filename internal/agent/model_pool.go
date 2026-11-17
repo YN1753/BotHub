@@ -372,7 +372,7 @@ func (e *Engine) ProbeModelTargetWithID(ctx context.Context, targetID, baseURL, 
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	if provider == "openrouter" {
 		req.Header.Set("HTTP-Referer", "https://github.com/YN1753/BotHub")
-		req.Header.Set("X-Title", "Vesper BotHub")
+		req.Header.Set("X-Title", "BotHub")
 	}
 
 	resp, err := e.httpClient.Do(req)
@@ -613,7 +613,7 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 		}
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 		if provider == "openrouter" {
-			req.Header.Set("X-Title", "Vesper BotHub")
+			req.Header.Set("X-Title", "BotHub")
 		}
 
 		resp, err := e.httpClient.Do(req)
@@ -722,7 +722,7 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 			req.Header.Set("Authorization", "Bearer "+apiKey)
 			if provider == "openrouter" {
 				req.Header.Set("HTTP-Referer", "https://github.com/YN1753/BotHub")
-				req.Header.Set("X-Title", "Vesper BotHub")
+				req.Header.Set("X-Title", "BotHub")
 			}
 
 			resp, err := e.httpClient.Do(req)

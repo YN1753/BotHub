@@ -41,6 +41,12 @@ const (
 	KeyNezhaWebhookToken = "nezha_webhook_token"
 	KeyAdminPassHash     = "admin_pass_hash"
 	KeySessionSecret     = "session_secret"
+
+	KeyOIDCEnabled      = "oidc_enabled"
+	KeyOIDCIssuer       = "oidc_issuer"
+	KeyOIDCClientID     = "oidc_client_id"
+	KeyOIDCClientSecret = "oidc_client_secret"
+	KeyOIDCAllowedSub   = "oidc_allowed_sub"
 )
 
 type Store struct {

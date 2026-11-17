@@ -298,7 +298,7 @@ func (a *anchorDayAdapter) Sync(_ context.Context, _ *store.Store, _ *http.Clien
 
 func (w *AssetWatcherModule) dispatchNotice(ctx context.Context, taskID string, items []store.Asset, dateStr string) error {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### Vesper 数字资产临期预警 · %s\n\n", dateStr))
+	sb.WriteString(fmt.Sprintf("### BotHub 数字资产临期预警 · %s\n\n", dateStr))
 	sb.WriteString("守望哨兵检测到以下资产临近到期或自动扣款日：\n\n")
 
 	for i, a := range items {
@@ -327,7 +327,7 @@ func (w *AssetWatcherModule) dispatchNotice(ctx context.Context, taskID string, 
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("---\n*来自 Vesper BotHub 自动化汇报*")
+	sb.WriteString("---\n*来自 BotHub 自动化汇报*")
 	title := fmt.Sprintf("[资产临期预警] %d 项资产即将到期（最快剩余 %d 天）", len(items), items[0].DaysLeft)
 	return w.push.SendMarkdown(ctx, taskID, title, sb.String())
 }

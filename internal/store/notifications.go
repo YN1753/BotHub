@@ -23,7 +23,7 @@ func (s *Store) CreateNotification(moduleID, title, summary, markdownBody, prior
 	}
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = "Vesper BotHub 通知"
+		title = "BotHub 通知"
 	}
 	priority = strings.ToLower(strings.TrimSpace(priority))
 	if priority != "high" && priority != "critical" {

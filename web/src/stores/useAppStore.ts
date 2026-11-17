@@ -35,6 +35,8 @@ const TOAST_DURATION_MS = 3200
 const state = reactive({
   authChecked: false,
   authenticated: false,
+  oidcEnabled: false,
+  oidcProviderName: 'Vesper Auth',
   version: 'v2.36.0',
   commit: '',
   buildTime: '',
@@ -226,6 +228,10 @@ export function useAppStore() {
     try {
       const res = await BotHubApi.authStatus()
       state.authenticated = !!res.authenticated
+      state.oidcEnabled = Boolean(res.oidc_enabled)
+      if (res.oidc_provider_name) {
+        state.oidcProviderName = res.oidc_provider_name
+      }
       state.authChecked = true
       if (state.authenticated) {
         await loadDashboard(true)
@@ -691,7 +697,7 @@ export function useAppStore() {
             (document.hidden || item.priority === 'high')
           ) {
             try {
-              new Notification(`Vesper BotHub · ${item.title}`, {
+              new Notification(`BotHub · ${item.title}`, {
                 body: item.summary || '收到新的情报推送',
               })
             } catch {

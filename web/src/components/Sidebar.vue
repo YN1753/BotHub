@@ -168,7 +168,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
                 ]"
               />
             </span>
-            <strong class="text-sm font-semibold tracking-tight text-white truncate">Vesper</strong>
+            <strong class="text-sm font-semibold tracking-tight text-white truncate">BotHub</strong>
           </div>
 
           <div class="flex items-center gap-1 shrink-0">

@@ -503,7 +503,7 @@ function exportTimelineMarkdown() {
   const activeTh = store.state.botThreads.find((t) => t.id === store.state.activeThreadId)
   const thTitle = activeTh ? activeTh.title : '主时间线'
   const parts = [
-    `# Vesper BotHub · ${bName}（${thTitle}）\n\n- 导出时间: ${new Date().toISOString()}\n`,
+    `# BotHub · ${bName}（${thTitle}）\n\n- 导出时间: ${new Date().toISOString()}\n`,
   ]
   if (scopedMemories.value.length > 0) {
     parts.push('\n## 核心记忆上下文\n\n')

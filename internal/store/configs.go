@@ -7,14 +7,16 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"os"
 	"strings"
 )
 
-// ConfigSpec describes the mutability, sensitivity, and validation contract of a configuration key.
+// ConfigSpec describes the mutability, sensitivity, validation, and environment fallback contract of a configuration key.
 type ConfigSpec struct {
-	Editable  bool
-	Sensitive bool
-	IsURL     bool
+	Editable    bool
+	Sensitive   bool
+	IsURL       bool
+	EnvFallback string
 }
 
 // ConfigRegistry is the single source of truth for configuration metadata across store and HTTP handlers.
@@ -38,6 +40,11 @@ var ConfigRegistry = map[string]ConfigSpec{
 	KeyMorningCity:       {Editable: true},
 	KeyRadarHNMinScore:   {Editable: true},
 	KeyRadarLimit:        {Editable: true},
+	KeyOIDCEnabled:       {Editable: true, EnvFallback: "BOTHUB_OIDC_ENABLED"},
+	KeyOIDCIssuer:        {Editable: true, IsURL: true, EnvFallback: "BOTHUB_OIDC_ISSUER"},
+	KeyOIDCClientID:      {Editable: true, EnvFallback: "BOTHUB_OIDC_CLIENT_ID"},
+	KeyOIDCClientSecret:  {Editable: true, Sensitive: true, EnvFallback: "BOTHUB_OIDC_CLIENT_SECRET"},
+	KeyOIDCAllowedSub:    {Editable: true, EnvFallback: "BOTHUB_OIDC_ALLOWED_SUB"},
 	KeyPushChannel:       {Editable: false},
 	KeyFreeModelPool:     {Editable: false},
 	KeyPasskeyUserID:     {Editable: false},
@@ -78,10 +85,20 @@ func (s *Store) GetConfig(key string) (string, error) {
 	}
 	var val string
 	err := s.db.QueryRow(`SELECT value FROM configs WHERE key = ?`, trimmed).Scan(&val)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", err
 	}
-	return val, err
+	if strings.TrimSpace(val) == "" {
+		if spec, ok := ConfigRegistry[trimmed]; ok && spec.EnvFallback != "" {
+			if envVal := strings.TrimSpace(os.Getenv(spec.EnvFallback)); envVal != "" {
+				return envVal, nil
+			}
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+	}
+	return val, nil
 }
 
 func (s *Store) GetAllConfigs() (map[string]string, error) {
@@ -98,7 +115,18 @@ func (s *Store) GetAllConfigs() (map[string]string, error) {
 			res[k] = v
 		}
 	}
-	return res, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for k, spec := range ConfigRegistry {
+		if spec.EnvFallback == "" || strings.TrimSpace(res[k]) != "" {
+			continue
+		}
+		if envVal := strings.TrimSpace(os.Getenv(spec.EnvFallback)); envVal != "" {
+			res[k] = envVal
+		}
+	}
+	return res, nil
 }
 
 func (s *Store) SetConfig(key, value string) error {
