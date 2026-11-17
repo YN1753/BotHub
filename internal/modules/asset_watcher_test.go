@@ -112,3 +112,59 @@ func TestAssetWatcherSortsMostUrgentAlertFirst(t *testing.T) {
 		t.Fatalf("expected urgent-first sorted title with 最快剩余 1 天, got %+v", notifs)
 	}
 }
+
+func TestRetiringNonRenewingAssetCountdownRakSV(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "rak_sv.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	loc := ShanghaiLocation()
+	dueIn14Days := time.Now().In(loc).AddDate(0, 0, 14).Format("2006-01-02") + "T00:00:00+08:00"
+	// Note: today's date + 14 days at 00:00:00 yields Ceil((14d - elapsedToday)/24h) == 14 days when elapsedToday > 0;
+	// use exact 14*24h offset rounded to RFC3339 to make test time-of-day invariant.
+	dueExact14 := time.Now().In(loc).Add(14*24*time.Hour - time.Hour).Format(time.RFC3339)
+	_ = dueIn14Days
+
+	err = st.SaveAsset(store.Asset{
+		ID:          "rak_sv",
+		Name:        "RakSmart SV",
+		Category:    "compute",
+		Spec:        "Silicon Valley VPS",
+		Status:      "运行中",
+		DueDate:     dueExact14,
+		AutoRenew:   false,
+		WarnDays:    "[14, 7, 3, 1]",
+		ExtraConfig: `{"provider": "RakSmart", "retiring": true, "anchor_day": 12, "note": "2026-12-12 到期退役不续费，在此之前迁移散页"}`,
+	})
+	if err != nil {
+		t.Fatalf("SaveAsset rak_sv: %v", err)
+	}
+
+	push := notifier.NewClient(st)
+	mod := NewAssetWatcherModule(st, push)
+	res, err := mod.Run(context.Background())
+	if err != nil {
+		t.Fatalf("AssetWatcherModule.Run failed: %v", err)
+	}
+	if res.ItemsPushed != 1 {
+		t.Fatalf("expected 1 countdown alert for rak_sv at 14 days left, got %d (%s)", res.ItemsPushed, res.Summary)
+	}
+
+	after, err := st.GetAsset("rak_sv")
+	if err != nil || after == nil {
+		t.Fatalf("GetAsset rak_sv failed: %v", err)
+	}
+	if after.AutoRenew {
+		t.Fatal("expected rak_sv auto_renew=false preserved without anchor_day rollover")
+	}
+	if after.DueDate != dueExact14 {
+		t.Fatalf("expected rak_sv due_date %q preserved, got %q", dueExact14, after.DueDate)
+	}
+
+	notifs, _ := st.ListNotifications(0, 5, false)
+	if len(notifs) != 1 || !strings.Contains(notifs[0].MarkdownBody, "到期退役不续费，在此之前迁移散页") {
+		t.Fatalf("expected retiring note in notification markdown, got %+v", notifs)
+	}
+}

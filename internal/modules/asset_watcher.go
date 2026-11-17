@@ -280,7 +280,10 @@ func (b *bilibiliVIPAdapter) Sync(ctx context.Context, st *store.Store, client *
 type anchorDayAdapter struct{}
 
 func (a *anchorDayAdapter) ID() string { return "monthly_anchor" }
-func (a *anchorDayAdapter) Matches(_ store.Asset, extra map[string]any) bool {
+func (a *anchorDayAdapter) Matches(asset store.Asset, extra map[string]any) bool {
+	if !asset.AutoRenew {
+		return false
+	}
 	_, ok := extra["anchor_day"]
 	return ok
 }
@@ -325,6 +328,16 @@ func (w *AssetWatcherModule) dispatchNotice(ctx context.Context, taskID string, 
 
 		if a.AutoRenew {
 			sb.WriteString("   - **[自动续费提醒]** 该项目已启用自动续费，如不再使用请及时关闭免密/自动扣款授权。\n")
+		} else {
+			var extra map[string]any
+			_ = json.Unmarshal([]byte(a.ExtraConfig), &extra)
+			note, _ := extra["note"].(string)
+			retiring, _ := extra["retiring"].(bool)
+			if note = notifier.StripEmoji(strings.TrimSpace(note)); note != "" {
+				sb.WriteString(fmt.Sprintf("   - **[停续倒计时提醒]** %s\n", note))
+			} else if retiring {
+				sb.WriteString("   - **[停续倒计时提醒]** 该项目已标记到期退役不续费，请在到期前完成数据与业务迁移。\n")
+			}
 		}
 		sb.WriteString("\n")
 	}

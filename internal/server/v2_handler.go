@@ -284,12 +284,10 @@ func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 	if !authorized && s.isAuthenticated(r) {
 		authorized = true
 	}
-	// Also allow localhost loopback from co-located Nezha Dashboard when nezha_webhook_token is not explicitly set
-	if !authorized && configuredHookToken == "" {
-		ip := clientIP(r)
-		if ip == "127.0.0.1" || ip == "::1" || strings.HasPrefix(r.RemoteAddr, "127.0.0.1:") || strings.HasPrefix(r.RemoteAddr, "[::1]:") {
-			authorized = true
-		}
+	// Also allow direct localhost loopback from co-located Nezha Dashboard when nezha_webhook_token is not explicitly set
+	// (requests arriving via local Nginx carry X-Real-IP / X-Forwarded-For and must NOT match direct loopback)
+	if !authorized && configuredHookToken == "" && isDirectLoopbackRequest(r) {
+		authorized = true
 	}
 
 	if !authorized {

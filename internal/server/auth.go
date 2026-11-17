@@ -110,7 +110,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "会话签发失败")
 		return
 	}
-	isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	isSecure := isSecureRequest(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    token,
@@ -145,7 +145,7 @@ func (s *Server) rotateSessionSecretAndReissue(w http.ResponseWriter, r *http.Re
 	}
 	s.KickPushSubscribers()
 
-	isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	isSecure := isSecureRequest(r)
 	if !keepCurrent {
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookieName,

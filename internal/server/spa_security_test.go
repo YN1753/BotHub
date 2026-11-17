@@ -159,3 +159,81 @@ func TestLoginRememberDeviceCookieTTL(t *testing.T) {
 		t.Fatalf("expected model pool API key preserved on masked import, got %+v", poolAfter)
 	}
 }
+
+func TestNginxReverseProxyAndLoopbackNezhaWebhook(t *testing.T) {
+	s, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	s.limiter = newRateLimiter()
+	_ = s.store.SetConfig(store.KeyAdminPassHash, store.HashPassword("prod-secret-pass"))
+	_ = s.store.SetConfig(store.KeySessionSecret, "prod-hmac-secret")
+
+	// 1. Nginx reverse proxy sets X-Real-IP / X-Forwarded-For from 127.0.0.1 peer; spoofed headers from public peers are ignored
+	nginxReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	nginxReq.RemoteAddr = "127.0.0.1:48210"
+	nginxReq.Header.Set("X-Real-IP", "203.0.113.55")
+	if got := clientIP(nginxReq); got != "203.0.113.55" {
+		t.Fatalf("expected X-Real-IP 203.0.113.55 via local Nginx, got %q", got)
+	}
+
+	spoofReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	spoofReq.RemoteAddr = "198.51.100.88:52000"
+	spoofReq.Header.Set("X-Forwarded-For", "127.0.0.1")
+	spoofReq.Header.Set("X-Real-IP", "127.0.0.1")
+	if got := clientIP(spoofReq); got != "198.51.100.88" {
+		t.Fatalf("expected untrusted peer spoofed headers ignored, got %q", got)
+	}
+
+	// 2. Cloudflare HTTPS -> Nginx:80 (X-Forwarded-Proto: http + Cf-Visitor: https) still issues Secure session cookie
+	loginRec := httptest.NewRecorder()
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"password":"prod-secret-pass"}`))
+	loginReq.RemoteAddr = "127.0.0.1:48211"
+	loginReq.Header.Set("X-Forwarded-Proto", "http")
+	loginReq.Header.Set("Cf-Visitor", `{"scheme":"https"}`)
+	s.handleLogin(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 login OK, got %d", loginRec.Code)
+	}
+	if sc := loginRec.Header().Get("Set-Cookie"); !strings.Contains(sc, "Secure") {
+		t.Fatalf("expected Secure cookie when Cf-Visitor indicates https, got %q", sc)
+	}
+
+	// 3. When nezha_webhook_token is empty, direct loopback succeeds, but Nginx-proxied external request is rejected (401)
+	_ = s.store.SetConfig(store.KeyNezhaWebhookToken, "")
+	extRec := httptest.NewRecorder()
+	extReq := httptest.NewRequest(http.MethodPost, "/api/v1/webhook/nezha", bytes.NewBufferString(`{"title":"forged"}`))
+	extReq.RemoteAddr = "127.0.0.1:48212"
+	extReq.Header.Set("X-Real-IP", "203.0.113.99")
+	extReq.Header.Set("X-Forwarded-For", "203.0.113.99")
+	s.Handler().ServeHTTP(extRec, extReq)
+	if extRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauthenticated Nginx-proxied webhook, got %d", extRec.Code)
+	}
+
+	loopRec := httptest.NewRecorder()
+	loopReq := httptest.NewRequest(http.MethodPost, "/api/v1/webhook/nezha", bytes.NewBufferString(`{"title":"loopback-probe","content":"ok"}`))
+	loopReq.RemoteAddr = "127.0.0.1:48213"
+	s.Handler().ServeHTTP(loopRec, loopReq)
+	if loopRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for direct loopback webhook when token empty, got %d: %s", loopRec.Code, loopRec.Body.String())
+	}
+
+	// 4. When nezha_webhook_token IS configured (production setup), loopback with ?token=... succeeds and missing/wrong token fails
+	_ = s.store.SetConfig(store.KeyNezhaWebhookToken, "prod-nezha-token-52chars")
+
+	badLoopRec := httptest.NewRecorder()
+	badLoopReq := httptest.NewRequest(http.MethodPost, "/api/v1/webhook/nezha?token=wrong", bytes.NewBufferString(`{"title":"probe"}`))
+	badLoopReq.RemoteAddr = "127.0.0.1:48214"
+	s.Handler().ServeHTTP(badLoopRec, badLoopReq)
+	if badLoopRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 when configured webhook token mismatches even on loopback, got %d", badLoopRec.Code)
+	}
+
+	okLoopRec := httptest.NewRecorder()
+	okLoopReq := httptest.NewRequest(http.MethodPost, "/api/v1/webhook/nezha?token=prod-nezha-token-52chars", bytes.NewBufferString(`{"title":"rak_sv check","content":"node healthy"}`))
+	okLoopReq.RemoteAddr = "127.0.0.1:48215"
+	s.Handler().ServeHTTP(okLoopRec, okLoopReq)
+	if okLoopRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for direct loopback webhook with valid ?token=, got %d: %s", okLoopRec.Code, okLoopRec.Body.String())
+	}
+}
