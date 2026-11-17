@@ -182,7 +182,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         runCatching {
             val cleanUrl = serverUrl.trim().trimEnd('/').ifEmpty { prefs.serverUrl }
             val req = Request.Builder()
-                .url("$cleanUrl/api/auth/passkey/status")
+                .url("$cleanUrl/api/v2/auth/passkey/status")
                 .get()
                 .build()
             httpClient.newCall(req).execute().use { resp ->
@@ -197,7 +197,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         runCatching {
             val cleanUrl = serverUrl.trim().trimEnd('/').ifEmpty { prefs.serverUrl }
             val req = Request.Builder()
-                .url("$cleanUrl/api/auth/passkey/login/options")
+                .url("$cleanUrl/api/v2/auth/passkey/login/options")
                 .post("{}".toRequestBody(jsonMedia))
                 .build()
             httpClient.newCall(req).execute().use { resp ->
@@ -220,7 +220,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
             val cleanUrl = serverUrl.trim().trimEnd('/').ifEmpty { prefs.serverUrl }
             val encId = URLEncoder.encode(ceremonyId, "UTF-8")
             val req = Request.Builder()
-                .url("$cleanUrl/api/auth/passkey/login/verify?ceremony_id=$encId")
+                .url("$cleanUrl/api/v2/auth/passkey/login/verify?ceremony_id=$encId")
                 .post(responseJson.toRequestBody(jsonMedia))
                 .build()
             httpClient.newCall(req).execute().use { resp ->
@@ -240,7 +240,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
 
     suspend fun beginPasskeyRegister(): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
         runCatching {
-            val req = authRequestBuilder("/api/auth/passkey/register/options")
+            val req = authRequestBuilder("/api/v2/auth/passkey/register/options")
                 .post("""{"promotion":true}""".toRequestBody(jsonMedia))
                 .build()
             httpClient.newCall(req).execute().use { resp ->
@@ -261,7 +261,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
     suspend fun finishPasskeyRegister(ceremonyId: String, responseJson: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val encId = URLEncoder.encode(ceremonyId, "UTF-8")
-            val req = authRequestBuilder("/api/auth/passkey/register/verify?ceremony_id=$encId")
+            val req = authRequestBuilder("/api/v2/auth/passkey/register/verify?ceremony_id=$encId")
                 .post(responseJson.toRequestBody(jsonMedia))
                 .build()
             httpClient.newCall(req).execute().use { resp ->

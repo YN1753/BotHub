@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from './stores/useAppStore'
+import { BotHubApi } from './api/client'
 import { lazyOverlayChunk } from './utils/lazyComponent'
 import { resolveTabSlideTransition, type DirectionalTransitionName } from './utils/motion'
 import StarfieldBg from './components/StarfieldBg.vue'
@@ -154,6 +155,27 @@ function handleViewportResize() {
     mobileSidebarOpen.value = false
   }
 }
+
+watch(
+  () => store.state.authenticated,
+  async (authed) => {
+    if (!authed || typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('auto_pair_app') !== '1') return
+    params.delete('auto_pair_app')
+    const rest = params.toString()
+    const cleanUrl = window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash
+    window.history.replaceState({}, '', cleanUrl)
+    try {
+      const res = await BotHubApi.createAppPairCode()
+      store.notify('正在无感回跳激活手机客户端实时通知...')
+      window.location.href = res.deep_link
+    } catch {
+      // Ignore if pair creation fails
+    }
+  },
+  { immediate: true }
+)
 
 onMounted(() => {
   store.checkAuth()

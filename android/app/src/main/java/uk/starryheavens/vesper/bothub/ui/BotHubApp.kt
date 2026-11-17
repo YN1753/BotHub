@@ -926,6 +926,14 @@ fun BotHubApp(
         var registeringPasskey by remember { mutableStateOf(false) }
         var sheetHint by remember { mutableStateOf("") }
 
+        fun launchBrowserAutoPairBridge() {
+            val base = urlInput.trim().trimEnd('/').ifEmpty { prefs.serverUrl }
+            prefs.serverUrl = base
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$base/?auto_pair_app=1")))
+            }
+        }
+
         fun runPasskeyConnect(autoTriggered: Boolean) {
             val act = activity
             if (act == null) {
@@ -935,38 +943,53 @@ fun BotHubApp(
             scope.launch {
                 connecting = true
                 sheetHint = ""
-                when (val out = BiometricAuthHelper.signInWithPasskey(act, api, urlInput)) {
-                    is PasskeyOutcome.Success -> {
-                        isPairedState = true
-                        biometricUnlocked = true
-                        showSettingsSheet = false
-                        ensurePushRunning()
-                        refreshAll()
-                        snackbarHostState.showSnackbar("无感面容 / 指纹验证通过，实时通知已开启")
-                    }
-                    is PasskeyOutcome.Cancelled -> {
-                        if (!autoTriggered) {
-                            sheetHint = "已取消生物识别验证，也可从手机浏览器一键免密绑定"
+                val serverHasPasskey = api.fetchPasskeyStatus(urlInput).getOrDefault(false)
+                if (serverHasPasskey) {
+                    when (BiometricAuthHelper.signInWithPasskey(act, api, urlInput)) {
+                        is PasskeyOutcome.Success -> {
+                            isPairedState = true
+                            biometricUnlocked = true
+                            showSettingsSheet = false
+                            ensurePushRunning()
+                            refreshAll()
+                            snackbarHostState.showSnackbar("无感面容 / 指纹验证通过，实时通知已开启")
+                            connecting = false
+                            return@launch
                         }
-                    }
-                    is PasskeyOutcome.Failed -> {
-                        if (!autoTriggered) {
-                            sheetHint = out.message
-                            showPasswordFallback = true
+                        is PasskeyOutcome.Cancelled -> {
+                            connecting = false
+                            return@launch
+                        }
+                        is PasskeyOutcome.Failed -> {
+                            // Fall through to local passive Face -> Fingerprint + Auto-Pair Bridge
                         }
                     }
                 }
                 connecting = false
+                if (BiometricAuthHelper.canUseLocalBiometrics(context)) {
+                    BiometricAuthHelper.authenticateLocal(
+                        activity = act,
+                        title = "无感激活 Vesper 实时通知",
+                        subtitle = "优先前置无感面容识别，不支持面容自动降级指纹",
+                        onSuccess = {
+                            launchBrowserAutoPairBridge()
+                        },
+                        onFallbackOrCancel = {
+                            if (!autoTriggered) {
+                                showPasswordFallback = true
+                            }
+                        }
+                    )
+                } else if (!autoTriggered) {
+                    showPasswordFallback = true
+                }
             }
         }
 
-        // Auto-attempt passive Face / Fingerprint Passkey on fresh install when server has Passkeys
+        // Auto-attempt passive Face -> Fingerprint -> Auto-Pair on fresh install
         LaunchedEffect(Unit) {
             if (!isPairedState && activity != null) {
-                val serverHasPasskey = api.fetchPasskeyStatus(urlInput).getOrDefault(false)
-                if (serverHasPasskey) {
-                    runPasskeyConnect(autoTriggered = true)
-                }
+                runPasskeyConnect(autoTriggered = true)
             }
         }
 
@@ -1039,18 +1062,13 @@ fun BotHubApp(
                     }
 
                     OutlinedButton(
-                        onClick = {
-                            val target = urlInput.trim().ifEmpty { prefs.serverUrl }
-                            runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
-                            }
-                        },
+                        onClick = { launchBrowserAutoPairBridge() },
                         enabled = !connecting,
                         modifier = Modifier
                             .fillMaxWidth()
                             .sizeIn(minHeight = 48.dp)
                     ) {
-                        Text("从已登录手机浏览器一键免密绑定")
+                        Text("从已登录手机浏览器一键自动回跳绑定")
                     }
 
                     if (!showPasswordFallback) {
