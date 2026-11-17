@@ -31,16 +31,7 @@ func (s *Store) CreateNotification(moduleID, title, summary, markdownBody, prior
 	}
 	summary = strings.TrimSpace(summary)
 	if summary == "" {
-		clean := strings.ReplaceAll(markdownBody, "\n", " ")
-		clean = strings.ReplaceAll(clean, "#", "")
-		clean = strings.ReplaceAll(clean, "*", "")
-		clean = strings.TrimSpace(clean)
-		runes := []rune(clean)
-		if len(runes) > 120 {
-			summary = string(runes[:120]) + "..."
-		} else {
-			summary = clean
-		}
+		summary = summarizeMarkdownPreview(markdownBody, 120)
 	}
 
 	now := NowShanghai()
@@ -147,4 +138,14 @@ func (s *Store) ClearReadNotifications() (int64, error) {
 	}
 	affected, _ := res.RowsAffected()
 	return affected, nil
+}
+
+func summarizeMarkdownPreview(markdownBody string, maxRunes int) string {
+	replacer := strings.NewReplacer("\r", " ", "\n", " ", "#", "", "*", "", "`", "")
+	clean := strings.Join(strings.Fields(replacer.Replace(markdownBody)), " ")
+	runes := []rune(clean)
+	if maxRunes > 0 && len(runes) > maxRunes {
+		return string(runes[:maxRunes]) + "..."
+	}
+	return clean
 }

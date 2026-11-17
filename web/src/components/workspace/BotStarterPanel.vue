@@ -71,6 +71,25 @@ onMounted(() => {
       <p class="text-xs sm:text-sm text-slate-400 max-w-md">
         {{ bot?.role_title }} · 输入消息开始对话，键入 <code class="font-mono text-[#f2b880]">@</code> 协同成员或 <code class="font-mono text-[#f2b880]">/</code> 触发指令
       </p>
+      <div
+        v-if="isGroupBot && groupMembers.length > 0"
+        class="flex flex-wrap items-center justify-center gap-1.5 mt-1"
+      >
+        <span
+          v-for="m in groupMembers.slice(0, 5)"
+          :key="m.id"
+          class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[#fff8ee]/10 bg-[#070b18]/75 text-[10.5px] text-slate-300"
+        >
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-300/75" aria-hidden="true" />
+          {{ m.name }}
+        </span>
+        <span
+          v-if="groupMembers.length > 5"
+          class="text-[10.5px] font-mono text-slate-500"
+        >
+          +{{ groupMembers.length - 5 }}
+        </span>
+      </div>
     </div>
 
     <div
@@ -84,7 +103,7 @@ onMounted(() => {
         type="button"
         :title="`${tool.desc}（点击立即触发或填入指令）`"
         @click="emit('starter', tool.id)"
-        class="stagger-item inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#fff8ee]/12 bg-[#070b18]/80 hover:border-[#f2b880]/55 hover:text-[#f7cba0] text-[11px] text-slate-300 cursor-pointer transition-colors"
+        class="stagger-item min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#fff8ee]/12 bg-[#070b18]/80 hover:border-[#f2b880]/55 hover:text-[#f7cba0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] text-[11px] text-slate-300 cursor-pointer transition-colors"
       >
         <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880]/75" aria-hidden="true" />
         <span>{{ shortToolLabel({ id: tool.id, description: tool.desc }) }}</span>

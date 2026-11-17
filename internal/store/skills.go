@@ -120,20 +120,25 @@ func (s *Store) GetSkillsByIDs(ids []string) ([]Skill, error) {
 
 func (s *Store) SaveSkill(sk Skill) error {
 	now := NowShanghai()
-	if sk.CreatedAt == "" {
+	if strings.TrimSpace(sk.CreatedAt) == "" {
 		sk.CreatedAt = now
 	}
 	sk.UpdatedAt = now
+	sk.ID = strings.TrimSpace(sk.ID)
+	sk.Name = strings.TrimSpace(sk.Name)
+	sk.Slug = strings.TrimSpace(sk.Slug)
+	sk.HTTPURL = strings.TrimSpace(sk.HTTPURL)
 	if sk.Kind != "webhook" {
 		sk.Kind = "prompt"
 	}
-	if strings.TrimSpace(sk.HTTPMethod) == "" {
+	sk.HTTPMethod = strings.ToUpper(strings.TrimSpace(sk.HTTPMethod))
+	if sk.HTTPMethod == "" {
 		sk.HTTPMethod = "GET"
 	}
-	if strings.TrimSpace(sk.HTTPHeaders) == "" {
+	if strings.TrimSpace(sk.HTTPHeaders) == "" || !json.Valid([]byte(sk.HTTPHeaders)) {
 		sk.HTTPHeaders = "{}"
 	}
-	if strings.TrimSpace(sk.ParamsSchema) == "" {
+	if strings.TrimSpace(sk.ParamsSchema) == "" || !json.Valid([]byte(sk.ParamsSchema)) {
 		sk.ParamsSchema = "[]"
 	}
 	en := 0
@@ -154,35 +159,39 @@ func (s *Store) SaveSkill(sk Skill) error {
 			params_schema = excluded.params_schema,
 			enabled = excluded.enabled,
 			updated_at = excluded.updated_at`,
-		sk.ID, sk.Name, sk.Slug, sk.Kind, sk.Description, sk.Instruction, strings.ToUpper(sk.HTTPMethod), sk.HTTPURL, sk.HTTPHeaders, sk.ParamsSchema, en, sk.CreatedAt, sk.UpdatedAt)
+		sk.ID, sk.Name, sk.Slug, sk.Kind, sk.Description, sk.Instruction, sk.HTTPMethod, sk.HTTPURL, sk.HTTPHeaders, sk.ParamsSchema, en, sk.CreatedAt, sk.UpdatedAt)
 	return err
 }
 
 func (s *Store) DeleteSkill(id string) error {
 	trimmed := strings.TrimSpace(id)
+	if trimmed == "" {
+		return nil
+	}
 	_, err := s.db.Exec(`DELETE FROM skills WHERE id = ?`, trimmed)
 	if err != nil {
 		return err
 	}
 	// Clean dangling skill IDs from bots.skill_ids
 	bots, err := s.ListBots()
-	if err == nil {
-		for _, b := range bots {
-			cur := b.SkillIDList()
-			changed := false
-			next := make([]string, 0, len(cur))
-			for _, sid := range cur {
-				if sid == trimmed {
-					changed = true
-					continue
-				}
-				next = append(next, sid)
+	if err != nil {
+		return nil
+	}
+	for _, b := range bots {
+		cur := b.SkillIDList()
+		changed := false
+		next := make([]string, 0, len(cur))
+		for _, sid := range cur {
+			if sid == trimmed {
+				changed = true
+				continue
 			}
-			if changed {
-				raw, _ := json.Marshal(next)
-				b.SkillIDs = string(raw)
-				_ = s.SaveBot(b)
-			}
+			next = append(next, sid)
+		}
+		if changed {
+			raw, _ := json.Marshal(next)
+			b.SkillIDs = string(raw)
+			_ = s.SaveBot(b)
 		}
 	}
 	return nil

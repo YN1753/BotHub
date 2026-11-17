@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 )
@@ -56,12 +57,20 @@ func (s *Store) GetTask(id string) (*Task, error) {
 
 func (s *Store) SaveTask(t Task) error {
 	now := NowShanghai()
-	if t.CreatedAt == "" {
+	if strings.TrimSpace(t.CreatedAt) == "" {
 		t.CreatedAt = now
 	}
 	t.UpdatedAt = now
+	t.ID = strings.TrimSpace(t.ID)
+	t.Name = strings.TrimSpace(t.Name)
+	t.Type = strings.TrimSpace(t.Type)
 	t.BotID = strings.TrimSpace(t.BotID)
+	t.Description = strings.TrimSpace(t.Description)
+	t.CronExpr = strings.TrimSpace(t.CronExpr)
 	t.RunAt = strings.TrimSpace(t.RunAt)
+	if strings.TrimSpace(t.Params) == "" || !json.Valid([]byte(t.Params)) {
+		t.Params = "{}"
+	}
 	en := 0
 	if t.Enabled {
 		en = 1
@@ -84,6 +93,10 @@ func (s *Store) SaveTask(t Task) error {
 }
 
 func (s *Store) DeleteTask(id string) error {
-	_, err := s.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
+	trimmed := strings.TrimSpace(id)
+	if trimmed == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`DELETE FROM tasks WHERE id = ?`, trimmed)
 	return err
 }

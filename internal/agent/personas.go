@@ -77,9 +77,22 @@ func BuildSystemPrompt(personaID string, memories []store.AgentMemory) string {
 	sb.WriteString("硬性输出规范：全文严禁输出任何 Emoji 表情或特殊装饰符号。\n")
 
 	if len(memories) > 0 {
-		sb.WriteString("\n[已持久化的用户背景与长期记忆]\n")
+		wroteHeader := false
 		for _, m := range memories {
-			sb.WriteString(fmt.Sprintf("- [%s] %s: %s\n", m.Category, m.FactKey, m.Content))
+			cat := strings.TrimSpace(m.Category)
+			key := strings.TrimSpace(m.FactKey)
+			val := strings.TrimSpace(m.Content)
+			if key == "" && val == "" {
+				continue
+			}
+			if !wroteHeader {
+				sb.WriteString("\n[已持久化的用户背景与长期记忆]\n")
+				wroteHeader = true
+			}
+			if cat == "" {
+				cat = "general"
+			}
+			sb.WriteString(fmt.Sprintf("- [%s] %s: %s\n", cat, key, val))
 		}
 	}
 	return sb.String()

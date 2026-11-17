@@ -293,4 +293,19 @@ func TestBuiltinToolsExecution(t *testing.T) {
 	if cat := normalizeDistilledCategory("unknown_bucket"); cat != "general" {
 		t.Fatalf("unexpected fallback category: %q", cat)
 	}
+
+	// 8. Verify skill arg formatting and empty memory filtering in BuildSystemPrompt
+	if got := formatSkillArg(nil, true); got != "" {
+		t.Fatalf("expected empty string for nil skill arg, got %q", got)
+	}
+	if got := formatSkillArg("  hello ", true); got != "hello" {
+		t.Fatalf("expected trimmed skill arg, got %q", got)
+	}
+	sysPrompt := BuildSystemPrompt("grok", []store.AgentMemory{
+		{Category: "", FactKey: "  ", Content: "   "},
+		{Category: "infra", FactKey: "region", Content: "tokyo"},
+	})
+	if strings.Contains(sysPrompt, "[] :") || !strings.Contains(sysPrompt, "[infra] region: tokyo") {
+		t.Fatalf("unexpected BuildSystemPrompt memory output: %s", sysPrompt)
+	}
 }

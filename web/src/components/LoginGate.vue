@@ -75,8 +75,9 @@ async function handleSubmit() {
           <button
             type="button"
             @click="showPassword = !showPassword"
+            :aria-pressed="showPassword"
             :aria-label="showPassword ? '隐藏密钥' : '显示密钥'"
-            class="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-lg text-[11px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer"
+            class="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-lg text-[11px] font-mono text-slate-400 hover:text-[#f2b880] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer"
           >
             {{ showPassword ? '隐藏' : '显示' }}
           </button>

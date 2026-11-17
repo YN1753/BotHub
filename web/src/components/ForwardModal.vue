@@ -147,12 +147,18 @@ async function submitForward(jumpAfter: boolean) {
       </div>
 
       <div class="flex flex-col gap-1.5 text-xs text-slate-300">
-        <span>附言说明（可选）</span>
+        <div class="flex items-center justify-between">
+          <span>附言说明（可选）</span>
+          <span class="text-[10.5px] font-mono text-slate-500">{{ note.length }}/500</span>
+        </div>
         <input
           v-model="note"
           type="text"
+          maxlength="500"
           aria-label="转发附言说明"
-          placeholder="如：请参考这条记录排查关联节点..."
+          placeholder="如：请参考这条记录排查关联节点... (Cmd/Ctrl + Enter 发送)"
+          @keydown.meta.enter.prevent="selectedId && !sending && submitForward(true)"
+          @keydown.ctrl.enter.prevent="selectedId && !sending && submitForward(true)"
           class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 text-xs text-white focus:border-[#f2b880]/60"
         />
         <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
@@ -160,8 +166,14 @@ async function submitForward(jumpAfter: boolean) {
             v-for="tag in ['请协助跟进', '供参考上下文', '排查关联异常']"
             :key="tag"
             type="button"
-            @click="note = tag"
-            class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 bg-[#050811] text-slate-400 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+            :aria-pressed="note === tag"
+            @click="note = note === tag ? '' : tag"
+            :class="[
+              'px-2 py-0.5 rounded-md border cursor-pointer transition-colors',
+              note === tag
+                ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
+                : 'border-[#fff8ee]/10 bg-[#050811] text-slate-400 hover:border-[#f2b880]/45 hover:text-[#f2b880]'
+            ]"
           >
             {{ tag }}
           </button>

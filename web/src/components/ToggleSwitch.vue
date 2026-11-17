@@ -1,23 +1,35 @@
 <script setup lang="ts">
-const props = defineProps<{
-  modelValue: boolean
-  label: string
-  hint?: string
-  description?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean
+    label: string
+    hint?: string
+    description?: string
+    disabled?: boolean
+  }>(),
+  {
+    disabled: false,
+  }
+)
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
 }>()
+
+function toggle() {
+  if (props.disabled) return
+  emit('update:modelValue', !props.modelValue)
+}
 </script>
 
 <template>
   <button
     type="button"
     role="switch"
+    :disabled="props.disabled"
     :aria-checked="props.modelValue"
-    @click="emit('update:modelValue', !props.modelValue)"
-    class="w-full min-h-[44px] flex items-center justify-between gap-3 rounded-xl border border-[#fff8ee]/10 bg-[#070a16]/70 hover:border-[#f2b880]/35 px-3.5 py-2.5 text-left cursor-pointer"
+    @click="toggle"
+    class="w-full min-h-[44px] flex items-center justify-between gap-3 rounded-xl border border-[#fff8ee]/10 bg-[#070a16]/70 hover:border-[#f2b880]/35 px-3.5 py-2.5 text-left cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880]"
   >
     <div class="min-w-0">
       <div class="text-xs font-medium text-slate-100">{{ label }}</div>
@@ -25,6 +37,7 @@ const emit = defineEmits<{
     </div>
 
     <span
+      aria-hidden="true"
       :class="[
         'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-200',
         modelValue

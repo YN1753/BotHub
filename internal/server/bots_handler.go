@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -669,6 +671,22 @@ func (s *Server) handleClearBotMessages(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+func decodeOptionalJSON(w http.ResponseWriter, r *http.Request, maxBytes int64, dst any) error {
+	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes)).Decode(dst)
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	return err
+}
+
+func truncateRunes(s string, maxRunes int) string {
+	r := []rune(s)
+	if maxRunes > 0 && len(r) > maxRunes {
+		return string(r[:maxRunes])
+	}
+	return s
+}
+
 func (s *Server) handleCreateBotThread(w http.ResponseWriter, r *http.Request) {
 	botID := strings.TrimSpace(r.PathValue("id"))
 	bot, err := s.store.GetBot(botID)
@@ -679,12 +697,15 @@ func (s *Server) handleCreateBotThread(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title string `json:"title"`
 	}
-	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*1024)).Decode(&req)
+	if err := decodeOptionalJSON(w, r, 8*1024, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "话题请求格式错误")
+		return
+	}
 
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
 	threadID := "th_" + hex.EncodeToString(b)
-	title := notifier.StripEmoji(strings.TrimSpace(req.Title))
+	title := truncateRunes(notifier.StripEmoji(strings.TrimSpace(req.Title)), 80)
 	if title == "" {
 		title = "新话题"
 	}
@@ -718,7 +739,10 @@ func (s *Server) handleForkBotThread(w http.ResponseWriter, r *http.Request) {
 		UpToMsgID      int64  `json:"up_to_msg_id"`
 		Title          string `json:"title"`
 	}
-	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*1024)).Decode(&req)
+	if err := decodeOptionalJSON(w, r, 8*1024, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "分支请求格式错误")
+		return
+	}
 
 	srcMsgs, _ := s.store.ListBotMessagesByThread(botID, strings.TrimSpace(req.SourceThreadID), 60)
 	var contextSlice []store.AgentMessage
@@ -737,7 +761,7 @@ func (s *Server) handleForkBotThread(w http.ResponseWriter, r *http.Request) {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
 	newThreadID := "th_" + hex.EncodeToString(b)
-	title := notifier.StripEmoji(strings.TrimSpace(req.Title))
+	title := truncateRunes(notifier.StripEmoji(strings.TrimSpace(req.Title)), 80)
 	if title == "" {
 		if len(contextSlice) > 0 {
 			lastTxt := strings.TrimSpace(contextSlice[len(contextSlice)-1].Content)
@@ -939,7 +963,7 @@ func (s *Server) handleForwardBotMessage(w http.ResponseWriter, r *http.Request)
 	if fromName == "" {
 		fromName = "其他会话"
 	}
-	note := notifier.StripEmoji(strings.TrimSpace(req.Note))
+	note := truncateRunes(notifier.StripEmoji(strings.TrimSpace(req.Note)), 500)
 	targetThreadID := strings.TrimSpace(req.ThreadID)
 	if targetThreadID == "" {
 		targetThreadID = strings.TrimSpace(targetBot.ActiveThreadID)

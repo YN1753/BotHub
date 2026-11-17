@@ -2060,7 +2060,7 @@ function stateBadgeClass(state?: string): string {
                   @click="enableThinking = !enableThinking"
                   :title="selectedModel.startsWith('pool:') || selectedModel === 'free-pool' ? '深度思考开关主要作用于 DeepSeek Flash / 支持 thinking 的中转站' : '开启或关闭 Flash 深度推理'"
                   :class="[
-                    'min-h-[44px] sm:min-h-[32px] px-3 rounded-full text-xs border cursor-pointer whitespace-nowrap shrink-0',
+                    'min-h-[44px] sm:min-h-[32px] px-3 rounded-full text-xs border cursor-pointer whitespace-nowrap shrink-0 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880]',
                     enableThinking
                       ? 'border-[#f2b880]/50 bg-[#f2b880]/15 text-[#f2b880]'
                       : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
@@ -2101,7 +2101,7 @@ function stateBadgeClass(state?: string): string {
                   type="button"
                   @click="clearDraftPrompt"
                   title="清空当前输入框草稿"
-                  class="hidden sm:inline-flex px-2 py-1 rounded-full text-[11px] text-slate-500 hover:text-slate-200 hover:bg-white/[0.05] cursor-pointer"
+                  class="inline-flex items-center min-h-[40px] sm:min-h-[30px] px-2.5 py-1 rounded-full text-[11px] text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer"
                 >
                   清空
                 </button>
@@ -2109,7 +2109,7 @@ function stateBadgeClass(state?: string): string {
                   v-if="store.state.isStreaming"
                   type="button"
                   @click="stopStream"
-                  class="min-h-[44px] sm:min-h-[34px] px-3.5 rounded-full text-xs bg-rose-500/20 border border-rose-400/45 text-rose-300 hover:bg-rose-500/30 cursor-pointer"
+                  class="min-h-[44px] sm:min-h-[34px] px-3.5 rounded-full text-xs bg-rose-500/20 border border-rose-400/45 text-rose-300 hover:bg-rose-500/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-400 cursor-pointer"
                 >
                   停止
                 </button>
@@ -2118,7 +2118,7 @@ function stateBadgeClass(state?: string): string {
                   :disabled="store.state.isStreaming || !inputPrompt.trim()"
                   aria-label="发送指令"
                   title="发送 (Enter)"
-                  class="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-[#f2b880] hover:bg-[#f7cba0] hover:scale-105 text-[#070a13] flex items-center justify-center cursor-pointer disabled:opacity-35 disabled:hover:scale-100 disabled:cursor-not-allowed shadow-md"
+                  class="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-[#f2b880] hover:bg-[#f7cba0] hover:scale-105 text-[#070a13] flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer disabled:opacity-35 disabled:hover:scale-100 disabled:cursor-not-allowed shadow-md"
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
                     <line x1="12" y1="19" x2="12" y2="5" />

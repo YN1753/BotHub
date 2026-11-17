@@ -118,3 +118,56 @@ func TestTodosNotesAndTaskNoHardcodedButler(t *testing.T) {
 		t.Fatalf("expected overdue todo in workspace briefing, err=%v brief=%+v", err, brief)
 	}
 }
+
+func TestAssetHydrationNotificationAndTaskNormalization(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "norm_test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	// Empty params defaults to "{}" and whitespace trims cleanly
+	if err := st.SaveTask(Task{
+		ID:       "  trimmed_task ",
+		Name:     "  巡检任务  ",
+		Type:     " asset_watcher ",
+		CronExpr: " 0 * * * * ",
+		Params:   "   ",
+	}); err != nil {
+		t.Fatalf("save task: %v", err)
+	}
+	gotTask, err := st.GetTask("trimmed_task")
+	if err != nil || gotTask == nil {
+		t.Fatalf("get normalized task failed: %v", err)
+	}
+	if gotTask.Name != "巡检任务" || gotTask.Params != "{}" || gotTask.CronExpr != "0 * * * *" {
+		t.Fatalf("unexpected task normalization: %+v", gotTask)
+	}
+	if err := st.DeleteTask("   "); err != nil {
+		t.Fatalf("empty delete task should be no-op, got %v", err)
+	}
+
+	// Shared asset hydration parity between ListAssets and GetAsset
+	_ = st.SaveAsset(Asset{ID: "expired_vps", Name: "Old VPS", Category: "compute", Status: "active", DueDate: "2020-01-02"})
+	_ = st.SaveAsset(Asset{ID: "perpetual_vps", Name: "Long VPS", Category: "compute", Status: "active", DueDate: "2099-12-31"})
+	expAsset, err := st.GetAsset("expired_vps")
+	if err != nil || expAsset == nil || expAsset.Status != "已到期" || !expAsset.WarnFlag {
+		t.Fatalf("expected expired asset hydrated with 已到期 and WarnFlag=true, got %+v (%v)", expAsset, err)
+	}
+	allAssets, err := st.ListAssets()
+	if err != nil || len(allAssets) != 2 {
+		t.Fatalf("expected 2 assets, got %d (%v)", len(allAssets), err)
+	}
+
+	// Notification preview summary strips markdown noise and collapses whitespace
+	notif, err := st.CreateNotification("sys", "告警标题", "", "## 节点异常\n- CPU **99%**\n- 详情见 `journalctl`", "urgent")
+	if err != nil {
+		t.Fatalf("create notification: %v", err)
+	}
+	if notif.Priority != "normal" && notif.Priority != "high" {
+		t.Fatalf("unexpected priority: %q", notif.Priority)
+	}
+	if notif.Summary == "" || notif.Summary[0] == '#' {
+		t.Fatalf("expected cleaned summary preview, got %q", notif.Summary)
+	}
+}

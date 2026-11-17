@@ -26,7 +26,9 @@ func isEmojiRune(r rune) bool {
 	switch {
 	case r >= 0x1F300 && r <= 0x1FAFF: // Misc symbols, pictographs, emoticons, transport, supplemental
 		return true
-	case r >= 0x1F000 && r <= 0x1F0FF: // Mahjong, Domino, Playing Cards
+	case r >= 0x1F000 && r <= 0x1F2FF: // Mahjong, Domino, Playing Cards, Regional Flags & Enclosed Symbols
+		return true
+	case r >= 0xE0020 && r <= 0xE007F: // Tag characters (subdivision flag sequences)
 		return true
 	case r >= 0x2600 && r <= 0x27BF: // Misc symbols & Dingbats
 		return true

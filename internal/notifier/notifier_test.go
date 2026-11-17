@@ -19,6 +19,7 @@ func TestStripEmoji(t *testing.T) {
 		{"【早报】☁️ 晴转多云", "【早报】 晴转多云"},
 		{"纯文本测试", "纯文本测试"},
 		{"Emoji with variant ‼️⚠️", "Emoji with variant "},
+		{"Flag \U0001F1E8\U0001F1F3 & Alert \U0001F198", "Flag  & Alert "},
 	}
 
 	for _, c := range cases {
@@ -69,5 +70,14 @@ func TestNativeAppDispatch(t *testing.T) {
 	}
 	if len(logs) == 0 || logs[0].ResponseMsg != "native_app_stream" {
 		t.Fatalf("expected native_app_stream push log, got %+v", logs)
+	}
+
+	if err := client.SendWithPriority(context.Background(), "sys", "   ", "", "urgent"); err == nil {
+		t.Fatal("expected error for empty title and content")
+	}
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := client.SendWithPriority(canceledCtx, "sys", "title", "body", "high"); err == nil {
+		t.Fatal("expected canceled context error")
 	}
 }

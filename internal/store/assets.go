@@ -52,6 +52,16 @@ func NormalizeAssetStatus(raw string) string {
 	}
 }
 
+func hydrateAssetState(a *Asset, autoRenewInt int) {
+	a.AutoRenew = autoRenewInt == 1
+	a.Status = NormalizeAssetStatus(a.Status)
+	a.DaysLeft, _ = CalculateDaysLeft(a.DueDate)
+	if a.Status == "生效中" && a.DaysLeft < 0 && !strings.HasPrefix(strings.TrimSpace(a.DueDate), "2099") {
+		a.Status = "已到期"
+	}
+	a.WarnFlag = (a.Status == "生效中" && a.DaysLeft >= 0 && a.DaysLeft <= 7) || a.Status == "已到期"
+}
+
 func (s *Store) ListAssets() ([]Asset, error) {
 	rows, err := s.db.Query(`
 SELECT id, name, category, spec, price, status, due_date, auto_renew, warn_days, last_checked_at, extra_config
@@ -66,13 +76,7 @@ FROM assets ORDER BY CASE category WHEN 'compute' THEN 1 WHEN 'domain' THEN 2 WH
 		var a Asset
 		var autoRenewInt int
 		if err := rows.Scan(&a.ID, &a.Name, &a.Category, &a.Spec, &a.Price, &a.Status, &a.DueDate, &autoRenewInt, &a.WarnDays, &a.LastCheckedAt, &a.ExtraConfig); err == nil {
-			a.AutoRenew = (autoRenewInt == 1)
-			a.Status = NormalizeAssetStatus(a.Status)
-			a.DaysLeft, _ = CalculateDaysLeft(a.DueDate)
-			if a.Status == "生效中" && a.DaysLeft < 0 && !strings.HasPrefix(a.DueDate, "2099") {
-				a.Status = "已到期"
-			}
-			a.WarnFlag = (a.Status == "生效中" && a.DaysLeft >= 0 && a.DaysLeft <= 7) || a.Status == "已到期"
+			hydrateAssetState(&a, autoRenewInt)
 			list = append(list, a)
 		}
 	}
@@ -90,13 +94,7 @@ func (s *Store) GetAsset(id string) (*Asset, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.AutoRenew = (autoRenewInt == 1)
-	a.Status = NormalizeAssetStatus(a.Status)
-	a.DaysLeft, _ = CalculateDaysLeft(a.DueDate)
-	if a.Status == "生效中" && a.DaysLeft < 0 && !strings.HasPrefix(a.DueDate, "2099") {
-		a.Status = "已到期"
-	}
-	a.WarnFlag = (a.Status == "生效中" && a.DaysLeft >= 0 && a.DaysLeft <= 7) || a.Status == "已到期"
+	hydrateAssetState(&a, autoRenewInt)
 	return &a, nil
 }
 
@@ -161,7 +159,7 @@ func (s *Store) GetExpiringAssets(thresholdDays int) ([]Asset, error) {
 	if err != nil {
 		return nil, err
 	}
-	var expiring []Asset
+	expiring := make([]Asset, 0)
 	for _, a := range list {
 		if a.DaysLeft >= 0 && a.DaysLeft <= thresholdDays {
 			expiring = append(expiring, a)
@@ -171,7 +169,8 @@ func (s *Store) GetExpiringAssets(thresholdDays int) ([]Asset, error) {
 }
 
 func CalculateDaysLeft(dueDateStr string) (int, error) {
-	if strings.TrimSpace(dueDateStr) == "" {
+	trimmed := strings.TrimSpace(dueDateStr)
+	if trimmed == "" {
 		return 9999, nil
 	}
 	loc := ShanghaiLocation()
@@ -179,7 +178,7 @@ func CalculateDaysLeft(dueDateStr string) (int, error) {
 	var t time.Time
 	var err error
 	for _, f := range formats {
-		if t, err = time.ParseInLocation(f, dueDateStr, loc); err == nil {
+		if t, err = time.ParseInLocation(f, trimmed, loc); err == nil {
 			break
 		}
 	}

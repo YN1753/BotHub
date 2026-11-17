@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -133,13 +135,13 @@ func TestSmartGroupAutoBatonRelay(t *testing.T) {
 	defer st.Close()
 	seedAgentTestBots(st)
 
-	callCount := 0
+	var callCount atomic.Int32
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		n := callCount.Add(1)
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, _ := w.(http.Flusher)
 		var chunks []string
-		if callCount == 1 {
+		if n == 1 {
 			// Lead bot delegates follow-up check to @探针哨兵
 			chunks = []string{
 				`data: {"choices":[{"delta":{"role":"assistant","content":"域名与续费周期核验无误，请 @探针哨兵 顺便确认节点实时在线率。"}}]}`,
@@ -166,6 +168,7 @@ func TestSmartGroupAutoBatonRelay(t *testing.T) {
 	_ = st.SetConfig(store.KeyAIModel, "deepseek-flash")
 
 	eng := NewEngine(st, &fakeTaskController{st: st})
+	var turnsMu sync.Mutex
 	var turns []string
 	resp, err := eng.ChatStream(context.Background(), ChatRequest{
 		BotID:   "team_room",
@@ -173,7 +176,9 @@ func TestSmartGroupAutoBatonRelay(t *testing.T) {
 	}, func(event string, data any) {
 		if event == "bot_turn" {
 			b, _ := json.Marshal(data)
+			turnsMu.Lock()
 			turns = append(turns, string(b))
+			turnsMu.Unlock()
 		}
 	})
 	if err != nil {

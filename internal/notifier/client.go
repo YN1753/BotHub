@@ -2,6 +2,7 @@ package notifier
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/YN1753/vesper/bothub/internal/pushstream"
@@ -43,6 +44,15 @@ func inferPriority(moduleID string) string {
 	}
 }
 
+func normalizePriority(priority string) string {
+	switch strings.ToLower(strings.TrimSpace(priority)) {
+	case "high", "urgent", "critical":
+		return "high"
+	default:
+		return "normal"
+	}
+}
+
 // SendMarkdown dispatches an alert exclusively to the native App notification channel
 // (persisting to SQLite inbox and broadcasting in real time over the SSE Hub).
 func (c *Client) SendMarkdown(ctx context.Context, moduleID, title, content string) error {
@@ -50,14 +60,30 @@ func (c *Client) SendMarkdown(ctx context.Context, moduleID, title, content stri
 }
 
 func (c *Client) SendWithPriority(ctx context.Context, moduleID, title, content, priority string) error {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+
+	cleanModuleID := strings.TrimSpace(moduleID)
 	cleanTitle := StripEmoji(strings.TrimSpace(title))
 	cleanContent := StripEmoji(strings.TrimSpace(content))
+	if cleanTitle == "" && cleanContent == "" {
+		return errors.New("notification title and content cannot both be empty")
+	}
 
+	normPriority := normalizePriority(priority)
 	if c.store != nil {
-		if notif, err := c.store.CreateNotification(moduleID, cleanTitle, "", cleanContent, priority); err == nil && c.hub != nil {
+		notif, err := c.store.CreateNotification(cleanModuleID, cleanTitle, "", cleanContent, normPriority)
+		if err != nil {
+			_ = c.store.AddPushLog(cleanModuleID, cleanTitle, cleanContent, "failed", err.Error())
+			return err
+		}
+		if c.hub != nil {
 			c.hub.Publish(notif)
 		}
-		_ = c.store.AddPushLog(moduleID, cleanTitle, cleanContent, "sent", "native_app_stream")
+		_ = c.store.AddPushLog(cleanModuleID, cleanTitle, cleanContent, "sent", "native_app_stream")
 	}
 	return nil
 }

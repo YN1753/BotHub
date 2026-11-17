@@ -62,7 +62,7 @@ function randomizeLook() {
           :aria-label="c.label"
           :aria-pressed="parsed.color === c.id"
           @click="pickColor(c.id)"
-          class="min-w-[32px] min-h-[32px] inline-flex items-center justify-center rounded-full cursor-pointer"
+          class="min-w-[32px] min-h-[32px] inline-flex items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer"
         >
           <span
             :style="{ backgroundColor: c.ring }"
@@ -85,16 +85,18 @@ function randomizeLook() {
     </div>
 
     <!-- Interactive Living Shape Grid -->
-    <div class="grid grid-cols-3 sm:grid-cols-6 gap-2">
+    <div class="grid grid-cols-3 sm:grid-cols-6 gap-2" role="group" aria-label="机甲造型">
       <button
         v-for="sh in BOT_SHAPES"
         :key="sh.id"
         type="button"
+        :title="sh.label"
+        :aria-label="sh.label"
         @pointermove="trackSpotlight"
         @click="pickShape(sh.id)"
         :aria-pressed="parsed.shape === sh.id"
         :class="[
-          'group luxury-card rounded-xl p-2 flex flex-col items-center gap-1.5 cursor-pointer text-center',
+          'group luxury-card rounded-xl p-2 flex flex-col items-center gap-1.5 cursor-pointer text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880]',
           parsed.shape === sh.id
             ? 'border-[#f2b880]/70 bg-[#f2b880]/14'
             : 'border-[#fff8ee]/10 opacity-85 hover:opacity-100'

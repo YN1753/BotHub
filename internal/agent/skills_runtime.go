@@ -120,14 +120,14 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 			continue
 		}
 		val, exists := workingArgs[key]
-		valStr := strings.TrimSpace(fmt.Sprintf("%v", val))
-		if (!exists || val == nil || valStr == "") && strings.TrimSpace(f.Default) != "" {
+		valStr := formatSkillArg(val, exists)
+		if valStr == "" && strings.TrimSpace(f.Default) != "" {
 			workingArgs[key] = strings.TrimSpace(f.Default)
 			val = workingArgs[key]
-			valStr = strings.TrimSpace(fmt.Sprintf("%v", val))
+			valStr = formatSkillArg(val, true)
 			exists = true
 		}
-		if f.Required && (!exists || val == nil || valStr == "") {
+		if f.Required && (!exists || valStr == "") {
 			return 0, "", fmt.Errorf("技能「%s」缺少必填参数: %s", sk.Name, key)
 		}
 	}
@@ -145,6 +145,11 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 	if method == "" {
 		method = http.MethodGet
 	}
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodHead:
+	default:
+		return 0, "", fmt.Errorf("技能不支持的 HTTP 方法: %s", method)
+	}
 
 	var bodyReader io.Reader
 	hasBody := method == http.MethodPost || method == http.MethodPut || method == http.MethodPatch
@@ -155,7 +160,10 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 			bodyText := interpolateSkillTemplate(tpl, workingArgs, false, looksJSON)
 			bodyReader = strings.NewReader(bodyText)
 		} else {
-			payloadBytes, _ := json.Marshal(workingArgs)
+			payloadBytes, err := json.Marshal(workingArgs)
+			if err != nil {
+				return 0, "", fmt.Errorf("序列化技能参数失败: %w", err)
+			}
 			bodyReader = bytes.NewReader(payloadBytes)
 		}
 	}
@@ -188,7 +196,16 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 	}
 	defer resp.Body.Close()
 
-	rawBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 128*1024))
+	const maxSkillRespBytes = 128 * 1024
+	rawBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxSkillRespBytes+1))
+	if err != nil {
+		return resp.StatusCode, "", fmt.Errorf("读取技能响应失败: %w", err)
+	}
+	byteTruncated := len(rawBytes) > maxSkillRespBytes
+	if byteTruncated {
+		rawBytes = rawBytes[:maxSkillRespBytes]
+	}
+
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	rawStr := strings.TrimSpace(string(rawBytes))
 
@@ -202,13 +219,25 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 	runes := []rune(text)
 	if len(runes) > 6000 {
 		text = string(runes[:6000]) + "\n...[已截断过长响应]"
+	} else if byteTruncated {
+		text += "\n...[响应超过 128KB 已截断]"
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errPreview := text
+		if errPreview == "" {
+			errPreview = http.StatusText(resp.StatusCode)
+		}
 		if r := []rune(errPreview); len(r) > 320 {
 			errPreview = string(r[:320]) + "..."
 		}
 		return resp.StatusCode, text, fmt.Errorf("技能接口返回 HTTP %d: %s", resp.StatusCode, errPreview)
 	}
 	return resp.StatusCode, text, nil
+}
+
+func formatSkillArg(val any, exists bool) string {
+	if !exists || val == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprintf("%v", val))
 }

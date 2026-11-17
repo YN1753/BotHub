@@ -14,6 +14,7 @@ import {
 } from '../src/utils/format.ts'
 import { formatToolDisplayName, groupAvailableTools } from '../src/utils/toolMeta.ts'
 import { parseAvatarStyle, composeAvatarStyle, resolveGroupMemberBots } from '../src/utils/botLook.ts'
+import { renderSafeMarkdown } from '../src/utils/markdown.ts'
 
 test('format utilities produce expected strings', () => {
   assert.equal(formatDurationMs(420), '420ms')
@@ -74,4 +75,32 @@ test('botLook parses styles and resolves group members cleanly', () => {
   const resolved = resolveGroupMemberBots(bots[2], bots)
   assert.equal(resolved.length, 1)
   assert.equal(resolved[0].id, 'b2')
+})
+
+test('renderSafeMarkdown sanitizes XSS and renders structured blocks', () => {
+  const xss = renderSafeMarkdown('<script>alert(1)</script> [bad](javascript:alert(2)) [ok](https://example.com)')
+  assert.equal(xss.includes('<script>'), false)
+  assert.equal(xss.includes('href="javascript:'), false)
+  assert.equal(xss.includes('href="https://example.com"'), true)
+
+  const rich = renderSafeMarkdown([
+    '## Ops Summary',
+    '- [x] SSL verified',
+    '- [ ] Renew domain',
+    '',
+    '| Node | Load |',
+    '| --- | --- |',
+    '| hk-1 | 0.21 |',
+    '',
+    '> check logs',
+    '',
+    '```sh',
+    'uptime',
+    '```',
+  ].join('\n'))
+  assert.match(rich, /<h2>Ops Summary<\/h2>/)
+  assert.match(rich, /md-task-item is-done/)
+  assert.match(rich, /<table>/)
+  assert.match(rich, /<blockquote>/)
+  assert.match(rich, /md-copy-code-btn/)
 })

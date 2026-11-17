@@ -1496,6 +1496,14 @@ func (e *Engine) runSingleBotTurn(
 				totalUsage.CompletionTokens += sUsage.CompletionTokens
 				totalUsage.TotalTokens += sUsage.TotalTokens
 			}
+			if strings.TrimSpace(sContent) == "" && strings.TrimSpace(finalContent.String()) == "" {
+				fallback := "已完成工具调用，但模型未返回进一步总结，请在下方工具记录中查看执行详情。"
+				finalContent.WriteString(fallback)
+				sContent = fallback
+				if emit != nil {
+					emit("content", map[string]any{"delta": fallback, "sender_bot_id": actingBot.ID})
+				}
+			}
 			msgKind := strings.TrimSpace(req.MsgKind)
 			if msgKind == "" {
 				msgKind = "chat"
@@ -1513,6 +1521,12 @@ func (e *Engine) runSingleBotTurn(
 					ToolCalls:        "[]",
 					ModelUsed:        activeTarget.Model,
 				})
+			}
+		} else if strings.TrimSpace(finalContent.String()) == "" {
+			fallback := fmt.Sprintf("已完成工具调用，但生成最终汇总时出错：%v", sErr)
+			finalContent.WriteString(fallback)
+			if emit != nil {
+				emit("content", map[string]any{"delta": fallback, "sender_bot_id": actingBot.ID})
 			}
 		}
 	}

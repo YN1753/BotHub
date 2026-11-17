@@ -76,6 +76,10 @@ function selectOption(val: string) {
 
 function handleTriggerKeydown(e: KeyboardEvent) {
   if (props.disabled) return
+  if (e.key === 'Tab' && open.value) {
+    open.value = false
+    return
+  }
   if (e.key === 'Escape' && open.value) {
     e.preventDefault()
     e.stopPropagation()
@@ -160,6 +164,7 @@ onBeforeUnmount(() => {
       :disabled="disabled"
       :aria-expanded="open"
       :aria-controls="listboxId"
+      :aria-activedescendant="open && options.length ? `${listboxId}-opt-${highlightedIndex}` : undefined"
       aria-haspopup="listbox"
       :aria-label="ariaLabel || currentLabel"
       @click="toggleOpen"
@@ -203,8 +208,12 @@ onBeforeUnmount(() => {
           openAbove ? 'bottom-full mb-1.5 origin-bottom-left' : 'top-full mt-1.5 origin-top-left'
         ]"
       >
+        <div v-if="options.length === 0" class="px-3 py-2 text-xs text-slate-500 text-center">
+          暂无可选项
+        </div>
         <button
           v-for="(opt, idx) in options"
+          :id="`${listboxId}-opt-${idx}`"
           :key="opt.value"
           :data-option-idx="idx"
           type="button"
