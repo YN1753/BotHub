@@ -14,7 +14,8 @@ import {
   scoreOmnisearchMatch,
 } from '../src/utils/format.ts'
 import { formatToolDisplayName, groupAvailableTools } from '../src/utils/toolMeta.ts'
-import { parseAvatarStyle, composeAvatarStyle, resolveGroupMemberBots } from '../src/utils/botLook.ts'
+import { parseAvatarStyle, composeAvatarStyle, getColorPalette, resolveGroupMemberBots } from '../src/utils/botLook.ts'
+import { clampUnit, computeNormalizedGaze } from '../src/utils/botGaze.ts'
 import { renderSafeMarkdown } from '../src/utils/markdown.ts'
 import { shouldReloadOnPreloadError, installPreloadErrorRecovery } from '../src/utils/lazyComponent.ts'
 import { isImeComposingEnter, isPointOutsideRect, closePopoverWithTransition } from '../src/utils/topLayer.ts'
@@ -83,8 +84,15 @@ test('toolMeta groups and formats builtin & skill names cleanly', () => {
 
 test('botLook parses styles and resolves group members cleanly', () => {
   assert.deepEqual(parseAvatarStyle('visor:indigo'), { shape: 'visor', color: 'indigo' })
+  assert.deepEqual(parseAvatarStyle('sentinel:obsidian'), { shape: 'sentinel', color: 'obsidian' })
   assert.deepEqual(parseAvatarStyle('cyan'), { shape: 'butler', color: 'gold' })
   assert.equal(composeAvatarStyle('radar', 'emerald'), 'radar:emerald')
+  assert.equal(Boolean(getColorPalette('obsidian').shellHi), true)
+
+  assert.deepEqual(computeNormalizedGaze(500, 250, 1000, 500), { gx: 0, gy: 0 })
+  assert.deepEqual(computeNormalizedGaze(1000, 0, 1000, 500), { gx: 1, gy: -1 })
+  assert.equal(clampUnit(2.5), 1)
+  assert.equal(clampUnit(-3), -1)
 
   const bots = [
     { id: 'b1', name: 'Alice', is_group: false },

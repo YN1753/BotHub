@@ -157,5 +157,20 @@ onMounted(() => {
 </script>
 
 <template>
-  <canvas ref="canvasRef" aria-hidden="true" class="fixed inset-0 z-0 pointer-events-none opacity-80" />
+  <div aria-hidden="true" class="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+    <!-- Ambient Atmospheric Aurora Light Pools (gives glass surfaces real color depth to refract) -->
+    <div
+      class="absolute -top-32 -left-24 w-[38rem] h-[30rem] rounded-full opacity-55 blur-[110px]"
+      style="background: radial-gradient(circle, rgba(99, 102, 241, 0.28) 0%, rgba(56, 189, 248, 0.1) 48%, transparent 72%)"
+    />
+    <div
+      class="absolute -top-24 right-[-6rem] w-[34rem] h-[28rem] rounded-full opacity-50 blur-[105px]"
+      style="background: radial-gradient(circle, rgba(242, 184, 128, 0.24) 0%, rgba(251, 113, 133, 0.08) 52%, transparent 74%)"
+    />
+    <div
+      class="absolute -bottom-36 left-1/3 w-[42rem] h-[28rem] rounded-full opacity-40 blur-[120px]"
+      style="background: radial-gradient(circle, rgba(52, 211, 153, 0.14) 0%, rgba(56, 189, 248, 0.08) 50%, transparent 74%)"
+    />
+    <canvas ref="canvasRef" class="absolute inset-0 opacity-85" />
+  </div>
 </template>

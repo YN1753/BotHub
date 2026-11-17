@@ -4,6 +4,7 @@ import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
 import { formatDurationMs } from '../../utils/format'
 import { isImeComposingEnter } from '../../utils/topLayer'
+import { pulseBotListening } from '../../utils/botGaze'
 import type { Bot } from '../../types/bothub'
 import BotAvatar from '../BotAvatar.vue'
 import CustomSelect from '../CustomSelect.vue'
@@ -30,6 +31,12 @@ interface SlashCmdItem {
   action?: 'open_drawer' | 'clear_timeline' | 'new_thread' | 'summarize_thread' | 'open_skills' | 'open_workhub'
 }
 
+export interface StarterChipItem {
+  id: string
+  label: string
+  highlight?: boolean
+}
+
 const props = defineProps<{
   inputPrompt: string
   selectedModel: string
@@ -40,6 +47,8 @@ const props = defineProps<{
   isGroupBot: boolean
   groupMembers: Bot[]
   lastPrompt: string
+  centeredStage?: boolean
+  starterChips?: StarterChipItem[]
 }>()
 
 const emit = defineEmits<{
@@ -51,6 +60,7 @@ const emit = defineEmits<{
   stopStream: []
   clearTimeline: []
   summarizeThread: []
+  pickStarter: [toolId: string]
 }>()
 
 const store = useAppStore()
@@ -298,6 +308,8 @@ watch(promptModel, (val) => {
   if (!val) {
     mentionOpen.value = false
     slashOpen.value = false
+  } else {
+    pulseBotListening()
   }
 })
 
@@ -568,26 +580,18 @@ function handleComposerKeydown(e: KeyboardEvent) {
     />
 
     <div
-      v-if="isGroupBot && groupMembers.length > 0"
-      class="max-w-[820px] w-full mx-auto mb-2 flex items-center gap-1.5 flex-wrap"
+      v-if="isGroupBot && groupMembers.length > 0 && !centeredStage"
+      class="max-w-[780px] w-full mx-auto mb-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar"
     >
-      <span class="font-mono text-[11px] text-slate-400">@点名协同:</span>
       <button
         v-for="member in groupMembers"
         :key="member.id"
         type="button"
         @click="appendMention(`@${member.name} `)"
-        class="min-h-[36px] sm:min-h-[28px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border border-[#fff8ee]/12 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer"
+        class="btn-tactile min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11.5px] shrink-0 cursor-pointer"
       >
-        <BotAvatar :avatar-style="member.avatar_style" :state="member.state" size="sm" :interactive="false" />
+        <BotAvatar :avatar-style="member.avatar_style" :state="member.state" size="xs" :interactive="false" />
         <span>@{{ member.name }}</span>
-      </button>
-      <button
-        type="button"
-        @click="store.state.showGroupDrawer = true"
-        class="min-h-[36px] sm:min-h-[28px] inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border border-dashed border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/10 cursor-pointer"
-      >
-        <span>+ 拉人</span>
       </button>
     </div>
 
@@ -595,7 +599,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
       ref="formRef"
       @submit.prevent="emit('submitPrompt')"
       :class="[
-        'composer-dock max-w-[820px] w-full mx-auto rounded-[22px] border border-[#fff8ee]/14 focus-within:border-[#f2b880]/55 bg-[#0b101e]/92 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,248,238,0.08),0_20px_46px_rgba(0,0,0,0.52)] px-3.5 sm:px-4 pt-3 pb-2.5 flex flex-col gap-2.5',
+        'composer-dock max-w-[780px] w-full mx-auto rounded-[24px] px-4 sm:px-4.5 pt-3.5 pb-2.5 flex flex-col gap-2',
         store.state.isStreaming ? 'is-streaming' : ''
       ]"
     >
@@ -645,38 +649,43 @@ function handleComposerKeydown(e: KeyboardEvent) {
         />
       </div>
 
-      <div class="flex items-center justify-between gap-2">
-        <div class="flex items-center gap-2 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
-          <div class="flex-1 min-w-[140px] max-w-[230px] sm:flex-none sm:w-56 shrink-0">
+      <div class="flex items-center justify-between gap-2 pt-1.5">
+        <div class="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
+          <div class="min-w-[132px] max-w-[196px] shrink-0">
             <CustomSelect v-model="modelValueProxy" :options="store.modelOptions.value" compact aria-label="选择推理模型" />
           </div>
           <button
             type="button"
             :aria-pressed="enableThinking"
             @click="emit('update:enableThinking', !enableThinking)"
-            :title="selectedModel.startsWith('pool:') || selectedModel === 'free-pool' ? '深度思考开关主要作用于 DeepSeek Flash / 支持 thinking 的中转站' : '开启或关闭 Flash 深度推理'"
+            :title="selectedModel.startsWith('pool:') || selectedModel === 'free-pool' ? '深度思考开关主要作用于 DeepSeek Flash / 支持 thinking 的中转站' : '开启或关闭深度推理思考链'"
             :class="[
-              'min-h-[44px] sm:min-h-[32px] px-3 rounded-full text-xs border cursor-pointer whitespace-nowrap shrink-0 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880]',
-              enableThinking
-                ? 'border-[#f2b880]/50 bg-[#f2b880]/15 text-[#f2b880]'
-                : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+              'min-h-[40px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880]',
+              enableThinking ? 'btn-tactile-gold' : 'btn-tactile text-slate-400'
             ]"
           >
-            深度思考: {{ enableThinking ? '开' : '关' }}
-          </button>
-          <span class="hidden sm:inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-400 truncate" aria-live="polite">
             <span
-              v-if="store.state.isStreaming"
-              class="w-1.5 h-1.5 rounded-full bg-[#f2b880] animate-pulse shrink-0"
+              :class="[
+                'w-1.5 h-1.5 rounded-full transition-colors',
+                enableThinking ? 'bg-[#f2b880] shadow-[0_0_8px_#f2b880]' : 'bg-slate-500'
+              ]"
               aria-hidden="true"
             />
+            <span>思考</span>
+          </button>
+          <span
+            v-if="store.state.isStreaming"
+            class="hidden sm:inline-flex items-center gap-1.5 font-mono text-[11px] text-[#ffe2be] truncate pl-1"
+            aria-live="polite"
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880] animate-pulse shrink-0" aria-hidden="true" />
             <span class="truncate">
-              {{ streamStatus }}<template v-if="store.state.isStreaming && streamElapsedMs >= 400"> · {{ formatDurationMs(streamElapsedMs) }}</template>
+              {{ streamStatus }}<template v-if="streamElapsedMs >= 400"> · {{ formatDurationMs(streamElapsedMs) }}</template>
             </span>
           </span>
         </div>
 
-        <div class="flex items-center gap-2 shrink-0">
+        <div class="flex items-center gap-1.5 shrink-0">
           <button
             v-if="promptModel.length >= 1600 && !store.state.isStreaming"
             type="button"
@@ -687,7 +696,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
             长文转文档 ({{ promptModel.length }}字)
           </button>
           <span
-            v-else-if="promptModel.length > 80"
+            v-else-if="promptModel.length > 120"
             class="hidden sm:inline font-mono text-[10.5px] text-slate-500 tabular-nums"
           >
             {{ promptModel.length }} 字
@@ -697,7 +706,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
             type="button"
             @click="clearDraftPrompt"
             title="清空当前输入框草稿"
-            class="inline-flex items-center min-h-[40px] sm:min-h-[30px] px-2.5 py-1 rounded-full text-[11px] text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer"
+            class="inline-flex items-center min-h-[34px] px-2.5 py-1 rounded-full text-[11px] text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] cursor-pointer"
           >
             清空
           </button>
@@ -705,7 +714,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
             v-if="store.state.isStreaming"
             type="button"
             @click="emit('stopStream')"
-            class="min-h-[44px] sm:min-h-[34px] px-3.5 rounded-full text-xs bg-rose-500/20 border border-rose-400/45 text-rose-300 hover:bg-rose-500/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-400 cursor-pointer"
+            class="min-h-[38px] sm:min-h-[34px] px-3.5 rounded-full text-xs bg-rose-500/20 border border-rose-400/45 text-rose-300 hover:bg-rose-500/30 cursor-pointer"
           >
             停止
           </button>
@@ -714,9 +723,9 @@ function handleComposerKeydown(e: KeyboardEvent) {
             :disabled="store.state.isStreaming || !promptModel.trim()"
             aria-label="发送指令"
             title="发送 (Enter)"
-            class="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-[#f2b880] hover:bg-[#f7cba0] hover:scale-105 text-[#070a13] flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer disabled:opacity-35 disabled:hover:scale-100 disabled:cursor-not-allowed shadow-md"
+            class="btn-jewel w-10 h-10 sm:w-9 sm:h-9 rounded-full hover:scale-105 flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer disabled:opacity-35 disabled:hover:scale-100 disabled:cursor-not-allowed"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
               <line x1="12" y1="19" x2="12" y2="5" />
               <polyline points="5 12 12 5 19 12" />
             </svg>
@@ -724,5 +733,31 @@ function handleComposerKeydown(e: KeyboardEvent) {
         </div>
       </div>
     </form>
+
+    <!-- Grok / Perplexity-Style Curated Quick Chips Underneath Centered Empty-Stage Console -->
+    <div
+      v-if="centeredStage && starterChips && starterChips.length > 0"
+      class="max-w-[760px] w-full mx-auto mt-3.5 flex flex-wrap items-center justify-center gap-2"
+    >
+      <button
+        v-for="chip in starterChips"
+        :key="chip.id"
+        type="button"
+        @click="emit('pickStarter', chip.id)"
+        :class="[
+          'min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs cursor-pointer',
+          chip.highlight ? 'btn-tactile-gold font-medium' : 'btn-tactile text-slate-300'
+        ]"
+      >
+        <span
+          :class="[
+            'w-1.5 h-1.5 rounded-full shrink-0',
+            chip.highlight ? 'bg-[#f2b880] shadow-[0_0_6px_#f2b880]' : 'bg-slate-400/80'
+          ]"
+          aria-hidden="true"
+        />
+        <span>{{ chip.label }}</span>
+      </button>
+    </div>
   </div>
 </template>

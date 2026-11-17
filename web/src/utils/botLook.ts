@@ -1,7 +1,7 @@
 import type { Bot } from '../types/bothub'
 
 export type BotShape = 'butler' | 'sentinel' | 'radar' | 'critic' | 'swarm' | 'visor'
-export type BotColor = 'gold' | 'indigo' | 'emerald' | 'amber' | 'violet'
+export type BotColor = 'gold' | 'indigo' | 'emerald' | 'amber' | 'violet' | 'obsidian'
 
 export interface ShapeOption {
   id: BotShape
@@ -17,62 +17,120 @@ export interface ColorOption {
   fill: string
   eye: string
   visor: string
+  shellHi: string
+  shellMid: string
+  shellDeep: string
+  aurora: string
+  eyeInk: string
+  blush: string
+  shadow: string
 }
 
 export const BOT_SHAPES: ShapeOption[] = [
-  { id: 'butler', label: '星冕智脑', hint: '冠冕天线' },
-  { id: 'sentinel', label: '哨兵雷达', hint: '双耳感测' },
-  { id: 'radar', label: '天穹猎手', hint: '弧形天盘' },
-  { id: 'critic', label: '锐角极客', hint: '双角锋锐' },
-  { id: 'swarm', label: '星云协从', hint: '双星环绕' },
-  { id: 'visor', label: '赛博领航', hint: '全景目镜' },
+  { id: 'butler', label: '云团灵眸', hint: '圆润糯团' },
+  { id: 'sentinel', label: '猫耳灵团', hint: '一体灵耳' },
+  { id: 'radar', label: '流光星滴', hint: '水滴一体' },
+  { id: 'critic', label: '灵角小魔', hint: '一体双角' },
+  { id: 'swarm', label: '绵绵星云', hint: '云朵轮廓' },
+  { id: 'visor', label: '方糖果冻', hint: '超椭一体' },
 ]
 
 export const BOT_COLORS: ColorOption[] = [
   {
     id: 'gold',
-    label: '暖琥珀金',
+    label: '奶白暖杏',
     ring: '#f2b880',
-    glow: 'rgba(242, 184, 128, 0.34)',
-    fill: 'rgba(242, 184, 128, 0.14)',
-    eye: '#fbf3e8',
-    visor: 'rgba(242, 184, 128, 0.2)',
+    glow: 'rgba(242, 184, 128, 0.44)',
+    fill: 'rgba(242, 184, 128, 0.18)',
+    eye: '#141928',
+    visor: 'rgba(242, 184, 128, 0.25)',
+    shellHi: '#ffffff',
+    shellMid: '#f6ede2',
+    shellDeep: '#d8c2aa',
+    aurora: '#ffb87a',
+    eyeInk: '#131826',
+    blush: '#ff8570',
+    shadow: 'rgba(4, 7, 16, 0.58)',
   },
   {
     id: 'indigo',
-    label: '深空暮靛',
+    label: '冰透星蓝',
     ring: '#a5b4fc',
-    glow: 'rgba(165, 180, 252, 0.32)',
-    fill: 'rgba(165, 180, 252, 0.14)',
-    eye: '#eef2ff',
-    visor: 'rgba(165, 180, 252, 0.2)',
+    glow: 'rgba(147, 197, 253, 0.44)',
+    fill: 'rgba(165, 180, 252, 0.18)',
+    eye: '#11182d',
+    visor: 'rgba(165, 180, 252, 0.25)',
+    shellHi: '#ffffff',
+    shellMid: '#e6eeff',
+    shellDeep: '#b2c5f2',
+    aurora: '#7dd3fc',
+    eyeInk: '#10172b',
+    blush: '#fb7185',
+    shadow: 'rgba(4, 7, 16, 0.58)',
   },
   {
     id: 'emerald',
-    label: '星野翠绿',
+    label: '薄荷青玉',
     ring: '#34d399',
-    glow: 'rgba(52, 211, 153, 0.32)',
-    fill: 'rgba(52, 211, 153, 0.14)',
-    eye: '#d1fae5',
-    visor: 'rgba(52, 211, 153, 0.2)',
+    glow: 'rgba(52, 211, 153, 0.42)',
+    fill: 'rgba(52, 211, 153, 0.18)',
+    eye: '#0d211d',
+    visor: 'rgba(52, 211, 153, 0.25)',
+    shellHi: '#ffffff',
+    shellMid: '#e2faef',
+    shellDeep: '#9edbc3',
+    aurora: '#34d399',
+    eyeInk: '#0f201d',
+    blush: '#fb923c',
+    shadow: 'rgba(4, 7, 16, 0.58)',
   },
   {
     id: 'amber',
-    label: '炽焰流金',
+    label: '蜜桃晨曦',
     ring: '#fbbf24',
-    glow: 'rgba(251, 191, 36, 0.34)',
-    fill: 'rgba(251, 191, 36, 0.14)',
-    eye: '#fef3c7',
-    visor: 'rgba(251, 191, 36, 0.2)',
+    glow: 'rgba(251, 191, 36, 0.44)',
+    fill: 'rgba(251, 191, 36, 0.18)',
+    eye: '#221612',
+    visor: 'rgba(251, 191, 36, 0.25)',
+    shellHi: '#fffefb',
+    shellMid: '#ffefd6',
+    shellDeep: '#efc48e',
+    aurora: '#fb923c',
+    eyeInk: '#1f1512',
+    blush: '#f43f5e',
+    shadow: 'rgba(4, 7, 16, 0.58)',
   },
   {
     id: 'violet',
-    label: '星云紫微',
+    label: '雾粉星紫',
     ring: '#d8b4fe',
-    glow: 'rgba(216, 180, 254, 0.34)',
-    fill: 'rgba(216, 180, 254, 0.14)',
-    eye: '#faf5ff',
-    visor: 'rgba(216, 180, 254, 0.2)',
+    glow: 'rgba(216, 180, 254, 0.44)',
+    fill: 'rgba(216, 180, 254, 0.18)',
+    eye: '#1c132b',
+    visor: 'rgba(216, 180, 254, 0.25)',
+    shellHi: '#ffffff',
+    shellMid: '#f2e7ff',
+    shellDeep: '#c9b1ee',
+    aurora: '#f472b6',
+    eyeInk: '#1a1228',
+    blush: '#fb7185',
+    shadow: 'rgba(4, 7, 16, 0.58)',
+  },
+  {
+    id: 'obsidian',
+    label: '暗夜流光',
+    ring: '#38bdf8',
+    glow: 'rgba(56, 189, 248, 0.45)',
+    fill: 'rgba(56, 189, 248, 0.16)',
+    eye: '#f0f9ff',
+    visor: 'rgba(56, 189, 248, 0.28)',
+    shellHi: '#374669',
+    shellMid: '#182036',
+    shellDeep: '#090d1a',
+    aurora: '#38bdf8',
+    eyeInk: '#f0f9ff',
+    blush: '#f472b6',
+    shadow: 'rgba(2, 4, 10, 0.72)',
   },
 ]
 

@@ -73,15 +73,15 @@ function parseConsultSummary(raw?: string): { label: string; tools: string[] } |
   <details
     v-if="tools.length"
     :class="[
-      'vesper-details rounded-xl border bg-[#070a16]/75 px-3 py-2 font-mono text-[11.5px]',
+      'vesper-details well-recessed rounded-2xl px-3.5 py-2.5 font-mono text-[11.5px]',
       tools.some((t) => t.status === 'error')
-        ? 'border-rose-400/25'
-        : 'border-[#fff8ee]/10',
+        ? 'border-rose-400/35'
+        : '',
     ]"
   >
-    <summary class="cursor-pointer flex items-center justify-between gap-2 text-slate-300 select-none">
-      <span class="inline-flex items-center gap-1.5 min-w-0">
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron text-slate-400 shrink-0">
+    <summary class="cursor-pointer flex items-center justify-between gap-2 text-slate-200 select-none">
+      <span class="inline-flex items-center gap-2 min-w-0">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron text-[#f2b880] shrink-0">
           <polyline points="9 18 15 12 9 6" />
         </svg>
         <span class="truncate">
@@ -89,13 +89,14 @@ function parseConsultSummary(raw?: string): { label: string; tools: string[] } |
         </span>
       </span>
       <span
-        :class="
+        :class="[
+          'px-2 py-0.5 rounded-full text-[10px] border shrink-0',
           tools.some((t) => !t.done)
-            ? 'text-[#f2b880] shrink-0'
+            ? 'border-[#f2b880]/40 bg-[#f2b880]/15 text-[#ffe2be]'
             : tools.some((t) => t.status === 'error')
-            ? 'text-rose-300 shrink-0'
-            : 'text-emerald-400 shrink-0'
-        "
+            ? 'border-rose-400/40 bg-rose-500/15 text-rose-200'
+            : 'border-emerald-400/35 bg-emerald-500/12 text-emerald-300'
+        ]"
       >
         {{
           tools.some((t) => !t.done)
@@ -106,11 +107,11 @@ function parseConsultSummary(raw?: string): { label: string; tools: string[] } |
         }}
       </span>
     </summary>
-    <div class="mt-2 pt-2 border-t border-[#fff8ee]/8 flex flex-col gap-2">
+    <div class="mt-2.5 pt-2.5 border-t border-[#fff8ee]/8 flex flex-col gap-2">
       <div
         v-for="(tc, idx) in tools"
         :key="tc.id"
-        class="rounded-lg border border-[#fff8ee]/8 bg-[#050811]/75 px-2.5 py-2"
+        class="rounded-xl border border-[#fff8ee]/10 bg-white/[0.025] shadow-[inset_0_1px_0_rgba(255,248,238,0.06)] px-3 py-2"
       >
         <div class="flex items-center justify-between gap-2 text-[11px]">
           <span class="text-[#f2b880] font-semibold truncate">#{{ idx + 1 }} {{ formatToolLabel(tc.name) }}</span>

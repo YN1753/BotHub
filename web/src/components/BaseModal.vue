@@ -129,7 +129,10 @@ onBeforeUnmount(() => {
 
       <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto mt-2.5 shrink-0" aria-hidden="true" />
 
-      <div class="flex items-start justify-between gap-3 px-4 sm:px-5 pt-4 pb-3 border-b border-[#fff8ee]/8 bg-[#080c18]/55 shrink-0">
+      <div
+        class="flex items-start justify-between gap-3 px-4 sm:px-5 pt-4 pb-3.5 border-b border-[#fff8ee]/10 shrink-0"
+        style="background: radial-gradient(85% 140% at 12% 0%, rgba(242, 184, 128, 0.1) 0%, transparent 62%), rgba(10, 14, 28, 0.72)"
+      >
         <div class="min-w-0">
           <h3 :id="titleId" class="text-base sm:text-lg font-semibold text-white tracking-tight">
             {{ title }}
@@ -141,13 +144,13 @@ onBeforeUnmount(() => {
 
         <div class="flex items-center gap-2 shrink-0 flex-wrap">
           <slot name="header-actions" />
-          <kbd aria-hidden="true" class="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded border border-[#fff8ee]/10 bg-[#050811]/70 text-[10px] font-mono text-slate-500">Esc</kbd>
+          <kbd aria-hidden="true" class="well-recessed hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono text-slate-400">Esc</kbd>
           <button
             type="button"
             aria-label="关闭窗口"
             title="关闭 (Esc)"
             @click="requestAnimatedClose"
-            class="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] inline-flex items-center justify-center rounded-xl border border-[#fff8ee]/12 bg-[#070a16]/60 text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer"
+            class="btn-tactile min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] inline-flex items-center justify-center rounded-xl text-slate-300 hover:text-[#f2b880] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />

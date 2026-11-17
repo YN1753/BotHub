@@ -6,13 +6,14 @@ import { formatTime, formatTimelineDivider, triggerBlobDownload } from '../utils
 import { lazyPanelChunk } from '../utils/lazyComponent'
 import { resolveTabSlideTransition, type DirectionalTransitionName } from '../utils/motion'
 import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
+import { shortToolLabel } from '../utils/toolMeta'
 import type { Bot } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
 import GroupDrawer from './GroupDrawer.vue'
 import BotWorkspaceHeader from './workspace/BotWorkspaceHeader.vue'
 import BotThreadBar from './workspace/BotThreadBar.vue'
 import BotToolTrail from './workspace/BotToolTrail.vue'
-import BotChatComposer, { type RelayStepItem, type ReplyQuoteTarget } from './workspace/BotChatComposer.vue'
+import BotChatComposer, { type RelayStepItem, type ReplyQuoteTarget, type StarterChipItem } from './workspace/BotChatComposer.vue'
 import BotChatSearchBar from './workspace/BotChatSearchBar.vue'
 
 const BotRoutinesTab = lazyPanelChunk(() => import('./workspace/BotRoutinesTab.vue'))
@@ -222,6 +223,54 @@ watch(
 )
 
 const isGroupBot = computed(() => Boolean(bot.value?.is_group))
+const isStreamEmpty = computed(() => store.state.timeline.length === 0)
+
+const activeSpeakerBotId = computed(() => {
+  const activeStep = relaySteps.value.find((s) => s.status === 'active')
+  if (activeStep?.id) return activeStep.id
+  const lastMsg = store.state.timeline[store.state.timeline.length - 1]
+  if (lastMsg?.streaming && lastMsg.senderBotId) return lastMsg.senderBotId
+  return ''
+})
+
+const starterChips = computed<StarterChipItem[]>(() => {
+  const b = bot.value
+  if (!b) return []
+  const chips: StarterChipItem[] = []
+  const todos = store.pendingTodoCount.value
+  const expiring = store.expiringAssetCount.value
+  if (b.bot_mode !== 'companion' && (todos > 0 || expiring > 0)) {
+    const parts: string[] = []
+    if (todos > 0) parts.push(`${todos} 项待办`)
+    if (expiring > 0) parts.push(`${expiring} 项临期`)
+    chips.push({
+      id: 'workspace_briefing',
+      label: `梳理今日安排 · ${parts.join(' / ')}`,
+      highlight: true,
+    })
+  }
+  let allowed: string[] = []
+  try {
+    const parsed = JSON.parse(b.allowed_tools || '[]')
+    if (Array.isArray(parsed)) allowed = parsed
+  } catch {
+    allowed = []
+  }
+  for (const id of allowed) {
+    if (chips.some((c) => c.id === id)) continue
+    const found = (store.state.availableTools || []).find((t) => t.id === id)
+    chips.push({
+      id,
+      label: shortToolLabel({ id, description: found?.description || id }),
+    })
+    if (chips.length >= 5) break
+  }
+  return chips
+})
+
+function closeDetailsMenu(e: Event) {
+  ;(e.currentTarget as HTMLElement | null)?.closest('details')?.removeAttribute('open')
+}
 
 const availableSpecialistBots = computed(() =>
   store.state.bots.filter((b) => !b.is_group)
@@ -795,6 +844,7 @@ async function clearTimeline() {
       :bot="bot"
       :is-group-bot="isGroupBot"
       :group-members="groupMembers"
+      :active-speaker-id="activeSpeakerBotId"
       :desktop-collapsed="desktopCollapsed"
       @open-mobile-menu="emit('openMobileMenu')"
       @toggle-desktop-sidebar="emit('toggleDesktopSidebar')"
@@ -835,9 +885,12 @@ async function clearTimeline() {
     </div>
 
     <template v-else>
-    <!-- View 1: Persistent Stream -->
+    <!-- View 1: Persistent Stream (Centered Grok-Style Spotlight Stage when empty -> Bottom-Docked Stream when chatting) -->
     <Transition :name="streamEnterTransition">
-      <div v-show="store.state.botView === 'stream'" class="flex-1 min-h-0 flex flex-col">
+      <div
+        v-show="store.state.botView === 'stream'"
+        :class="['flex-1 min-h-0 flex flex-col', isStreamEmpty ? 'overflow-y-auto py-2 sm:py-4' : '']"
+      >
         <BotThreadBar v-if="bot" :bot="bot" @carry-summary="onCarryThreadSummary" />
 
         <!-- Slide-Down In-Chat Search Bar (Cmd/Ctrl + F) -->
@@ -850,7 +903,7 @@ async function clearTimeline() {
           @close="closeChatSearch"
         />
 
-        <!-- Pinned Group Announcement Banner (QQ/WeChat style) -->
+        <!-- Pinned Group Announcement Banner -->
         <Transition
           enter-active-class="transition-[opacity,transform] duration-180 ease-[var(--ease-snappy)] motion-reduce:duration-100"
           enter-from-class="opacity-0 -translate-y-1.5 motion-reduce:translate-y-0"
@@ -860,8 +913,8 @@ async function clearTimeline() {
           leave-to-class="opacity-0 -translate-y-1.5 motion-reduce:translate-y-0"
         >
           <div
-            v-if="isGroupBot && bot?.announcement && !announcementDismissed"
-            class="px-4 md:px-6 py-2 border-b border-[#f2b880]/15 bg-[#f2b880]/[0.05] flex items-center justify-between gap-3 shrink-0"
+            v-if="isGroupBot && bot?.announcement && !announcementDismissed && !isStreamEmpty"
+            class="mx-4 md:mx-6 mb-1 px-3.5 py-1.5 rounded-2xl border border-[#f2b880]/20 bg-[#f2b880]/[0.06] flex items-center justify-between gap-3 shrink-0"
           >
             <button
               type="button"
@@ -887,24 +940,26 @@ async function clearTimeline() {
           </div>
         </Transition>
 
-        <div class="relative flex-1 min-h-0 flex flex-col">
+        <div :class="['relative flex flex-col', isStreamEmpty ? 'shrink-0 mt-auto' : 'flex-1 min-h-0']">
           <div
             ref="scrollContainerRef"
             @scroll="onMessagesScroll"
             @click="handleMarkdownClick"
-            class="cq-container stream-scroller flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-5 flex flex-col gap-5"
+            :class="[
+              'cq-container stream-scroller px-4 md:px-6 flex flex-col gap-6',
+              isStreamEmpty ? 'shrink-0 py-1' : 'stream-edge-fade flex-1 min-h-0 overflow-y-auto py-5'
+            ]"
           >
             <BotStarterPanel
-              v-if="store.state.timeline.length === 0"
+              v-if="isStreamEmpty"
               :bot="bot"
               :is-group-bot="isGroupBot"
               :group-members="groupMembers"
-              @starter="runQuickToolStarter"
             />
 
             <!-- Messages -->
             <template v-for="(m, idx) in store.state.timeline" :key="m.localId">
-              <!-- QQ/WeChat 5-Minute Time Cluster Divider -->
+              <!-- 5-Minute Time Cluster Divider -->
               <div
                 v-if="shouldShowTimestamp(idx)"
                 class="flex justify-center py-0.5 select-none"
@@ -914,12 +969,12 @@ async function clearTimeline() {
                 </span>
               </div>
 
-              <!-- QQ/WeChat Centered System Dynamic Pill (Invite / Remove / Adhoc / Context Sync) -->
+              <!-- Centered System Dynamic Pill -->
               <div
                 v-if="m.role === 'system' || m.msgKind === 'system'"
                 :class="['max-w-[680px] mx-auto flex justify-center my-0.5', m.isLiveNew ? 'msg-enter' : '']"
               >
-                <div class="px-3.5 py-1 rounded-2xl border border-[#fff8ee]/8 bg-[#fff8ee]/[0.04] text-[11.5px] text-slate-400 text-center whitespace-pre-line leading-relaxed">
+                <div class="px-3.5 py-1 rounded-full border border-[#fff8ee]/8 bg-[#fff8ee]/[0.035] text-[11px] text-slate-400 text-center whitespace-pre-line leading-relaxed">
                   {{ m.content }}
                 </div>
               </div>
@@ -929,7 +984,7 @@ async function clearTimeline() {
                 v-else-if="m.role === 'user'"
                 :data-msg-id="m.localId"
                 :class="[
-                  'reveal-host max-w-[820px] w-full mx-auto flex flex-col items-end gap-1 rounded-2xl transition-shadow',
+                  'reveal-host max-w-[780px] w-full mx-auto flex flex-col items-end gap-1 rounded-2xl transition-shadow',
                   m.isLiveNew ? 'msg-enter-user' : '',
                   shouldDeferMessageRender(idx) ? 'msg-deferred-user' : '',
                   focusedMatchId === m.localId ? 'ring-1 ring-[#f2b880]/70 p-1' : ''
@@ -937,11 +992,11 @@ async function clearTimeline() {
               >
                 <div
                   :title="formatTime(m.createdAt)"
-                  class="max-w-[85%] sm:max-w-[74%] rounded-2xl rounded-tr-sm px-4 py-2.5 bg-[#f2b880]/14 border border-[#f2b880]/28 text-sm text-slate-100 leading-relaxed whitespace-pre-wrap"
+                  class="msg-bubble-user max-w-[85%] sm:max-w-[72%] rounded-[22px] rounded-tr-md px-4 py-2.5 text-sm text-slate-50 leading-relaxed whitespace-pre-wrap"
                 >
                   <div
                     v-if="m.replyPreview"
-                    class="mb-2 pl-2.5 border-l-2 border-[#f2b880]/70 text-xs text-slate-300/85 bg-[#050811]/35 rounded-r-lg py-1 pr-2 line-clamp-2"
+                    class="mb-2 pl-2.5 border-l-2 border-[#f2b880]/80 text-xs text-slate-200/90 bg-black/25 rounded-r-lg py-1 pr-2 line-clamp-2"
                   >
                     {{ m.replyPreview }}
                   </div>
@@ -952,110 +1007,120 @@ async function clearTimeline() {
                     v-if="isLongUserMessage(m.content)"
                     type="button"
                     @click="toggleExpandUserMsg(m.localId)"
-                    class="mt-1.5 font-mono text-[11px] text-[#f2b880] hover:underline cursor-pointer"
+                    class="mt-1.5 font-mono text-[11px] text-[#ffe2be] hover:underline cursor-pointer"
                   >
                     {{ expandedUserMsgs[m.localId] ? '收起长消息' : '展开全文' }}
                   </button>
                 </div>
-                <div class="reveal-actions flex items-center gap-1.5 px-1">
+                <div class="reveal-actions msg-action-bar inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5">
                   <button
                     type="button"
                     @click="setReplyQuote(m)"
-                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
+                    class="px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
                   >
                     引用
                   </button>
                   <button
                     type="button"
                     @click="editResendUserMessage(m)"
-                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
+                    class="px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
                   >
-                    编辑重发
+                    重编
+                  </button>
+                  <button
+                    type="button"
+                    @click="copyMessageContent(m.content)"
+                    class="px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
+                  >
+                    复制
                   </button>
                   <button
                     v-if="m.serverId"
                     type="button"
                     @click="store.forkThread(m.serverId)"
-                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-emerald-300 cursor-pointer"
+                    class="px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-emerald-300 hover:bg-white/[0.08] cursor-pointer"
                   >
-                    分支话题
-                  </button>
-                  <button
-                    type="button"
-                    @click="copyMessageContent(m.content)"
-                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
-                  >
-                    复制
-                  </button>
-                  <button
-                    type="button"
-                    @click="openForwardForMessage(m)"
-                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
-                  >
-                    转发
+                    分支
                   </button>
                   <button
                     v-if="m.serverId"
                     type="button"
                     @click="store.deleteSingleMessage(m)"
-                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-rose-300 cursor-pointer"
+                    class="px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-rose-300 hover:bg-rose-500/15 cursor-pointer"
                   >
                     删除
                   </button>
                 </div>
               </div>
 
-              <!-- Bot Message -->
+              <!-- Open Editorial Left-Avatar Bot Message (Unboxed Prose + Subtle Thread Spine + 4-Button Micro Toolbar) -->
               <article
                 v-else
                 :data-msg-id="m.localId"
                 :class="[
-                  'reveal-host max-w-[820px] w-full mx-auto rounded-2xl transition-shadow',
+                  'reveal-host max-w-[780px] w-full mx-auto flex items-start gap-3 sm:gap-3.5 rounded-2xl transition-shadow',
                   m.isLiveNew ? 'msg-enter-bot' : '',
                   shouldDeferMessageRender(idx) ? 'msg-deferred-bot' : '',
-                  focusedMatchId === m.localId ? 'ring-1 ring-[#f2b880]/70 bg-[#f2b880]/[0.04] px-2.5 py-1.5' : ''
+                  focusedMatchId === m.localId ? 'ring-1 ring-[#f2b880]/70 bg-[#f2b880]/[0.04] p-2' : ''
                 ]"
               >
+                <!-- Left Living Companion Gutter + Luminous Thread Spine -->
+                <div class="flex flex-col items-center self-stretch shrink-0 pt-0.5">
+                  <button
+                    type="button"
+                    @click="appendMention(`@${m.senderName} `)"
+                    :title="`点击 @${m.senderName}`"
+                    class="cursor-pointer rounded-full"
+                  >
+                    <BotAvatar
+                      :avatar-style="m.avatarStyle"
+                      :state="m.streaming ? 'working' : (m.msgKind === 'routine' ? 'done' : 'idle')"
+                      size="sm"
+                    />
+                  </button>
+                  <span
+                    v-if="m.reasoning || m.tools.length || m.streaming"
+                    aria-hidden="true"
+                    class="w-px flex-1 mt-2 bg-gradient-to-b from-[#f2b880]/30 via-[#fff8ee]/8 to-transparent"
+                  />
+                </div>
+
+                <!-- Right Editorial Content Column -->
                 <div
                   :class="[
-                    'flex flex-col gap-2.5',
-                    m.msgKind === 'routine'
-                      ? 'vesper-card rounded-2xl border-[#f2b880]/28 p-4'
-                      : 'py-1'
+                    'flex-1 min-w-0 flex flex-col gap-2',
+                    m.msgKind === 'routine' ? 'vesper-card rounded-2xl border-[#f2b880]/30 p-4' : 'pt-0.5'
                   ]"
                 >
-                  <!-- Quiet editorial sender header with clickable @Bot & Role Tag -->
                   <div class="flex items-center justify-between gap-2 text-xs text-slate-400">
                     <div class="flex items-center gap-2 min-w-0">
                       <button
                         type="button"
                         @click="appendMention(`@${m.senderName} `)"
-                        :title="`点击 @${m.senderName}`"
-                        class="inline-flex items-center gap-2 min-w-0 cursor-pointer group/sender"
+                        class="text-[#ffe2be] hover:underline font-medium truncate cursor-pointer"
                       >
-                        <BotAvatar :avatar-style="m.avatarStyle" :state="m.streaming ? 'working' : (m.msgKind === 'routine' ? 'done' : 'idle')" size="sm" :interactive="false" />
-                        <span class="text-[#f2b880] group-hover/sender:underline font-medium truncate">{{ m.senderName }}</span>
+                        {{ m.senderName }}
                       </button>
                       <span
                         v-if="m.roleTitle && isGroupBot"
-                        class="hidden sm:inline-flex font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#fff8ee]/[0.05] text-slate-400 truncate max-w-[160px]"
+                        class="hidden sm:inline-flex font-mono text-[10px] text-slate-500 truncate max-w-[160px]"
                       >
                         {{ m.roleTitle }}
                       </span>
                       <span
                         v-if="m.isTempGuest"
-                        class="font-mono text-[10px] px-1.5 py-0.5 rounded border border-emerald-400/30 bg-emerald-400/10 text-emerald-300 shrink-0"
+                        class="font-mono text-[10px] px-1.5 py-0.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 text-emerald-300 shrink-0"
                       >
-                        临时支援
+                        外援
                       </span>
-                      <span v-if="m.msgKind === 'routine'" class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#f2b880]/12 text-[#f2b880] shrink-0">
-                        例程汇报
+                      <span v-if="m.msgKind === 'routine'" class="font-mono text-[10px] px-2 py-0.5 rounded-full bg-[#f2b880]/14 text-[#ffe2be] shrink-0">
+                        自动汇报
                       </span>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                       <span
                         v-if="m.model && !m.streaming"
-                        class="hidden sm:inline-flex font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#fff8ee]/[0.04] text-slate-400"
+                        class="hidden sm:inline-flex font-mono text-[10px] text-slate-500"
                       >
                         {{ m.model }}
                       </span>
@@ -1063,39 +1128,39 @@ async function clearTimeline() {
                         v-if="isGroupBot && m.senderBotId && m.senderBotId !== bot?.id"
                         type="button"
                         @click="store.jumpToBot(m.senderBotId)"
-                        class="reveal-actions font-mono text-[10px] px-1.5 py-0.5 rounded border border-[#fff8ee]/12 text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                        class="reveal-actions font-mono text-[10px] px-2 py-0.5 rounded-full border border-[#fff8ee]/12 text-slate-400 hover:text-[#ffe2be] cursor-pointer"
                       >
-                        私聊TA
+                        私聊
                       </button>
-                      <span :class="['font-mono text-[11px]', m.errorText ? 'text-rose-400' : 'text-slate-500']">
+                      <span :class="['font-mono text-[10.5px]', m.errorText ? 'text-rose-400' : 'text-slate-500']">
                         {{ m.statusText }}
                       </span>
                     </div>
                   </div>
 
-                  <!-- Calm Thinking Waveform (before first token arrives) -->
+                  <!-- Calm Thinking Waveform -->
                   <div
                     v-if="m.streaming && !m.content && !m.reasoning && !m.tools.length"
-                    class="py-1.5 flex items-center gap-2.5 text-xs text-slate-400"
+                    class="py-1 flex items-center gap-2 text-xs text-slate-400"
                     aria-live="polite"
                   >
                     <span class="thinking-dots inline-flex items-center gap-1" aria-hidden="true">
                       <span /><span /><span />
                     </span>
-                    <span>思考中</span>
+                    <span>正在构思</span>
                   </div>
 
-                  <!-- Smooth Interpolate-Size Collapsible Reasoning -->
+                  <!-- Collapsible Reasoning -->
                   <details
                     v-if="m.reasoning"
                     :open="m.streaming && !m.content"
-                    class="vesper-details rounded-xl border border-amber-400/20 bg-[#060a16]/65 px-3 py-2 text-xs text-slate-400"
+                    class="vesper-details well-recessed rounded-2xl px-3.5 py-2 text-xs text-slate-400"
                   >
                     <summary class="cursor-pointer flex items-center gap-1.5 font-mono text-amber-300/90 select-none">
                       <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron shrink-0">
                         <polyline points="9 18 15 12 9 6" />
                       </svg>
-                      <span>深度思考过程</span>
+                      <span>思考过程</span>
                       <span class="text-[10px] text-amber-300/60">({{ m.reasoning.length }} 字)</span>
                     </summary>
                     <div class="mt-2 font-mono whitespace-pre-wrap leading-relaxed text-slate-300/90">
@@ -1103,10 +1168,10 @@ async function clearTimeline() {
                     </div>
                   </details>
 
-                  <!-- Smooth Collapsible Merged Tool Call Trajectory -->
+                  <!-- Collapsible Merged Tool Call Trajectory -->
                   <BotToolTrail :tools="m.tools" @copy="copyMessageContent" />
 
-                  <!-- Markdown Body -->
+                  <!-- Open Editorial Markdown Body -->
                   <div v-if="m.content" :class="m.streaming ? 'md-streaming' : ''" v-html="renderSafeMarkdown(m.content)" />
                   <div v-else-if="m.errorText" class="flex items-center justify-between gap-2 flex-wrap text-sm text-rose-400">
                     <span>[调用失败] {{ m.errorText }}</span>
@@ -1120,89 +1185,59 @@ async function clearTimeline() {
                     </button>
                   </div>
 
-                  <!-- Quiet Footer Actions (hover / keyboard / touch) -->
-                  <div v-if="!m.streaming && m.content" class="reveal-actions flex items-center flex-wrap gap-1.5 pt-1">
-                    <button
-                      type="button"
-                      @click="setReplyQuote(m)"
-                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
-                    >
-                      引用
-                    </button>
-                    <button
-                      type="button"
-                      @click="saveMessageAsMemory(m)"
-                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-emerald-300 hover:border-emerald-400/40 cursor-pointer"
-                    >
-                      存为记忆
-                    </button>
-                    <button
-                      type="button"
-                      @click="convertMessageToTodo(m)"
-                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-cyan-300 hover:border-cyan-400/40 cursor-pointer"
-                    >
-                      转待办
-                    </button>
-                    <button
-                      type="button"
-                      @click="saveMessageAsNote(m)"
-                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
-                    >
-                      存文档
-                    </button>
-                    <button
-                      type="button"
-                      @click="openForwardForMessage(m)"
-                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
-                    >
-                      转发
-                    </button>
-                    <button
-                      type="button"
-                      @click="copyMessageContent(m.content)"
-                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
-                    >
-                      复制全文
-                    </button>
-                    <button
-                      type="button"
-                      @click="copyPlainTextContent(m.content)"
-                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
-                    >
-                      复制纯文本
-                    </button>
-                    <button
-                      v-if="m.serverId"
-                      type="button"
-                      @click="store.forkThread(m.serverId)"
-                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-emerald-300 hover:border-emerald-400/40 cursor-pointer"
-                    >
-                      分支话题
-                    </button>
-                    <button
-                      v-if="idx === store.state.timeline.length - 1"
-                      type="button"
-                      @click="continueFromMessage()"
-                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
-                    >
-                      继续补充
-                    </button>
-                    <button
-                      v-if="findPrecedingUserPrompt(idx)"
-                      type="button"
-                      @click="sendPrompt(findPrecedingUserPrompt(idx))"
-                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
-                    >
-                      重试该轮
-                    </button>
-                    <button
-                      v-if="m.serverId"
-                      type="button"
-                      @click="store.deleteSingleMessage(m)"
-                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-500 hover:text-rose-300 hover:border-rose-400/40 cursor-pointer"
-                    >
-                      删除
-                    </button>
+                  <!-- Streamlined 4-Item Micro-Action Pill + Progressive 'More' Menu -->
+                  <div v-if="!m.streaming && m.content" class="reveal-actions pt-0.5">
+                    <div class="msg-action-bar inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5">
+                      <button
+                        type="button"
+                        @click="copyMessageContent(m.content)"
+                        class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
+                      >
+                        <svg viewBox="0 0 24 24" width="11.5" height="11.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                        <span>复制</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        @click="setReplyQuote(m)"
+                        class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
+                      >
+                        引用
+                      </button>
+
+                      <button
+                        v-if="idx === store.state.timeline.length - 1"
+                        type="button"
+                        @click="continueFromMessage()"
+                        class="px-2.5 py-0.5 rounded-full text-[11px] text-[#f7cba0] hover:bg-[#f2b880]/15 cursor-pointer font-medium"
+                      >
+                        继续深挖
+                      </button>
+                      <button
+                        v-else-if="findPrecedingUserPrompt(idx)"
+                        type="button"
+                        @click="sendPrompt(findPrecedingUserPrompt(idx))"
+                        class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
+                      >
+                        重试
+                      </button>
+
+                      <details class="msg-more-menu relative">
+                        <summary class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-400 hover:text-white hover:bg-white/[0.08] cursor-pointer select-none inline-flex items-center gap-1">
+                          <span>沉淀与更多</span>
+                          <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
+                        </summary>
+                        <div class="aero-glass absolute right-0 sm:left-0 sm:right-auto bottom-full mb-1.5 z-30 min-w-[8.5rem] rounded-xl border border-[#fff8ee]/16 p-1 flex flex-col gap-0.5 shadow-2xl">
+                          <button type="button" @click="saveMessageAsMemory(m); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-emerald-500/15 hover:text-emerald-300 text-left cursor-pointer">存为长期记忆</button>
+                          <button type="button" @click="convertMessageToTodo(m); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-cyan-500/15 hover:text-cyan-200 text-left cursor-pointer">转为个人待办</button>
+                          <button type="button" @click="saveMessageAsNote(m); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-[#f2b880]/15 hover:text-[#ffe2be] text-left cursor-pointer">存为工作文档</button>
+                          <button type="button" @click="openForwardForMessage(m); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-white/[0.08] text-left cursor-pointer">转发给其他 Bot</button>
+                          <button type="button" @click="copyPlainTextContent(m.content); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 hover:bg-white/[0.08] text-left cursor-pointer">复制纯文本</button>
+                          <button v-if="m.serverId" type="button" @click="store.forkThread(m.serverId); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 hover:bg-emerald-500/15 hover:text-emerald-300 text-left cursor-pointer">从此分支新话题</button>
+                          <button v-if="m.serverId" type="button" @click="store.deleteSingleMessage(m); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-rose-300 hover:bg-rose-500/15 text-left cursor-pointer">删除此消息</button>
+                        </div>
+                      </details>
+                    </div>
                   </div>
                 </div>
               </article>
@@ -1219,10 +1254,10 @@ async function clearTimeline() {
             leave-to-class="opacity-0 translate-y-2 scale-95"
           >
             <button
-              v-if="userScrolledUp"
+              v-if="userScrolledUp && !isStreamEmpty"
               type="button"
               @click="scrollToBottom(true)"
-              class="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 min-h-[40px] sm:min-h-[34px] px-4 rounded-full border border-[#f2b880]/45 bg-[#0a0f1f]/95 text-xs font-medium text-[#f2b880] shadow-xl backdrop-blur-md hover:bg-[#f2b880]/15 cursor-pointer"
+              class="btn-tactile-gold absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 min-h-[36px] px-4 rounded-full text-xs font-medium shadow-xl cursor-pointer"
             >
               <span
                 v-if="store.state.isStreaming || unreadBelowCount > 0"
@@ -1245,9 +1280,10 @@ async function clearTimeline() {
           </Transition>
         </div>
 
-        <!-- Floating Composer Dock + Popovers -->
+        <!-- Unified Spotlight / Bottom-Docked Composer -->
         <BotChatComposer
           ref="composerRef"
+          :class="isStreamEmpty ? 'mb-auto' : ''"
           v-model:input-prompt="inputPrompt"
           v-model:selected-model="selectedModel"
           v-model:enable-thinking="enableThinking"
@@ -1257,10 +1293,13 @@ async function clearTimeline() {
           :is-group-bot="isGroupBot"
           :group-members="groupMembers"
           :last-prompt="lastPrompt"
+          :centered-stage="isStreamEmpty"
+          :starter-chips="starterChips"
           @submit-prompt="sendPrompt"
           @stop-stream="stopStream"
           @clear-timeline="clearTimeline"
           @summarize-thread="handleSummarizeThread"
+          @pick-starter="runQuickToolStarter"
         />
       </div>
     </Transition>

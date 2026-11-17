@@ -123,13 +123,11 @@ onBeforeUnmount(() => {
     role="tablist"
     :aria-label="ariaLabel || '视图切换'"
     :class="[
-      'chip-rail relative inline-flex items-center p-1 rounded-full overflow-x-auto no-scrollbar max-w-full select-none [contain:layout_style]',
-      variant === 'pill'
-        ? 'bg-[#060913]/92 border border-[#fff8ee]/10'
-        : 'bg-[#060913]/65 border border-[#fff8ee]/8'
+      'chip-rail well-recessed relative inline-flex items-center p-1 rounded-full overflow-x-auto no-scrollbar max-w-full select-none [contain:layout_style]',
+      variant === 'pill' ? 'opacity-100' : 'opacity-95'
     ]"
   >
-    <!-- Gliding Spring Indicator (snaps instantly on dialog mount, glides with spring on user switch) -->
+    <!-- Gliding 3D Jewel Spring Indicator (snaps instantly on dialog mount, glides with spring on user switch) -->
     <span
       aria-hidden="true"
       :style="{
@@ -139,7 +137,7 @@ onBeforeUnmount(() => {
         transitionTimingFunction: indicatorAnimated ? 'var(--ease-spring)' : 'none',
       }"
       :class="[
-        'pointer-events-none absolute top-1 bottom-1 left-0 rounded-full bg-[#f2b880] shadow-[0_2px_12px_rgba(242,184,128,0.28)] motion-reduce:transition-none',
+        'btn-jewel pointer-events-none absolute top-1 bottom-1 left-0 rounded-full motion-reduce:transition-none',
         indicatorAnimated ? 'transition-[transform,width,opacity] duration-300' : 'transition-none'
       ]"
     />
@@ -156,9 +154,11 @@ onBeforeUnmount(() => {
       @click="emit('update:modelValue', item.id)"
       :class="[
         'snap-chip relative z-10 min-h-[38px] sm:min-h-[30px] px-3.5 rounded-full text-xs whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-200',
-        modelValue === item.id
+        modelValue === item.id && pillStyle.opacity > 0
           ? 'text-[#070a13] font-semibold'
-          : 'text-slate-300 hover:text-white'
+          : modelValue === item.id
+            ? 'text-[#ffe2be] font-semibold'
+            : 'text-slate-300 hover:text-white'
       ]"
     >
       {{ item.label }}

@@ -64,7 +64,10 @@ data class BotItem(
     val enableThinking: Boolean,
     val state: String,
     val unreadCount: Int,
-    val lastSummary: String
+    val lastSummary: String,
+    val isGroup: Boolean = false,
+    val memberIds: List<String> = emptyList(),
+    val botMode: String = "worker"
 )
 
 data class AgentHistoryMessage(
@@ -356,6 +359,16 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 val list = mutableListOf<BotItem>()
                 for (i in 0 until arr.length()) {
                     val b = arr.getJSONObject(i)
+                    val memberIdsRaw = b.optString("member_ids", "[]")
+                    val parsedMembers = runCatching {
+                        val mArr = JSONArray(memberIdsRaw)
+                        buildList {
+                            for (mi in 0 until mArr.length()) {
+                                val mid = mArr.optString(mi).trim()
+                                if (mid.isNotEmpty()) add(mid)
+                            }
+                        }
+                    }.getOrDefault(emptyList())
                     list.add(
                         BotItem(
                             id = b.optString("id"),
@@ -366,7 +379,10 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                             enableThinking = b.optBoolean("enable_thinking", true),
                             state = b.optString("state", "idle"),
                             unreadCount = b.optInt("unread_count", 0),
-                            lastSummary = b.optString("last_summary", "")
+                            lastSummary = b.optString("last_summary", ""),
+                            isGroup = b.optBoolean("is_group", false),
+                            memberIds = parsedMembers,
+                            botMode = b.optString("bot_mode", "worker")
                         )
                     )
                 }

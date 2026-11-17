@@ -149,12 +149,19 @@ watch(
   { immediate: true }
 )
 
+function handleViewportResize() {
+  if (typeof window !== 'undefined' && window.innerWidth >= 768 && mobileSidebarOpen.value) {
+    mobileSidebarOpen.value = false
+  }
+}
+
 onMounted(() => {
   store.checkAuth()
   window.addEventListener('keydown', handleGlobalKeydown)
   window.addEventListener('online', handleOnlineStatus)
   window.addEventListener('offline', handleOnlineStatus)
   window.addEventListener('bothub:unauthorized', handleUnauthorized)
+  window.addEventListener('resize', handleViewportResize)
 })
 
 onBeforeUnmount(() => {
@@ -162,6 +169,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('online', handleOnlineStatus)
   window.removeEventListener('offline', handleOnlineStatus)
   window.removeEventListener('bothub:unauthorized', handleUnauthorized)
+  window.removeEventListener('resize', handleViewportResize)
 })
 </script>
 
@@ -183,10 +191,13 @@ onBeforeUnmount(() => {
     <!-- Auth Gate -->
     <LoginGate v-else-if="!store.state.authenticated" />
 
-    <!-- Main Persistent GrokBot Workspace -->
+    <!-- Main Persistent GrokBot Workspace (Floating Spatial Islands on Desktop, Full-Bleed on Mobile) -->
     <div
       v-else
-      class="relative z-10 h-dvh w-full flex overflow-hidden bg-[#050811]/66 backdrop-blur-lg"
+      :class="[
+        'relative z-10 h-dvh w-full flex overflow-hidden md:p-2.5 transition-[gap] duration-250',
+        desktopCollapsed ? 'md:gap-0' : 'md:gap-2.5'
+      ]"
     >
       <Sidebar
         :mobile-open="mobileSidebarOpen"
@@ -197,7 +208,7 @@ onBeforeUnmount(() => {
 
       <main
         :inert="mobileSidebarOpen || undefined"
-        class="flex-1 min-w-0 min-h-0 flex flex-col"
+        class="workspace-island flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden md:rounded-[24px] md:border md:border-[#fff8ee]/12"
       >
         <Transition :name="workspaceTransition" mode="out-in">
           <BotWorkspace

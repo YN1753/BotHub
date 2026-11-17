@@ -47,11 +47,11 @@ async function handleSubmit() {
       :class="['luxury-card w-full max-w-md rounded-2xl p-7 shadow-2xl', errorMsg ? 'vesper-shake border-rose-400/35' : '']"
     >
       <div class="flex items-center justify-between gap-3 mb-4">
-        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880] font-mono text-[11px] tracking-wider">
-          <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880]" aria-hidden="true" />
+        <div class="btn-tactile-gold inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-mono text-[11px] tracking-wider">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880] shadow-[0_0_8px_#f2b880]" aria-hidden="true" />
           <span>VESPER BOTHUB</span>
         </div>
-        <BotAvatar avatar-style="butler:gold" :state="loading ? 'working' : password ? 'thinking' : 'idle'" size="lg" />
+        <BotAvatar avatar-style="butler:gold" :state="loading ? 'working' : password ? 'thinking' : 'idle'" size="lg" focusable />
       </div>
       <h1 class="text-2xl font-semibold text-white mb-1 tracking-tight">星穹 GrokBot 中枢</h1>
       <p class="font-mono text-xs text-slate-300 mb-6">{{ hostLabel }} · 请输入管理密钥</p>
@@ -104,7 +104,7 @@ async function handleSubmit() {
         <button
           type="submit"
           :disabled="loading"
-          class="w-full min-h-[44px] rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-sm cursor-pointer disabled:opacity-50"
+          class="btn-jewel w-full min-h-[44px] rounded-xl text-sm cursor-pointer disabled:opacity-50"
         >
           {{ loading ? '验证中...' : '解锁控制台' }}
         </button>

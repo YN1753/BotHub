@@ -170,8 +170,8 @@ onBeforeUnmount(() => {
       @click="toggleOpen"
       @keydown="handleTriggerKeydown"
       :class="[
-        'w-full flex items-center justify-between gap-2 rounded-xl border transition-colors text-left cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed',
-        'bg-[#080c19]/85 border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-slate-100',
+        'btn-tactile w-full flex items-center justify-between gap-2 rounded-xl text-left cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed',
+        open ? 'border-[#f2b880]/55 text-white' : 'text-slate-100',
         compact ? 'px-3 py-1.5 text-xs min-h-[44px] sm:min-h-[34px]' : 'px-3.5 py-2 text-sm min-h-[44px]'
       ]"
     >
@@ -204,7 +204,7 @@ onBeforeUnmount(() => {
         ref="listboxEl"
         role="listbox"
         :class="[
-          'absolute left-0 z-50 w-full min-w-[180px] max-h-60 overflow-y-auto rounded-xl border border-[#fff8ee]/14 bg-[#090d1b]/96 backdrop-blur-xl shadow-2xl p-1',
+          'aero-glass absolute left-0 z-50 w-full min-w-[180px] max-h-60 overflow-y-auto rounded-2xl border border-[#fff8ee]/16 p-1.5',
           openAbove ? 'bottom-full mb-1.5 origin-bottom-left' : 'top-full mt-1.5 origin-top-left'
         ]"
       >

@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
+import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.theme.VesperBotHubTheme
 
 class QuickCaptureActivity : ComponentActivity() {
@@ -212,21 +213,49 @@ private fun QuickCaptureSheet(
                         .align(Alignment.CenterHorizontally)
                 )
 
+                val captureSpiritStyle = when {
+                    preview.kindLabel.contains("Bilibili", ignoreCase = true) -> "radar:emerald"
+                    preview.kindLabel.contains("GitHub", ignoreCase = true) -> "sentinel:indigo"
+                    preview.kindLabel.contains("闪念") -> "swarm:violet"
+                    else -> "butler:gold"
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Vesper 智能收藏与闪念匣",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFEAF0FF)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        GrokBotAvatar(
+                            avatarStyle = captureSpiritStyle,
+                            state = when {
+                                saving -> "working"
+                                errorMsg.isNotEmpty() -> "blocked"
+                                noteInput.isNotEmpty() -> "thinking"
+                                else -> "idle"
+                            },
+                            size = 36.dp,
+                            interactive = true,
+                            isListening = noteInput.isNotEmpty(),
+                            seedKey = "quick_capture"
+                        )
+                        Text(
+                            text = "Vesper 智能收藏与闪念匣",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFEAF0FF),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = Color(0xFF172342),
-                        border = BorderStroke(1.dp, Color(0xFF2E4374))
+                        border = BorderStroke(1.dp, Color(0xFFF2B880).copy(alpha = 0.45f))
                     ) {
                         Text(
                             text = preview.kindLabel,

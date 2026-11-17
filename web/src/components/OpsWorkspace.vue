@@ -84,6 +84,29 @@ const filteredAssets = computed(() => {
 
 const activeCostSummary = computed(() => summarizeAssetsMonthlyCost(filteredAssets.value))
 
+const healthMetrics = computed(() => {
+  const total = store.state.assets.length
+  if (!total) {
+    return { healthyPct: 100, okStop: '100%', warnStop: '100%', expiredCount: 0 }
+  }
+  let expired = 0
+  let warn = 0
+  for (const a of store.state.assets) {
+    if (a.status === '已停用' || String(a.due_date || '').startsWith('2099')) continue
+    if (a.status === '已到期' || a.days_left < 0) expired++
+    else if (a.days_left <= 7) warn++
+  }
+  const healthy = Math.max(0, total - expired - warn)
+  const okPct = Math.round((healthy / total) * 100)
+  const warnPct = Math.round(((healthy + warn) / total) * 100)
+  return {
+    healthyPct: okPct,
+    okStop: `${okPct}%`,
+    warnStop: `${warnPct}%`,
+    expiredCount: expired,
+  }
+})
+
 function resetAssetFilters() {
   searchQuery.value = ''
   activeCat.value = 'all'
@@ -105,6 +128,21 @@ function daysBadgeClass(a: Asset): string {
   if (a.days_left <= 3) return 'text-rose-400 font-semibold'
   if (a.days_left <= 7) return 'text-amber-300 font-semibold'
   return 'text-emerald-300'
+}
+
+function assetRunwayPercent(a: Asset): number {
+  if (a.status === '长期有效' || String(a.due_date || '').startsWith('2099')) return 100
+  if (a.days_left <= 0) return 6
+  return Math.max(8, Math.min(100, Math.round((a.days_left / 90) * 100)))
+}
+
+function assetRunwayBarClass(a: Asset): string {
+  if (a.status === '长期有效' || String(a.due_date || '').startsWith('2099')) {
+    return 'from-emerald-400 to-teal-300 shadow-[0_0_8px_rgba(52,211,153,0.45)]'
+  }
+  if (a.days_left <= 3) return 'from-rose-500 to-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.5)]'
+  if (a.days_left <= 7) return 'from-amber-400 to-yellow-300 shadow-[0_0_8px_rgba(251,191,36,0.45)]'
+  return 'from-[#f2b880] to-[#ffe4c4] shadow-[0_0_8px_rgba(242,184,128,0.35)]'
 }
 
 function cardAccentClass(a: Asset): string {
@@ -221,12 +259,15 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
 
 <template>
   <section class="flex-1 min-h-0 flex flex-col overflow-hidden">
-    <header class="px-4 md:px-6 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pb-3 border-b border-[#fff8ee]/8 bg-[#080c18]/50 backdrop-blur-md flex items-center justify-between gap-3">
+    <header
+      class="px-4 md:px-6 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pb-3 border-b border-[#fff8ee]/10 flex items-center justify-between gap-3"
+      style="background: radial-gradient(75% 130% at 15% 0%, rgba(242, 184, 128, 0.08) 0%, transparent 62%), rgba(10, 14, 28, 0.45)"
+    >
       <div class="flex items-center gap-3 min-w-0">
         <button
           type="button"
           aria-label="打开菜单"
-          class="md:hidden min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+          class="btn-tactile md:hidden min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-slate-200 cursor-pointer"
           @click="emit('openMobileMenu')"
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -240,7 +281,7 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
           type="button"
           aria-label="展开侧边栏"
           title="展开侧边栏"
-          class="relative hidden md:inline-flex items-center justify-center w-9 h-9 rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+          class="btn-tactile relative hidden md:inline-flex items-center justify-center w-9 h-9 rounded-xl text-slate-200 cursor-pointer"
           @click="emit('toggleDesktopSidebar')"
         >
           <span
@@ -259,191 +300,175 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
           <p class="text-xs text-slate-400/90 truncate">VPS / 域名 / 订阅到期台账与后台自动化调度</p>
         </div>
       </div>
-      <button
-        type="button"
-        @click="store.loadDashboard(false)"
-        class="min-h-[44px] sm:min-h-[34px] px-3.5 py-1.5 rounded-xl text-xs border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer shrink-0"
-      >
-        刷新数据
-      </button>
+      <div class="flex items-center gap-2 shrink-0">
+        <button
+          type="button"
+          @click="store.state.showLogsModal = true"
+          title="查看系统推送与执行流水"
+          class="btn-tactile min-h-[38px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 rounded-full text-xs cursor-pointer"
+        >
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-400" aria-hidden="true" />
+          <span>流水 {{ store.state.stats.sent_pushes }}</span>
+        </button>
+        <button
+          type="button"
+          @click="store.loadDashboard(false)"
+          class="btn-tactile min-h-[38px] sm:min-h-[34px] px-3 rounded-full text-xs cursor-pointer"
+        >
+          刷新
+        </button>
+      </div>
     </header>
 
-    <!-- Hairline 52px Interactive Telemetry Bar (clean, zero card bloat) -->
-    <div class="border-b border-[#fff8ee]/8 bg-[#070a15]/60 grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-[#fff8ee]/8 shrink-0">
-      <div class="min-h-[52px] px-4 md:px-6 py-2 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-2 min-w-0">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" aria-hidden="true" />
-          <span class="text-xs text-slate-400 truncate">在线追踪资产</span>
-        </div>
-        <span class="font-mono text-base font-bold text-[#f2b880]">{{ store.state.assets.length }}</span>
-      </div>
-
-      <button
-        type="button"
-        :aria-pressed="expiringOnly"
-        @click="expiringOnly = !expiringOnly"
-        :class="[
-          'min-h-[52px] px-4 md:px-6 py-2 flex items-center justify-between gap-2 hover:bg-white/[0.03] cursor-pointer text-left transition-colors',
-          expiringOnly ? 'bg-amber-400/12' : ''
-        ]"
-        title="点击切换仅看 7 天内临期资产"
-      >
-        <div class="flex items-center gap-2 min-w-0">
-          <span
-            :class="[
-              'w-1.5 h-1.5 rounded-full shrink-0',
-              store.expiringAssetCount.value > 0 ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
-            ]"
-            aria-hidden="true"
-          />
-          <span class="text-xs text-slate-400 truncate">
-            {{ expiringOnly ? '筛选中 · 临期预警' : '7天内临期预警' }}
-          </span>
-        </div>
-        <span :class="['font-mono text-base font-bold', store.expiringAssetCount.value > 0 ? 'text-amber-300' : 'text-emerald-300']">
-          {{ store.expiringAssetCount.value }}
-        </span>
-      </button>
-
-      <button
-        type="button"
-        :aria-pressed="taskStatusFilter === 'enabled'"
-        @click="focusEnabledTasks"
-        title="点击定位并筛选已启用调度任务"
-        :class="[
-          'min-h-[52px] px-4 md:px-6 py-2 flex items-center justify-between gap-2 hover:bg-white/[0.03] cursor-pointer text-left transition-colors',
-          taskStatusFilter === 'enabled' ? 'bg-[#f2b880]/10' : ''
-        ]"
-      >
-        <div class="flex items-center gap-2 min-w-0">
-          <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880] shrink-0" aria-hidden="true" />
-          <span class="text-xs text-slate-400 truncate">
-            {{ taskStatusFilter === 'enabled' ? '筛选中 · 启用任务' : '启用调度例程' }}
-          </span>
-        </div>
-        <span class="font-mono text-base font-bold text-white">
-          {{ store.state.tasks.filter((t) => t.enabled).length }}
-        </span>
-      </button>
-
-      <button
-        type="button"
-        @click="store.state.showLogsModal = true"
-        class="min-h-[52px] px-4 md:px-6 py-2 flex items-center justify-between gap-2 hover:bg-white/[0.03] cursor-pointer text-left"
-      >
-        <div class="flex items-center gap-2 min-w-0">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" aria-hidden="true" />
-          <span class="text-xs text-slate-400 truncate">原生 APP 通知</span>
-        </div>
-        <span class="font-mono text-xs font-semibold text-emerald-300 shrink-0">
-          成功 {{ store.state.stats.sent_pushes }}
-        </span>
-      </button>
-    </div>
-
     <div class="cq-container flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
-      <div class="max-w-6xl mx-auto flex flex-col gap-7">
-        <!-- Asset Watcher Section -->
-        <div class="flex flex-col gap-3.5">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-2.5 flex-wrap">
-              <h2 class="text-base font-semibold text-white">数字资产与会员守望</h2>
-              <span
-                v-if="activeCostSummary"
-                class="font-mono text-[11px] px-2.5 py-0.5 rounded-full border border-[#f2b880]/25 bg-[#f2b880]/10 text-[#f7cba0]"
-                title="已将按年/季/周/日计费资产自动折算为当前筛选视图的月均预估合计"
+      <div class="max-w-6xl mx-auto flex flex-col gap-6">
+        <!-- Asymmetric Bento Cockpit: CSS Conic-Gradient Health Radar + Interactive Filter Tiles -->
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-3">
+          <div
+            @pointermove="trackSpotlight"
+            class="luxury-card lg:col-span-2 rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap"
+          >
+            <div class="flex items-center gap-3.5 min-w-0">
+              <div
+                class="relative w-14 h-14 shrink-0 flex items-center justify-center"
+                role="img"
+                :aria-label="`资产健康率 ${healthMetrics.healthyPct}%`"
               >
-                折合月均: {{ activeCostSummary }}
-              </span>
+                <div
+                  class="health-donut-ring absolute inset-0"
+                  :style="{ '--ok-stop': healthMetrics.okStop, '--warn-stop': healthMetrics.warnStop }"
+                  aria-hidden="true"
+                />
+                <span class="font-mono text-xs font-bold text-white tabular-nums">{{ healthMetrics.healthyPct }}%</span>
+              </div>
+              <div class="min-w-0">
+                <div class="text-[11px] text-slate-400">全局追踪 {{ store.state.assets.length }} 项 · 月均预估折算</div>
+                <div class="font-mono tabular-nums text-lg sm:text-xl font-bold text-[#ffe2be] truncate mt-0.5">
+                  {{ activeCostSummary || '¥0 / 月' }}
+                </div>
+              </div>
             </div>
-            <div class="flex items-center gap-2 flex-wrap">
+
+            <div class="flex items-center gap-2 shrink-0 ml-auto">
               <button
                 v-if="store.state.bots.length > 0"
                 type="button"
                 @click="auditAssetsWithAssistant"
-                class="min-h-[44px] sm:min-h-[34px] px-3 py-2 rounded-xl border border-cyan-400/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/18 text-xs cursor-pointer"
+                class="btn-tactile min-h-[36px] px-3 rounded-xl text-cyan-200 text-xs cursor-pointer"
               >
-                派助手审计
-              </button>
-              <button
-                type="button"
-                @click="exportAssetsCsv"
-                class="min-h-[44px] sm:min-h-[34px] px-3 py-2 rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:border-[#f2b880]/40 hover:text-[#f2b880] text-xs cursor-pointer"
-              >
-                导出 CSV ({{ filteredAssets.length }})
-              </button>
-              <button
-                type="button"
-                @click="store.state.editingAsset = null"
-                class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/12 text-slate-200 hover:border-[#f2b880]/40 hover:text-[#f2b880] text-xs cursor-pointer"
-              >
-                + 新增资产
+                AI 审计
               </button>
               <button
                 type="button"
                 :disabled="syncing"
                 @click="handleSyncAssets"
-                class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+                class="btn-jewel min-h-[36px] px-3.5 rounded-xl text-xs cursor-pointer disabled:opacity-50"
               >
-                {{ syncing ? '嗅探同步中...' : '立即嗅探同步' }}
+                {{ syncing ? '同步中...' : '嗅探同步' }}
               </button>
             </div>
           </div>
 
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            :aria-pressed="expiringOnly"
+            @pointermove="trackSpotlight"
+            @click="expiringOnly = !expiringOnly"
+            :class="[
+              'luxury-card vesper-card-interactive rounded-2xl p-4 flex items-center justify-between gap-3 cursor-pointer text-left',
+              expiringOnly ? 'border-amber-400/55 ring-1 ring-amber-400/30' : ''
+            ]"
+            title="点击切换仅看 7 天内临期资产"
+          >
+            <div class="min-w-0">
+              <div class="text-[11px] text-slate-400 truncate">
+                {{ expiringOnly ? '筛选中 · 7天临期' : '7天内临期预警' }}
+              </div>
+              <div :class="['font-mono tabular-nums text-2xl font-bold mt-0.5', store.expiringAssetCount.value > 0 ? 'text-amber-300' : 'text-emerald-300']">
+                {{ store.expiringAssetCount.value }}
+              </div>
+            </div>
+            <span
+              :class="[
+                'w-10 h-10 rounded-xl bg-gradient-to-br border inline-flex items-center justify-center shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]',
+                store.expiringAssetCount.value > 0
+                  ? 'from-amber-400/25 to-rose-500/10 border-amber-400/35 text-amber-200'
+                  : 'from-emerald-400/20 to-teal-500/8 border-emerald-400/30 text-emerald-300'
+              ]"
+              aria-hidden="true"
+            >
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            :aria-pressed="taskStatusFilter === 'enabled'"
+            @pointermove="trackSpotlight"
+            @click="focusEnabledTasks"
+            title="点击定位并筛选已启用调度任务"
+            :class="[
+              'luxury-card vesper-card-interactive rounded-2xl p-4 flex items-center justify-between gap-3 cursor-pointer text-left',
+              taskStatusFilter === 'enabled' ? 'border-[#f2b880]/55 ring-1 ring-[#f2b880]/30' : ''
+            ]"
+          >
+            <div class="min-w-0">
+              <div class="text-[11px] text-slate-400 truncate">
+                {{ taskStatusFilter === 'enabled' ? '筛选中 · 活跃例程' : '活跃自动化例程' }}
+              </div>
+              <div class="font-mono tabular-nums text-2xl font-bold text-white mt-0.5">
+                {{ store.state.tasks.filter((t) => t.enabled).length }}
+              </div>
+            </div>
+            <span class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#f2b880]/25 to-amber-500/10 border border-[#f2b880]/35 text-[#ffe2be] inline-flex items-center justify-center shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
+            </span>
+          </button>
+        </div>
+
+        <!-- Asset Watcher Section (Streamlined Single-Row Control Bar) -->
+        <div class="flex flex-col gap-3.5">
+          <div class="flex flex-wrap items-center justify-between gap-2.5">
+            <div class="flex items-center gap-2 flex-wrap flex-1 min-w-0">
               <input
                 v-model="searchQuery"
                 type="search"
                 aria-label="搜索资产"
                 placeholder="搜索资产名称、规格或服务商..."
                 @keydown.escape="searchQuery = ''"
-                class="w-full sm:w-56 min-h-[44px] sm:min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#070a16]/85 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
+                class="w-full sm:w-52 min-h-[36px] rounded-full border border-[#fff8ee]/12 px-3.5 py-1.5 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
               />
+              <SegmentedTabs v-model="activeCat" :items="categoryTabs" variant="subtle" aria-label="资产类别筛选" />
               <button
                 type="button"
                 :aria-pressed="sortByUrgency"
                 @click="sortByUrgency = !sortByUrgency"
                 :class="[
-                  'min-h-[36px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
-                  sortByUrgency
-                    ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
-                    : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+                  'min-h-[34px] px-3 rounded-full text-[11px] cursor-pointer',
+                  sortByUrgency ? 'btn-tactile-gold' : 'btn-tactile text-slate-400'
                 ]"
               >
-                紧迫排序
+                按紧迫度
+              </button>
+            </div>
+
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                @click="exportAssetsCsv"
+                title="导出当前筛选列表为 CSV"
+                class="btn-tactile min-h-[34px] px-3 rounded-full text-xs cursor-pointer"
+              >
+                导出
               </button>
               <button
                 type="button"
-                :aria-pressed="autoRenewOnly"
-                @click="autoRenewOnly = !autoRenewOnly"
-                :class="[
-                  'min-h-[36px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
-                  autoRenewOnly
-                    ? 'border-emerald-400/45 bg-emerald-400/12 text-emerald-300'
-                    : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
-                ]"
+                @click="store.state.editingAsset = null"
+                class="btn-tactile-gold min-h-[34px] px-3.5 rounded-full text-xs font-medium cursor-pointer"
               >
-                仅自动续费
+                + 新增资产
               </button>
-              <div class="inline-flex rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-0.5 text-[11px]">
-                <button
-                  v-for="st in ([
-                    { id: 'all', label: '全部' },
-                    { id: 'active', label: '生效中' },
-                    { id: 'expired', label: '已到期' },
-                    { id: 'paused', label: '已停用' },
-                  ] as const)"
-                  :key="st.id"
-                  type="button"
-                  @click="assetStatusFilter = st.id"
-                  :class="['px-2 py-1 rounded-lg cursor-pointer transition-colors', assetStatusFilter === st.id ? 'bg-[#f2b880]/20 text-[#f2b880]' : 'text-slate-400 hover:text-white']"
-                >
-                  {{ st.label }}
-                </button>
-              </div>
             </div>
-            <SegmentedTabs v-model="activeCat" :items="categoryTabs" variant="subtle" aria-label="资产类别筛选" />
           </div>
 
           <div v-if="filteredAssets.length === 0" class="vesper-card rounded-2xl p-8 text-center flex flex-col items-center gap-2.5 text-sm text-slate-400">
@@ -504,11 +529,19 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                 </span>
               </div>
 
-              <div class="flex items-center justify-between text-[11px] pt-2.5 border-t border-[#fff8ee]/7 w-full">
-                <span class="font-mono tabular-nums text-slate-500">
-                  {{ formatDateOnly(a.due_date) }} · {{ a.auto_renew ? '自动续费' : '手动续费' }}
-                </span>
-                <span :class="['font-mono tabular-nums shrink-0', daysBadgeClass(a)]">{{ daysText(a) }}</span>
+              <div class="flex flex-col gap-2 pt-2.5 border-t border-[#fff8ee]/8 w-full">
+                <div class="well-recessed h-1.5 w-full rounded-full overflow-hidden p-[1px]" aria-hidden="true">
+                  <div
+                    :style="{ width: `${assetRunwayPercent(a)}%` }"
+                    :class="['h-full rounded-full bg-gradient-to-r transition-[width] duration-300', assetRunwayBarClass(a)]"
+                  />
+                </div>
+                <div class="flex items-center justify-between text-[11px] w-full">
+                  <span class="font-mono tabular-nums text-slate-400">
+                    {{ formatDateOnly(a.due_date) }} · {{ a.auto_renew ? '自动续费' : '手动续费' }}
+                  </span>
+                  <span :class="['font-mono tabular-nums shrink-0', daysBadgeClass(a)]">{{ daysText(a) }}</span>
+                </div>
               </div>
             </button>
           </div>
@@ -522,25 +555,25 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
               <span class="ml-1.5 text-xs font-mono text-slate-500">({{ filteredTasks.length }})</span>
             </h2>
             <div class="flex items-center gap-2 flex-wrap">
-              <div class="inline-flex rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-0.5 text-[11px]">
+              <div class="well-recessed inline-flex rounded-xl p-1 text-[11px]">
                 <button
                   type="button"
                   @click="taskStatusFilter = 'all'"
-                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', taskStatusFilter === 'all' ? 'bg-[#f2b880]/20 text-[#f2b880]' : 'text-slate-400 hover:text-white']"
+                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-all', taskStatusFilter === 'all' ? 'btn-tactile-gold' : 'text-slate-400 hover:text-white']"
                 >
                   全部
                 </button>
                 <button
                   type="button"
                   @click="taskStatusFilter = 'enabled'"
-                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', taskStatusFilter === 'enabled' ? 'bg-emerald-400/20 text-emerald-300' : 'text-slate-400 hover:text-white']"
+                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-all', taskStatusFilter === 'enabled' ? 'bg-emerald-400/20 text-emerald-200 border border-emerald-400/35' : 'text-slate-400 hover:text-white']"
                 >
                   已启用
                 </button>
                 <button
                   type="button"
                   @click="taskStatusFilter = 'paused'"
-                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', taskStatusFilter === 'paused' ? 'bg-slate-400/20 text-slate-200' : 'text-slate-400 hover:text-white']"
+                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-all', taskStatusFilter === 'paused' ? 'bg-slate-400/20 text-slate-200' : 'text-slate-400 hover:text-white']"
                 >
                   已暂停
                 </button>
@@ -548,7 +581,7 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
               <button
                 type="button"
                 @click="store.state.editingTask = null"
-                class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/12 text-slate-200 hover:border-[#f2b880]/40 hover:text-[#f2b880] text-xs cursor-pointer"
+                class="btn-tactile min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl text-xs cursor-pointer"
               >
                 + 创建任务
               </button>
@@ -612,7 +645,7 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                 </button>
               </div>
               <p class="text-xs text-slate-300/90 leading-relaxed">{{ t.description }}</p>
-              <div class="font-mono text-[11px] text-slate-400 truncate rounded-lg bg-[#050811]/60 border border-[#fff8ee]/6 px-2.5 py-1.5">
+              <div class="well-recessed font-mono text-[11px] text-slate-300 truncate rounded-xl px-3 py-1.5">
                 最近摘要: {{ t.last_run?.summary || '等待执行' }}
               </div>
               <div class="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
@@ -620,14 +653,14 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                   <button
                     type="button"
                     @click="runTaskNow(t.id)"
-                    class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg bg-[#f2b880]/15 border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/25 text-xs cursor-pointer"
+                    class="btn-tactile-gold min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-xl text-xs cursor-pointer"
                   >
                     立即执行
                   </button>
                   <button
                     type="button"
                     @click="store.state.editingTask = t"
-                    class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg border border-[#fff8ee]/12 text-slate-300 hover:bg-white/5 text-xs cursor-pointer"
+                    class="btn-tactile min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-xl text-xs cursor-pointer"
                   >
                     编辑配置
                   </button>
@@ -636,7 +669,7 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                   v-if="t.bot_id && taskBot(t.bot_id)"
                   type="button"
                   @click="store.jumpToBot(t.bot_id)"
-                  class="min-h-[36px] sm:min-h-[28px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#fff8ee]/10 bg-[#050811]/70 hover:border-[#f2b880]/40 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+                  class="btn-tactile min-h-[36px] sm:min-h-[28px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] cursor-pointer"
                 >
                   <BotAvatar :avatar-style="taskBot(t.bot_id)?.avatar_style" :state="taskBot(t.bot_id)?.state" size="xs" :interactive="false" />
                   <span>{{ taskBot(t.bot_id)?.name }}</span>
