@@ -56,8 +56,13 @@ const sizeClass = computed(() => {
 <template>
   <div
     :style="{ '--bot-glow': palette.glow }"
+    :role="interactive ? 'button' : undefined"
+    :tabindex="interactive ? 0 : undefined"
+    :aria-label="interactive ? '点击触发互动眨眼' : undefined"
     :aria-hidden="!interactive || undefined"
     @click="triggerWink"
+    @keydown.enter.prevent="triggerWink"
+    @keydown.space.prevent="triggerWink"
     :class="[
       'bot-avatar-root shrink-0 relative inline-flex items-center justify-center select-none',
       sizeClass,

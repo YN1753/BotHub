@@ -117,6 +117,13 @@ function loadSkillToEdit(sk: Skill) {
   }
 }
 
+function cloneSkillToForm(sk: Skill) {
+  loadSkillToEdit(sk)
+  editingId.value = null
+  name.value = `${sk.name} (副本)`
+  slug.value = `${sk.slug}_copy`
+}
+
 function addHeaderRow() {
   headerRows.value.push({ key: '', value: '' })
 }
@@ -618,6 +625,13 @@ watch(
                 class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-white cursor-pointer"
               >
                 {{ sk.enabled ? '停用' : '启用' }}
+              </button>
+              <button
+                type="button"
+                @click="cloneSkillToForm(sk)"
+                class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-cyan-200 cursor-pointer"
+              >
+                复用新建
               </button>
               <button
                 type="button"

@@ -422,6 +422,19 @@ watch(
         <div class="w-44">
           <CustomSelect v-model="filterScope" :options="filterScopeOptions" aria-label="按作用域筛选" />
         </div>
+        <button
+          v-if="store.activeBot.value"
+          type="button"
+          @click="filterScope = filterScope === `bot:${store.activeBot.value.id}` ? 'all' : `bot:${store.activeBot.value.id}`"
+          :class="[
+            'min-h-[34px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+            filterScope === `bot:${store.activeBot.value.id}`
+              ? 'border-cyan-400/55 bg-cyan-500/15 text-cyan-200'
+              : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+          ]"
+        >
+          只看当前Bot
+        </button>
         <div class="w-36">
           <CustomSelect v-model="sortBy" :options="SORT_OPTIONS" aria-label="排序方式" />
         </div>

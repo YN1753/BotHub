@@ -313,6 +313,18 @@ function removePoolNode(id: string) {
   poolEntries.value = poolEntries.value.filter((x) => x.id !== id)
 }
 
+function duplicatePoolNode(entry: ModelPoolEntry) {
+  const suffix = Date.now().toString(36).slice(-4)
+  const copy: ModelPoolEntry = {
+    ...entry,
+    id: `node_${suffix}`,
+    name: `${entry.name} (副本)`,
+    priority: (poolEntries.value.length + 1) * 10,
+  }
+  poolEntries.value.push(copy)
+  expandedPoolId.value = copy.id
+}
+
 async function handleTestPush() {
   if (testingPush.value) return
   testingPush.value = true
@@ -754,6 +766,14 @@ async function handleImportBackup(e: Event) {
                       ]"
                     >
                       {{ entry.enabled ? '启用' : '停用' }}
+                    </button>
+                    <button
+                      type="button"
+                      @click="duplicatePoolNode(entry)"
+                      title="克隆节点地址与密钥配置新模型"
+                      class="px-2 py-0.5 rounded border border-[#fff8ee]/12 text-[10.5px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+                    >
+                      克隆
                     </button>
                     <button
                       type="button"

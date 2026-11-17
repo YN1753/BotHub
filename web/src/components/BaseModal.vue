@@ -156,7 +156,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="flex-1 min-h-0 flex flex-col p-4 sm:p-5 pb-[max(1.1rem,env(safe-area-inset-bottom,1.1rem))] gap-4 overflow-hidden">
+      <div class="flex-1 min-h-0 flex flex-col p-4 sm:p-5 pb-[max(1.1rem,env(safe-area-inset-bottom,1.1rem))] gap-4 overflow-hidden overscroll-contain">
         <slot />
       </div>
     </div>

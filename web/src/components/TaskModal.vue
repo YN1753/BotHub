@@ -331,7 +331,7 @@ async function handleDelete() {
               <button type="button" @click="runAt = formatQuickRunAt(0, 9)" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">明早 09:00</button>
             </div>
           </div>
-          <label v-if="freq === 'custom'" class="sm:col-span-2 flex flex-col gap-1 text-xs text-slate-300">
+          <div v-if="freq === 'custom'" class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
             <div class="flex items-center justify-between">
               <span>Cron 表达式</span>
               <span :class="['font-mono text-[10.5px]', isCustomCronValid ? 'text-emerald-300' : 'text-rose-400']">
@@ -339,7 +339,13 @@ async function handleDelete() {
               </span>
             </div>
             <input v-model="customCron" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
-          </label>
+            <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
+              <span class="text-slate-500">常用表达式:</span>
+              <button type="button" @click="customCron = '*/30 * * * *'" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] font-mono text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">每 30 分钟</button>
+              <button type="button" @click="customCron = '0 9 * * 1-5'" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] font-mono text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">工作日 09:00</button>
+              <button type="button" @click="customCron = '0 9,18 * * *'" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] font-mono text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">早晚 09/18 点</button>
+            </div>
+          </div>
         </div>
       </div>
 

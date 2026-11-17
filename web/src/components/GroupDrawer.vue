@@ -529,7 +529,17 @@ async function handleDisbandGroup() {
           <div class="modal-section flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2">
               <span class="text-xs font-semibold text-[#f7cba0]">临时拉人发起协同群聊</span>
-              <span class="font-mono text-[10.5px] text-slate-400">已拉 {{ adhocSelectedIds.length }} 位外援</span>
+              <div class="flex items-center gap-2 text-[10.5px]">
+                <button
+                  v-if="adhocCandidates.length > 0"
+                  type="button"
+                  @click="adhocSelectedIds = adhocSelectedIds.length === adhocCandidates.length ? [] : adhocCandidates.map((c) => c.id)"
+                  class="text-[#f2b880] hover:underline cursor-pointer"
+                >
+                  {{ adhocSelectedIds.length === adhocCandidates.length ? '清空选择' : '全选候选' }}
+                </button>
+                <span class="font-mono text-slate-400">已拉 {{ adhocSelectedIds.length }} 位外援</span>
+              </div>
             </div>
             <p class="text-[11.5px] text-slate-400 leading-relaxed">
               无需中断思路：保留「{{ bot.name }}」，勾选其他专家即刻组建多人协同群。

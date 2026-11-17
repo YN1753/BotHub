@@ -250,6 +250,14 @@ watch(
           </details>
           <div class="flex items-center gap-1.5 shrink-0 self-start">
             <button
+              v-if="!n.read_at"
+              type="button"
+              @click="markRead(n.id)"
+              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-[#fff8ee]/12 hover:border-emerald-400/40 text-[11px] text-slate-300 hover:text-emerald-300 cursor-pointer"
+            >
+              标已读
+            </button>
+            <button
               type="button"
               @click="convertInboxToTodo(n)"
               class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-cyan-400/30 bg-cyan-500/8 hover:bg-cyan-500/18 text-[11px] text-cyan-200 cursor-pointer"

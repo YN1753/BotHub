@@ -1,3 +1,5 @@
+import type { Bot } from '../types/bothub'
+
 export type BotShape = 'butler' | 'sentinel' | 'radar' | 'critic' | 'swarm' | 'visor'
 export type BotColor = 'gold' | 'indigo' | 'emerald' | 'amber' | 'violet'
 
@@ -99,4 +101,21 @@ export function composeAvatarStyle(shape: BotShape, color: BotColor): string {
 
 export function getColorPalette(color: BotColor): ColorOption {
   return BOT_COLORS.find((c) => c.id === color) || BOT_COLORS[0]
+}
+
+export function resolveGroupMemberBots(groupBot: Bot, allBots: Bot[]): Bot[] {
+  const specialistMap = new Map<string, Bot>()
+  for (const b of allBots) {
+    if (!b.is_group) specialistMap.set(b.id, b)
+  }
+  try {
+    const ids = JSON.parse(groupBot.member_ids || '[]')
+    if (Array.isArray(ids)) {
+      const resolved = ids.map((id: string) => specialistMap.get(id)).filter((x): x is Bot => Boolean(x))
+      if (resolved.length > 0) return resolved
+    }
+  } catch {
+    // ignore malformed member_ids JSON
+  }
+  return Array.from(specialistMap.values()).slice(0, 4)
 }

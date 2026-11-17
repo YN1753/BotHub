@@ -22,6 +22,7 @@ const searchQuery = ref('')
 const activeCat = ref('all')
 const expiringOnly = ref(false)
 const autoRenewOnly = ref(false)
+const sortByUrgency = ref(false)
 const assetStatusFilter = ref<'all' | 'active' | 'expired' | 'paused'>('all')
 const taskSearch = ref('')
 const taskStatusFilter = ref<'all' | 'enabled' | 'paused'>('all')
@@ -60,8 +61,8 @@ function assetStatusBadgeClass(status?: string): string {
   return 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
 }
 
-const filteredAssets = computed(() =>
-  store.state.assets.filter((a) => {
+const filteredAssets = computed(() => {
+  const list = store.state.assets.filter((a) => {
     if (activeCat.value !== 'all' && a.category !== activeCat.value) return false
     if (expiringOnly.value && !isExpiringSoon(a)) return false
     if (autoRenewOnly.value && !a.auto_renew) return false
@@ -72,7 +73,14 @@ const filteredAssets = computed(() =>
     if (!q) return true
     return `${a.name} ${a.spec} ${a.status} ${a.extra_config}`.toLowerCase().includes(q)
   })
-)
+  if (!sortByUrgency.value) return list
+  return [...list].sort((a, b) => {
+    const aPerm = a.status === '长期有效' || String(a.due_date || '').startsWith('2099')
+    const bPerm = b.status === '长期有效' || String(b.due_date || '').startsWith('2099')
+    if (aPerm !== bPerm) return aPerm ? 1 : -1
+    return (a.days_left ?? 9999) - (b.days_left ?? 9999)
+  })
+})
 
 const activeCostSummary = computed(() => {
   const totals = new Map<string, number>()
@@ -369,7 +377,7 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                 @click="exportAssetsCsv"
                 class="min-h-[44px] sm:min-h-[34px] px-3 py-2 rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:border-[#f2b880]/40 hover:text-[#f2b880] text-xs cursor-pointer"
               >
-                导出 CSV
+                导出 CSV ({{ filteredAssets.length }})
               </button>
               <button
                 type="button"
@@ -399,6 +407,19 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                 @keydown.escape="searchQuery = ''"
                 class="w-full sm:w-56 min-h-[44px] sm:min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#070a16]/85 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
               />
+              <button
+                type="button"
+                :aria-pressed="sortByUrgency"
+                @click="sortByUrgency = !sortByUrgency"
+                :class="[
+                  'min-h-[36px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+                  sortByUrgency
+                    ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
+                    : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+                ]"
+              >
+                紧迫排序
+              </button>
               <button
                 type="button"
                 :aria-pressed="autoRenewOnly"

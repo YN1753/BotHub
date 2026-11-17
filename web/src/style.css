@@ -991,3 +991,19 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
   background: rgba(255, 248, 238, 0.12);
   margin: 0.65rem 0;
 }
+
+@media print {
+  aside,
+  canvas,
+  form.composer-dock,
+  .reveal-actions {
+    display: none !important;
+  }
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+  }
+  .md-body {
+    color: #111827 !important;
+  }
+}

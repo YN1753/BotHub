@@ -1,4 +1,4 @@
-import type { AvailableToolMeta } from '../types/bothub'
+import type { AvailableToolMeta, Skill } from '../types/bothub'
 
 export interface ToolGroup {
   id: string
@@ -25,6 +25,16 @@ const TOOL_META: Record<string, { group: string; shortLabel: string }> = {
 
   manage_assets: { group: 'ops', shortLabel: '数字资产台账' },
   query_nezha_nodes: { group: 'ops', shortLabel: '哪吒探针巡检' },
+}
+
+export function formatToolDisplayName(name: string, skills: Skill[] = []): string {
+  if (name.startsWith('skill_')) {
+    const slug = name.slice(6)
+    const found = skills.find((s) => s.slug === slug)
+    return found ? `${found.name} (${name})` : name
+  }
+  const meta = TOOL_META[name]
+  return meta ? `${meta.shortLabel} (${name})` : name
 }
 
 const GROUP_ORDER: Array<{ id: string; label: string }> = [

@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
+import { resolveGroupMemberBots } from '../utils/botLook'
 import BaseModal from './BaseModal.vue'
 import BotAvatar from './BotAvatar.vue'
 import BotGroupAvatar from './BotGroupAvatar.vue'
@@ -28,25 +29,8 @@ function categoryBadgeClass(cat: SearchEntry['category']): string {
   return 'border-[#fff8ee]/10 bg-[#050811]/70 text-slate-400'
 }
 
-const specialistMap = computed(() => {
-  const m = new Map<string, Bot>()
-  store.state.bots.forEach((b) => {
-    if (!b.is_group) m.set(b.id, b)
-  })
-  return m
-})
-
 function resolveGroupMembers(b: Bot): Bot[] {
-  try {
-    const ids = JSON.parse(b.member_ids || '[]')
-    if (Array.isArray(ids)) {
-      const resolved = ids.map((id: string) => specialistMap.value.get(id)).filter((x): x is Bot => Boolean(x))
-      if (resolved.length > 0) return resolved
-    }
-  } catch {
-    // ignore
-  }
-  return Array.from(specialistMap.value.values()).slice(0, 4)
+  return resolveGroupMemberBots(b, store.state.bots)
 }
 
 interface SearchEntry {

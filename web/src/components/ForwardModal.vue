@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
+import { resolveGroupMemberBots } from '../utils/botLook'
 import { trackSpotlight } from '../utils/topLayer'
 import type { Bot } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
@@ -26,25 +27,8 @@ const filteredTargets = computed(() => {
   )
 })
 
-const specialistMap = computed(() => {
-  const m = new Map<string, Bot>()
-  store.state.bots.forEach((b) => {
-    if (!b.is_group) m.set(b.id, b)
-  })
-  return m
-})
-
 function resolveGroupMembers(b: Bot): Bot[] {
-  try {
-    const ids = JSON.parse(b.member_ids || '[]')
-    if (Array.isArray(ids)) {
-      const resolved = ids.map((id: string) => specialistMap.value.get(id)).filter((x): x is Bot => Boolean(x))
-      if (resolved.length > 0) return resolved
-    }
-  } catch {
-    // ignore
-  }
-  return Array.from(specialistMap.value.values()).slice(0, 4)
+  return resolveGroupMemberBots(b, store.state.bots)
 }
 
 watch(
@@ -162,15 +146,27 @@ async function submitForward(jumpAfter: boolean) {
         </div>
       </div>
 
-      <label class="flex flex-col gap-1 text-xs text-slate-300">
+      <div class="flex flex-col gap-1.5 text-xs text-slate-300">
         <span>附言说明（可选）</span>
         <input
           v-model="note"
           type="text"
+          aria-label="转发附言说明"
           placeholder="如：请参考这条记录排查关联节点..."
           class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 text-xs text-white focus:border-[#f2b880]/60"
         />
-      </label>
+        <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
+          <button
+            v-for="tag in ['请协助跟进', '供参考上下文', '排查关联异常']"
+            :key="tag"
+            type="button"
+            @click="note = tag"
+            class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 bg-[#050811] text-slate-400 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          >
+            {{ tag }}
+          </button>
+        </div>
+      </div>
 
       <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#fff8ee]/10">
         <button

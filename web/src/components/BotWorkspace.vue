@@ -5,7 +5,7 @@ import { BotHubApi } from '../api/client'
 import { botStateLabel, describeCron, formatDurationMs, formatTime, formatTimelineDivider, groupModeLabel } from '../utils/format'
 import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
 import { applySiblingStaggerFallback, isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
-import { groupAvailableTools, shortToolLabel } from '../utils/toolMeta'
+import { groupAvailableTools, formatToolDisplayName, shortToolLabel } from '../utils/toolMeta'
 import type { AgentMemory, Bot, BotMode, MemoryPolicy } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
 import BotGroupAvatar from './BotGroupAvatar.vue'
@@ -577,29 +577,7 @@ async function handleSummarizeThread() {
 }
 
 function formatToolLabel(name: string): string {
-  if (name.startsWith('skill_')) {
-    const slug = name.slice(6)
-    const found = (store.state.skills || []).find((s) => s.slug === slug)
-    return found ? `${found.name} (${name})` : name
-  }
-  const builtinNames: Record<string, string> = {
-    read_url: '网页正文抓取 (read_url)',
-    web_search: '联网检索 (web_search)',
-    query_nezha_nodes: '哪吒探针巡检 (query_nezha_nodes)',
-    manage_assets: '数字资产台账 (manage_assets)',
-    manage_tasks: '定时与单次提醒 (manage_tasks)',
-    remember_fact: '写入长期记忆 (remember_fact)',
-    recall_memory: '检索长期记忆 (recall_memory)',
-    manage_memory: '整理与遗忘记忆 (manage_memory)',
-    manage_todos: '个人待办清单 (manage_todos)',
-    manage_notes: '工作文档交付 (manage_notes)',
-    send_notification: '主动推送卡片 (send_notification)',
-    consult_bot: '团队协同委派 (consult_bot)',
-    workspace_briefing: '今日全景简报 (workspace_briefing)',
-    calculate_eval: '高精度表达式计算 (calculate_eval)',
-    datetime_calc: '时间日历推算 (datetime_calc)',
-  }
-  return builtinNames[name] || name
+  return formatToolDisplayName(name, store.state.skills || [])
 }
 
 function parseConsultSummary(raw?: string): { label: string; tools: string[] } | null {
@@ -1090,6 +1068,19 @@ function handleComposerKeydown(e: KeyboardEvent) {
     e.stopPropagation()
     replyTarget.value = null
     return
+  }
+
+  if (e.key === 'ArrowUp' && !inputPrompt.value) {
+    const fallbackPrompt =
+      lastPrompt ||
+      [...store.state.timeline].reverse().find((m) => m.role === 'user')?.content ||
+      ''
+    if (fallbackPrompt) {
+      e.preventDefault()
+      inputPrompt.value = fallbackPrompt
+      nextTick(() => autoResizeTextarea())
+      return
+    }
   }
 
   if ((e.key === 'Enter' && !e.shiftKey) || ((e.metaKey || e.ctrlKey) && e.key === 'Enter')) {

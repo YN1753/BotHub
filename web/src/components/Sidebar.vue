@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { botStateLabel, formatChatTime, shortVersion } from '../utils/format'
+import { resolveGroupMemberBots } from '../utils/botLook'
 import { applySiblingStaggerFallback } from '../utils/topLayer'
 import type { Bot } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
@@ -48,25 +49,8 @@ const filteredBots = computed(() => {
   })
 })
 
-const specialistMap = computed(() => {
-  const m = new Map<string, Bot>()
-  store.state.bots.forEach((b) => {
-    if (!b.is_group) m.set(b.id, b)
-  })
-  return m
-})
-
 function resolveGroupMembers(b: Bot): Bot[] {
-  try {
-    const ids = JSON.parse(b.member_ids || '[]')
-    if (Array.isArray(ids)) {
-      const resolved = ids.map((id: string) => specialistMap.value.get(id)).filter((x): x is Bot => Boolean(x))
-      if (resolved.length > 0) return resolved
-    }
-  } catch {
-    // ignore
-  }
-  return Array.from(specialistMap.value.values()).slice(0, 4)
+  return resolveGroupMemberBots(b, store.state.bots)
 }
 
 function isGroup(b: Bot): boolean {

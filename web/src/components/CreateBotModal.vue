@@ -55,6 +55,7 @@ const groupDesc = ref('')
 const groupAvatar = ref('swarm:indigo')
 const groupMembers = ref<string[]>([])
 const groupMode = ref<'smart' | 'sequential' | 'mention_only'>('smart')
+const groupModel = ref('')
 const groupAnnouncement = ref('')
 const toolSearch = ref('')
 const saving = ref(false)
@@ -173,10 +174,10 @@ async function handleSubmit() {
       )
       const toolSet = new Set<string>()
       const skillSet = new Set<string>()
-      let derivedModel = store.modelOptions.value[0]?.value || 'primary'
+      let derivedModel = groupModel.value || store.modelOptions.value[0]?.value || 'primary'
       let allCompanion = selectedBots.length > 0
       selectedBots.forEach((b) => {
-        if (b.model && derivedModel === (store.modelOptions.value[0]?.value || 'primary')) {
+        if (!groupModel.value && b.model && derivedModel === (store.modelOptions.value[0]?.value || 'primary')) {
           derivedModel = b.model
         }
         if (b.bot_mode !== 'companion') allCompanion = false
@@ -498,6 +499,14 @@ async function handleSubmit() {
                 ]"
                 variant="subtle"
                 aria-label="群协同策略"
+              />
+            </div>
+            <div class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
+              <span>群协调主力模型 (可选)</span>
+              <CustomSelect
+                v-model="groupModel"
+                :options="[{ value: '', label: '自动沿用群内成员主力模型' }, ...store.modelOptions.value]"
+                aria-label="群协调主力模型"
               />
             </div>
             <label class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">

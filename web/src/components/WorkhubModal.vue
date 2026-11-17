@@ -84,6 +84,18 @@ const botFilterOptions = computed(() => [
 ])
 
 const todayPrefix = computed(() => new Date().toISOString().slice(0, 10))
+const doneTodoCount = computed(() => store.state.todos.filter((t) => t.status === 'done').length)
+
+function quoteNoteToChat(n: WorkNote) {
+  const targetBotId = n.bot_id || store.activeBot.value?.id || store.state.bots[0]?.id || ''
+  if (!targetBotId) {
+    store.notify('请先创建一个 Bot')
+    return
+  }
+  const snippet = n.content ? `\n\n[参考文档：${n.title}]\n${n.content.slice(0, 600)}` : `\n\n[参考文档：${n.title}]`
+  closeModal()
+  void store.jumpToBot(targetBotId, snippet.trimStart())
+}
 
 function offsetDateStr(days: number): string {
   const d = new Date()
@@ -543,10 +555,11 @@ async function refineNoteWithBot(n: WorkNote) {
         </div>
         <button
           type="button"
+          :disabled="doneTodoCount === 0"
           @click="clearDoneTodos"
-          class="px-3 py-1 rounded-lg border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-rose-300 hover:border-rose-400/35 cursor-pointer"
+          class="px-3 py-1 rounded-lg border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-rose-300 hover:border-rose-400/35 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          清理已完成
+          清理已完成 ({{ doneTodoCount }})
         </button>
       </div>
 
@@ -805,6 +818,13 @@ async function refineNoteWithBot(n: WorkNote) {
               </div>
             </div>
             <div class="flex items-center gap-1.5 flex-wrap shrink-0">
+              <button
+                type="button"
+                @click="quoteNoteToChat(selectedNote)"
+                class="px-2.5 py-1 rounded-lg border border-cyan-400/35 text-[11px] text-cyan-200 hover:bg-cyan-500/15 cursor-pointer"
+              >
+                引用进对话
+              </button>
               <button
                 type="button"
                 @click="refineNoteWithBot(selectedNote)"

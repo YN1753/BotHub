@@ -513,7 +513,9 @@ async function handleDelete() {
         >
           删除资产
         </button>
-        <span v-else />
+        <span v-else class="font-mono text-[11px] text-slate-400">
+          {{ dueMode === 'permanent' ? '长期有效 · 免提醒' : `到期日 ${dueYear}-${dueMonth}-${dueDay}` }}
+        </span>
         <div class="flex gap-2">
           <button type="button" @click="closeModal" class="min-h-[44px] sm:min-h-[34px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">
             取消

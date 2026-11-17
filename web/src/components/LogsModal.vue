@@ -39,6 +39,21 @@ async function copyPayload(content: string) {
   }
 }
 
+function exportLogsJson() {
+  if (!filteredLogs.value.length) {
+    store.notify('当前无可导出的流水记录')
+    return
+  }
+  const blob = new Blob([JSON.stringify(filteredLogs.value, null, 2)], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `bothub_push_logs_${Date.now()}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+  store.notify(`已导出 ${filteredLogs.value.length} 条流水记录`)
+}
+
 watch(
   () => [store.state.showLogsModal, filteredLogs.value.length],
   () => nextTick(() => applySiblingStaggerFallback(listRef.value))
@@ -53,6 +68,15 @@ watch(
     max-width="2xl"
     @close="store.state.showLogsModal = false"
   >
+    <template #header-actions>
+      <button
+        type="button"
+        @click="exportLogsJson"
+        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 hover:bg-white/5 cursor-pointer"
+      >
+        导出 JSON
+      </button>
+    </template>
     <!-- Interactive Audit Strip -->
     <div class="modal-section grid grid-cols-3 divide-x divide-[#fff8ee]/10 p-0 overflow-hidden shrink-0">
       <button
