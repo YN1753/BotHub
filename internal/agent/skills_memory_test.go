@@ -449,6 +449,10 @@ func TestAssistantToolsTodosNotesNotificationConsultAndDatetime(t *testing.T) {
 	if err != nil || !strings.Contains(cronRes, "09:30") {
 		t.Fatalf("datetime_calc cron_next failed: %v %s", err, cronRes)
 	}
+	diffRes, err := eng.ExecuteTool(ctx, "datetime_calc", `{"action":"diff","base_time":"2026-11-17","target_time":"2026-11-20"}`)
+	if err != nil || !strings.Contains(diffRes, `"diff_days":3`) || !strings.Contains(diffRes, `"direction":"future"`) {
+		t.Fatalf("datetime_calc diff failed: %v %s", err, diffRes)
+	}
 
 	// 5. consult_bot runs target bot cleanly without polluting target's DM history, and blocks cycles
 	consultRes, err := eng.ExecuteTool(ctx, "consult_bot", `{"bot_name":"Ops专员","instruction":"汇报当前所有节点状态"}`)

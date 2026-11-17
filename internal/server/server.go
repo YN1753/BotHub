@@ -151,6 +151,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v2/notifications", s.requireAuth(s.handleV2ListNotifications))
 	mux.HandleFunc("POST /api/v2/notifications/{id}/read", s.requireAuth(s.handleV2MarkNotificationRead))
 	mux.HandleFunc("POST /api/v2/notifications/read-all", s.requireAuth(s.handleV2MarkAllNotificationsRead))
+	mux.HandleFunc("POST /api/v2/notifications/clear-read", s.requireAuth(s.handleV2ClearReadNotifications))
 	mux.HandleFunc("POST /api/v1/webhook/nezha", s.handleNezhaWebhook)
 	mux.HandleFunc("POST /api/v2/webhook/nezha", s.handleNezhaWebhook)
 

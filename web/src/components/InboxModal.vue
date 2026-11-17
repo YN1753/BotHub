@@ -123,6 +123,17 @@ async function markAllRead() {
   store.notify('全部情报已标记为已读')
 }
 
+async function clearReadItems() {
+  const readCount = store.state.notifications.filter((n) => !!n.read_at).length
+  if (readCount === 0) {
+    store.notify('当前没有可清理的已读情报')
+    return
+  }
+  const res = await BotHubApi.clearReadNotifications()
+  store.state.notifications = store.state.notifications.filter((n) => !n.read_at)
+  store.notify(`已清理 ${res.deleted || readCount} 条已读情报`)
+}
+
 async function toggleDesktopNotify() {
   if (typeof Notification === 'undefined') {
     store.notify('当前浏览器不支持桌面通知 API')
@@ -172,6 +183,13 @@ watch(
         class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 hover:bg-white/5 cursor-pointer"
       >
         全部已读
+      </button>
+      <button
+        type="button"
+        @click="clearReadItems"
+        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-400 hover:text-rose-300 hover:border-rose-400/40 hover:bg-white/5 cursor-pointer"
+      >
+        清理已读
       </button>
     </template>
 

@@ -578,12 +578,16 @@ func BuiltinTools() []ToolDefinition {
 					"properties": map[string]any{
 						"action": map[string]any{
 							"type":        "string",
-							"enum":        []string{"now", "add", "cron_next"},
-							"description": "操作类型：now | add | cron_next",
+							"enum":        []string{"now", "add", "diff", "cron_next"},
+							"description": "操作类型：now | add | diff | cron_next",
 						},
 						"base_time": map[string]any{
 							"type":        "string",
 							"description": "可选：基准时间 YYYY-MM-DD HH:MM（缺省为当前时间）",
+						},
+						"target_time": map[string]any{
+							"type":        "string",
+							"description": "当 action=diff 时必填：目标时间 YYYY-MM-DD HH:MM 或 YYYY-MM-DD",
 						},
 						"delta_minutes": map[string]any{
 							"type":        "integer",
@@ -1262,37 +1266,49 @@ func (e *Engine) toolQueryNezhaNodes(ctx context.Context, argsJSON string) (stri
 	}
 	nodes := make([]nodeRecord, 0)
 	sourceUsed := "local_assets"
+	nezhaStatus := ""
 
 	// 1. Try read-only direct SQLite connection to Nezha Dashboard DB only when configured
 	dbPath, _ := e.store.GetConfig(store.KeyNezhaDBPath)
 	dbPath = strings.TrimSpace(dbPath)
 
-	if info, err := os.Stat(dbPath); err == nil && !info.IsDir() {
-		dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(3000)", dbPath)
-		if db, err := sql.Open("sqlite", dsn); err == nil {
-			defer db.Close()
-			rows, qErr := db.QueryContext(ctx, `SELECT id, name, COALESCE(host, ''), COALESCE(updated_at, '') FROM servers ORDER BY display_index DESC, id ASC`)
-			if qErr == nil {
-				defer rows.Close()
-				sourceUsed = "nezha_sqlite_ro"
-				for rows.Next() {
-					var id int64
-					var name, hostJSON, updatedAt string
-					if err := rows.Scan(&id, &name, &hostJSON, &updatedAt); err != nil {
-						continue
+	if dbPath != "" {
+		info, err := os.Stat(dbPath)
+		if err != nil {
+			nezhaStatus = fmt.Sprintf("Nezha DB 文件不可访问: %v", err)
+		} else if info.IsDir() {
+			nezhaStatus = "nezha_db_path 指向了目录而非 SQLite 文件"
+		} else {
+			dsn := fmt.Sprintf("file:%s?mode=ro&_pragma=query_only(1)&_pragma=busy_timeout(3000)", dbPath)
+			if db, err := sql.Open("sqlite", dsn); err != nil {
+				nezhaStatus = fmt.Sprintf("打开 Nezha SQLite 失败: %v", err)
+			} else {
+				defer db.Close()
+				rows, qErr := db.QueryContext(ctx, `SELECT id, name, COALESCE(host, ''), COALESCE(updated_at, '') FROM servers ORDER BY display_index DESC, id ASC`)
+				if qErr != nil {
+					nezhaStatus = fmt.Sprintf("查询 Nezha servers 表失败: %v", qErr)
+				} else {
+					defer rows.Close()
+					sourceUsed = "nezha_sqlite_ro"
+					for rows.Next() {
+						var id int64
+						var name, hostJSON, updatedAt string
+						if err := rows.Scan(&id, &name, &hostJSON, &updatedAt); err != nil {
+							continue
+						}
+						if kw != "" && !strings.Contains(strings.ToLower(name), kw) && !strings.Contains(strings.ToLower(hostJSON), kw) {
+							continue
+						}
+						status := "online"
+						nodes = append(nodes, nodeRecord{
+							ID:         fmt.Sprintf("nezha-%d", id),
+							Name:       notifier.StripEmoji(name),
+							HostInfo:   notifier.StripEmoji(hostJSON),
+							LastActive: updatedAt,
+							Status:     status,
+							Source:     "nezha_sqlite",
+						})
 					}
-					if kw != "" && !strings.Contains(strings.ToLower(name), kw) && !strings.Contains(strings.ToLower(hostJSON), kw) {
-						continue
-					}
-					status := "online"
-					nodes = append(nodes, nodeRecord{
-						ID:         fmt.Sprintf("nezha-%d", id),
-						Name:       notifier.StripEmoji(name),
-						HostInfo:   notifier.StripEmoji(hostJSON),
-						LastActive: updatedAt,
-						Status:     status,
-						Source:     "nezha_sqlite",
-					})
 				}
 			}
 		}
@@ -1311,13 +1327,17 @@ func (e *Engine) toolQueryNezhaNodes(ctx context.Context, argsJSON string) (stri
 		computeAssets = append(computeAssets, a)
 	}
 
-	payload, _ := json.Marshal(map[string]any{
+	payloadMap := map[string]any{
 		"source":         sourceUsed,
 		"nezha_db_path":  dbPath,
 		"nezha_nodes":    nodes,
 		"compute_assets": computeAssets,
 		"checked_at":     store.NowShanghai(),
-	})
+	}
+	if nezhaStatus != "" {
+		payloadMap["nezha_error"] = nezhaStatus
+	}
+	payload, _ := json.Marshal(payloadMap)
 	return string(payload), nil
 }
 

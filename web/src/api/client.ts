@@ -319,6 +319,10 @@ export const BotHubApi = {
     apiRequest(`/api/v2/notifications/${encodeURIComponent(String(id))}/read`, { method: 'POST' }),
   markAllNotificationsRead: () =>
     apiRequest('/api/v2/notifications/read-all', { method: 'POST' }),
+  clearReadNotifications: () =>
+    apiRequest<{ ok: boolean; deleted: number; unread_count: number }>('/api/v2/notifications/clear-read', {
+      method: 'POST',
+    }),
 
   // Personal Assistant Workbench (Briefing, Todos & Notes)
   getBriefing: () => apiRequest<{ ok: boolean; briefing: WorkspaceBriefing }>('/api/v2/briefing'),

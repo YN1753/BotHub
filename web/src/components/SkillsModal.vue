@@ -41,11 +41,31 @@ const paramRows = ref<SkillParamField[]>([])
 const enabled = ref(true)
 const saving = ref(false)
 
-// Live test state for webhook skills
+// Live test state for webhook skills (remembers last test args per skill)
 const testSkillTarget = ref<Skill | null>(null)
 const testArgs = ref<Record<string, string>>({})
+const lastTestArgsBySkill = ref<Record<string, Record<string, string>>>({})
 const testing = ref(false)
 const testResult = ref<{ statusCode?: number; latencyMs?: number; output: string; error?: string } | null>(null)
+
+function applyWebhookTemplate(mode: 'get' | 'post') {
+  kind.value = 'webhook'
+  if (mode === 'get') {
+    httpMethod.value = 'GET'
+    httpUrl.value = 'https://api.example.com/v1/lookup?q={{query}}'
+    instruction.value = '按关键词查询外部 REST 接口并返回结果'
+    paramRows.value = [{ key: 'query', description: '查询关键词', type: 'string', required: true }]
+    return
+  }
+  httpMethod.value = 'POST'
+  httpUrl.value = 'https://api.example.com/v1/webhook'
+  instruction.value = '{"title": "{{title}}", "content": "{{content}}"}'
+  headerRows.value = [{ key: 'Content-Type', value: 'application/json' }]
+  paramRows.value = [
+    { key: 'title', description: '标题或事件名', type: 'string', required: true },
+    { key: 'content', description: '正文负载内容', type: 'string', required: false },
+  ]
+}
 
 const skills = computed(() => store.state.skills || [])
 const skillSearch = ref('')
@@ -221,14 +241,21 @@ async function handleDelete(sk: Skill) {
 }
 
 function openTestPanel(sk: Skill) {
+  if (testSkillTarget.value) {
+    lastTestArgsBySkill.value[testSkillTarget.value.id] = { ...testArgs.value }
+  }
   testSkillTarget.value = sk
   testResult.value = null
   const initArgs: Record<string, string> = {}
+  const prevSaved = lastTestArgsBySkill.value[sk.id] || {}
   try {
     const arr = JSON.parse(sk.params_schema || '[]')
     if (Array.isArray(arr)) {
       arr.forEach((f: any) => {
-        if (f?.key) initArgs[String(f.key)] = String(f.default || '')
+        if (f?.key) {
+          const k = String(f.key)
+          initArgs[k] = k in prevSaved ? prevSaved[k] : String(f.default || '')
+        }
       })
     }
   } catch {
@@ -383,6 +410,23 @@ watch(
 
         <!-- Webhook / API Tool Builder -->
         <template v-else>
+          <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
+            <span class="text-slate-500">快速脚手架:</span>
+            <button
+              type="button"
+              @click="applyWebhookTemplate('get')"
+              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-cyan-400/45 hover:text-cyan-200 cursor-pointer"
+            >
+              GET 查询模板
+            </button>
+            <button
+              type="button"
+              @click="applyWebhookTemplate('post')"
+              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+            >
+              POST JSON 模板
+            </button>
+          </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div class="flex flex-col gap-1 text-xs text-slate-300">
               <span>请求方法</span>

@@ -696,6 +696,7 @@ func (e *Engine) summarizeAssetsPayload(categoryFilter string) (string, error) {
 		Count      int     `json:"priced_items"`
 	}
 	currMap := make(map[string]*currTotal)
+	byCategory := make(map[string]int)
 	var activeCount, expiring30Count, inactiveCount int
 	cat := strings.TrimSpace(categoryFilter)
 
@@ -708,6 +709,11 @@ func (e *Engine) summarizeAssetsPayload(categoryFilter string) (string, error) {
 			continue
 		}
 		activeCount++
+		catName := strings.TrimSpace(a.Category)
+		if catName == "" {
+			catName = "other"
+		}
+		byCategory[catName]++
 		if a.DueDate != "" && !strings.HasPrefix(a.DueDate, "2099") && a.DaysLeft <= 30 {
 			expiring30Count++
 		}
@@ -764,6 +770,7 @@ func (e *Engine) summarizeAssetsPayload(categoryFilter string) (string, error) {
 		"active_count":       activeCount,
 		"inactive_count":     inactiveCount,
 		"expiring_30d_count": expiring30Count,
+		"by_category":        byCategory,
 		"cost_by_currency":   breakdown,
 	})
 	return string(out), nil
@@ -1062,10 +1069,20 @@ func weekdayCN(w time.Weekday) string {
 	return names[int(w)%7]
 }
 
+func parseDatetimeFlex(raw string, loc *time.Location) (time.Time, error) {
+	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02 15:04", "2006-01-02"} {
+		if t, err := time.ParseInLocation(layout, raw, loc); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("无法识别时间 %q（请使用 YYYY-MM-DD HH:MM 或 YYYY-MM-DD）", raw)
+}
+
 func (e *Engine) toolDatetimeCalc(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Action       string `json:"action"`
 		BaseTime     string `json:"base_time"`
+		TargetTime   string `json:"target_time"`
 		DeltaMinutes int    `json:"delta_minutes"`
 		DeltaHours   int    `json:"delta_hours"`
 		DeltaDays    int    `json:"delta_days"`
@@ -1078,17 +1095,11 @@ func (e *Engine) toolDatetimeCalc(ctx context.Context, argsJSON string) (string,
 	loc := store.ShanghaiLocation()
 	base := time.Now().In(loc)
 	if raw := strings.TrimSpace(args.BaseTime); raw != "" {
-		parsedOK := false
-		for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02 15:04", "2006-01-02"} {
-			if t, err := time.ParseInLocation(layout, raw, loc); err == nil {
-				base = t
-				parsedOK = true
-				break
-			}
+		t, err := parseDatetimeFlex(raw, loc)
+		if err != nil {
+			return "", err
 		}
-		if !parsedOK {
-			return "", fmt.Errorf("无法识别 base_time %q（请使用 YYYY-MM-DD HH:MM 或 YYYY-MM-DD）", raw)
-		}
+		base = t
 	}
 
 	action := strings.ToLower(strings.TrimSpace(args.Action))
@@ -1107,6 +1118,38 @@ func (e *Engine) toolDatetimeCalc(ctx context.Context, argsJSON string) (string,
 			"date":          target.Format("2006-01-02"),
 			"weekday":       weekdayCN(target.Weekday()),
 			"unix":          target.Unix(),
+		})
+		return string(out), nil
+
+	case "diff", "diff_days":
+		rawTarget := strings.TrimSpace(args.TargetTime)
+		if rawTarget == "" {
+			return "", fmt.Errorf("diff 操作必须传入 target_time")
+		}
+		target, err := parseDatetimeFlex(rawTarget, loc)
+		if err != nil {
+			return "", err
+		}
+		delta := target.Sub(base)
+		direction := "same"
+		if delta > 0 {
+			direction = "future"
+		} else if delta < 0 {
+			direction = "past"
+		}
+		absSecs := math.Abs(delta.Seconds())
+		totalHours := math.Round((delta.Hours())*100) / 100
+		totalDays := math.Round((delta.Hours()/24.0)*100) / 100
+		out, _ := json.Marshal(map[string]any{
+			"base":            base.Format("2006-01-02 15:04:05"),
+			"base_weekday":    weekdayCN(base.Weekday()),
+			"target":          target.Format("2006-01-02 15:04:05"),
+			"target_weekday":  weekdayCN(target.Weekday()),
+			"direction":       direction,
+			"diff_days":       totalDays,
+			"diff_hours":      totalHours,
+			"diff_minutes":    int(math.Round(delta.Minutes())),
+			"abs_whole_days":  int(absSecs / 86400),
 		})
 		return string(out), nil
 

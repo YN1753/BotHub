@@ -369,7 +369,7 @@ func (e *Engine) ProbeModelTargetWithID(ctx context.Context, targetID, baseURL, 
 	}
 	defer resp.Body.Close()
 
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 16384))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errText := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 		e.health.recordFailure(healthID, errText, resp.StatusCode == http.StatusTooManyRequests)
@@ -378,7 +378,9 @@ func (e *Engine) ProbeModelTargetWithID(ctx context.Context, targetID, baseURL, 
 	var parsed struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
+				Reasoning        string `json:"reasoning"`
 			} `json:"message"`
 		} `json:"choices"`
 	}
@@ -386,8 +388,15 @@ func (e *Engine) ProbeModelTargetWithID(ctx context.Context, targetID, baseURL, 
 		e.health.recordFailure(healthID, "接口返回非标准 OpenAI 格式", false)
 		return elapsed, "", fmt.Errorf("接口返回非标准 OpenAI 格式")
 	}
+	reply := strings.TrimSpace(parsed.Choices[0].Message.Content)
+	if reply == "" {
+		reply = strings.TrimSpace(parsed.Choices[0].Message.ReasoningContent)
+	}
+	if reply == "" {
+		reply = strings.TrimSpace(parsed.Choices[0].Message.Reasoning)
+	}
 	e.health.recordSuccess(healthID, elapsed)
-	return elapsed, strings.TrimSpace(parsed.Choices[0].Message.Content), nil
+	return elapsed, reply, nil
 }
 
 type UpstreamModelCheck struct {
@@ -702,7 +711,7 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 				checks[idx] = UpstreamModelCheck{ID: mid, Usable: false, LatencyMs: elapsed, Reason: summarizeProbeError(err)}
 				return
 			}
-			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 			_ = resp.Body.Close()
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				checks[idx] = UpstreamModelCheck{
@@ -710,6 +719,29 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 					Usable:    false,
 					LatencyMs: elapsed,
 					Reason:    summarizeProbeError(fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))),
+				}
+				return
+			}
+			trimmed := bytes.TrimSpace(raw)
+			if len(trimmed) == 0 || trimmed[0] != '{' {
+				checks[idx] = UpstreamModelCheck{
+					ID:        mid,
+					Usable:    false,
+					LatencyMs: elapsed,
+					Reason:    "接口返回非 JSON 响应",
+				}
+				return
+			}
+			var probeBody struct {
+				Choices []json.RawMessage `json:"choices"`
+				Error   any               `json:"error"`
+			}
+			if err := json.Unmarshal(trimmed, &probeBody); err != nil || (len(probeBody.Choices) == 0 && probeBody.Error != nil) {
+				checks[idx] = UpstreamModelCheck{
+					ID:        mid,
+					Usable:    false,
+					LatencyMs: elapsed,
+					Reason:    "接口返回非标准 OpenAI 格式",
 				}
 				return
 			}

@@ -82,12 +82,27 @@ func TestV2NotificationsAndEventsCatchup(t *testing.T) {
 		t.Fatalf("expected latest notification ID 4 after webhook, got %d", s.store.LatestNotificationID())
 	}
 
-	// 5. Test Mark All Read
+	// 5. Test Mark All Read & Clear Read
 	reqReadAll := httptest.NewRequest(http.MethodPost, "/api/v2/notifications/read-all", nil)
 	recReadAll := httptest.NewRecorder()
 	s.handleV2MarkAllNotificationsRead(recReadAll, reqReadAll)
 	if s.store.CountUnreadNotifications() != 0 {
 		t.Fatalf("expected 0 unread after read-all, got %d", s.store.CountUnreadNotifications())
+	}
+
+	reqClearRead := httptest.NewRequest(http.MethodPost, "/api/v2/notifications/clear-read", nil)
+	recClearRead := httptest.NewRecorder()
+	s.handleV2ClearReadNotifications(recClearRead, reqClearRead)
+	if recClearRead.Code != http.StatusOK || !strings.Contains(recClearRead.Body.String(), `"deleted":4`) {
+		t.Fatalf("expected 4 deleted notifications after clear-read, got %d %s", recClearRead.Code, recClearRead.Body.String())
+	}
+
+	// 6. Test CreateBot rejects malformed allowed_tools JSON array
+	reqBadBot := httptest.NewRequest(http.MethodPost, "/api/v2/bots", bytes.NewReader([]byte(`{"name":"BadBot","allowed_tools":"not-json"}`)))
+	recBadBot := httptest.NewRecorder()
+	s.handleCreateBot(recBadBot, reqBadBot)
+	if recBadBot.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for malformed allowed_tools, got %d %s", recBadBot.Code, recBadBot.Body.String())
 	}
 }
 

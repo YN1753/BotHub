@@ -139,3 +139,12 @@ func (s *Store) MarkAllNotificationsRead() error {
 	_, err := s.db.Exec(`UPDATE notifications SET read_at = ? WHERE read_at = ''`, now)
 	return err
 }
+
+func (s *Store) ClearReadNotifications() (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM notifications WHERE read_at != ''`)
+	if err != nil {
+		return 0, err
+	}
+	affected, _ := res.RowsAffected()
+	return affected, nil
+}

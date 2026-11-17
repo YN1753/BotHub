@@ -12,6 +12,7 @@ import BotGroupAvatar from './BotGroupAvatar.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 import GroupDrawer from './GroupDrawer.vue'
+import BotThreadBar from './workspace/BotThreadBar.vue'
 
 const BotRoutinesTab = defineAsyncComponent(() => import('./workspace/BotRoutinesTab.vue'))
 const BotConfigTab = defineAsyncComponent(() => import('./workspace/BotConfigTab.vue'))
@@ -331,10 +332,6 @@ const slashCommands = computed<SlashCmdItem[]>(() => {
   return items
 })
 
-// Inline Topic Thread rename
-const renamingThreadId = ref<string | null>(null)
-const renameThreadTitle = ref('')
-
 function botModeLabel(mode?: string): string {
   if (mode === 'companion') return '陪伴'
   if (mode === 'worker') return '执行'
@@ -424,7 +421,6 @@ watch(
     enableThinking.value = b.enable_thinking !== false
     announcementDismissed.value = false
     replyTarget.value = null
-    renamingThreadId.value = null
   },
   { immediate: true }
 )
@@ -479,49 +475,19 @@ const mentionCandidates = computed(() => {
     }))
 })
 
-const summarizingThread = ref(false)
-const summaryExpanded = ref(false)
-const activeThreadObj = computed(() =>
-  store.state.activeThreadId
-    ? store.state.botThreads.find((t) => t.id === store.state.activeThreadId) || null
-    : null
-)
-
-async function saveThreadSummaryToNote() {
-  const th = activeThreadObj.value
-  if (!th?.summary || !bot.value) return
-  try {
-    await BotHubApi.createNote({
-      title: `话题纪要: ${th.title || bot.value.name}`,
-      category: 'summary',
-      bot_id: bot.value.id,
-      content: `# ${th.title || '话题纪要'}\n\n> 来源：${bot.value.name}\n\n${th.summary}\n`,
-    })
-    const notesRes = await BotHubApi.listNotes('', '')
-    store.state.notes = notesRes.notes || []
-    store.notify('前情提要已沉淀至工作文档')
-  } catch (err: any) {
-    store.notify(err.message || '保存文档失败')
-  }
-}
-
-async function carrySummaryToNewThread() {
-  const th = activeThreadObj.value
-  if (!th?.summary) return
-  const nextTitle = `${th.title || '延续话题'} · 续`
+async function onCarryThreadSummary(summary: string, title: string) {
+  const nextTitle = `${title || '延续话题'} · 续`
   await store.createThread(nextTitle)
-  inputPrompt.value = `接续上一段话题前情提要继续推进：\n> ${th.summary}\n\n接下来的重点：`
-  nextTick(() => textareaRef.value?.focus())
+  inputPrompt.value = `接续上一段话题前情提要继续推进：\n> ${summary}\n\n接下来的重点：`
+  nextTick(() => {
+    autoResizeTextarea()
+    textareaRef.value?.focus()
+  })
 }
 
 async function handleSummarizeThread() {
-  if (summarizingThread.value || !bot.value) return
-  summarizingThread.value = true
-  try {
-    await store.summarizeThread(store.state.activeThreadId || 'main', true)
-  } finally {
-    summarizingThread.value = false
-  }
+  if (!bot.value) return
+  await store.summarizeThread(store.state.activeThreadId || 'main', true)
 }
 
 function formatToolLabel(name: string): string {
@@ -1374,26 +1340,6 @@ function toolTrailSummary(tools: Array<{ name: string }>): string {
   return tools.length > 3 ? `${names.join(' -> ')} +${tools.length - 3}` : names.join(' -> ')
 }
 
-function startRenameThread(id: string, curTitle: string) {
-  renamingThreadId.value = id
-  renameThreadTitle.value = curTitle
-  nextTick(() => {
-    const raw = renameInputRef.value
-    const el = Array.isArray(raw) ? raw[0] : raw
-    el?.focus()
-    el?.select()
-  })
-}
-
-async function commitRenameThread() {
-  if (!renamingThreadId.value) return
-  const title = renameThreadTitle.value.trim()
-  if (title) {
-    await store.renameThread(renamingThreadId.value, title)
-  }
-  renamingThreadId.value = null
-}
-
 function stateBadgeClass(state?: string): string {
   if (state === 'thinking') return 'border-amber-400/40 bg-amber-400/10 text-amber-300'
   if (state === 'working') return 'border-[#f2b880]/45 bg-[#f2b880]/12 text-[#f2b880]'
@@ -1659,143 +1605,7 @@ function stateBadgeClass(state?: string): string {
       enter-to-class="opacity-100 translate-y-0"
     >
       <div v-show="store.state.botView === 'stream'" class="flex-1 min-h-0 flex flex-col">
-        <!-- Per-Bot / Per-Group Scoped Topic Threads Bar -->
-        <div
-          v-if="bot"
-          class="px-4 md:px-6 py-1.5 border-b border-[#fff8ee]/8 bg-[#050811]/75 flex items-center gap-1.5 overflow-x-auto shrink-0 no-scrollbar"
-        >
-          <span class="text-[10.5px] font-mono text-slate-500 shrink-0 mr-1">话题</span>
-          <button
-            type="button"
-            @click="store.switchThread('')"
-            :class="[
-              'px-2.5 py-1 rounded-lg text-[11px] whitespace-nowrap cursor-pointer transition-colors border',
-              !store.state.activeThreadId
-                ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f7cba0] font-medium'
-                : 'border-[#fff8ee]/10 bg-transparent text-slate-400 hover:text-slate-200',
-            ]"
-          >
-            主时间线
-          </button>
-
-          <div
-            v-for="th in store.state.botThreads"
-            :key="th.id"
-            class="inline-flex items-center gap-1 shrink-0"
-          >
-            <input
-              v-if="renamingThreadId === th.id"
-              ref="renameInputRef"
-              v-model="renameThreadTitle"
-              type="text"
-              aria-label="重命名话题"
-              @keydown.enter.prevent="commitRenameThread"
-              @keydown.escape.stop="renamingThreadId = null"
-              @blur="commitRenameThread"
-              class="w-32 px-2 py-0.5 rounded-lg border border-[#f2b880]/60 bg-[#070a16] text-[11px] text-white"
-            />
-            <div
-              v-else
-              :class="[
-                'inline-flex items-center gap-1 rounded-lg border transition-colors',
-                store.state.activeThreadId === th.id
-                  ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f7cba0]'
-                  : 'border-[#fff8ee]/10 bg-transparent text-slate-400 hover:text-slate-200',
-              ]"
-            >
-              <button
-                type="button"
-                :title="th.summary ? `${th.summary}（双击重命名）` : '点击切换话题 · 双击重命名'"
-                @click="store.switchThread(th.id)"
-                @dblclick="startRenameThread(th.id, th.title)"
-                class="px-2.5 py-1 text-[11px] whitespace-nowrap cursor-pointer font-medium"
-              >
-                {{ th.title }}
-                <span v-if="th.msg_count > 0" class="font-mono text-[10px] opacity-65 ml-0.5">
-                  ({{ th.msg_count }})
-                </span>
-              </button>
-              <button
-                v-if="store.state.activeThreadId === th.id"
-                type="button"
-                title="重命名话题"
-                @click.stop="startRenameThread(th.id, th.title)"
-                class="pr-1 text-[10px] text-slate-400 hover:text-[#f2b880] cursor-pointer"
-              >
-                改
-              </button>
-              <button
-                v-if="store.state.activeThreadId === th.id"
-                type="button"
-                title="删除此话题"
-                @click.stop="store.deleteThread(th.id)"
-                class="pr-2 text-[10px] text-slate-400 hover:text-rose-300 cursor-pointer"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-
-          <div class="ml-auto flex items-center gap-1.5 shrink-0">
-            <button
-              v-if="store.state.timeline.length >= 2"
-              type="button"
-              :disabled="summarizingThread"
-              @click="handleSummarizeThread"
-              title="提炼当前话题核心结论并存为专属记忆"
-              class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:border-emerald-400/45 hover:text-emerald-300 cursor-pointer whitespace-nowrap disabled:opacity-50"
-            >
-              {{ summarizingThread ? '提炼中...' : '总结存记忆' }}
-            </button>
-            <button
-              type="button"
-              @click="store.createThread('')"
-              class="px-2.5 py-1 rounded-lg border border-dashed border-[#fff8ee]/16 text-[11px] text-slate-300 hover:border-[#f2b880]/50 hover:text-[#f2b880] cursor-pointer whitespace-nowrap"
-            >
-              + 新话题
-            </button>
-          </div>
-        </div>
-
-        <!-- Active Thread Summary Pill Banner -->
-        <div
-          v-if="activeThreadObj?.summary"
-          class="px-4 md:px-6 py-1.5 border-b border-emerald-400/15 bg-emerald-500/[0.06] flex items-start justify-between gap-2 text-[11px] shrink-0"
-        >
-          <button
-            type="button"
-            @click="summaryExpanded = !summaryExpanded"
-            class="flex items-start gap-1.5 min-w-0 flex-1 text-left cursor-pointer group"
-          >
-            <span class="px-1.5 py-0.5 rounded bg-emerald-400/15 text-emerald-300 font-mono text-[10px] shrink-0">
-              前情提要
-            </span>
-            <span
-              :class="[
-                'text-slate-300 group-hover:text-white transition-colors',
-                summaryExpanded ? 'whitespace-pre-wrap' : 'truncate',
-              ]"
-            >
-              {{ activeThreadObj.summary }}
-            </span>
-          </button>
-          <div class="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              @click="saveThreadSummaryToNote"
-              class="px-2 py-0.5 rounded border border-[#fff8ee]/12 text-[10.5px] text-slate-300 hover:text-white hover:border-[#fff8ee]/30 cursor-pointer"
-            >
-              存成文档
-            </button>
-            <button
-              type="button"
-              @click="carrySummaryToNewThread"
-              class="px-2 py-0.5 rounded border border-emerald-400/30 text-[10.5px] text-emerald-300 hover:bg-emerald-400/15 cursor-pointer"
-            >
-              带摘要续开
-            </button>
-          </div>
-        </div>
+        <BotThreadBar v-if="bot" :bot="bot" @carry-summary="onCarryThreadSummary" />
 
         <!-- Slide-Down In-Chat Search Bar (Cmd/Ctrl + F) -->
         <Transition

@@ -286,6 +286,9 @@ async function handleDelete() {
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <span class="text-xs font-semibold text-[#f2b880]">触发频率与时间窗</span>
           <div class="flex items-center gap-1.5 flex-wrap">
+            <button type="button" @click="parseCronExpr('30 8 * * *')" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 text-[10.5px] text-slate-400 hover:border-[#f2b880]/40 hover:text-[#f2b880] cursor-pointer">每日 08:30</button>
+            <button type="button" @click="parseCronExpr('0 9 * * 1-5')" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 text-[10.5px] text-slate-400 hover:border-[#f2b880]/40 hover:text-[#f2b880] cursor-pointer">工作日 09:00</button>
+            <button type="button" @click="parseCronExpr('0 * * * *')" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 text-[10.5px] text-slate-400 hover:border-[#f2b880]/40 hover:text-[#f2b880] cursor-pointer">每小时</button>
             <span
               v-if="(store.state.editingTask as any)?.next_run_at"
               class="font-mono text-[10.5px] px-2 py-0.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 text-emerald-300"

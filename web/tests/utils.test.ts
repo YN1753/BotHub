@@ -6,6 +6,7 @@ import {
   generateSlug,
   shortVersion,
   escapeHtml,
+  csvEscapeCell,
   groupModeLabel,
   summarizeAssetsMonthlyCost,
 } from '../src/utils/format.ts'
@@ -23,6 +24,11 @@ test('format utilities produce expected strings', () => {
   assert.equal(generateSlug('My Check_Skill!'), 'my_check_skill')
   assert.equal(shortVersion('v2.22.0-abcdef12345678'), 'v2.22.0')
   assert.equal(escapeHtml('<script>"a&b"'), '&lt;script&gt;&quot;a&amp;b&quot;')
+  assert.equal(csvEscapeCell('=CMD("calc")'), '"\'=CMD(""calc"")"')
+  assert.equal(csvEscapeCell('+SUM(A1:A2)'), '"\'+SUM(A1:A2)"')
+  assert.equal(csvEscapeCell('-3'), '"-3"')
+  assert.equal(csvEscapeCell('@evil'), '"\'@evil"')
+  assert.equal(csvEscapeCell('Tokyo "VPS"'), '"Tokyo ""VPS"""')
   assert.equal(
     summarizeAssetsMonthlyCost([
       { status: '生效中', price: '$12 / 年' },

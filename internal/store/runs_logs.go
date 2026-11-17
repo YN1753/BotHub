@@ -144,6 +144,8 @@ func (s *Store) PruneOldRecords() error {
 	_, _ = s.db.Exec(`DELETE FROM seen_items WHERE first_seen_at < datetime('now', '-90 days')`)
 	// Retain read notifications within 90 days
 	_, _ = s.db.Exec(`DELETE FROM notifications WHERE read_at != '' AND created_at < datetime('now', '-90 days')`)
+	// Retain latest 2000 bot execution logs
+	_, _ = s.db.Exec(`DELETE FROM bot_execution_logs WHERE id NOT IN (SELECT id FROM bot_execution_logs ORDER BY id DESC LIMIT 2000)`)
 	// Non-blocking WAL checkpoint to keep db file size lean
 	_, _ = s.db.Exec(`PRAGMA wal_checkpoint(PASSIVE)`)
 	return nil

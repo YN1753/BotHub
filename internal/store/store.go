@@ -319,6 +319,9 @@ CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(pinned DESC, updated_at DE
 	}
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot ON agent_messages(bot_id, id ASC)`)
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot_thread ON agent_messages(bot_id, thread_id, id ASC)`)
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_todos_status_due ON todos(status, due_at)`)
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_todos_bot ON todos(bot_id, updated_at DESC)`)
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_mod ON notifications(module_id, id DESC)`)
 	_, _ = s.db.Exec(`UPDATE bots SET is_builtin = 0 WHERE is_builtin = 1`)
 	_, _ = s.db.Exec(`UPDATE bots SET is_group = 1 WHERE id = 'team_room' AND is_group = 0`)
 	_, _ = s.db.Exec(`DELETE FROM configs WHERE key IN ('wecom_corpid', 'wecom_agentid', 'wecom_secret', 'wecom_touser', 'pushplus_token')`)

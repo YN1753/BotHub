@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
-import { formatTime, triggerBlobDownload } from '../utils/format'
+import { formatTime, formatRelativeTime, triggerBlobDownload } from '../utils/format'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -76,6 +76,7 @@ watch(
     <div class="modal-section grid grid-cols-3 divide-x divide-[#fff8ee]/10 p-0 overflow-hidden shrink-0">
       <button
         type="button"
+        :aria-pressed="filterStatus === 'all'"
         @click="filterStatus = 'all'"
         :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-white/[0.03]', filterStatus === 'all' ? 'bg-[#f2b880]/8' : '']"
       >
@@ -84,6 +85,7 @@ watch(
       </button>
       <button
         type="button"
+        :aria-pressed="filterStatus === 'sent'"
         @click="filterStatus = 'sent'"
         :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-white/[0.03]', filterStatus === 'sent' ? 'bg-emerald-400/8' : '']"
       >
@@ -92,6 +94,7 @@ watch(
       </button>
       <button
         type="button"
+        :aria-pressed="filterStatus === 'failed'"
         @click="filterStatus = 'failed'"
         :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-white/[0.03]', filterStatus === 'failed' ? 'bg-rose-400/10' : '']"
       >
@@ -116,8 +119,16 @@ watch(
     </div>
 
     <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
-      <div v-if="filteredLogs.length === 0" class="py-12 text-center text-sm text-slate-500">
-        暂无匹配推送流水记录
+      <div v-if="filteredLogs.length === 0" class="py-12 text-center text-sm text-slate-500 flex flex-col items-center gap-2">
+        <span>暂无匹配推送流水记录</span>
+        <button
+          v-if="filterStatus !== 'all' || logQuery.trim()"
+          type="button"
+          @click="filterStatus = 'all'; logQuery = ''"
+          class="px-3 py-1 rounded-lg border border-[#fff8ee]/12 text-xs text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+        >
+          重置筛选条件
+        </button>
       </div>
       <article
         v-for="log in filteredLogs"
@@ -140,7 +151,7 @@ watch(
             </span>
             <strong class="text-sm text-white truncate">{{ log.title }}</strong>
           </div>
-          <span class="font-mono tabular-nums text-[11px] text-slate-400 shrink-0">{{ formatTime(log.created_at) }}</span>
+          <span :title="formatTime(log.created_at)" class="font-mono tabular-nums text-[11px] text-slate-400 shrink-0">{{ formatRelativeTime(log.created_at) }}</span>
         </div>
         <div class="font-mono text-[11px] text-slate-400 mt-1.5 truncate">模块: {{ log.module_id }} · {{ log.response_msg }}</div>
         <details v-if="log.content" class="vesper-details mt-2">

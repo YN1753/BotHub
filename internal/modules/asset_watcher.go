@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -188,6 +189,9 @@ func (a *cloudflareDomainAdapter) Sync(ctx context.Context, st *store.Store, cli
 		return false
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return false
+	}
 	var res struct {
 		Success bool `json:"success"`
 		Result  struct {
@@ -195,7 +199,7 @@ func (a *cloudflareDomainAdapter) Sync(ctx context.Context, st *store.Store, cli
 			AutoRenew bool   `json:"auto_renew"`
 		} `json:"result"`
 	}
-	if json.NewDecoder(resp.Body).Decode(&res) == nil && res.Success && res.Result.ExpiresAt != "" {
+	if json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&res) == nil && res.Success && res.Result.ExpiresAt != "" {
 		asset.DueDate = res.Result.ExpiresAt
 		asset.AutoRenew = res.Result.AutoRenew
 		asset.Status = "生效中"
@@ -231,6 +235,9 @@ func (b *bilibiliVIPAdapter) Sync(ctx context.Context, st *store.Store, client *
 		return false
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return false
+	}
 	var res struct {
 		Code int `json:"code"`
 		Data struct {
@@ -240,7 +247,7 @@ func (b *bilibiliVIPAdapter) Sync(ctx context.Context, st *store.Store, client *
 			} `json:"vip"`
 		} `json:"data"`
 	}
-	if json.NewDecoder(resp.Body).Decode(&res) == nil && res.Code == 0 && res.Data.Vip.DueDate > 0 {
+	if json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&res) == nil && res.Code == 0 && res.Data.Vip.DueDate > 0 {
 		asset.DueDate = time.UnixMilli(res.Data.Vip.DueDate).In(ShanghaiLocation()).Format(time.RFC3339)
 		if res.Data.Vip.Status == 1 {
 			asset.Status = "生效中"

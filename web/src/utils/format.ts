@@ -10,6 +10,15 @@ export function escapeHtml(s: unknown): string {
     .replaceAll('"', '&quot;')
 }
 
+// Neutralize leading spreadsheet formula characters (=, +, -, @, tab, CR) unless it's a pure signed number
+export function csvEscapeCell(raw: unknown): string {
+  let str = String(raw ?? '')
+  if (/^[=+\-@\t\r]/.test(str) && !/^[-+]?\d+(?:\.\d+)?$/.test(str.trim())) {
+    str = `'${str}`
+  }
+  return `"${str.replaceAll('"', '""')}"`
+}
+
 export function formatTime(str?: string): string {
   if (!str) return '--'
   const d = new Date(str)

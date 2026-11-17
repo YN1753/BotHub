@@ -106,11 +106,23 @@ func (s *Server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 			req.SystemPrompt = "你是用户的专属智能伙伴，既能自然沟通陪伴也能调动工具高效办事，严禁使用 Emoji。"
 		}
 	}
-	if strings.TrimSpace(req.MemberIDs) == "" {
-		req.MemberIDs = "[]"
+	if v, ok := normalizeJSONStringArray(req.AllowedTools, ""); !ok {
+		writeError(w, http.StatusBadRequest, "allowed_tools 必须为有效 JSON 字符串数组")
+		return
+	} else {
+		req.AllowedTools = v
 	}
-	if strings.TrimSpace(req.SkillIDs) == "" {
-		req.SkillIDs = "[]"
+	if v, ok := normalizeJSONStringArray(req.MemberIDs, req.ID); !ok {
+		writeError(w, http.StatusBadRequest, "member_ids 必须为有效 JSON 字符串数组")
+		return
+	} else {
+		req.MemberIDs = v
+	}
+	if v, ok := normalizeJSONStringArray(req.SkillIDs, ""); !ok {
+		writeError(w, http.StatusBadRequest, "skill_ids 必须为有效 JSON 字符串数组")
+		return
+	} else {
+		req.SkillIDs = v
 	}
 	req.GroupMode = normalizeGroupMode(req.GroupMode)
 	req.Announcement = notifier.StripEmoji(strings.TrimSpace(req.Announcement))
@@ -200,17 +212,28 @@ func (s *Server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		existing.Model = v
 	}
 	if req.AllowedTools != "" {
-		existing.AllowedTools = req.AllowedTools
+		v, ok := normalizeJSONStringArray(req.AllowedTools, "")
+		if !ok {
+			writeError(w, http.StatusBadRequest, "allowed_tools 必须为有效 JSON 字符串数组")
+			return
+		}
+		existing.AllowedTools = v
 	}
 	if req.SkillIDs != nil {
-		sids := strings.TrimSpace(*req.SkillIDs)
-		if sids == "" {
-			sids = "[]"
+		v, ok := normalizeJSONStringArray(*req.SkillIDs, "")
+		if !ok {
+			writeError(w, http.StatusBadRequest, "skill_ids 必须为有效 JSON 字符串数组")
+			return
 		}
-		existing.SkillIDs = sids
+		existing.SkillIDs = v
 	}
 	if req.MemberIDs != "" {
-		existing.MemberIDs = req.MemberIDs
+		v, ok := normalizeJSONStringArray(req.MemberIDs, existing.ID)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "member_ids 必须为有效 JSON 字符串数组")
+			return
+		}
+		existing.MemberIDs = v
 	}
 	if req.ActiveThreadID != nil {
 		existing.ActiveThreadID = strings.TrimSpace(*req.ActiveThreadID)
@@ -248,6 +271,29 @@ func (s *Server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		"ok":  true,
 		"bot": updated,
 	})
+}
+
+func normalizeJSONStringArray(raw, excludeID string) (string, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "[]", true
+	}
+	var items []string
+	if err := json.Unmarshal([]byte(trimmed), &items); err != nil {
+		return "", false
+	}
+	seen := make(map[string]bool, len(items))
+	cleaned := make([]string, 0, len(items))
+	for _, it := range items {
+		v := strings.TrimSpace(it)
+		if v == "" || (excludeID != "" && v == excludeID) || seen[v] {
+			continue
+		}
+		seen[v] = true
+		cleaned = append(cleaned, v)
+	}
+	out, _ := json.Marshal(cleaned)
+	return string(out), true
 }
 
 func (s *Server) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request) {
@@ -335,6 +381,9 @@ func (s *Server) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if current == nil {
+		current = []string{}
+	}
 	rawMembers, _ := json.Marshal(current)
 	groupBot.MemberIDs = string(rawMembers)
 	if len(changedNames) > 0 {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -207,8 +208,11 @@ func (r *RadarModule) fetchGitHubTrending(ctx context.Context, maxItems int) ([]
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("GitHub Trending HTTP %d", resp.StatusCode)
+	}
 
-	doc, err := html.Parse(resp.Body)
+	doc, err := html.Parse(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, err
 	}
@@ -274,9 +278,14 @@ func (r *RadarModule) fetchHackerNews(ctx context.Context, minScore, maxItems in
 	resp, err := r.http.Do(req)
 	if err != nil { return nil, err }
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("HackerNews topstories HTTP %d", resp.StatusCode)
+	}
 
 	var ids []int64
-	_ = json.NewDecoder(resp.Body).Decode(&ids)
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&ids); err != nil {
+		return nil, err
+	}
 	if len(ids) > 30 { ids = ids[:30] }
 
 	var mu sync.Mutex
@@ -299,13 +308,13 @@ func (r *RadarModule) fetchHackerNews(ctx context.Context, minScore, maxItems in
 			u := fmt.Sprintf("https://hacker-news.firebaseio.com/v0/item/%d.json", storyID)
 			sReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 			if sResp, sErr := r.http.Do(sReq); sErr == nil {
-				defer sResp.Body.Close()
 				var st hnStory
-				if json.NewDecoder(sResp.Body).Decode(&st) == nil && st.Type == "story" && st.Score >= minScore {
+				if sResp.StatusCode < 400 && json.NewDecoder(io.LimitReader(sResp.Body, 64<<10)).Decode(&st) == nil && st.Type == "story" && st.Score >= minScore {
 					mu.Lock()
 					stories = append(stories, st)
 					mu.Unlock()
 				}
+				_ = sResp.Body.Close()
 			}
 		}(id)
 	}

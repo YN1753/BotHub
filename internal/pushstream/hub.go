@@ -2,6 +2,7 @@ package pushstream
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
@@ -13,11 +14,17 @@ type StreamEvent struct {
 
 // Hub manages active SSE subscribers and broadcasts newly created notifications and bot events in real time.
 type Hub struct {
-	mu           sync.RWMutex
-	clients      map[chan store.Notification]struct{}
-	eventClients map[chan StreamEvent]struct{}
-	done         chan struct{}
-	closed       bool
+	mu            sync.RWMutex
+	clients       map[chan store.Notification]struct{}
+	eventClients  map[chan StreamEvent]struct{}
+	done          chan struct{}
+	closed        bool
+	droppedEvents atomic.Uint64
+}
+
+// DroppedCount returns the total number of SSE events dropped due to slow consumers.
+func (h *Hub) DroppedCount() uint64 {
+	return h.droppedEvents.Load()
 }
 
 func NewHub() *Hub {
@@ -85,11 +92,15 @@ func (h *Hub) SubscribeEvents() (<-chan StreamEvent, func()) {
 func (h *Hub) PublishEvent(event string, data any) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+	if h.closed {
+		return
+	}
 	ev := StreamEvent{Event: event, Data: data}
 	for ch := range h.eventClients {
 		select {
 		case ch <- ev:
 		default:
+			h.droppedEvents.Add(1)
 		}
 	}
 }
