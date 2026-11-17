@@ -5,6 +5,7 @@ import { BotHubApi } from '../api/client'
 import { trackSpotlight } from '../utils/topLayer'
 import { checkPasskeyCapabilities, loginWithPasskeyCeremony } from '../utils/passkey'
 import BotAvatar from './BotAvatar.vue'
+import VesperBrandIcon from './ui/VesperBrandIcon.vue'
 
 const store = useAppStore()
 const headingId = useId()
@@ -107,8 +108,8 @@ async function handleSubmit() {
       :class="['luxury-card w-full max-w-md rounded-2xl p-7 shadow-2xl', errorMsg ? 'vesper-shake border-rose-400/35' : '']"
     >
       <div class="flex items-center justify-between gap-3 mb-4">
-        <div class="btn-tactile-gold inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-mono text-[11px] tracking-wider">
-          <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880] shadow-[0_0_8px_#f2b880]" aria-hidden="true" />
+        <div class="btn-tactile-gold inline-flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full font-mono text-[11px] tracking-wider">
+          <VesperBrandIcon class="w-4 h-4 rounded-[4px]" />
           <span>VESPER BOTHUB</span>
         </div>
         <BotAvatar

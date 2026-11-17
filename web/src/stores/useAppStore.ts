@@ -35,7 +35,7 @@ const TOAST_DURATION_MS = 3200
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.35.0',
+  version: 'v2.36.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,

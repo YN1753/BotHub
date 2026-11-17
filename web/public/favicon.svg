@@ -1,38 +1,136 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56" fill="none">
-  <rect width="56" height="56" rx="15" fill="#060914"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
   <defs>
-    <clipPath id="fav-clip">
-      <path d="M 28 7.6 C 39.8 7.6, 48.8 18.2, 48.8 31.8 C 48.8 42.8, 40.8 48.6, 28 48.6 C 15.2 48.6, 7.2 42.8, 7.2 31.8 C 7.2 18.2, 16.2 7.6, 28 7.6 Z"/>
+    <linearGradient id="v-bg" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#131D42"/>
+      <stop offset="52%" stop-color="#080C1C"/>
+      <stop offset="100%" stop-color="#04060D"/>
+    </linearGradient>
+    <radialGradient id="v-nebula-gold" cx="46" cy="48" r="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F2B880" stop-opacity="0.30"/>
+      <stop offset="50%" stop-color="#F2B880" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#F2B880" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="v-nebula-indigo" cx="15" cy="13" r="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818CF8" stop-opacity="0.28"/>
+      <stop offset="55%" stop-color="#818CF8" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#818CF8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="v-bevel" x1="8" y1="2" x2="56" y2="62" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE6C7" stop-opacity="0.28"/>
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#F2B880" stop-opacity="0.18"/>
+    </linearGradient>
+
+    <clipPath id="v-mochi-clip">
+      <path d="M 31.2 14.4 C 43.4 14.4, 50.4 24.5, 50.4 36.8 C 50.4 47.1, 42.8 52.4, 31.2 52.4 C 19.6 52.4, 12.0 47.1, 12.0 36.8 C 12.0 24.5, 19.0 14.4, 31.2 14.4 Z"/>
     </clipPath>
-    <radialGradient id="fav-body" gradientUnits="userSpaceOnUse" cx="22" cy="17" r="34" fx="18" fy="13">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="56%" stop-color="#f6ede2"/>
-      <stop offset="100%" stop-color="#d8c2aa"/>
+
+    <clipPath id="v-orbit-front-half">
+      <rect x="0" y="35.6" width="64" height="24"/>
+    </clipPath>
+
+    <radialGradient id="v-ao-shadow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#020308" stop-opacity="0.65"/>
+      <stop offset="55%" stop-color="#020308" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#020308" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="fav-aurora" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#ffb87a" stop-opacity="0.45"/>
-      <stop offset="65%" stop-color="#ffb87a" stop-opacity="0.14"/>
-      <stop offset="100%" stop-color="#ffb87a" stop-opacity="0"/>
+
+    <radialGradient id="v-body" cx="24.5" cy="21.5" r="33" fx="21.5" fy="18.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="54%" stop-color="#F9F0E6"/>
+      <stop offset="100%" stop-color="#DCC1A3"/>
     </radialGradient>
-    <radialGradient id="fav-blush" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#ff8570" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#ff8570" stop-opacity="0"/>
+    <radialGradient id="v-subsurface" cx="39" cy="43" r="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFB36B" stop-opacity="0.52"/>
+      <stop offset="65%" stop-color="#FFB36B" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#FFB36B" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="fav-rim" gradientUnits="userSpaceOnUse" x1="12" y1="8" x2="44" y2="48">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.78"/>
-      <stop offset="52%" stop-color="#ffb87a" stop-opacity="0.14"/>
-      <stop offset="100%" stop-color="#ffb87a" stop-opacity="0.58"/>
+    <radialGradient id="v-lustre" cx="24.5" cy="20.5" r="12" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.92"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="v-blush" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FF836B" stop-opacity="0.56"/>
+      <stop offset="65%" stop-color="#FF836B" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#FF836B" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="v-rim" x1="16" y1="14" x2="47" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.86"/>
+      <stop offset="55%" stop-color="#F2B880" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#F2B880" stop-opacity="0.65"/>
+    </linearGradient>
+
+    <!-- 100% Opaque 3D Lighting Gradient in Orbit Space: Zero Alpha Double-Compositing Seam! -->
+    <linearGradient id="v-orbit-3d" x1="31.2" y1="27.2" x2="31.2" y2="44.0" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6A564E"/>
+      <stop offset="48%" stop-color="#DEA976"/>
+      <stop offset="100%" stop-color="#FFF2DC"/>
+    </linearGradient>
+
+    <radialGradient id="v-star-glow" cx="50.2" cy="14.5" r="11.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFE7C4" stop-opacity="0.54"/>
+      <stop offset="36%" stop-color="#F2B880" stop-opacity="0.17"/>
+      <stop offset="72%" stop-color="#F2B880" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#F2B880" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="v-star-fill" x1="44" y1="8.5" x2="56" y2="20.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="52%" stop-color="#FFE5BF"/>
+      <stop offset="100%" stop-color="#F2B880"/>
     </linearGradient>
   </defs>
-  <g clip-path="url(#fav-clip)">
-    <path d="M 28 7.6 C 39.8 7.6, 48.8 18.2, 48.8 31.8 C 48.8 42.8, 40.8 48.6, 28 48.6 C 15.2 48.6, 7.2 42.8, 7.2 31.8 C 7.2 18.2, 16.2 7.6, 28 7.6 Z" fill="url(#fav-body)"/>
-    <circle cx="35" cy="37" r="21" fill="url(#fav-aurora)"/>
-    <ellipse cx="15.4" cy="33.6" rx="6.8" ry="4.4" fill="url(#fav-blush)"/>
-    <ellipse cx="40.6" cy="33.6" rx="6.8" ry="4.4" fill="url(#fav-blush)"/>
-    <rect x="18.8" y="22.4" width="5" height="11.2" rx="2.5" fill="#131826"/>
-    <circle cx="20.5" cy="25.1" r="1.15" fill="#ffffff" opacity="0.9"/>
-    <rect x="32.2" y="22.4" width="5" height="11.2" rx="2.5" fill="#131826"/>
-    <circle cx="33.9" cy="25.1" r="1.15" fill="#ffffff" opacity="0.9"/>
+
+  <!-- Cosmic Twilight Squircle Base -->
+  <rect width="64" height="64" rx="15" fill="url(#v-bg)"/>
+  <rect width="64" height="64" rx="15" fill="url(#v-nebula-indigo)"/>
+  <rect width="64" height="64" rx="15" fill="url(#v-nebula-gold)"/>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="14.5" stroke="url(#v-bevel)" stroke-width="0.8"/>
+
+  <!-- Companion Star Spark -->
+  <path d="M 14.2 14.8 Q 14.2 17.2 16.6 17.2 Q 14.2 17.2 14.2 19.6 Q 14.2 17.2 11.8 17.2 Q 14.2 17.2 14.2 14.8 Z" fill="#FFE6C6" opacity="0.74"/>
+
+  <!-- Pass 1: Full 3D Orbital Ellipse (Back Half Naturally Occluded Behind Spirit Body) -->
+  <g transform="rotate(-22 31.2 35.6)">
+    <ellipse cx="31.2" cy="35.6" rx="25.8" ry="8.2" stroke="url(#v-orbit-3d)" stroke-width="2.15"/>
   </g>
-  <path d="M 28 7.6 C 39.8 7.6, 48.8 18.2, 48.8 31.8 C 48.8 42.8, 40.8 48.6, 28 48.6 C 15.2 48.6, 7.2 42.8, 7.2 31.8 C 7.2 18.2, 16.2 7.6, 28 7.6 Z" stroke="url(#fav-rim)" stroke-width="0.9" fill="none"/>
+
+  <!-- Soft Ambient Occlusion Ground Shadow -->
+  <ellipse cx="31.2" cy="54.8" rx="16.5" ry="3.4" fill="url(#v-ao-shadow)"/>
+
+  <!-- Central Monolithic Soft-Body GrokBot Spirit -->
+  <g clip-path="url(#v-mochi-clip)">
+    <path d="M 31.2 14.4 C 43.4 14.4, 50.4 24.5, 50.4 36.8 C 50.4 47.1, 42.8 52.4, 31.2 52.4 C 19.6 52.4, 12.0 47.1, 12.0 36.8 C 12.0 24.5, 19.0 14.4, 31.2 14.4 Z" fill="url(#v-body)"/>
+    <circle cx="39" cy="43" r="20" fill="url(#v-subsurface)"/>
+    <ellipse cx="24.5" cy="20.6" rx="11.5" ry="7.2" fill="url(#v-lustre)"/>
+
+    <!-- Warm Cheek Blush -->
+    <ellipse cx="19.0" cy="37.8" rx="5.8" ry="3.8" fill="url(#v-blush)"/>
+    <ellipse cx="43.4" cy="37.8" rx="5.8" ry="3.8" fill="url(#v-blush)"/>
+
+    <!-- Crisp Capsule Eyes Looking Slightly Toward the Vesper Evening Star -->
+    <rect x="21.8" y="26.6" width="5.2" height="11.4" rx="2.6" fill="#101524"/>
+    <circle cx="23.7" cy="29.4" r="1.22" fill="#FFFFFF" opacity="0.95"/>
+    <circle cx="25.1" cy="35.3" r="0.65" fill="#F2B880" opacity="0.78"/>
+
+    <rect x="35.4" y="26.6" width="5.2" height="11.4" rx="2.6" fill="#101524"/>
+    <circle cx="37.3" cy="29.4" r="1.22" fill="#FFFFFF" opacity="0.95"/>
+    <circle cx="38.7" cy="35.3" r="0.65" fill="#F2B880" opacity="0.78"/>
+
+    <!-- Soft Cast Shadow of the Front Orbital Ring Strictly Clipped to Body -->
+    <g transform="rotate(-22 31.2 35.6)" clip-path="url(#v-orbit-front-half)">
+      <ellipse cx="31.2" cy="37.1" rx="25.8" ry="8.2" stroke="#5C3D24" stroke-opacity="0.20" stroke-width="2.6"/>
+    </g>
+  </g>
+
+  <!-- Porcelain Rim Specular -->
+  <path d="M 31.2 14.4 C 43.4 14.4, 50.4 24.5, 50.4 36.8 C 50.4 47.1, 42.8 52.4, 31.2 52.4 C 19.6 52.4, 12.0 47.1, 12.0 36.8 C 12.0 24.5, 19.0 14.4, 31.2 14.4 Z" stroke="url(#v-rim)" stroke-width="1.0"/>
+
+  <!-- Pass 2: Seamless Front Half of Orbital Ring (Opaque Gradient -> Zero Seam Anywhere!) -->
+  <g transform="rotate(-22 31.2 35.6)" clip-path="url(#v-orbit-front-half)">
+    <ellipse cx="31.2" cy="35.6" rx="25.8" ry="8.2" stroke="url(#v-orbit-3d)" stroke-width="2.15"/>
+  </g>
+
+  <!-- Vesper Evening Star (长庚星) Crowned at Upper-Right -->
+  <circle cx="50.2" cy="14.5" r="11.5" fill="url(#v-star-glow)"/>
+  <path d="M 50.2 6.8 Q 50.2 14.5 57.9 14.5 Q 50.2 14.5 50.2 22.2 Q 50.2 14.5 42.5 14.5 Q 50.2 14.5 50.2 6.8 Z" fill="url(#v-star-fill)"/>
 </svg>

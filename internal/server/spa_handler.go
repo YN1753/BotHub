@@ -23,6 +23,9 @@ func (s *Server) spaFileServer() http.Handler {
 					return
 				}
 			} else {
+				if strings.HasSuffix(cleanPath, ".webmanifest") {
+					w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
+				}
 				if strings.HasSuffix(cleanPath, ".html") {
 					w.Header().Set("Cache-Control", "no-cache")
 				} else if strings.HasPrefix(cleanPath, "assets/") {

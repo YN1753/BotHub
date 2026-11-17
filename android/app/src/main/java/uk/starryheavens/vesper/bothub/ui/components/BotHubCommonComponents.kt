@@ -86,6 +86,7 @@ fun BotAvatarOrCluster(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BotHubTopBar(
+    selectedTab: BotHubTab,
     activeBot: BotItem?,
     allBots: List<BotItem>,
     isStreaming: Boolean,
@@ -99,14 +100,18 @@ fun BotHubTopBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                BotAvatarOrCluster(
-                    bot = activeBot,
-                    allBots = allBots,
-                    state = if (isStreaming) "working" else (activeBot?.state ?: "idle"),
-                    size = 30.dp,
-                    interactive = true,
-                    defaultSeedKey = "vesper_top"
-                )
+                if (selectedTab == BotHubTab.AGENT && activeBot != null) {
+                    BotAvatarOrCluster(
+                        bot = activeBot,
+                        allBots = allBots,
+                        state = if (isStreaming) "working" else activeBot.state,
+                        size = 30.dp,
+                        interactive = true,
+                        defaultSeedKey = "vesper_top"
+                    )
+                } else {
+                    VesperBrandEmblem(size = 30.dp)
+                }
                 Column {
                     Text(
                         text = "Vesper BotHub",

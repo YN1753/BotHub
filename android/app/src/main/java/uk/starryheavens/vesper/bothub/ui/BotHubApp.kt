@@ -101,6 +101,7 @@ fun BotHubApp(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             BotHubTopBar(
+                selectedTab = viewModel.selectedTab,
                 activeBot = viewModel.bots.find { it.id == viewModel.activeBotId },
                 allBots = viewModel.bots,
                 isStreaming = viewModel.isStreaming,

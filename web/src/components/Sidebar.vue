@@ -8,6 +8,7 @@ import type { Bot } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
 import BotGroupAvatar from './BotGroupAvatar.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
+import VesperBrandIcon from './ui/VesperBrandIcon.vue'
 
 defineProps<{
   mobileOpen: boolean
@@ -151,11 +152,11 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2 min-w-0">
             <span
-              class="relative w-7 h-7 rounded-xl btn-jewel inline-flex items-center justify-center shrink-0"
+              class="relative w-7 h-7 rounded-xl inline-flex items-center justify-center shrink-0 shadow-[0_3px_10px_rgba(0,0,0,0.45)]"
               :title="!isOnline ? '设备已离线' : store.state.sseConnected ? '实时通道在线' : '通道重连中'"
               aria-hidden="true"
             >
-              <span class="font-mono text-xs font-extrabold tracking-tighter text-[#080b15]">V</span>
+              <VesperBrandIcon class="w-7 h-7" />
               <span
                 :class="[
                   'absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-[#090d1b]',
