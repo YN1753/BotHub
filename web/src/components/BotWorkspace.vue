@@ -5,7 +5,6 @@ import { BotHubApi } from '../api/client'
 import { botStateLabel, formatDurationMs, formatTime, formatTimelineDivider, groupModeLabel, triggerBlobDownload } from '../utils/format'
 import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
 import { isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
-import { formatToolDisplayName } from '../utils/toolMeta'
 import type { Bot } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
 import BotGroupAvatar from './BotGroupAvatar.vue'
@@ -13,6 +12,8 @@ import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 import GroupDrawer from './GroupDrawer.vue'
 import BotThreadBar from './workspace/BotThreadBar.vue'
+import BotToolTrail from './workspace/BotToolTrail.vue'
+import BotComposerDropdown from './workspace/BotComposerDropdown.vue'
 
 const BotRoutinesTab = defineAsyncComponent(() => import('./workspace/BotRoutinesTab.vue'))
 const BotConfigTab = defineAsyncComponent(() => import('./workspace/BotConfigTab.vue'))
@@ -488,46 +489,6 @@ async function onCarryThreadSummary(summary: string, title: string) {
 async function handleSummarizeThread() {
   if (!bot.value) return
   await store.summarizeThread(store.state.activeThreadId || 'main', true)
-}
-
-function formatToolLabel(name: string): string {
-  return formatToolDisplayName(name, store.state.skills || [])
-}
-
-function parseConsultSummary(raw?: string): { label: string; tools: string[] } | null {
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw)
-    if (parsed && parsed.ok && parsed.bot_name) {
-      return {
-        label: `委派协办成员: ${parsed.bot_name}${parsed.role_title ? ` (${parsed.role_title})` : ''}`,
-        tools: Array.isArray(parsed.tools_used) ? parsed.tools_used.map(String) : [],
-      }
-    }
-    if (parsed && parsed.ok && Array.isArray(parsed.results)) {
-      const names = parsed.results.map((r: any) => r.bot_name || r.bot_id).filter(Boolean)
-      return {
-        label: `并发协办 (${parsed.parallel_count || parsed.results.length} 位成员): ${names.join('、')}`,
-        tools: [],
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return null
-}
-
-function formatToolPayload(raw?: string): string {
-  if (!raw) return ''
-  const trimmed = raw.trim()
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-    try {
-      return JSON.stringify(JSON.parse(trimmed), null, 2)
-    } catch {
-      return trimmed
-    }
-  }
-  return trimmed
 }
 
 const filteredSlashCommands = computed(() => {
@@ -1331,15 +1292,6 @@ async function clearTimeline() {
   await store.clearActiveBotTimeline()
 }
 
-function sumToolDurationMs(tools: Array<{ durationMs?: number }>): number {
-  return tools.reduce((acc, tc) => acc + (tc.durationMs || 0), 0)
-}
-
-function toolTrailSummary(tools: Array<{ name: string }>): string {
-  const names = tools.slice(0, 3).map((t) => formatToolDisplayName(t.name, store.state.skills || []))
-  return tools.length > 3 ? `${names.join(' -> ')} +${tools.length - 3}` : names.join(' -> ')
-}
-
 function stateBadgeClass(state?: string): string {
   if (state === 'thinking') return 'border-amber-400/40 bg-amber-400/10 text-amber-300'
   if (state === 'working') return 'border-[#f2b880]/45 bg-[#f2b880]/12 text-[#f2b880]'
@@ -1904,85 +1856,7 @@ function stateBadgeClass(state?: string): string {
                   </details>
 
                   <!-- Smooth Collapsible Merged Tool Call Trajectory -->
-                  <details
-                    v-if="m.tools.length"
-                    :class="[
-                      'vesper-details rounded-xl border bg-[#070a16]/75 px-3 py-2 font-mono text-[11.5px]',
-                      m.tools.some((t) => t.status === 'error')
-                        ? 'border-rose-400/25'
-                        : 'border-[#fff8ee]/10',
-                    ]"
-                  >
-                    <summary class="cursor-pointer flex items-center justify-between gap-2 text-slate-300 select-none">
-                      <span class="inline-flex items-center gap-1.5 min-w-0">
-                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron text-slate-400 shrink-0">
-                          <polyline points="9 18 15 12 9 6" />
-                        </svg>
-                        <span class="truncate">
-                          工具轨迹 · {{ toolTrailSummary(m.tools) }} ({{ m.tools.length }} 步<template v-if="sumToolDurationMs(m.tools) > 0"> · {{ formatDurationMs(sumToolDurationMs(m.tools)) }}</template>)
-                        </span>
-                      </span>
-                      <span
-                        :class="
-                          m.tools.some((t) => !t.done)
-                            ? 'text-[#f2b880] shrink-0'
-                            : m.tools.some((t) => t.status === 'error')
-                            ? 'text-rose-300 shrink-0'
-                            : 'text-emerald-400 shrink-0'
-                        "
-                      >
-                        {{
-                          m.tools.some((t) => !t.done)
-                            ? '执行中'
-                            : m.tools.some((t) => t.status === 'error')
-                            ? `存在异常 (${m.tools.filter((t) => t.status === 'error').length})`
-                            : '全部完成'
-                        }}
-                      </span>
-                    </summary>
-                    <div class="mt-2 pt-2 border-t border-[#fff8ee]/8 flex flex-col gap-2">
-                      <div
-                        v-for="(tc, idx) in m.tools"
-                        :key="tc.id"
-                        class="rounded-lg border border-[#fff8ee]/8 bg-[#050811]/75 px-2.5 py-2"
-                      >
-                        <div class="flex items-center justify-between gap-2 text-[11px]">
-                          <span class="text-[#f2b880] font-semibold truncate">#{{ idx + 1 }} {{ formatToolLabel(tc.name) }}</span>
-                          <div class="flex items-center gap-2 shrink-0">
-                            <span v-if="tc.durationMs !== undefined" class="text-[10px] text-slate-400">{{ formatDurationMs(tc.durationMs) }}</span>
-                            <button
-                              v-if="tc.result || tc.arguments"
-                              type="button"
-                              @click="copyMessageContent(tc.result || tc.arguments)"
-                              class="text-[10px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
-                            >
-                              复制
-                            </button>
-                            <span
-                              :class="
-                                !tc.done
-                                  ? 'text-amber-300'
-                                  : tc.status === 'error'
-                                  ? 'text-rose-400'
-                                  : 'text-emerald-400'
-                              "
-                            >
-                              {{ !tc.done ? '执行中' : tc.status === 'error' ? '异常' : '已完成' }}
-                            </span>
-                          </div>
-                        </div>
-                        <div v-if="tc.arguments && tc.arguments !== '{}'" class="mt-1 text-slate-400 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">入参: {{ formatToolPayload(tc.arguments) }}</div>
-                        <div
-                          v-if="tc.name === 'consult_bot' && parseConsultSummary(tc.result)"
-                          class="mt-1.5 px-2 py-1 rounded border border-cyan-400/25 bg-cyan-500/8 text-[10.5px] text-cyan-200"
-                        >
-                          {{ parseConsultSummary(tc.result)?.label }}
-                          <template v-if="parseConsultSummary(tc.result)?.tools.length"> · 使用工具: {{ parseConsultSummary(tc.result)?.tools.join(', ') }}</template>
-                        </div>
-                        <div v-if="tc.result" class="mt-1 text-slate-300 whitespace-pre-wrap break-all max-h-48 overflow-y-auto border-t border-[#fff8ee]/6 pt-1">出参: {{ formatToolPayload(tc.result) }}</div>
-                      </div>
-                    </div>
-                  </details>
+                  <BotToolTrail :tools="m.tools" @copy="copyMessageContent" />
 
                   <!-- Markdown Body -->
                   <div v-if="m.content" v-html="renderSafeMarkdown(m.content)" />
@@ -2137,104 +2011,21 @@ function stateBadgeClass(state?: string): string {
           </div>
 
           <!-- Interactive @Mention Autocomplete Popover -->
-          <Transition
-            enter-active-class="transition duration-150 ease-out"
-            enter-from-class="opacity-0 translate-y-2 scale-95"
-            enter-to-class="opacity-100 translate-y-0 scale-100"
-          >
-            <div
-              v-if="mentionOpen && mentionCandidates.length > 0"
-              class="max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 bg-[#090e1e]/96 backdrop-blur-2xl shadow-2xl p-1.5 flex flex-col gap-0.5 max-h-60 overflow-y-auto"
-            >
-              <div class="px-2.5 py-1 flex items-center justify-between text-[10.5px] font-mono text-slate-400">
-                <span>选择要 @点名 或临时支援的 Bot</span>
-                <span>Enter 确认 · Esc 关闭</span>
-              </div>
-              <button
-                v-if="isGroupBot && (!mentionQuery || '全体成员所有人all'.includes(mentionQuery.toLowerCase()))"
-                type="button"
-                @click="pickMentionText('全体成员')"
-                class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-left cursor-pointer"
-              >
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="w-6 h-6 rounded-full bg-[#f2b880]/25 text-[#f2b880] font-mono text-[11px] font-bold flex items-center justify-center shrink-0">@</span>
-                  <div class="min-w-0">
-                    <div class="text-xs font-semibold text-[#f7cba0]">@全体成员</div>
-                    <div class="text-[10.5px] text-slate-400 truncate">唤起群内全部 {{ groupMembers.length }} 位成员协同回应</div>
-                  </div>
-                </div>
-                <span class="px-1.5 py-0.5 rounded font-mono text-[9.5px] bg-[#f2b880]/18 text-[#f2b880] shrink-0">群协同</span>
-              </button>
-              <div
-                v-for="(item, idx) in mentionCandidates"
-                :key="item.bot.id"
-                :class="[
-                  'flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl transition-colors',
-                  idx === mentionHighlight ? 'bg-[#f2b880]/16' : 'hover:bg-white/[0.04]'
-                ]"
-              >
-                <button
-                  type="button"
-                  @click="pickMentionCandidate(item.bot)"
-                  class="flex-1 min-w-0 flex items-center gap-2.5 text-left cursor-pointer"
-                >
-                  <BotAvatar :avatar-style="item.bot.avatar_style" :state="item.bot.state" size="sm" :interactive="false" />
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-1.5">
-                      <span class="text-xs font-semibold text-white truncate">@{{ item.bot.name }}</span>
-                      <span
-                        :class="[
-                          'px-1.5 py-0.5 rounded font-mono text-[9.5px] leading-none',
-                          item.inRoom ? 'bg-[#f2b880]/15 text-[#f2b880]' : 'bg-emerald-400/12 text-emerald-300'
-                        ]"
-                      >
-                        {{ item.inRoom ? (isGroupBot ? '群内成员' : '当前Bot') : '临时召唤外援' }}
-                      </span>
-                    </div>
-                    <div class="text-[10.5px] text-slate-400 truncate">{{ item.bot.role_title }}</div>
-                  </div>
-                </button>
-                <button
-                  v-if="isGroupBot && !item.inRoom"
-                  type="button"
-                  @click="inviteFromMentionAndPick(item.bot)"
-                  class="px-2 py-1 rounded-lg border border-[#f2b880]/40 bg-[#f2b880]/12 text-[10.5px] font-medium text-[#f2b880] hover:bg-[#f2b880]/22 shrink-0 cursor-pointer"
-                >
-                  拉群并@
-                </button>
-              </div>
-            </div>
-          </Transition>
-
-          <!-- Interactive /Slash Command Palette -->
-          <Transition
-            enter-active-class="transition duration-150 ease-out"
-            enter-from-class="opacity-0 translate-y-2 scale-95"
-            enter-to-class="opacity-100 translate-y-0 scale-100"
-          >
-            <div
-              v-if="slashOpen && filteredSlashCommands.length > 0"
-              class="max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 bg-[#090e1e]/96 backdrop-blur-2xl shadow-2xl p-1.5 flex flex-col gap-0.5"
-            >
-              <div class="px-2.5 py-1 text-[10.5px] font-mono text-slate-400">快捷斜杠指令 (Enter 执行)</div>
-              <button
-                v-for="(cmd, idx) in filteredSlashCommands"
-                :key="cmd.cmd"
-                type="button"
-                @click="pickSlashCommand(cmd)"
-                :class="[
-                  'w-full flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-left cursor-pointer transition-colors',
-                  idx === slashHighlight ? 'bg-[#f2b880]/16 text-white' : 'text-slate-300 hover:bg-white/[0.04]'
-                ]"
-              >
-                <div class="flex items-center gap-2.5 min-w-0">
-                  <span class="font-mono text-xs font-semibold text-[#f2b880] w-16 shrink-0">{{ cmd.cmd }}</span>
-                  <span class="text-xs font-medium truncate">{{ cmd.title }}</span>
-                </div>
-                <span class="text-[11px] text-slate-400 truncate">{{ cmd.desc }}</span>
-              </button>
-            </div>
-          </Transition>
+          <BotComposerDropdown
+            :is-group-bot="isGroupBot"
+            :group-member-count="groupMembers.length"
+            :mention-open="mentionOpen"
+            :mention-query="mentionQuery"
+            :mention-candidates="mentionCandidates"
+            :mention-highlight="mentionHighlight"
+            :slash-open="slashOpen"
+            :slash-commands="filteredSlashCommands"
+            :slash-highlight="slashHighlight"
+            @pick-mention-text="pickMentionText"
+            @pick-mention-candidate="pickMentionCandidate"
+            @invite-from-mention-and-pick="inviteFromMentionAndPick"
+            @pick-slash-command="pickSlashCommand"
+          />
 
           <div
             v-if="isGroupBot && groupMembers.length > 0"

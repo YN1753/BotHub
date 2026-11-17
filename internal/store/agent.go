@@ -303,9 +303,19 @@ func (s *Store) DeleteBotThread(botID, threadID string) error {
 	if tid == "" {
 		return errors.New("cannot delete default main timeline without thread_id")
 	}
-	_, _ = s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ? AND COALESCE(thread_id,'') = ?`, bid, tid)
-	_, err := s.db.Exec(`DELETE FROM bot_threads WHERE bot_id = ? AND id = ?`, bid, tid)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM agent_messages WHERE bot_id = ? AND COALESCE(thread_id,'') = ?`, bid, tid); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM bot_threads WHERE bot_id = ? AND id = ?`, bid, tid); err != nil {
+		return err
+	}
+	_, _ = tx.Exec(`UPDATE bots SET active_thread_id = '' WHERE id = ? AND COALESCE(active_thread_id,'') = ?`, bid, tid)
+	return tx.Commit()
 }
 
 func (s *Store) SetBotActiveThread(botID, threadID string) error {

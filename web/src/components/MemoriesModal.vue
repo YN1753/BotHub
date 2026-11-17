@@ -242,6 +242,21 @@ async function runBulkScope(targetScope: string) {
   }
 }
 
+async function runBulkPin(pinState: boolean) {
+  if (!selectedIds.value.length || bulkBusy.value) return
+  bulkBusy.value = true
+  try {
+    await Promise.all(selectedIds.value.map((id) => BotHubApi.updateMemory(id, { pinned: pinState })))
+    selectedIds.value = []
+    store.notify(pinState ? '已批量设为置顶核心记忆' : '已批量取消置顶')
+    await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
+  } catch (err: any) {
+    store.notify(err.message || '批量更新置顶失败')
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
 async function runBulkDelete() {
   if (!selectedIds.value.length || bulkBusy.value) return
   if (!window.confirm(`确定删除已选中的 ${selectedIds.value.length} 条记忆吗？`)) return
@@ -543,6 +558,14 @@ watch(
             class="px-2 py-0.5 rounded border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/12 cursor-pointer disabled:opacity-50"
           >
             批量收归当前Bot
+          </button>
+          <button
+            type="button"
+            :disabled="bulkBusy"
+            @click="runBulkPin(true)"
+            class="px-2 py-0.5 rounded border border-amber-400/40 text-amber-200 hover:bg-amber-500/12 cursor-pointer disabled:opacity-50"
+          >
+            批量置顶
           </button>
           <button
             type="button"

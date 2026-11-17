@@ -242,6 +242,22 @@ async function launchAdhocGroup() {
   }
 }
 
+async function copyGroupRosterSummary() {
+  if (!bot.value) return
+  const lines = [
+    `群聊名称: ${bot.value.name}`,
+    `协同策略: ${editMode.value}`,
+    `成员名单 (${currentMembers.value.length}): ${currentMembers.value.map((m) => `${m.name} (${m.role_title})`).join('、')}`,
+    editAnnouncement.value.trim() ? `群公告: ${editAnnouncement.value.trim()}` : '',
+  ].filter(Boolean)
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'))
+    store.notify('已复制群成员与协同配置摘要')
+  } catch {
+    store.notify('复制失败')
+  }
+}
+
 async function handleClearTimeline() {
   if (!bot.value || store.state.isStreaming) return
   if (!window.confirm(`确定清空 [${bot.value.name}] 的聊天记录吗？`)) return
@@ -506,6 +522,13 @@ async function handleDisbandGroup() {
                 class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
               >
                 清空聊天记录
+              </button>
+              <button
+                type="button"
+                @click="copyGroupRosterSummary"
+                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+              >
+                复制群名录
               </button>
               <button
                 type="button"

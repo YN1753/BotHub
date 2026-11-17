@@ -86,6 +86,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.publishAssistantEvent("tasks")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": req.ID})
 }
 
@@ -145,6 +146,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.publishAssistantEvent("tasks")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -159,6 +161,7 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.scheduler.Reload()
+	s.publishAssistantEvent("tasks")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

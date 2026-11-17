@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -176,6 +177,9 @@ func (m *MorningModule) fetchWeather(ctx context.Context, city string) (weatherI
 		return weatherInfo{}, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return weatherInfo{}, fmt.Errorf("geocoding HTTP %d", resp.StatusCode)
+	}
 
 	var geo struct {
 		Results []struct {
@@ -184,7 +188,9 @@ func (m *MorningModule) fetchWeather(ctx context.Context, city string) (weatherI
 			Longitude float64 `json:"longitude"`
 		} `json:"results"`
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&geo)
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&geo); err != nil {
+		return weatherInfo{}, err
+	}
 	if len(geo.Results) == 0 {
 		return weatherInfo{}, fmt.Errorf("未找到城市: %s", city)
 	}
@@ -201,6 +207,9 @@ func (m *MorningModule) fetchWeather(ctx context.Context, city string) (weatherI
 		return weatherInfo{}, err
 	}
 	defer fResp.Body.Close()
+	if fResp.StatusCode >= 400 {
+		return weatherInfo{}, fmt.Errorf("open-meteo HTTP %d", fResp.StatusCode)
+	}
 
 	var fc struct {
 		Current struct {
@@ -214,7 +223,7 @@ func (m *MorningModule) fetchWeather(ctx context.Context, city string) (weatherI
 			PrecipProb []int     `json:"precipitation_probability_max"`
 		} `json:"daily"`
 	}
-	if err := json.NewDecoder(fResp.Body).Decode(&fc); err != nil || len(fc.Daily.MaxTemp) == 0 {
+	if err := json.NewDecoder(io.LimitReader(fResp.Body, 512<<10)).Decode(&fc); err != nil || len(fc.Daily.MaxTemp) == 0 {
 		return weatherInfo{}, fmt.Errorf("解析气象预报失败")
 	}
 
@@ -264,6 +273,9 @@ func (m *MorningModule) fetchWeatherWttrIn(ctx context.Context, city string) (we
 		return weatherInfo{}, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return weatherInfo{}, fmt.Errorf("wttr.in HTTP %d", resp.StatusCode)
+	}
 
 	var data struct {
 		Current []struct {
@@ -279,7 +291,7 @@ func (m *MorningModule) fetchWeatherWttrIn(ctx context.Context, city string) (we
 			} `json:"hourly"`
 		} `json:"weather"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil || len(data.Current) == 0 || len(data.Weather) == 0 {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 512<<10)).Decode(&data); err != nil || len(data.Current) == 0 || len(data.Weather) == 0 {
 		return weatherInfo{}, fmt.Errorf("解析 wttr.in 失败")
 	}
 
@@ -325,7 +337,7 @@ func (m *MorningModule) fetchNodePulse(ctx context.Context, nezhaURL string) str
 				LastActive int64 `json:"last_active"`
 			} `json:"result"`
 		}
-		if json.NewDecoder(resp.Body).Decode(&res) == nil && len(res.Result) > 0 {
+		if resp.StatusCode < 400 && json.NewDecoder(io.LimitReader(resp.Body, 512<<10)).Decode(&res) == nil && len(res.Result) > 0 {
 			online := 0
 			nowUnix := time.Now().Unix()
 			for _, n := range res.Result {

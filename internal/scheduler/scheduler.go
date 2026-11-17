@@ -118,7 +118,11 @@ func (s *Scheduler) Stop() {
 	s.mu.Unlock()
 	if c != nil {
 		ctx := c.Stop()
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-time.After(10 * time.Second):
+			log.Printf("[scheduler] cron stop timed out waiting for running jobs")
+		}
 	}
 }
 
@@ -175,6 +179,9 @@ func (s *Scheduler) Reload() error {
 				if latest, gErr := s.store.GetTask(taskID); gErr == nil && latest != nil && latest.Enabled {
 					latest.Enabled = false
 					_ = s.store.SaveTask(*latest)
+				}
+				if s.hub != nil {
+					s.hub.PublishEvent("assistant_update", map[string]any{"kind": "tasks"})
 				}
 				s.mu.Lock()
 				delete(s.timers, taskID)

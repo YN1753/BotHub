@@ -1035,6 +1035,34 @@ func (e *Engine) runTeamRoomParallel(
 	return finalResp, nil
 }
 
+// budgetChatMessages keeps all leading system messages and trims oldest conversation turns
+// starting from clean user boundaries whenever total rune count exceeds maxRunes.
+func budgetChatMessages(messages []apiMessage, maxRunes int) []apiMessage {
+	if maxRunes <= 0 || len(messages) == 0 {
+		return messages
+	}
+	total := 0
+	for _, m := range messages {
+		total += len([]rune(m.Content))
+	}
+	if total <= maxRunes {
+		return messages
+	}
+	cur := messages
+	for total > maxRunes {
+		trimmed, ok := trimContextMessages(cur)
+		if !ok {
+			break
+		}
+		cur = trimmed
+		total = 0
+		for _, m := range cur {
+			total += len([]rune(m.Content))
+		}
+	}
+	return cur
+}
+
 func (e *Engine) runSingleBotTurn(
 	ctx context.Context,
 	req ChatRequest,
@@ -1183,6 +1211,7 @@ func (e *Engine) runSingleBotTurn(
 		}
 	}
 	messages = append(messages, apiMessage{Role: "user", Content: userMsg})
+	messages = budgetChatMessages(messages, 48000)
 
 	parentScope := toolScopeFromContext(ctx)
 	toolCtx := WithToolScope(ctx, ToolScope{

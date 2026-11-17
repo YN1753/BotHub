@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -48,9 +49,18 @@ func (rl *rateLimiter) isLocked(ip string) bool {
 func (rl *rateLimiter) recordFail(ip string) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
+	now := time.Now()
+	if len(rl.lockedAt) > 128 {
+		for k, ts := range rl.lockedAt {
+			if now.Sub(ts) >= 3*time.Minute {
+				delete(rl.lockedAt, k)
+				delete(rl.failures, k)
+			}
+		}
+	}
 	rl.failures[ip]++
 	if rl.failures[ip] >= 5 {
-		rl.lockedAt[ip] = time.Now()
+		rl.lockedAt[ip] = now
 	}
 }
 
@@ -128,6 +138,25 @@ func (s *Server) handleUpdatePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.store.SetConfig(store.KeyAdminPassHash, store.HashPassword(strings.TrimSpace(body.NewPassword)))
+
+	// Rotate session signing secret so existing cookies elsewhere are invalidated immediately,
+	// while issuing a fresh valid session cookie for the caller's current browser session.
+	secretBytes := make([]byte, 32)
+	if _, err := rand.Read(secretBytes); err == nil {
+		_ = s.store.SetConfig(store.KeySessionSecret, hex.EncodeToString(secretBytes))
+		if token, tErr := s.issueSessionCookie(); tErr == nil {
+			isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+			http.SetCookie(w, &http.Cookie{
+				Name:     sessionCookieName,
+				Value:    token,
+				Path:     "/",
+				HttpOnly: true,
+				Secure:   isSecure,
+				SameSite: http.SameSiteLaxMode,
+				MaxAge:   7 * 24 * 3600,
+			})
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

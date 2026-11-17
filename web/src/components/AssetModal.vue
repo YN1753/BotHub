@@ -247,6 +247,13 @@ function removeExtraRow(idx: number) {
   extraRows.value.splice(idx, 1)
 }
 
+const previewDaysLeft = computed(() => {
+  if (dueMode.value === 'permanent') return null
+  const target = new Date(`${dueYear.value}-${dueMonth.value}-${dueDay.value}T23:59:59`)
+  if (Number.isNaN(target.getTime())) return null
+  return Math.ceil((target.getTime() - Date.now()) / 86_400_000)
+})
+
 function extendDueDate(months: number) {
   dueMode.value = 'date'
   const base = new Date(`${dueYear.value}-${dueMonth.value}-${dueDay.value}T00:00:00`)
@@ -387,7 +394,28 @@ async function handleDelete() {
 
       <!-- Section 2: Due Date & Alert Rules -->
       <div class="modal-section flex flex-col gap-3">
-        <div class="text-xs font-semibold text-[#f2b880]">到期守望与续费规则</div>
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="text-xs font-semibold text-[#f2b880]">到期守望与续费规则</div>
+          <span
+            v-if="dueMode === 'permanent'"
+            class="font-mono text-[10.5px] px-2 py-0.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
+          >
+            长期有效
+          </span>
+          <span
+            v-else-if="previewDaysLeft !== null"
+            :class="[
+              'font-mono text-[10.5px] px-2 py-0.5 rounded-full border',
+              previewDaysLeft <= 0
+                ? 'border-rose-400/40 bg-rose-500/15 text-rose-300'
+                : previewDaysLeft <= 14
+                  ? 'border-amber-400/35 bg-amber-400/10 text-amber-300'
+                  : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300',
+            ]"
+          >
+            {{ previewDaysLeft <= 0 ? `已逾期 ${Math.abs(previewDaysLeft)} 天` : `预计距今剩余 ${previewDaysLeft} 天` }}
+          </span>
+        </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div class="flex flex-col gap-1 text-xs text-slate-300">
             <span>到期类型</span>

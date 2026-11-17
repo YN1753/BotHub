@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -60,12 +61,16 @@ func (s *Server) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "技能名称不能为空")
 		return
 	}
+	req.Kind = strings.TrimSpace(req.Kind)
+	if req.Kind != "webhook" {
+		req.Kind = "prompt"
+	}
 	req.Slug = normalizeSkillSlug(req.Slug, req.Name)
 	req.Description = notifier.StripEmoji(strings.TrimSpace(req.Description))
 	req.Instruction = notifier.StripEmoji(strings.TrimSpace(req.Instruction))
 	req.HTTPURL = strings.TrimSpace(req.HTTPURL)
-	if req.Kind == "webhook" && req.HTTPURL == "" {
-		writeError(w, http.StatusBadRequest, "Webhook 外部技能必须填写请求 URL")
+	if msg := validateWebhookSkillFields(&req); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 	req.Enabled = true
@@ -134,8 +139,11 @@ func (s *Server) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		existing.Enabled = *req.Enabled
 	}
-	if existing.Kind == "webhook" && existing.HTTPURL == "" {
-		writeError(w, http.StatusBadRequest, "Webhook 外部技能必须填写请求 URL")
+	if existing.Kind != "webhook" {
+		existing.Kind = "prompt"
+	}
+	if msg := validateWebhookSkillFields(existing); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 
@@ -145,6 +153,44 @@ func (s *Server) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	updated, _ := s.store.GetSkill(id)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "skill": updated})
+}
+
+func validateWebhookSkillFields(sk *store.Skill) string {
+	if sk.Kind != "webhook" {
+		return ""
+	}
+	if sk.HTTPURL == "" {
+		return "Webhook 外部技能必须填写请求 URL"
+	}
+	// Replace {{placeholder}} tokens temporarily so query interpolation doesn't break URL validation
+	sanitizedURL := strings.ReplaceAll(strings.ReplaceAll(sk.HTTPURL, "{{", "var_"), "}}", "")
+	parsed, err := url.Parse(sanitizedURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "Webhook URL 必须以 http:// 或 https:// 开头且包含有效主机"
+	}
+	method := strings.ToUpper(strings.TrimSpace(sk.HTTPMethod))
+	if method == "" {
+		method = http.MethodGet
+	}
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		sk.HTTPMethod = method
+	default:
+		return "Webhook 请求方法仅支持 GET / POST / PUT / PATCH / DELETE"
+	}
+	if h := strings.TrimSpace(sk.HTTPHeaders); h != "" {
+		var hdrs map[string]any
+		if json.Unmarshal([]byte(h), &hdrs) != nil {
+			return "http_headers 必须为合法 JSON 对象"
+		}
+	}
+	if ps := strings.TrimSpace(sk.ParamsSchema); ps != "" {
+		var params []map[string]any
+		if json.Unmarshal([]byte(ps), &params) != nil {
+			return "params_schema 必须为合法 JSON 数组"
+		}
+	}
+	return ""
 }
 
 func (s *Server) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {

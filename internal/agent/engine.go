@@ -879,6 +879,41 @@ func foldSystemIntoUserMessages(messages []apiMessage) []apiMessage {
 	return append([]apiMessage{{Role: "user", Content: prefix}}, rest...)
 }
 
+func formatUpstreamHTTPError(model string, statusCode int, raw string) error {
+	trimmed := strings.TrimSpace(raw)
+	// Extract OpenAI-style JSON error message if available
+	if strings.HasPrefix(trimmed, "{") {
+		var errPayload struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+			Message string `json:"message"`
+		}
+		if json.Unmarshal([]byte(trimmed), &errPayload) == nil {
+			msg := strings.TrimSpace(errPayload.Error.Message)
+			if msg == "" {
+				msg = strings.TrimSpace(errPayload.Message)
+			}
+			if msg != "" {
+				return fmt.Errorf("[%s] 返回错误 (%d): %s", model, statusCode, msg)
+			}
+		}
+	}
+	// Strip HTML gateway error pages (e.g., 502/504 Cloudflare HTML) down to <title>
+	lower := strings.ToLower(trimmed)
+	if strings.Contains(lower, "<html") || strings.Contains(lower, "<!doctype") {
+		if title := extractHTMLTitle(trimmed); title != "" {
+			return fmt.Errorf("[%s] 网关响应 (%d): %s", model, statusCode, title)
+		}
+		return fmt.Errorf("[%s] 上游网关异常 (%d)", model, statusCode)
+	}
+	runes := []rune(trimmed)
+	if len(runes) > 280 {
+		trimmed = string(runes[:280]) + "..."
+	}
+	return fmt.Errorf("[%s] 返回错误 (%d): %s", model, statusCode, trimmed)
+}
+
 func (e *Engine) streamSingleRoundWithProvider(
 	ctx context.Context,
 	provider, baseURL, apiKey, model string,
@@ -968,7 +1003,7 @@ func (e *Engine) streamSingleRoundWithProvider(
 				continue
 			}
 		}
-		return "", "", nil, nil, fmt.Errorf("[%s] 返回错误 (%d): %s", model, resp.StatusCode, errText)
+		return "", "", nil, nil, formatUpstreamHTTPError(model, resp.StatusCode, errText)
 	}
 	defer resp.Body.Close()
 

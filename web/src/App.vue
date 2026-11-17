@@ -128,6 +128,25 @@ function isEditableElement(target: EventTarget | null): boolean {
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+    e.preventDefault()
+    if (store.state.authenticated) {
+      store.state.showSettingsModal = !store.state.showSettingsModal
+    }
+    return
+  }
+  if (e.altKey && !e.metaKey && !e.ctrlKey && !isEditableElement(e.target) && store.state.authenticated && !document.querySelector('dialog[open]')) {
+    if (e.key === '1') {
+      e.preventDefault()
+      store.state.workspace = 'bots'
+      return
+    }
+    if (e.key === '2') {
+      e.preventDefault()
+      store.state.workspace = 'ops'
+      return
+    }
+  }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     if (store.state.authenticated) {
@@ -155,10 +174,17 @@ function handleUnauthorized() {
 }
 
 watch(
-  () => [store.state.authenticated, store.unreadInboxCount.value] as const,
-  ([authed, unread]) => {
+  () => [
+    store.state.authenticated,
+    store.unreadInboxCount.value,
+    store.state.bots.reduce((sum, b) => sum + (b.unread_count || 0), 0),
+    store.activeBot.value?.name || '',
+  ] as const,
+  ([authed, inboxUnread, botUnread, activeName]) => {
     if (typeof document === 'undefined') return
-    document.title = authed && unread > 0 ? `(${unread}) Vesper BotHub` : 'Vesper BotHub'
+    const total = inboxUnread + botUnread
+    const base = activeName ? `${activeName} · Vesper BotHub` : 'Vesper BotHub'
+    document.title = authed && total > 0 ? `(${total}) ${base}` : base
   },
   { immediate: true }
 )

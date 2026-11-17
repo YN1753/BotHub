@@ -261,4 +261,28 @@ func TestBuiltinToolsExecution(t *testing.T) {
 	if !parsedRead.Truncated || parsedRead.CharCount > MaxReadURLChars {
 		t.Fatalf("expected truncated=true and char_count <= %d, got %+v", MaxReadURLChars, parsedRead)
 	}
+
+	// 5. Verify formatUpstreamHTTPError extracts JSON message & HTML <title> cleanly
+	jsonErr := formatUpstreamHTTPError("gpt-4o", 429, `{"error":{"message":"Rate limit exceeded"}}`)
+	if !strings.Contains(jsonErr.Error(), "Rate limit exceeded") {
+		t.Fatalf("expected JSON error extraction, got: %v", jsonErr)
+	}
+	htmlErr := formatUpstreamHTTPError("deepseek-chat", 502, `<!DOCTYPE html><html><head><title>502 Bad Gateway</title></head><body><h1>cloudflare</h1></body></html>`)
+	if !strings.Contains(htmlErr.Error(), "502 Bad Gateway") || strings.Contains(htmlErr.Error(), "<html") {
+		t.Fatalf("expected clean HTML title extraction, got: %v", htmlErr)
+	}
+
+	// 6. Verify budgetChatMessages preserves system messages and recent turns within budget
+	msgs := []apiMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("u", 200)},
+		{Role: "assistant", Content: strings.Repeat("a", 200)},
+		{Role: "user", Content: strings.Repeat("m", 200)},
+		{Role: "assistant", Content: strings.Repeat("b", 200)},
+		{Role: "user", Content: "latest question"},
+	}
+	budgeted := budgetChatMessages(msgs, 500)
+	if len(budgeted) >= len(msgs) || budgeted[0].Role != "system" || budgeted[len(budgeted)-1].Content != "latest question" {
+		t.Fatalf("unexpected budgeted history: %+v", budgeted)
+	}
 }

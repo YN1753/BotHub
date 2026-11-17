@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -15,7 +16,7 @@ import (
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"ok":         true,
 		"service":    "vesper-bothub",
 		"version":    s.version,
@@ -23,7 +24,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"build_time": s.buildTime,
 		"uptime_sec": int64(time.Since(s.startedAt).Seconds()),
 		"time":       store.NowShanghai(),
-	})
+	}
+	if s.push != nil && s.push.Hub() != nil {
+		resp["sse_clients"] = s.push.Hub().SubscriberCount()
+		resp["sse_dropped"] = s.push.Hub().DroppedCount()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 var sensitiveConfigKeys = map[string]bool{
@@ -144,11 +150,23 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = s.store.SetConfig(store.KeyPushChannel, "native")
+	urlConfigKeys := map[string]bool{
+		"deepseek_base_url": true,
+		"light_base_url":    true,
+		"nezha_url":         true,
+	}
 	for k, v := range updates {
 		if !allowedKeys[k] {
 			continue
 		}
 		val := strings.TrimSpace(v)
+		if urlConfigKeys[k] && val != "" {
+			parsed, err := url.Parse(val)
+			if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("配置项 %s 必须为有效的 http/https URL", k))
+				return
+			}
+		}
 		if sensitiveConfigKeys[k] && strings.Contains(val, "****") {
 			continue
 		}

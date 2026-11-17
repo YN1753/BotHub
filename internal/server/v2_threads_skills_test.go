@@ -133,6 +133,19 @@ func TestV2SkillsThreadsScopedMemoriesAndBackup(t *testing.T) {
 		t.Fatalf("test prompt skill failed: %d %s", recTestSk.Code, recTestSk.Body.String())
 	}
 
+	// Reject non-http/https webhook scheme cleanly
+	reqBadSk := httptest.NewRequest(http.MethodPost, "/api/v2/skills", strings.NewReader(`{
+		"name": "BadScheme",
+		"kind": "webhook",
+		"http_method": "GET",
+		"http_url": "file:///etc/passwd"
+	}`))
+	recBadSk := httptest.NewRecorder()
+	s.handleCreateSkill(recBadSk, reqBadSk)
+	if recBadSk.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for non-http webhook URL, got %d %s", recBadSk.Code, recBadSk.Body.String())
+	}
+
 	// 4. Scoped Memory Save, Filter & Update
 	memPayload := fmt.Sprintf(`{"scope":"bot:%s","category":"preference","fact_key":"bedtime","content":"通常一点半睡","importance":4,"pinned":true}`, botID)
 	reqMem := httptest.NewRequest(http.MethodPost, "/api/agent/memories", strings.NewReader(memPayload))

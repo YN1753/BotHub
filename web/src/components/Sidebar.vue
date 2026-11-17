@@ -315,7 +315,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
               <button
                 type="button"
                 @click="store.state.showQuickSwitcher = true; emit('closeMobile')"
-                title="全局搜索与快速跳转 (Cmd/Ctrl + K)"
+                title="全局搜索与快速跳转 (Cmd/Ctrl + K) · 上下切换 (Alt + ↑/↓)"
                 class="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-[#fff8ee]/10 bg-[#fff8ee]/[0.03] hover:border-[#f2b880]/40 hover:text-[#f2b880] font-mono text-[10px] text-slate-400 cursor-pointer"
               >
                 <span>Cmd+K</span>
@@ -387,7 +387,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
             type="button"
             @click="handlePickBot(b.id)"
             :aria-current="store.state.activeBotId === b.id && store.state.workspace === 'bots' ? 'true' : undefined"
-            class="flex-1 min-w-0 flex items-center gap-2.5 text-left cursor-pointer"
+            class="flex-1 min-w-0 flex items-center gap-2.5 text-left cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#f2b880]/70"
           >
             <BotGroupAvatar
               v-if="isGroup(b)"

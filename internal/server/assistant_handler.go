@@ -41,9 +41,13 @@ func (s *Server) handleCreateTodo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "无效待办请求体")
 		return
 	}
+	req.BotID = strings.TrimSpace(req.BotID)
 	req.Title = notifier.StripEmoji(strings.TrimSpace(req.Title))
 	req.Notes = notifier.StripEmoji(strings.TrimSpace(req.Notes))
 	req.Tags = notifier.StripEmoji(strings.TrimSpace(req.Tags))
+	req.DueAt = strings.TrimSpace(req.DueAt)
+	req.Status = store.NormalizeTodoStatus(req.Status)
+	req.Priority = store.NormalizeTodoPriority(req.Priority)
 	if req.Title == "" {
 		writeError(w, http.StatusBadRequest, "待办标题不能为空")
 		return
@@ -154,9 +158,13 @@ func (s *Server) handleCreateNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "无效文档请求体")
 		return
 	}
+	req.BotID = strings.TrimSpace(req.BotID)
 	req.Title = notifier.StripEmoji(strings.TrimSpace(req.Title))
 	req.Content = notifier.StripEmoji(strings.TrimSpace(req.Content))
 	req.Category = notifier.StripEmoji(strings.TrimSpace(req.Category))
+	if req.Category == "" {
+		req.Category = "deliverable"
+	}
 	if req.Title == "" {
 		writeError(w, http.StatusBadRequest, "文档标题不能为空")
 		return

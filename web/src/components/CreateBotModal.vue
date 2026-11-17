@@ -74,6 +74,72 @@ function resetCreateForm() {
   toolSearch.value = ''
 }
 
+const STARTER_ARCHETYPES: Array<{
+  label: string
+  name: string
+  role: string
+  mode: BotMode
+  avatar: string
+  traits: string
+  prompt: string
+  tools: string[]
+}> = [
+  {
+    label: '个人总助',
+    name: 'Muse 总助',
+    role: '全能个人效率与日程参谋',
+    mode: 'hybrid',
+    avatar: 'butler:gold',
+    traits: '简洁高效、主动帮用户拆解待办与时间规划',
+    prompt: '你是用户的专属个人总助。收到想法时先查现有待办/文档，能落地就调用工具直接创建待办、笔记或定时提醒，禁止废话与 Emoji。',
+    tools: ['manage_todos', 'manage_notes', 'manage_tasks', 'workspace_briefing', 'datetime_calc', 'calculate_eval', 'remember_fact', 'recall_memory', 'manage_memory', 'send_notification'],
+  },
+  {
+    label: '运维哨兵',
+    name: 'Ops 哨兵',
+    role: 'VPS 探针监控与数字资产审计官',
+    mode: 'worker',
+    avatar: 'visor:cyan',
+    traits: '严谨客观、先查实时探针和账单工具再汇报结论',
+    prompt: '你是基础设施运维与资产合规助手。涉及服务器负载、域名到期、续费成本时必须优先调用 query_nezha_nodes 与 manage_assets 获取实时数据，严禁使用 Emoji。',
+    tools: ['query_nezha_nodes', 'manage_assets', 'manage_tasks', 'send_notification', 'remember_fact', 'recall_memory', 'datetime_calc', 'calculate_eval'],
+  },
+  {
+    label: '深度研究员',
+    name: 'Researcher',
+    role: '技术情报与长文精读分析师',
+    mode: 'worker',
+    avatar: 'radar:indigo',
+    traits: '结构清晰、善用网页检索与链接阅读提炼要点',
+    prompt: '你是深度技术调研员。回答复杂调研问题前先调用 web_search 与 read_url 获取一手依据，给出对照对比与可执行建议，严禁使用 Emoji。',
+    tools: ['web_search', 'read_url', 'manage_notes', 'remember_fact', 'recall_memory', 'calculate_eval'],
+  },
+  {
+    label: '轻松伙伴',
+    name: '深夜酒馆',
+    role: '温柔真诚的日常聊天老友',
+    mode: 'companion',
+    avatar: 'spark:rose',
+    traits: '像真人发微信一样自然松弛，不列死板条框',
+    prompt: '你是用户信任的生活伙伴，陪聊解闷、倾听日常并悄悄记住关键约定。语气真实温暖、简短接梗，严禁列报告式大纲或使用 Emoji。',
+    tools: ['remember_fact', 'recall_memory'],
+  },
+]
+
+function applyArchetype(preset: (typeof STARTER_ARCHETYPES)[number]) {
+  name.value = preset.name
+  roleTitle.value = preset.role
+  avatarStyle.value = preset.avatar
+  traits.value = preset.traits
+  systemPrompt.value = preset.prompt
+  botMode.value = preset.mode
+  nextTick(() => {
+    allowedTools.value = availableTools.value
+      .filter((t) => preset.tools.includes(t.id))
+      .map((t) => t.id)
+  })
+}
+
 const availableTools = computed(() => store.state.availableTools || [])
 const groupedTools = computed(() => groupAvailableTools(availableTools.value))
 const filteredGroupedTools = computed(() => {
@@ -303,6 +369,18 @@ async function handleSubmit() {
       >
         <!-- Mode 1: Single Specialist / Companion Bot -->
         <div v-if="mode === 'bot'" key="bot" class="flex flex-col gap-3.5">
+          <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
+            <span class="text-slate-500">快速人设模板:</span>
+            <button
+              v-for="arc in STARTER_ARCHETYPES"
+              :key="arc.label"
+              type="button"
+              @click="applyArchetype(arc)"
+              class="px-2.5 py-1 rounded-full border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-[#f2b880]/50 hover:text-[#f2b880] cursor-pointer"
+            >
+              {{ arc.label }}
+            </button>
+          </div>
           <BotAvatarPicker v-model="avatarStyle" :preview-name="name || '新 Bot 伙伴'" />
 
           <div class="modal-section flex flex-col gap-2">
