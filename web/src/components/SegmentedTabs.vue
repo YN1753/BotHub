@@ -58,6 +58,25 @@ watch(
   }
 )
 
+function handleTabKeydown(e: KeyboardEvent, idx: number) {
+  if (!props.items.length) return
+  let nextIdx = -1
+  if (e.key === 'ArrowRight') nextIdx = (idx + 1) % props.items.length
+  else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + props.items.length) % props.items.length
+  else if (e.key === 'Home') nextIdx = 0
+  else if (e.key === 'End') nextIdx = props.items.length - 1
+  if (nextIdx < 0) return
+
+  e.preventDefault()
+  const target = props.items[nextIdx]
+  if (!target) return
+  emit('update:modelValue', target.id)
+  nextTick(() => {
+    const btns = trackRef.value?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+    btns?.[nextIdx]?.focus()
+  })
+}
+
 onMounted(() => {
   nextTick(updateIndicator)
   if (typeof ResizeObserver !== 'undefined' && trackRef.value) {
@@ -72,8 +91,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <nav
+  <div
     ref="trackRef"
+    role="tablist"
     :aria-label="ariaLabel || '视图切换'"
     :class="[
       'relative inline-flex items-center p-1 rounded-full overflow-x-auto no-scrollbar max-w-full select-none',
@@ -95,11 +115,14 @@ onBeforeUnmount(() => {
     />
 
     <button
-      v-for="item in items"
+      v-for="(item, idx) in items"
       :key="item.id"
       type="button"
+      role="tab"
+      :tabindex="modelValue === item.id ? 0 : -1"
       :data-active="modelValue === item.id"
-      :aria-current="modelValue === item.id ? 'page' : undefined"
+      :aria-selected="modelValue === item.id"
+      @keydown="handleTabKeydown($event, idx)"
       @click="emit('update:modelValue', item.id)"
       :class="[
         'relative z-10 min-h-[38px] sm:min-h-[30px] px-3.5 rounded-full text-xs whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-200',
@@ -110,5 +133,5 @@ onBeforeUnmount(() => {
     >
       {{ item.label }}
     </button>
-  </nav>
+  </div>
 </template>

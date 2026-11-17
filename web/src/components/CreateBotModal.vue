@@ -56,10 +56,26 @@ const groupAvatar = ref('swarm:indigo')
 const groupMembers = ref<string[]>([])
 const groupMode = ref<'smart' | 'sequential' | 'mention_only'>('smart')
 const groupAnnouncement = ref('')
+const toolSearch = ref('')
 const saving = ref(false)
 
 const availableTools = computed(() => store.state.availableTools || [])
 const groupedTools = computed(() => groupAvailableTools(availableTools.value))
+const filteredGroupedTools = computed(() => {
+  const q = toolSearch.value.trim().toLowerCase()
+  if (!q) return groupedTools.value
+  return groupedTools.value
+    .map((grp) => ({
+      ...grp,
+      tools: grp.tools.filter(
+        (t) =>
+          t.id.toLowerCase().includes(q) ||
+          t.shortLabel.toLowerCase().includes(q) ||
+          (t.description || '').toLowerCase().includes(q)
+      ),
+    }))
+    .filter((grp) => grp.tools.length > 0)
+})
 const availableSkills = computed(() => (store.state.skills || []).filter((s) => s.enabled !== false))
 
 const availableSpecialistBots = computed(() =>
@@ -329,7 +345,15 @@ async function handleSubmit() {
             <div class="flex flex-col gap-2 text-xs text-slate-300">
               <div class="flex items-center justify-between gap-2 flex-wrap">
                 <span>内置工具白名单 ({{ allowedTools.length }}/{{ availableTools.length }})</span>
-                <div class="flex items-center gap-1.5 text-[11px]">
+                <div class="flex items-center gap-1.5 text-[11px] flex-wrap">
+                  <input
+                    v-model="toolSearch"
+                    type="search"
+                    aria-label="搜索工具"
+                    placeholder="筛选工具..."
+                    @keydown.escape.stop="toolSearch = ''"
+                    class="w-28 min-h-[26px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
+                  />
                   <button
                     type="button"
                     @click="allowedTools = availableTools.map((t) => t.id)"
@@ -356,7 +380,10 @@ async function handleSubmit() {
                 </div>
               </div>
               <div class="flex flex-col gap-2">
-                <div v-for="grp in groupedTools" :key="grp.id" class="flex flex-col gap-1">
+                <div v-if="filteredGroupedTools.length === 0" class="text-[11px] text-slate-500 py-2">
+                  无匹配工具「{{ toolSearch }}」
+                </div>
+                <div v-for="grp in filteredGroupedTools" :key="grp.id" class="flex flex-col gap-1">
                   <span class="text-[10.5px] font-mono text-slate-500">{{ grp.label }}</span>
                   <div class="flex flex-wrap gap-1.5">
                     <label
@@ -494,21 +521,31 @@ async function handleSubmit() {
         </div>
       </Transition>
 
-      <div class="flex justify-end gap-2 pt-2 border-t border-[#fff8ee]/10 shrink-0">
-        <button
-          type="button"
-          @click="closeModal"
-          class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
-        >
-          取消
-        </button>
-        <button
-          type="submit"
-          :disabled="saving"
-          class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
-        >
-          {{ saving ? '创建中...' : (mode === 'group' ? '创建协同群聊' : '创建并激活 Bot') }}
-        </button>
+      <div class="flex items-center justify-between gap-2 pt-2 border-t border-[#fff8ee]/10 shrink-0 flex-wrap">
+        <span class="font-mono text-[11px] text-slate-400">
+          <template v-if="mode === 'bot'">
+            {{ BOT_MODE_TABS.find((t) => t.id === botMode)?.label }} · {{ allowedTools.length }} 工具 · {{ selectedSkillIds.length }} 技能
+          </template>
+          <template v-else>
+            已拉起 {{ groupMembers.length }} 位群成员 · {{ groupMode }}
+          </template>
+        </span>
+        <div class="flex items-center gap-2 ml-auto">
+          <button
+            type="button"
+            @click="closeModal"
+            class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+          >
+            取消
+          </button>
+          <button
+            type="submit"
+            :disabled="saving"
+            class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+          >
+            {{ saving ? '创建中...' : (mode === 'group' ? '创建协同群聊' : '创建并激活 Bot') }}
+          </button>
+        </div>
       </div>
     </form>
   </BaseModal>

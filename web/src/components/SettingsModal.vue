@@ -56,6 +56,11 @@ const biliSessdata = ref('')
 const newPassword = ref('')
 const saving = ref(false)
 const testingPush = ref(false)
+const showPrimaryKey = ref(false)
+const showLightKey = ref(false)
+const showAppToken = ref(false)
+const showCfToken = ref(false)
+const showBiliSess = ref(false)
 const savedSnapshot = ref('')
 
 function currentConfigSnapshot(): string {
@@ -444,8 +449,25 @@ async function handleImportBackup(e: Event) {
             </div>
 
             <label class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>主力 API Key (官方或中转站令牌)</span>
-              <input v-model="deepseekKey" type="password" placeholder="输入 API Key" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              <div class="flex items-center justify-between gap-2">
+                <span>主力 API Key (官方或中转站令牌)</span>
+                <span
+                  :class="[
+                    'font-mono text-[10px] px-1.5 py-0.5 rounded border',
+                    deepseekKey.trim()
+                      ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-300'
+                      : 'border-amber-400/35 bg-amber-500/10 text-amber-300'
+                  ]"
+                >
+                  {{ deepseekKey.trim() ? 'Key 已填入' : '未配置主力 Key' }}
+                </span>
+              </div>
+              <div class="relative">
+                <input v-model="deepseekKey" :type="showPrimaryKey ? 'text' : 'password'" placeholder="输入 API Key" class="w-full min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] pl-3 pr-14 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+                <button type="button" @click="showPrimaryKey = !showPrimaryKey" class="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[11px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
+                  {{ showPrimaryKey ? '隐藏' : '显示' }}
+                </button>
+              </div>
             </label>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label class="flex flex-col gap-1 text-xs text-slate-300">
@@ -535,7 +557,12 @@ async function handleImportBackup(e: Event) {
                 </label>
                 <label class="flex flex-col gap-1 text-xs text-slate-300">
                   <span>轻量 API Key</span>
-                  <input v-model="lightApiKey" type="password" placeholder="留空自动走免费池" class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                  <div class="relative">
+                    <input v-model="lightApiKey" :type="showLightKey ? 'text' : 'password'" placeholder="留空自动走免费池" class="w-full min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] pl-3 pr-12 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                    <button type="button" @click="showLightKey = !showLightKey" class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10.5px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
+                      {{ showLightKey ? '隐藏' : '显示' }}
+                    </button>
+                  </div>
                 </label>
                 <label class="flex flex-col gap-1 text-xs text-slate-300">
                   <span>轻量模型 ID</span>
@@ -825,7 +852,12 @@ async function handleImportBackup(e: Event) {
           <div class="modal-section flex flex-col gap-2">
             <label class="flex flex-col gap-1.5 text-xs text-slate-300">
               <span>Android / 原生 APP 接入令牌 (App Bearer Token)</span>
-              <input v-model="appBearerToken" type="password" placeholder="bh_..." class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              <div class="relative">
+                <input v-model="appBearerToken" :type="showAppToken ? 'text' : 'password'" placeholder="bh_..." class="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] pl-3 pr-14 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+                <button type="button" @click="showAppToken = !showAppToken" class="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[11px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
+                  {{ showAppToken ? '隐藏' : '显示' }}
+                </button>
+              </div>
             </label>
             <p class="text-[11px] text-slate-400">客户端请求头携带 Authorization: Bearer 令牌即可订阅实时通知流；可在「安全与数据灾备」中轮换。</p>
           </div>
@@ -863,11 +895,21 @@ async function handleImportBackup(e: Event) {
             <div class="text-xs font-semibold text-[#f2b880]">域名与生态扩展凭据</div>
             <label class="flex flex-col gap-1 text-xs text-slate-300">
               <span>Cloudflare API Token</span>
-              <input v-model="cfApiToken" type="password" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              <div class="relative">
+                <input v-model="cfApiToken" :type="showCfToken ? 'text' : 'password'" class="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] pl-3 pr-14 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+                <button type="button" @click="showCfToken = !showCfToken" class="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[11px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
+                  {{ showCfToken ? '隐藏' : '显示' }}
+                </button>
+              </div>
             </label>
             <label class="flex flex-col gap-1 text-xs text-slate-300">
               <span>哔哩哔哩 SESSDATA</span>
-              <input v-model="biliSessdata" type="password" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              <div class="relative">
+                <input v-model="biliSessdata" :type="showBiliSess ? 'text' : 'password'" class="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] pl-3 pr-14 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+                <button type="button" @click="showBiliSess = !showBiliSess" class="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[11px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
+                  {{ showBiliSess ? '隐藏' : '显示' }}
+                </button>
+              </div>
             </label>
           </div>
 

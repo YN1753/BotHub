@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { renderSafeMarkdown } from '../utils/markdown'
@@ -39,11 +39,15 @@ const activeTab = computed({
 // Todos state
 const todoFilter = ref<'open' | 'all' | 'done'>('open')
 const filterTodoBotId = ref('')
+const todoSearch = ref('')
+const urgentOnly = ref(false)
 const newTodoTitle = ref('')
 const newTodoPriority = ref<'high' | 'normal' | 'low'>('normal')
 const newTodoDueAt = ref('')
 const newTodoBotId = ref('')
 const savingTodo = ref(false)
+const todoInputRef = ref<HTMLInputElement | null>(null)
+const noteTitleRef = ref<HTMLInputElement | null>(null)
 
 // Inline Edit Todo state
 const editingTodoId = ref<string | null>(null)
@@ -92,9 +96,12 @@ function offsetDateStr(days: number): string {
 const filteredTodos = computed(() =>
   store.state.todos.filter((t) => {
     if (filterTodoBotId.value && (t.bot_id || '') !== filterTodoBotId.value) return false
-    if (todoFilter.value === 'open') return t.status !== 'done'
-    if (todoFilter.value === 'done') return t.status === 'done'
-    return true
+    if (todoFilter.value === 'open' && t.status === 'done') return false
+    if (todoFilter.value === 'done' && t.status !== 'done') return false
+    if (urgentOnly.value && t.priority !== 'high' && !isOverdue(t)) return false
+    const q = todoSearch.value.trim().toLowerCase()
+    if (!q) return true
+    return `${t.title} ${t.notes || ''} ${t.due_at || ''}`.toLowerCase().includes(q)
   })
 )
 
@@ -137,6 +144,9 @@ watch(
     }
     if (tab === 'briefing' || !briefing.value) {
       loadBriefing()
+    }
+    if (tab === 'todos') {
+      nextTick(() => todoInputRef.value?.focus())
     }
   }
 )
@@ -293,6 +303,7 @@ function startNewNote() {
   draftNoteContent.value = ''
   draftNotePinned.value = false
   editingNote.value = true
+  nextTick(() => noteTitleRef.value?.focus())
 }
 
 function startEditNote(n: WorkNote) {
@@ -302,6 +313,27 @@ function startEditNote(n: WorkNote) {
   draftNoteContent.value = n.content
   draftNotePinned.value = Boolean(n.pinned)
   editingNote.value = true
+  nextTick(() => noteTitleRef.value?.focus())
+}
+
+function handleNoteMarkdownClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  const btn = target.closest('.md-copy-code-btn') as HTMLButtonElement | null
+  if (!btn) return
+  const code = btn.closest('.md-code-wrap')?.querySelector('pre code')?.textContent || ''
+  navigator.clipboard?.writeText(code).then(() => {
+    btn.textContent = '已复制'
+    btn.classList.add('text-emerald-300', 'border-emerald-400/45')
+    window.setTimeout(() => {
+      btn.textContent = '复制代码'
+      btn.classList.remove('text-emerald-300', 'border-emerald-400/45')
+    }, 1500)
+  })
+}
+
+function openAssetOpsFromBriefing() {
+  closeModal()
+  store.state.workspace = 'ops'
 }
 
 async function handleSaveNote() {
@@ -402,6 +434,7 @@ async function refineNoteWithBot(n: WorkNote) {
       <form @submit.prevent="handleAddTodo" class="modal-section flex flex-col gap-2 shrink-0">
         <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
           <input
+            ref="todoInputRef"
             v-model="newTodoTitle"
             type="text"
             required
@@ -467,6 +500,27 @@ async function refineNoteWithBot(n: WorkNote) {
           <div class="w-36">
             <CustomSelect v-model="filterTodoBotId" :options="botFilterOptions" compact aria-label="按负责 Bot 筛选" />
           </div>
+          <button
+            type="button"
+            :aria-pressed="urgentOnly"
+            @click="urgentOnly = !urgentOnly"
+            :class="[
+              'min-h-[32px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+              urgentOnly
+                ? 'border-rose-400/50 bg-rose-500/15 text-rose-200'
+                : 'border-[#fff8ee]/10 text-slate-400 hover:text-white'
+            ]"
+          >
+            仅高优/逾期
+          </button>
+          <input
+            v-model="todoSearch"
+            type="search"
+            aria-label="筛选待办"
+            placeholder="筛选待办..."
+            @keydown.escape.stop="todoSearch = ''"
+            class="w-32 sm:w-40 min-h-[32px] rounded-xl border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55"
+          />
         </div>
         <button
           type="button"
@@ -478,8 +532,16 @@ async function refineNoteWithBot(n: WorkNote) {
       </div>
 
       <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
-        <div v-if="filteredTodos.length === 0" class="py-12 text-center text-xs text-slate-500">
-          当前筛选下暂无待办；在任意支持工具的助手对话里说「帮我记一下待办」，也会自动出现在这里。
+        <div v-if="filteredTodos.length === 0" class="py-12 text-center flex flex-col items-center gap-2 text-xs text-slate-500">
+          <span>{{ store.state.todos.length ? '当前筛选条件无匹配待办' : '当前暂无待办；在任意支持工具的助手对话里说「帮我记一下待办」，也会自动出现在这里。' }}</span>
+          <button
+            v-if="todoSearch || urgentOnly || filterTodoBotId"
+            type="button"
+            @click="todoSearch = ''; urgentOnly = false; filterTodoBotId = ''"
+            class="px-3 py-1 rounded-full border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] cursor-pointer"
+          >
+            重置待办筛选
+          </button>
         </div>
         <article
           v-for="t in filteredTodos"
@@ -665,6 +727,7 @@ async function refineNoteWithBot(n: WorkNote) {
         <form v-if="editingNote" @submit.prevent="handleSaveNote" class="flex-1 min-h-0 flex flex-col gap-2.5">
           <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 shrink-0">
             <input
+              ref="noteTitleRef"
               v-model="draftNoteTitle"
               type="text"
               required
@@ -684,7 +747,9 @@ async function refineNoteWithBot(n: WorkNote) {
           </div>
           <textarea
             v-model="draftNoteContent"
-            placeholder="编写或粘贴 Markdown 文档正文..."
+            placeholder="编写或粘贴 Markdown 文档正文（Cmd/Ctrl + Enter 快速保存）..."
+            @keydown.meta.enter.prevent="handleSaveNote"
+            @keydown.ctrl.enter.prevent="handleSaveNote"
             class="flex-1 min-h-[220px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] p-3 font-mono text-xs text-slate-100 resize-none"
           />
           <div class="flex items-center justify-end gap-2 shrink-0">
@@ -753,7 +818,7 @@ async function refineNoteWithBot(n: WorkNote) {
               </button>
             </div>
           </div>
-          <div class="flex-1 min-h-0 overflow-y-auto pr-1 text-xs leading-relaxed">
+          <div @click="handleNoteMarkdownClick" class="flex-1 min-h-0 overflow-y-auto pr-1 text-xs leading-relaxed">
             <div v-if="selectedNote.content" v-html="renderSafeMarkdown(selectedNote.content)" />
             <div v-else class="text-slate-500 py-8 text-center">文档正文为空，可点击「编辑」写入内容</div>
           </div>
@@ -803,32 +868,48 @@ async function refineNoteWithBot(n: WorkNote) {
       </div>
 
       <div v-if="briefing" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 shrink-0">
-        <div class="luxury-card rounded-xl p-3">
+        <button
+          type="button"
+          @click="activeTab = 'todos'"
+          class="luxury-card rounded-xl p-3 text-left cursor-pointer hover:border-[#f2b880]/45"
+        >
           <div class="text-[11px] font-mono text-slate-400">未完待办</div>
           <div class="text-xl font-semibold text-white mt-0.5">{{ briefing.open_todo_count }}</div>
           <div class="text-[10.5px] font-mono mt-0.5" :class="briefing.overdue_todos.length ? 'text-rose-300' : 'text-emerald-300'">
             逾期 {{ briefing.overdue_todos.length }} · 今日 {{ briefing.due_today_todos.length }}
           </div>
-        </div>
-        <div class="luxury-card rounded-xl p-3">
+        </button>
+        <button
+          type="button"
+          @click="openAssetOpsFromBriefing"
+          class="luxury-card rounded-xl p-3 text-left cursor-pointer hover:border-[#f2b880]/45"
+        >
           <div class="text-[11px] font-mono text-slate-400">14天内到期资产</div>
           <div class="text-xl font-semibold mt-0.5" :class="briefing.expiring_assets.length ? 'text-amber-300' : 'text-white'">
             {{ briefing.expiring_assets.length }}
           </div>
-          <div class="text-[10.5px] font-mono text-slate-400 mt-0.5">需提前核对续费</div>
-        </div>
-        <div class="luxury-card rounded-xl p-3">
+          <div class="text-[10.5px] font-mono text-slate-400 mt-0.5">点击前往资产守望</div>
+        </button>
+        <button
+          type="button"
+          @click="openAssetOpsFromBriefing"
+          class="luxury-card rounded-xl p-3 text-left cursor-pointer hover:border-[#f2b880]/45"
+        >
           <div class="text-[11px] font-mono text-slate-400">运行中例程</div>
           <div class="text-xl font-semibold text-cyan-200 mt-0.5">{{ briefing.enabled_tasks.length }}</div>
           <div class="text-[10.5px] font-mono text-slate-400 mt-0.5">自动值守任务</div>
-        </div>
-        <div class="luxury-card rounded-xl p-3">
+        </button>
+        <button
+          type="button"
+          @click="activeTab = 'notes'"
+          class="luxury-card rounded-xl p-3 text-left cursor-pointer hover:border-[#f2b880]/45"
+        >
           <div class="text-[11px] font-mono text-slate-400">未读情报与告警</div>
           <div class="text-xl font-semibold mt-0.5" :class="briefing.unread_count ? 'text-[#f2b880]' : 'text-white'">
             {{ briefing.unread_count }}
           </div>
-          <div class="text-[10.5px] font-mono text-slate-400 mt-0.5">近况文档 {{ briefing.recent_notes.length }} 份</div>
-        </div>
+          <div class="text-[10.5px] font-mono text-slate-400 mt-0.5">近况文档 {{ briefing.recent_notes.length }} 份 -></div>
+        </button>
       </div>
 
       <div v-if="briefing" class="grid grid-cols-1 md:grid-cols-2 gap-3">

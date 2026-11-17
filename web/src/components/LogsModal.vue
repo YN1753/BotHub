@@ -9,6 +9,7 @@ import SegmentedTabs from './SegmentedTabs.vue'
 const store = useAppStore()
 const listRef = ref<HTMLElement | null>(null)
 const filterStatus = ref<'all' | 'sent' | 'failed'>('all')
+const logQuery = ref('')
 
 const LOG_TABS = [
   { id: 'all', label: '全部流水' },
@@ -19,13 +20,24 @@ const LOG_TABS = [
 const sentCount = computed(() => store.state.pushLogs.filter((l) => l.status === 'sent').length)
 const failedCount = computed(() => store.state.pushLogs.filter((l) => l.status !== 'sent').length)
 
-const filteredLogs = computed(() =>
-  store.state.pushLogs.filter((l) => {
-    if (filterStatus.value === 'sent') return l.status === 'sent'
-    if (filterStatus.value === 'failed') return l.status !== 'sent'
-    return true
+const filteredLogs = computed(() => {
+  const q = logQuery.value.trim().toLowerCase()
+  return store.state.pushLogs.filter((l) => {
+    if (filterStatus.value === 'sent' && l.status !== 'sent') return false
+    if (filterStatus.value === 'failed' && l.status === 'sent') return false
+    if (!q) return true
+    return `${l.title} ${l.module_id} ${l.response_msg} ${l.content}`.toLowerCase().includes(q)
   })
-)
+})
+
+async function copyPayload(content: string) {
+  try {
+    await navigator.clipboard.writeText(content)
+    store.notify('已复制推送报文内容')
+  } catch {
+    store.notify('复制失败')
+  }
+}
 
 watch(
   () => [store.state.showLogsModal, filteredLogs.value.length],
@@ -41,26 +53,47 @@ watch(
     max-width="2xl"
     @close="store.state.showLogsModal = false"
   >
-    <!-- Compact Audit Strip -->
+    <!-- Interactive Audit Strip -->
     <div class="modal-section grid grid-cols-3 divide-x divide-[#fff8ee]/10 p-0 overflow-hidden shrink-0">
-      <div class="px-3.5 py-2.5 flex items-center justify-between">
+      <button
+        type="button"
+        @click="filterStatus = 'all'"
+        :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-white/[0.03]', filterStatus === 'all' ? 'bg-[#f2b880]/8' : '']"
+      >
         <span class="text-xs text-slate-400">总记录</span>
         <span class="font-mono tabular-nums text-sm font-semibold text-white">{{ store.state.pushLogs.length }}</span>
-      </div>
-      <div class="px-3.5 py-2.5 flex items-center justify-between">
+      </button>
+      <button
+        type="button"
+        @click="filterStatus = 'sent'"
+        :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-white/[0.03]', filterStatus === 'sent' ? 'bg-emerald-400/8' : '']"
+      >
         <span class="text-xs text-slate-400">已投递</span>
         <span class="font-mono tabular-nums text-sm font-semibold text-emerald-300">{{ sentCount }}</span>
-      </div>
-      <div class="px-3.5 py-2.5 flex items-center justify-between">
+      </button>
+      <button
+        type="button"
+        @click="filterStatus = 'failed'"
+        :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-white/[0.03]', filterStatus === 'failed' ? 'bg-rose-400/10' : '']"
+      >
         <span class="text-xs text-slate-400">异常</span>
         <span :class="['font-mono tabular-nums text-sm font-semibold', failedCount > 0 ? 'text-rose-400' : 'text-slate-500']">
           {{ failedCount }}
         </span>
-      </div>
+      </button>
     </div>
 
-    <div class="shrink-0">
+    <div class="shrink-0 flex items-center justify-between gap-2 flex-wrap">
       <SegmentedTabs v-model="filterStatus" :items="LOG_TABS" variant="subtle" aria-label="投递状态筛选" />
+      <input
+        v-if="store.state.pushLogs.length > 0"
+        v-model="logQuery"
+        type="search"
+        aria-label="筛选推送流水"
+        placeholder="搜索标题、模块或报文..."
+        @keydown.escape.stop="logQuery = ''"
+        class="w-full sm:w-52 min-h-[34px] rounded-xl border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
+      />
     </div>
 
     <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
@@ -98,7 +131,16 @@ watch(
             </svg>
             <span>查看推送报文</span>
           </summary>
-          <pre class="mt-2 p-2.5 rounded-lg bg-[#050811]/85 border border-[#fff8ee]/8 text-[11px] font-mono text-slate-300 whitespace-pre-wrap break-all">{{ log.content }}</pre>
+          <div class="mt-2 relative">
+            <button
+              type="button"
+              @click="copyPayload(log.content)"
+              class="absolute top-2 right-2 px-2 py-0.5 rounded border border-[#fff8ee]/15 bg-[#0d1222]/90 text-[10.5px] text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/45 cursor-pointer"
+            >
+              复制报文
+            </button>
+            <pre class="p-2.5 pr-16 rounded-lg bg-[#050811]/85 border border-[#fff8ee]/8 text-[11px] font-mono text-slate-300 whitespace-pre-wrap break-all">{{ log.content }}</pre>
+          </div>
         </details>
       </article>
     </div>

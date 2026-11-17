@@ -29,6 +29,12 @@ function pickShape(shape: BotShape) {
 function pickColor(color: BotColor) {
   emit('update:modelValue', composeAvatarStyle(parsed.value.shape, color))
 }
+
+function randomizeLook() {
+  const nextShape = BOT_SHAPES[Math.floor(Math.random() * BOT_SHAPES.length)].id
+  const nextColor = BOT_COLORS[Math.floor(Math.random() * BOT_COLORS.length)].id
+  emit('update:modelValue', composeAvatarStyle(nextShape, nextColor))
+}
 </script>
 
 <template>
@@ -46,8 +52,8 @@ function pickColor(color: BotColor) {
         </div>
       </div>
 
-      <!-- Color Swatch Dots -->
-      <div class="flex items-center gap-1.5 shrink-0" role="group" aria-label="配色光效">
+      <!-- Color Swatch Dots + Randomizer -->
+      <div class="flex items-center gap-1 shrink-0 flex-wrap justify-end" role="group" aria-label="配色光效">
         <button
           v-for="c in BOT_COLORS"
           :key="c.id"
@@ -56,14 +62,25 @@ function pickColor(color: BotColor) {
           :aria-label="c.label"
           :aria-pressed="parsed.color === c.id"
           @click="pickColor(c.id)"
-          :style="{ backgroundColor: c.ring }"
-          :class="[
-            'w-6 h-6 rounded-full cursor-pointer transition-transform duration-200',
-            parsed.color === c.id
-              ? 'scale-110 ring-2 ring-white/90 ring-offset-2 ring-offset-[#070a16]'
-              : 'opacity-70 hover:opacity-100 hover:scale-105'
-          ]"
-        />
+          class="min-w-[32px] min-h-[32px] inline-flex items-center justify-center rounded-full cursor-pointer"
+        >
+          <span
+            :style="{ backgroundColor: c.ring }"
+            :class="[
+              'w-5 h-5 rounded-full transition-transform duration-200',
+              parsed.color === c.id
+                ? 'scale-110 ring-2 ring-white/90 ring-offset-2 ring-offset-[#070a16]'
+                : 'opacity-70 hover:opacity-100 hover:scale-105'
+            ]"
+          />
+        </button>
+        <button
+          type="button"
+          @click="randomizeLook"
+          class="ml-1 px-2 py-1 rounded-lg border border-[#fff8ee]/12 text-[10.5px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+        >
+          随机搭配
+        </button>
       </div>
     </div>
 

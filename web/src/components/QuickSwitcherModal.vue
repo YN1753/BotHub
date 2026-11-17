@@ -11,6 +11,22 @@ const store = useAppStore()
 const query = ref('')
 const highlighted = ref(0)
 const inputRef = ref<HTMLInputElement | null>(null)
+const listContainerRef = ref<HTMLElement | null>(null)
+
+function scrollActiveEntryIntoView() {
+  nextTick(() => {
+    const el = listContainerRef.value?.querySelector<HTMLElement>(`[data-entry-idx="${highlighted.value}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+function categoryBadgeClass(cat: SearchEntry['category']): string {
+  if (cat === '会话' || cat === '话题') return 'border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880]'
+  if (cat === '待办') return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
+  if (cat === '文档' || cat === '记忆') return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
+  if (cat === '资产') return 'border-amber-400/30 bg-amber-500/10 text-amber-200'
+  return 'border-[#fff8ee]/10 bg-[#050811]/70 text-slate-400'
+}
 
 const specialistMap = computed(() => {
   const m = new Map<string, Bot>()
@@ -277,9 +293,11 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'ArrowDown') {
     e.preventDefault()
     highlighted.value = (highlighted.value + 1) % len
+    scrollActiveEntryIntoView()
   } else if (e.key === 'ArrowUp') {
     e.preventDefault()
     highlighted.value = (highlighted.value - 1 + len) % len
+    scrollActiveEntryIntoView()
   } else if (e.key === 'Enter') {
     e.preventDefault()
     executeEntry()
@@ -320,13 +338,14 @@ function handleKeydown(e: KeyboardEvent) {
         />
       </div>
 
-      <div class="flex-1 min-h-0 max-h-[52dvh] overflow-y-auto flex flex-col gap-1 pr-0.5">
+      <div ref="listContainerRef" class="flex-1 min-h-0 max-h-[52dvh] overflow-y-auto flex flex-col gap-1 pr-0.5">
         <div v-if="entries.length === 0" class="py-8 text-center text-xs text-slate-500">
           未找到匹配结果
         </div>
         <button
           v-for="(item, idx) in entries"
           :key="item.key"
+          :data-entry-idx="idx"
           type="button"
           @mouseenter="highlighted = idx"
           @click="executeEntry(item)"
@@ -359,7 +378,7 @@ function handleKeydown(e: KeyboardEvent) {
               <div class="text-[11px] text-slate-400 truncate">{{ item.subtitle }}</div>
             </div>
           </div>
-          <span class="font-mono text-[10px] px-2 py-0.5 rounded-md border border-[#fff8ee]/10 bg-[#050811]/70 text-slate-400 shrink-0">
+          <span :class="['font-mono text-[10px] px-2 py-0.5 rounded-md border shrink-0', categoryBadgeClass(item.category)]">
             {{ item.category }}
           </span>
         </button>

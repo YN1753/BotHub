@@ -21,6 +21,8 @@ const store = useAppStore()
 const searchQuery = ref('')
 const activeCat = ref('all')
 const expiringOnly = ref(false)
+const autoRenewOnly = ref(false)
+const assetStatusFilter = ref<'all' | 'active' | 'expired' | 'paused'>('all')
 const taskSearch = ref('')
 const taskStatusFilter = ref<'all' | 'enabled' | 'paused'>('all')
 const syncing = ref(false)
@@ -62,11 +64,23 @@ const filteredAssets = computed(() =>
   store.state.assets.filter((a) => {
     if (activeCat.value !== 'all' && a.category !== activeCat.value) return false
     if (expiringOnly.value && !isExpiringSoon(a)) return false
+    if (autoRenewOnly.value && !a.auto_renew) return false
+    if (assetStatusFilter.value === 'expired' && a.status !== '已到期') return false
+    if (assetStatusFilter.value === 'paused' && a.status !== '已停用') return false
+    if (assetStatusFilter.value === 'active' && (a.status === '已到期' || a.status === '已停用')) return false
     const q = searchQuery.value.trim().toLowerCase()
     if (!q) return true
     return `${a.name} ${a.spec} ${a.status} ${a.extra_config}`.toLowerCase().includes(q)
   })
 )
+
+function resetAssetFilters() {
+  searchQuery.value = ''
+  activeCat.value = 'all'
+  expiringOnly.value = false
+  autoRenewOnly.value = false
+  assetStatusFilter.value = 'all'
+}
 
 function daysText(a: Asset): string {
   if (a.status === '长期有效' || String(a.due_date || '').startsWith('2099')) return '长期有效'
@@ -90,12 +104,6 @@ function cardAccentClass(a: Asset): string {
   if (a.days_left <= 3) return 'border-l-[3px] border-l-rose-400'
   if (a.days_left <= 7) return 'border-l-[3px] border-l-amber-400'
   return 'border-l-[3px] border-l-[#f2b880]/40'
-}
-
-function resetAssetFilters() {
-  searchQuery.value = ''
-  activeCat.value = 'all'
-  expiringOnly.value = false
 }
 
 const filteredTasks = computed(() =>
@@ -340,14 +348,45 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
           </div>
 
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <input
-              v-model="searchQuery"
-              type="search"
-              aria-label="搜索资产"
-              placeholder="搜索资产名称、规格或服务商..."
-              @keydown.escape="searchQuery = ''"
-              class="w-full sm:w-64 min-h-[44px] sm:min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#070a16]/85 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
-            />
+            <div class="flex items-center gap-2 flex-wrap">
+              <input
+                v-model="searchQuery"
+                type="search"
+                aria-label="搜索资产"
+                placeholder="搜索资产名称、规格或服务商..."
+                @keydown.escape="searchQuery = ''"
+                class="w-full sm:w-56 min-h-[44px] sm:min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#070a16]/85 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
+              />
+              <button
+                type="button"
+                :aria-pressed="autoRenewOnly"
+                @click="autoRenewOnly = !autoRenewOnly"
+                :class="[
+                  'min-h-[36px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+                  autoRenewOnly
+                    ? 'border-emerald-400/45 bg-emerald-400/12 text-emerald-300'
+                    : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+                ]"
+              >
+                仅自动续费
+              </button>
+              <div class="inline-flex rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-0.5 text-[11px]">
+                <button
+                  v-for="st in ([
+                    { id: 'all', label: '全部' },
+                    { id: 'active', label: '生效中' },
+                    { id: 'expired', label: '已到期' },
+                    { id: 'paused', label: '已停用' },
+                  ] as const)"
+                  :key="st.id"
+                  type="button"
+                  @click="assetStatusFilter = st.id"
+                  :class="['px-2 py-1 rounded-lg cursor-pointer transition-colors', assetStatusFilter === st.id ? 'bg-[#f2b880]/20 text-[#f2b880]' : 'text-slate-400 hover:text-white']"
+                >
+                  {{ st.label }}
+                </button>
+              </div>
+            </div>
             <SegmentedTabs v-model="activeCat" :items="categoryTabs" variant="subtle" aria-label="资产类别筛选" />
           </div>
 

@@ -21,12 +21,18 @@ onMounted(() => {
   const stars: Star[] = []
   let w = 0
   let h = 0
+  let paused = document.hidden
+  const reducedMotion =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
   const resize = () => {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
     w = window.innerWidth
     h = window.innerHeight
-    canvas.width = w
-    canvas.height = h
+    canvas.width = Math.floor(w * dpr)
+    canvas.height = Math.floor(h * dpr)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   }
 
   const initStars = () => {
@@ -43,31 +49,59 @@ onMounted(() => {
     }
   }
 
-  const draw = () => {
+  const renderFrame = (stepMotion: boolean) => {
     ctx.clearRect(0, 0, w, h)
     for (const s of stars) {
-      s.x += s.vx
-      s.y += s.vy
-      if (s.x < 0) s.x = w
-      if (s.x > w) s.x = 0
-      if (s.y < 0) s.y = h
-      if (s.y > h) s.y = 0
+      if (stepMotion) {
+        s.x += s.vx
+        s.y += s.vy
+        if (s.x < 0) s.x = w
+        if (s.x > w) s.x = 0
+        if (s.y < 0) s.y = h
+        if (s.y > h) s.y = 0
+      }
       ctx.beginPath()
       ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
       ctx.fillStyle = `rgba(255, 238, 214, ${s.a})`
       ctx.fill()
     }
+  }
+
+  const draw = () => {
+    if (paused) {
+      rafId = 0
+      return
+    }
+    renderFrame(true)
     rafId = window.requestAnimationFrame(draw)
+  }
+
+  const onVisibilityChange = () => {
+    paused = document.hidden
+    if (!paused && !reducedMotion && !rafId) {
+      draw()
+    }
+  }
+
+  const onResize = () => {
+    resize()
+    if (reducedMotion || paused) renderFrame(false)
   }
 
   resize()
   initStars()
-  draw()
-  window.addEventListener('resize', resize)
+  if (reducedMotion) {
+    renderFrame(false)
+  } else {
+    draw()
+  }
+  window.addEventListener('resize', onResize)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 
   onBeforeUnmount(() => {
     window.cancelAnimationFrame(rafId)
-    window.removeEventListener('resize', resize)
+    window.removeEventListener('resize', onResize)
+    document.removeEventListener('visibilitychange', onVisibilityChange)
   })
 })
 </script>

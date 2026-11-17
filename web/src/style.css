@@ -137,9 +137,14 @@ img, video {
   scrollbar-width: none;
 }
 
-/* Stream scrolling */
+/* Stream scrolling & dark luxury thin scrollbar polish */
 .stream-scroller {
   scrollbar-gutter: stable;
+  scroll-padding-top: 1rem;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 248, 238, 0.14) transparent;
 }
 @media (prefers-reduced-motion: no-preference) {
   .stream-scroller {
@@ -277,7 +282,7 @@ img, video {
     background-color 200ms ease-out,
     box-shadow 240ms ease-out;
 }
-@media (prefers-reduced-motion: no-preference) {
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .vesper-card-interactive:hover {
     transform: translateY(-3px);
     box-shadow:

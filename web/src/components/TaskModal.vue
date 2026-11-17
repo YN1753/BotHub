@@ -31,6 +31,34 @@ const runAt = ref('')
 
 const paramsMap = ref<Record<string, string>>({})
 const saving = ref(false)
+const forceCreateCopy = ref(false)
+
+const isCustomCronValid = computed(() => {
+  if (freq.value !== 'custom') return true
+  const parts = customCron.value.trim().split(/\s+/)
+  return parts.length === 5 || parts.length === 6
+})
+
+function formatQuickRunAt(offsetMinutes: number, fixedHour?: number): string {
+  const d = new Date(Date.now() + offsetMinutes * 60_000)
+  if (fixedHour !== undefined) {
+    d.setDate(d.getDate() + 1)
+    d.setHours(fixedHour, 0, 0, 0)
+  }
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${y}-${mo}-${day} ${hh}:${mm}`
+}
+
+function duplicateAsNewTask() {
+  forceCreateCopy.value = true
+  id.value = ''
+  name.value = `${name.value.trim()} (副本)`
+  handleSubmit()
+}
 
 const FREQ_OPTIONS = [
   { value: 'daily', label: '每天固定时间' },
@@ -175,9 +203,15 @@ async function handleSubmit() {
     store.notify('请填写一次性触发时间 (YYYY-MM-DD HH:MM)')
     return
   }
+  if (!isCustomCronValid.value) {
+    store.notify('自定义 Cron 表达式需为 5 段（或 6 段）空格分隔格式')
+    return
+  }
+  const createMode = isNew.value || forceCreateCopy.value
+  forceCreateCopy.value = false
   saving.value = true
   try {
-    const finalID = isNew.value ? id.value.trim() || generateSlug(name.value, type.value) : id.value
+    const finalID = createMode ? id.value.trim() || generateSlug(name.value, type.value) : id.value
     const tpl = store.state.templates.find((t) => t.type === type.value)
     const payload = {
       id: finalID,
@@ -190,7 +224,7 @@ async function handleSubmit() {
       description: description.value.trim() || tpl?.description || '',
       params: JSON.stringify(paramsMap.value),
     }
-    if (isNew.value) {
+    if (createMode) {
       await BotHubApi.createTask(payload)
       store.notify('新例程任务创建成功')
     } else {
@@ -287,12 +321,23 @@ async function handleDelete() {
               <CustomSelect v-model="minute" :options="MIN_OPTIONS" aria-label="分钟" />
             </div>
           </div>
-          <label v-if="freq === 'once'" class="flex flex-col gap-1 text-xs text-slate-300">
+          <div v-if="freq === 'once'" class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
             <span>单次触发时间 (上海时间 YYYY-MM-DD HH:MM)</span>
             <input v-model="runAt" type="text" placeholder="2026-11-18 09:30" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
-          </label>
+            <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
+              <span class="text-slate-500">快捷设定:</span>
+              <button type="button" @click="runAt = formatQuickRunAt(30)" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">30 分钟后</button>
+              <button type="button" @click="runAt = formatQuickRunAt(120)" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">2 小时后</button>
+              <button type="button" @click="runAt = formatQuickRunAt(0, 9)" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">明早 09:00</button>
+            </div>
+          </div>
           <label v-if="freq === 'custom'" class="sm:col-span-2 flex flex-col gap-1 text-xs text-slate-300">
-            <span>Cron 表达式</span>
+            <div class="flex items-center justify-between">
+              <span>Cron 表达式</span>
+              <span :class="['font-mono text-[10.5px]', isCustomCronValid ? 'text-emerald-300' : 'text-rose-400']">
+                {{ isCustomCronValid ? '格式有效 (分 时 日 月 周)' : '需由 5 段空格分隔' }}
+              </span>
+            </div>
             <input v-model="customCron" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
           </label>
         </div>
@@ -319,15 +364,24 @@ async function handleDelete() {
         </div>
       </div>
 
-      <div class="flex items-center justify-between pt-2 border-t border-[#fff8ee]/10">
-        <button
-          v-if="!isNew"
-          type="button"
-          @click="handleDelete"
-          class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer"
-        >
-          删除该任务
-        </button>
+      <div class="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-[#fff8ee]/10">
+        <div v-if="!isNew" class="flex items-center gap-2">
+          <button
+            type="button"
+            @click="handleDelete"
+            class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer"
+          >
+            删除该任务
+          </button>
+          <button
+            type="button"
+            :disabled="saving"
+            @click="duplicateAsNewTask"
+            class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer disabled:opacity-50"
+          >
+            另存为新任务
+          </button>
+        </div>
         <span v-else />
         <div class="flex gap-2">
           <button type="button" @click="closeModal" class="min-h-[44px] sm:min-h-[34px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">

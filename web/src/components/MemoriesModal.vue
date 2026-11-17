@@ -20,6 +20,7 @@ const pinned = ref(false)
 const searchQuery = ref('')
 const filterCat = ref('all')
 const filterScope = ref('all')
+const pinnedOnly = ref(false)
 const sortBy = ref<'weight' | 'recent' | 'recalled'>('weight')
 const pruning = ref(false)
 const saving = ref(false)
@@ -88,12 +89,21 @@ const SORT_OPTIONS = [
   { value: 'recent', label: '按最近更新时间' },
 ]
 
+const duplicateFactExists = computed(() => {
+  const k = factKey.value.trim().toLowerCase()
+  if (!k) return false
+  return store.state.memories.some(
+    (m) => (m.scope || 'global') === scope.value && m.fact_key.toLowerCase() === k
+  )
+})
+
 const filteredMemories = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   const list = store.state.memories.filter((m) => {
     const mScope = m.scope || 'global'
     if (filterScope.value !== 'all' && mScope !== filterScope.value) return false
     if (filterCat.value !== 'all' && m.category !== filterCat.value) return false
+    if (pinnedOnly.value && !m.pinned) return false
     if (!q) return true
     return `${m.fact_key} ${m.content} ${m.category} ${mScope}`.toLowerCase().includes(q)
   })
@@ -361,26 +371,31 @@ watch(
           class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60"
         />
       </label>
-      <div class="sm:col-span-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-        <input
-          v-model="content"
-          type="text"
-          placeholder="写一条给这个 Bot 或全局记住的事实、性格偏好、重要约定..."
-          aria-label="记忆内容"
-          required
-          class="flex-1 min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-xs text-white focus:border-[#f2b880]/60"
-        />
-        <label class="inline-flex items-center gap-1.5 text-xs text-slate-300 px-2 cursor-pointer shrink-0">
-          <input v-model="pinned" type="checkbox" class="accent-[#f2b880]" />
-          <span>置顶核心记忆</span>
-        </label>
-        <button
-          type="submit"
-          :disabled="saving"
-          class="min-h-[40px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50 shrink-0"
-        >
-          写入记忆
-        </button>
+      <div class="sm:col-span-4 flex flex-col gap-1.5">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <input
+            v-model="content"
+            type="text"
+            placeholder="写一条给这个 Bot 或全局记住的事实、性格偏好、重要约定..."
+            aria-label="记忆内容"
+            required
+            class="flex-1 min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-xs text-white focus:border-[#f2b880]/60"
+          />
+          <label class="inline-flex items-center gap-1.5 text-xs text-slate-300 px-2 cursor-pointer shrink-0">
+            <input v-model="pinned" type="checkbox" class="accent-[#f2b880]" />
+            <span>置顶核心记忆</span>
+          </label>
+          <button
+            type="submit"
+            :disabled="saving"
+            class="min-h-[40px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50 shrink-0"
+          >
+            {{ duplicateFactExists ? '覆盖更新记忆' : '写入记忆' }}
+          </button>
+        </div>
+        <span v-if="duplicateFactExists" class="text-[11px] font-mono text-amber-300/90">
+          提示：同作用域内已存在键名「{{ factKey.trim() }}」，提交后将覆写原有内容
+        </span>
       </div>
     </form>
 
@@ -399,6 +414,19 @@ watch(
         <div class="w-36">
           <CustomSelect v-model="sortBy" :options="SORT_OPTIONS" aria-label="排序方式" />
         </div>
+        <button
+          type="button"
+          :aria-pressed="pinnedOnly"
+          @click="pinnedOnly = !pinnedOnly"
+          :class="[
+            'min-h-[34px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+            pinnedOnly
+              ? 'border-amber-400/55 bg-amber-400/15 text-amber-200'
+              : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+          ]"
+        >
+          仅置顶
+        </button>
         <button
           v-if="filterScope !== 'all' && filteredMemories.length > 25"
           type="button"
@@ -554,6 +582,9 @@ watch(
             <input
               v-model="editContent"
               type="text"
+              placeholder="Enter 保存 · Esc 取消"
+              @keydown.enter.prevent="saveEdit(m)"
+              @keydown.escape.stop="editingMemId = null"
               class="flex-1 min-h-[34px] rounded-lg border border-[#f2b880]/40 bg-[#050811] px-2.5 text-xs text-white"
             />
             <button

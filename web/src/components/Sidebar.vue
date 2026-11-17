@@ -22,6 +22,21 @@ const searchQuery = ref('')
 const rosterScope = ref<'all' | 'groups' | 'companion' | 'worker'>('all')
 const rosterRef = ref<HTMLElement | null>(null)
 
+const scopeCounts = computed(() => {
+  const bots = store.state.bots
+  const groups = bots.filter((b) => isGroup(b)).length
+  const companion = bots.filter((b) => !isGroup(b) && b.bot_mode === 'companion').length
+  const worker = bots.filter((b) => !isGroup(b) && b.bot_mode !== 'companion').length
+  return { all: bots.length, groups, companion, worker }
+})
+
+const unreadBotTarget = computed(() =>
+  store.state.bots.find((b) => (b.unread_count || 0) > 0)
+)
+const totalUnreadMessages = computed(() =>
+  store.state.bots.reduce((sum, b) => sum + (b.unread_count || 0), 0)
+)
+
 const filteredBots = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return store.state.bots.filter((b) => {
@@ -255,6 +270,15 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
             <div class="flex items-center gap-1.5 min-w-0">
               <span class="font-mono text-[10.5px] tracking-wider text-slate-500">会话 ({{ filteredBots.length }})</span>
               <button
+                v-if="totalUnreadMessages > 0 && unreadBotTarget"
+                type="button"
+                @click="handlePickBot(unreadBotTarget.id)"
+                title="跳转到有新消息的会话"
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[#f2b880]/18 border border-[#f2b880]/40 text-[#f2b880] font-mono text-[9.5px] cursor-pointer hover:bg-[#f2b880]/28"
+              >
+                {{ totalUnreadMessages }} 未读
+              </button>
+              <button
                 type="button"
                 @click="store.state.showQuickSwitcher = true; emit('closeMobile')"
                 title="全局搜索与快速跳转 (Cmd/Ctrl + K)"
@@ -276,16 +300,16 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
           <div class="grid grid-cols-4 gap-1 rounded-lg bg-[#050811]/70 p-0.5 border border-[#fff8ee]/8">
             <button
               v-for="tab in ([
-                { id: 'all', label: '全部' },
-                { id: 'groups', label: '群聊' },
-                { id: 'companion', label: '陪伴' },
-                { id: 'worker', label: '执行' },
+                { id: 'all', label: `全部` },
+                { id: 'groups', label: `群${scopeCounts.groups ? ' ' + scopeCounts.groups : ''}` },
+                { id: 'companion', label: `聊${scopeCounts.companion ? ' ' + scopeCounts.companion : ''}` },
+                { id: 'worker', label: `干${scopeCounts.worker ? ' ' + scopeCounts.worker : ''}` },
               ] as const)"
               :key="tab.id"
               type="button"
               @click="rosterScope = tab.id"
               :class="[
-                'py-1 rounded-md text-[11px] font-medium cursor-pointer transition-colors',
+                'py-1 rounded-md text-[10.5px] font-medium cursor-pointer transition-colors truncate',
                 rosterScope === tab.id
                   ? 'bg-[#f2b880]/16 text-[#f2b880]'
                   : 'text-slate-400 hover:text-slate-200'
@@ -408,7 +432,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
               'shrink-0 w-7 h-7 rounded-lg inline-flex items-center justify-center transition-opacity cursor-pointer',
               b.is_pinned
                 ? 'text-[#f2b880] opacity-75 hover:opacity-100 hover:bg-[#f2b880]/15'
-                : 'text-slate-500 opacity-0 group-hover:opacity-100 hover:text-[#f2b880] hover:bg-white/[0.06]'
+                : 'text-slate-500 opacity-65 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 hover:text-[#f2b880] hover:bg-white/[0.06]'
             ]"
           >
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

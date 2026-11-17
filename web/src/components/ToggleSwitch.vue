@@ -3,6 +3,7 @@ const props = defineProps<{
   modelValue: boolean
   label: string
   hint?: string
+  description?: string
 }>()
 
 const emit = defineEmits<{
@@ -20,7 +21,7 @@ const emit = defineEmits<{
   >
     <div class="min-w-0">
       <div class="text-xs font-medium text-slate-100">{{ label }}</div>
-      <div v-if="hint" class="text-[11px] text-slate-400 mt-0.5">{{ hint }}</div>
+      <div v-if="hint || description" class="text-[11px] text-slate-400 mt-0.5 leading-snug">{{ hint || description }}</div>
     </div>
 
     <span

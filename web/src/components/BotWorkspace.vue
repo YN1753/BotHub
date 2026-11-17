@@ -287,7 +287,10 @@ const cfgTools = ref<string[]>([])
 const cfgSkillIds = ref<string[]>([])
 const cfgMembers = ref<string[]>([])
 const cfgGroupMode = ref('smart')
+const cfgToolFilter = ref('')
 const savingProfile = ref(false)
+const activityFilter = ref<'all' | 'tool' | 'error'>('all')
+const activityQuery = ref('')
 
 // Inline Bot-Scoped Memory CRUD
 const newMemKey = ref('')
@@ -329,6 +332,67 @@ const VIEW_TABS = [
 
 const availableTools = computed(() => store.state.availableTools || [])
 const groupedTools = computed(() => groupAvailableTools(availableTools.value))
+const filteredGroupedTools = computed(() => {
+  const q = cfgToolFilter.value.trim().toLowerCase()
+  if (!q) return groupedTools.value
+  return groupedTools.value
+    .map((grp) => ({
+      ...grp,
+      tools: grp.tools.filter(
+        (t) =>
+          t.id.toLowerCase().includes(q) ||
+          t.shortLabel.toLowerCase().includes(q) ||
+          (t.description || '').toLowerCase().includes(q)
+      ),
+    }))
+    .filter((grp) => grp.tools.length > 0)
+})
+const hasProfileChanges = computed(() => {
+  const b = bot.value
+  if (!b) return false
+  const normModel = !b.model || b.model === 'deepseek-flash' ? 'primary' : b.model
+  const normMode = (b.bot_mode as BotMode) || 'hybrid'
+  const normPolicy = (b.memory_policy as MemoryPolicy) || 'standard'
+  const normTools = (() => {
+    try {
+      const a = JSON.parse(b.allowed_tools || '[]')
+      return Array.isArray(a) ? [...a].sort().join(',') : ''
+    } catch {
+      return ''
+    }
+  })()
+  const normSkills = (() => {
+    try {
+      const a = JSON.parse(b.skill_ids || '[]')
+      return Array.isArray(a) ? [...a].sort().join(',') : ''
+    } catch {
+      return ''
+    }
+  })()
+  const normMembers = (() => {
+    try {
+      const a = JSON.parse(b.member_ids || '[]')
+      return Array.isArray(a) ? [...a].sort().join(',') : ''
+    } catch {
+      return ''
+    }
+  })()
+  return (
+    cfgName.value.trim() !== (b.name || '') ||
+    cfgRole.value.trim() !== (b.role_title || '') ||
+    cfgPrompt.value.trim() !== (b.system_prompt || '').trim() ||
+    cfgModel.value !== normModel ||
+    cfgAvatar.value !== (b.avatar_style || 'cyan') ||
+    cfgThinking.value !== (b.enable_thinking !== false) ||
+    cfgBotMode.value !== normMode ||
+    cfgMemoryPolicy.value !== normPolicy ||
+    cfgTraits.value.trim() !== (b.traits || '').trim() ||
+    cfgGroupMode.value !== (b.group_mode || 'smart') ||
+    [...cfgTools.value].sort().join(',') !== normTools ||
+    [...cfgSkillIds.value].sort().join(',') !== normSkills ||
+    [...cfgMembers.value].sort().join(',') !== normMembers
+  )
+})
 const availableSkills = computed(() => (store.state.skills || []).filter((s) => s.enabled !== false))
 
 const expandedUserMsgs = ref<Record<string, boolean>>({})
@@ -803,6 +867,16 @@ const activityEntries = computed(() => {
   return items
 })
 
+const filteredActivityEntries = computed(() => {
+  const q = activityQuery.value.trim().toLowerCase()
+  return activityEntries.value.filter((act) => {
+    if (activityFilter.value === 'error' && act.status !== 'error') return false
+    if (activityFilter.value === 'tool' && !act.title.includes('工具') && !act.title.includes('技能')) return false
+    if (!q) return true
+    return `${act.title} ${act.detail}`.toLowerCase().includes(q)
+  })
+})
+
 function onMessagesScroll() {
   const el = scrollContainerRef.value
   if (!el) return
@@ -1125,6 +1199,9 @@ function handleWorkspaceKeydown(e: KeyboardEvent) {
       e.preventDefault()
       openChatSearch()
     }
+  } else if (e.key === 'F3' && chatSearchOpen.value) {
+    e.preventDefault()
+    jumpSearchMatch(e.shiftKey ? -1 : 1)
   } else if (e.key === 'Escape' && chatSearchOpen.value) {
     closeChatSearch()
   }
@@ -1279,6 +1356,7 @@ async function sendPrompt(overrideText?: string) {
   }
 
   let activeTurn = createTurn(botId, curBot?.name || 'BotHub', curBot?.avatar_style || 'cyan', curBot?.role_title || '')
+  const turnStartedAt = Date.now()
   scrollToBottom(true)
 
   try {
@@ -1408,10 +1486,11 @@ async function sendPrompt(overrideText?: string) {
           } else if (currentEvent === 'done') {
             activeTurn.streaming = false
             if (payload.model) activeTurn.model = payload.model
+            const elapsedSec = ((Date.now() - turnStartedAt) / 1000).toFixed(1)
             activeTurn.statusText =
               payload.usage && payload.usage.total_tokens
-                ? `${payload.usage.prompt_tokens}+${payload.usage.completion_tokens} Tokens`
-                : '已完成'
+                ? `${payload.usage.prompt_tokens}+${payload.usage.completion_tokens} Tokens · ${elapsedSec}s`
+                : `已完成 · ${elapsedSec}s`
           }
         }
       }
@@ -2344,7 +2423,17 @@ function stateBadgeClass(state?: string): string {
 
                   <!-- Markdown Body -->
                   <div v-if="m.content" v-html="renderSafeMarkdown(m.content)" />
-                  <div v-else-if="m.errorText" class="text-sm text-rose-400">[调用失败] {{ m.errorText }}</div>
+                  <div v-else-if="m.errorText" class="flex items-center justify-between gap-2 flex-wrap text-sm text-rose-400">
+                    <span>[调用失败] {{ m.errorText }}</span>
+                    <button
+                      v-if="findPrecedingUserPrompt(idx)"
+                      type="button"
+                      @click="sendPrompt(findPrecedingUserPrompt(idx))"
+                      class="px-2.5 py-1 rounded-lg border border-rose-400/45 bg-rose-500/15 hover:bg-rose-500/25 text-xs text-rose-200 cursor-pointer shrink-0"
+                    >
+                      立即重试
+                    </button>
+                  </div>
 
                   <!-- Quiet Footer Actions (hover / keyboard / touch) -->
                   <div v-if="!m.streaming && m.content" class="reveal-actions flex items-center flex-wrap gap-1.5 pt-1">
@@ -2897,7 +2986,15 @@ function stateBadgeClass(state?: string): string {
               <div class="md:col-span-2 flex flex-col gap-2 text-xs text-slate-300">
                 <div class="flex items-center justify-between gap-2 flex-wrap">
                   <span>绑定内置工具集 ({{ cfgTools.length }}/{{ availableTools.length }})</span>
-                  <div class="flex items-center gap-2 text-[11px]">
+                  <div class="flex items-center gap-2 text-[11px] flex-wrap">
+                    <input
+                      v-model="cfgToolFilter"
+                      type="search"
+                      aria-label="筛选工具"
+                      placeholder="筛选工具..."
+                      @keydown.escape.stop="cfgToolFilter = ''"
+                      class="w-32 min-h-[26px] rounded-lg border border-[#fff8ee]/12 bg-[#060a16] px-2 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
+                    />
                     <button
                       type="button"
                       @click="cfgTools = availableTools.map((t) => t.id)"
@@ -2915,7 +3012,10 @@ function stateBadgeClass(state?: string): string {
                   </div>
                 </div>
                 <div class="flex flex-col gap-2.5">
-                  <div v-for="grp in groupedTools" :key="grp.id" class="flex flex-col gap-1.5">
+                  <div v-if="filteredGroupedTools.length === 0" class="text-[11px] text-slate-500 py-2">
+                    未找到匹配「{{ cfgToolFilter }}」的内置工具
+                  </div>
+                  <div v-for="grp in filteredGroupedTools" :key="grp.id" class="flex flex-col gap-1.5">
                     <span class="text-[10.5px] font-mono text-slate-500">{{ grp.label }}</span>
                     <div class="flex flex-wrap gap-2">
                       <label
@@ -2958,6 +3058,14 @@ function stateBadgeClass(state?: string): string {
                   </label>
                 </div>
               </div>
+            </div>
+
+            <div
+              v-if="hasProfileChanges"
+              class="flex items-center justify-between gap-2 rounded-xl border border-[#f2b880]/35 bg-[#f2b880]/10 px-3 py-2 text-xs"
+            >
+              <span class="text-[#f7cba0]">检测到人设或工具权限已更改，记得点击右侧保存生效</span>
+              <span class="font-mono text-[10px] text-[#f2b880]">未保存</span>
             </div>
 
             <div class="flex items-center justify-between gap-3 flex-wrap pt-3 border-t border-[#fff8ee]/10">
@@ -3086,6 +3194,9 @@ function stateBadgeClass(state?: string): string {
                   <input
                     v-model="editMemContent"
                     type="text"
+                    placeholder="Enter 保存 · Esc 取消"
+                    @keydown.enter.prevent="saveInlineMemEdit(mem)"
+                    @keydown.escape.stop="editingMemId = null"
                     class="flex-1 min-h-[32px] rounded-lg border border-[#f2b880]/45 bg-[#050811] px-2.5 text-xs text-white"
                   />
                   <button
@@ -3113,19 +3224,55 @@ function stateBadgeClass(state?: string): string {
       <div v-show="store.state.botView === 'activity'" class="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
         <div class="max-w-4xl mx-auto flex flex-col gap-3">
           <div class="flex items-center justify-between gap-2 flex-wrap">
-            <h2 class="text-base sm:text-lg font-semibold text-white">
-              {{ bot?.name || '当前 Bot' }} 的专属运行脉搏
-            </h2>
-            <span class="text-[11px] font-mono text-slate-400">
-              仅显示该会话自身的工具/技能调用、绑定例程与专属推送
-            </span>
+            <div>
+              <h2 class="text-base sm:text-lg font-semibold text-white">
+                {{ bot?.name || '当前 Bot' }} 的专属运行脉搏
+              </h2>
+              <span class="text-[11px] font-mono text-slate-400">
+                仅显示该会话自身的工具/技能调用、绑定例程与专属推送
+              </span>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="inline-flex rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-0.5 text-[11px]">
+                <button
+                  type="button"
+                  @click="activityFilter = 'all'"
+                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'all' ? 'bg-[#f2b880]/20 text-[#f2b880]' : 'text-slate-400 hover:text-white']"
+                >
+                  全部 ({{ activityEntries.length }})
+                </button>
+                <button
+                  type="button"
+                  @click="activityFilter = 'tool'"
+                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'tool' ? 'bg-[#f2b880]/20 text-[#f2b880]' : 'text-slate-400 hover:text-white']"
+                >
+                  工具/技能
+                </button>
+                <button
+                  type="button"
+                  @click="activityFilter = 'error'"
+                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'error' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400 hover:text-white']"
+                >
+                  仅异常
+                </button>
+              </div>
+              <input
+                v-if="activityEntries.length > 0"
+                v-model="activityQuery"
+                type="search"
+                aria-label="筛选运行脉搏"
+                placeholder="筛选日志..."
+                @keydown.escape.stop="activityQuery = ''"
+                class="w-36 min-h-[30px] rounded-xl border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
+              />
+            </div>
           </div>
-          <div v-if="activityEntries.length === 0" class="vesper-card rounded-2xl p-8 text-center text-sm text-slate-400">
-            暂无该 Bot 的专属运行记录
+          <div v-if="filteredActivityEntries.length === 0" class="vesper-card rounded-2xl p-8 text-center text-sm text-slate-400">
+            {{ activityEntries.length ? '当前筛选条件下无匹配运行记录' : '暂无该 Bot 的专属运行记录' }}
           </div>
           <div ref="activityListRef" class="stagger-list flex flex-col gap-2.5">
             <article
-              v-for="(act, idx) in activityEntries"
+              v-for="(act, idx) in filteredActivityEntries"
               :key="idx"
               class="stagger-item vesper-card rounded-xl px-4 py-3"
             >
