@@ -18,18 +18,28 @@ import (
 )
 
 type RadarModule struct {
-	store *store.Store
-	push  *notifier.Client
-	http  *http.Client
+	store      *store.Store
+	push       *notifier.Client
+	http       *http.Client
+	mu         sync.RWMutex
+	summarizer LightSummarizer
 }
 
 func NewRadarModule(st *store.Store, push *notifier.Client) *RadarModule {
 	return &RadarModule{store: st, push: push, http: NewHTTPClient(20 * time.Second)}
 }
 
-func (r *RadarModule) ID() string          { return "radar" }
-func (r *RadarModule) Name() string        { return "全网开源技术雷达" }
-func (r *RadarModule) Description() string { return "抓取 GitHub Trending 与 Hacker News 热门条目，去重推送" }
+func (r *RadarModule) SetSummarizer(sum LightSummarizer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.summarizer = sum
+}
+
+func (r *RadarModule) getSummarizer() LightSummarizer {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.summarizer
+}
 
 type ghRepo struct {
 	Name, URL, Desc, Language, StarsToday string
@@ -41,14 +51,6 @@ type hnStory struct {
 	URL   string `json:"url"`
 	Score int    `json:"score"`
 	Type  string `json:"type"`
-}
-
-func (r *RadarModule) Run(ctx context.Context) (RunResult, error) {
-	return r.RunWithTask(ctx, store.Task{
-		ID:   "radar",
-		Name: "全网开源技术雷达",
-		Type: "radar",
-	})
 }
 
 func (r *RadarModule) RunWithTask(ctx context.Context, task store.Task) (RunResult, error) {
@@ -164,9 +166,9 @@ func (r *RadarModule) RunWithTask(ctx context.Context, task store.Task) (RunResu
 		sb.WriteString("\n")
 	}
 
-	// Optional AI synthesis & curation when DeepSeek API Key is configured
+	// Optional AI synthesis & curation when Light/Pool/DeepSeek API Key is configured
 	sysPrompt := "你是 Vesper BotHub 的开源技术雷达架构师。请从以下抓取的 GitHub Trending 与 Hacker News 列表中，挑选最值得关注的 3 个项目或话题，逐条给出核心亮点、技术价值与适用场景简评（中文，高信息密度）。严禁输出任何 Emoji 或特殊装饰符号。"
-	if aiReview, aiErr := SummarizeWithDeepSeek(ctx, r.store, sysPrompt, sb.String()); aiErr == nil && aiReview != "" {
+	if aiReview, aiErr := summarizeModuleContent(ctx, r.store, r.getSummarizer(), sysPrompt, sb.String()); aiErr == nil && aiReview != "" {
 		sb.WriteString("#### 3. DeepSeek 架构师精选锐评\n")
 		sb.WriteString(aiReview)
 		sb.WriteString("\n\n")

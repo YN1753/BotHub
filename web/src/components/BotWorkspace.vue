@@ -1,19 +1,22 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { useAppStore, mapServerMessages, type ChatMessageUI } from '../stores/useAppStore'
+import { useAppStore, type ChatMessageUI } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { formatTime, formatTimelineDivider, triggerBlobDownload } from '../utils/format'
+import { parseJsonStringArray, triggerBlobDownload } from '../utils/format'
+import { resolveGroupMemberBots, resolveScopedMemories } from '../utils/botLook'
+import { copyToClipboard } from '../utils/clipboard'
 import { lazyPanelChunk } from '../utils/lazyComponent'
 import { resolveTabSlideTransition, type DirectionalTransitionName } from '../utils/motion'
-import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
+import { handleMarkdownCodeCopy } from '../utils/markdown'
 import { shortToolLabel } from '../utils/toolMeta'
+import { useBotChatStream, type ReplyQuoteTarget } from '../composables/useBotChatStream'
 import type { Bot } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
 import GroupDrawer from './GroupDrawer.vue'
 import BotWorkspaceHeader from './workspace/BotWorkspaceHeader.vue'
 import BotThreadBar from './workspace/BotThreadBar.vue'
-import BotToolTrail from './workspace/BotToolTrail.vue'
-import BotChatComposer, { type RelayStepItem, type ReplyQuoteTarget, type StarterChipItem } from './workspace/BotChatComposer.vue'
+import BotMessageItem from './workspace/BotMessageItem.vue'
+import BotChatComposer, { type StarterChipItem } from './workspace/BotChatComposer.vue'
 import BotChatSearchBar from './workspace/BotChatSearchBar.vue'
 
 const BotRoutinesTab = lazyPanelChunk(() => import('./workspace/BotRoutinesTab.vue'))
@@ -36,11 +39,14 @@ const bot = store.activeBot
 const inputPrompt = ref('')
 const selectedModel = ref('primary')
 const enableThinking = ref(true)
-const streamStatus = ref('就绪')
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const composerRef = ref<InstanceType<typeof BotChatComposer> | null>(null)
+const chatSearchBarRef = ref<InstanceType<typeof BotChatSearchBar> | null>(null)
 const userScrolledUp = ref(false)
 const unreadBelowCount = ref(0)
+const replyTarget = ref<ReplyQuoteTarget | null>(null)
+const announcementDismissed = ref(false)
+
 const botSubViewTransition = ref<DirectionalTransitionName>('vesper-slide-forward')
 const streamEnterTransition = computed(() =>
   botSubViewTransition.value === 'vesper-slide-backward'
@@ -59,18 +65,40 @@ watch(
   }
 )
 
-let abortCtrl: AbortController | null = null
-const lastPrompt = ref('')
+function scrollToBottom(force = false) {
+  if (force) {
+    userScrolledUp.value = false
+    unreadBelowCount.value = 0
+  }
+  if (!force && userScrolledUp.value) return
+  nextTick(() => {
+    if (scrollContainerRef.value) {
+      scrollContainerRef.value.scrollTop = scrollContainerRef.value.scrollHeight
+    }
+  })
+}
 
-const replyTarget = ref<ReplyQuoteTarget | null>(null)
-const announcementDismissed = ref(false)
-const relaySteps = ref<RelayStepItem[]>([])
+const {
+  streamStatus,
+  lastPrompt,
+  relaySteps,
+  activeSpeakerBotId,
+  sendPrompt,
+  stopStream,
+} = useBotChatStream({
+  store,
+  inputPrompt,
+  selectedModel,
+  enableThinking,
+  replyTarget,
+  scrollToBottom,
+  onClosePopovers: () => composerRef.value?.closePopovers(),
+})
 
-// In-Chat Message Search (QQ/WeChat Cmd+F)
+// In-Chat Message Search (Cmd/Ctrl + F)
 const chatSearchOpen = ref(false)
 const chatSearchQuery = ref('')
 const chatSearchCursor = ref(0)
-const chatSearchInputRef = ref<HTMLInputElement | null>(null)
 
 const chatSearchMatches = computed(() => {
   const q = chatSearchQuery.value.trim().toLowerCase()
@@ -80,16 +108,13 @@ const chatSearchMatches = computed(() => {
     .map((m) => m.localId)
 })
 
-const focusedMatchId = computed(() =>
-  chatSearchMatches.value[chatSearchCursor.value] || ''
-)
+const focusedMatchId = computed(() => chatSearchMatches.value[chatSearchCursor.value] || '')
 
 function openChatSearch() {
   store.state.botView = 'stream'
   chatSearchOpen.value = true
   nextTick(() => {
-    chatSearchInputRef.value?.focus()
-    chatSearchInputRef.value?.select()
+    chatSearchBarRef.value?.focus()
   })
 }
 
@@ -139,21 +164,10 @@ function openForwardForMessage(msg: ChatMessageUI) {
   }
 }
 
-const expandedUserMsgs = ref<Record<string, boolean>>({})
-
-function isLongUserMessage(content: string): boolean {
-  if (!content) return false
-  return content.length > 260 || content.split('\n').length > 6
-}
-
-function toggleExpandUserMsg(localId: string) {
-  expandedUserMsgs.value[localId] = !expandedUserMsgs.value[localId]
-}
-
 function runQuickToolStarter(toolId: string) {
   switch (toolId) {
     case 'workspace_briefing':
-      sendPrompt('请调用 workspace_briefing 为我梳理今日重点待办、日程与临期风险，并排出优先次序。')
+      void sendPrompt('请调用 workspace_briefing 为我梳理今日重点待办、日程与临期风险，并排出优先次序。')
       break
     case 'manage_todos':
       store.state.workhubTab = 'todos'
@@ -168,17 +182,17 @@ function runQuickToolStarter(toolId: string) {
       store.state.showWorkhubModal = true
       break
     case 'manage_assets':
-      sendPrompt('请调用 manage_assets(action="summary") 和 expiring 帮我盘点当前数字资产费用与到期风险。')
+      void sendPrompt('请调用 manage_assets(action="summary") 和 expiring 帮我盘点当前数字资产费用与到期风险。')
       break
     case 'query_nezha_nodes':
-      sendPrompt('请调用 query_nezha_nodes 帮我巡检全部节点实时在线与负载健康状态。')
+      void sendPrompt('请调用 query_nezha_nodes 帮我巡检全部节点实时在线与负载健康状态。')
       break
     case 'manage_tasks':
-      sendPrompt('请调用 manage_tasks 核查当前自动化调度与提醒队列状态。')
+      void sendPrompt('请调用 manage_tasks 核查当前自动化调度与提醒队列状态。')
       break
     case 'recall_memory':
     case 'manage_memory':
-      sendPrompt('请检索当前作用域的长期记忆，确认你目前记得的核心习惯与约定。')
+      void sendPrompt('请检索当前作用域的长期记忆，确认你目前记得的核心习惯与约定。')
       break
     case 'web_search':
       inputPrompt.value = '请帮我联网检索：'
@@ -195,7 +209,7 @@ function runQuickToolStarter(toolId: string) {
 }
 
 function continueFromMessage() {
-  sendPrompt('请承接你上一条答复继续深入展开可执行步骤、关键细节与具体产出物。')
+  void sendPrompt('请承接你上一条答复继续深入展开可执行步骤、关键细节与具体产出物。')
 }
 
 watch(
@@ -225,14 +239,6 @@ watch(
 const isGroupBot = computed(() => Boolean(bot.value?.is_group))
 const isStreamEmpty = computed(() => store.state.timeline.length === 0)
 
-const activeSpeakerBotId = computed(() => {
-  const activeStep = relaySteps.value.find((s) => s.status === 'active')
-  if (activeStep?.id) return activeStep.id
-  const lastMsg = store.state.timeline[store.state.timeline.length - 1]
-  if (lastMsg?.streaming && lastMsg.senderBotId) return lastMsg.senderBotId
-  return ''
-})
-
 const starterChips = computed<StarterChipItem[]>(() => {
   const b = bot.value
   if (!b) return []
@@ -249,13 +255,7 @@ const starterChips = computed<StarterChipItem[]>(() => {
       highlight: true,
     })
   }
-  let allowed: string[] = []
-  try {
-    const parsed = JSON.parse(b.allowed_tools || '[]')
-    if (Array.isArray(parsed)) allowed = parsed
-  } catch {
-    allowed = []
-  }
+  const allowed = parseJsonStringArray(b.allowed_tools)
   for (const id of allowed) {
     if (chips.some((c) => c.id === id)) continue
     const found = (store.state.availableTools || []).find((t) => t.id === id)
@@ -268,26 +268,9 @@ const starterChips = computed<StarterChipItem[]>(() => {
   return chips
 })
 
-function closeDetailsMenu(e: Event) {
-  ;(e.currentTarget as HTMLElement | null)?.closest('details')?.removeAttribute('open')
-}
-
-const availableSpecialistBots = computed(() =>
-  store.state.bots.filter((b) => !b.is_group)
-)
-
 const groupMembers = computed<Bot[]>(() => {
-  if (!isGroupBot.value) return []
-  let ids: string[] = []
-  try {
-    const parsed = JSON.parse(bot.value?.member_ids || '[]')
-    if (Array.isArray(parsed)) ids = parsed.map(String)
-  } catch {
-    ids = []
-  }
-  const map = new Map(availableSpecialistBots.value.map((b) => [b.id, b]))
-  const resolved = ids.map((id) => map.get(id)).filter((x): x is Bot => Boolean(x))
-  return resolved.length > 0 ? resolved : availableSpecialistBots.value
+  if (!isGroupBot.value || !bot.value) return []
+  return resolveGroupMemberBots(bot.value, store.state.bots)
 })
 
 async function onCarryThreadSummary(summary: string, title: string) {
@@ -383,17 +366,9 @@ async function saveMessageAsNote(msg: ChatMessageUI) {
   }
 }
 
-const scopedMemories = computed(() => {
-  const serverMems = store.state.botMemories || []
-  if (serverMems.length > 0) return serverMems
-  const cur = bot.value
-  if (!cur) return []
-  const bScope = `bot:${cur.id}`
-  if (cur.memory_policy === 'isolated') {
-    return store.state.memories.filter((m) => m.scope === bScope)
-  }
-  return store.state.memories.filter((m) => !m.scope || m.scope === 'global' || m.scope === bScope)
-})
+const scopedMemories = computed(() =>
+  resolveScopedMemories(bot.value, store.state.botMemories || [], store.state.memories)
+)
 
 function shouldDeferMessageRender(idx: number): boolean {
   if (chatSearchOpen.value) return false
@@ -409,19 +384,6 @@ function onMessagesScroll() {
   if (!scrolledUp) {
     unreadBelowCount.value = 0
   }
-}
-
-function scrollToBottom(force = false) {
-  if (force) {
-    userScrolledUp.value = false
-    unreadBelowCount.value = 0
-  }
-  if (!force && userScrolledUp.value) return
-  nextTick(() => {
-    if (scrollContainerRef.value) {
-      scrollContainerRef.value.scrollTop = scrollContainerRef.value.scrollHeight
-    }
-  })
 }
 
 function editResendUserMessage(msg: ChatMessageUI) {
@@ -509,12 +471,8 @@ function handleMarkdownClick(e: MouseEvent) {
 }
 
 async function copyMessageContent(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    store.notify('已复制回复 Markdown 全文')
-  } catch {
-    store.notify('复制失败')
-  }
+  const ok = await copyToClipboard(text)
+  store.notify(ok ? '已复制回复 Markdown 全文' : '复制失败')
 }
 
 function stripMarkdownFormatting(raw: string): string {
@@ -532,267 +490,8 @@ function stripMarkdownFormatting(raw: string): string {
 }
 
 async function copyPlainTextContent(text: string) {
-  try {
-    await navigator.clipboard.writeText(stripMarkdownFormatting(text))
-    store.notify('已复制纯文本内容')
-  } catch {
-    store.notify('复制失败')
-  }
-}
-
-function stopStream() {
-  abortCtrl?.abort()
-}
-
-async function sendPrompt(overrideText?: string) {
-  if (store.state.isStreaming) return
-  const msg = (overrideText ?? inputPrompt.value).trim()
-  if (!msg) return
-
-  const curBot = bot.value
-  if (!curBot) {
-    store.notify('请先创建一个 Bot 再开始对话')
-    return
-  }
-  const botId = curBot.id
-  const quote = replyTarget.value
-  lastPrompt.value = msg
-  if (!overrideText) inputPrompt.value = ''
-  composerRef.value?.closePopovers()
-  replyTarget.value = null
-  relaySteps.value = []
-
-  store.state.isStreaming = true
-  abortCtrl = new AbortController()
-  streamStatus.value = `连线 [${curBot?.name || botId}]...`
-
-  store.state.timeline.push({
-    localId: `u_${Date.now()}`,
-    role: 'user',
-    senderBotId: 'user',
-    senderName: '管理员',
-    avatarStyle: 'cyan',
-    model: selectedModel.value,
-    msgKind: 'chat',
-    createdAt: new Date().toISOString(),
-    content: msg,
-    reasoning: '',
-    tools: [],
-    replyToId: quote?.serverId,
-    replyPreview: quote?.preview,
-    statusText: '已发送',
-    isLiveNew: true,
-  })
-
-  const createTurn = (bId: string, bName: string, style: string, roleTitle = '', isTempGuest = false): ChatMessageUI => {
-    const turn: ChatMessageUI = {
-      localId: `a_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      role: 'assistant',
-      senderBotId: bId,
-      senderName: bName,
-      roleTitle,
-      avatarStyle: style,
-      model: selectedModel.value,
-      msgKind: 'chat',
-      createdAt: new Date().toISOString(),
-      content: '',
-      reasoning: '',
-      tools: [],
-      isTempGuest,
-      statusText: '思考与生成中...',
-      streaming: true,
-      isLiveNew: true,
-    }
-    store.state.timeline.push(turn)
-    return store.state.timeline[store.state.timeline.length - 1]
-  }
-
-  let activeTurn = createTurn(botId, curBot?.name || 'BotHub', curBot?.avatar_style || 'cyan', curBot?.role_title || '')
-  const turnStartedAt = Date.now()
-  scrollToBottom(true)
-
-  try {
-    const res = await fetch('/api/agent/chat', {
-      method: 'POST',
-      credentials: 'same-origin',
-      signal: abortCtrl.signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        bot_id: botId,
-        thread_id: store.state.activeThreadId || '',
-        message: msg,
-        model: selectedModel.value,
-        enable_thinking: enableThinking.value,
-        reply_to_id: quote?.serverId || 0,
-        reply_preview: quote?.preview || '',
-      }),
-    })
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}))
-      throw new Error(errData.error || `HTTP ${res.status}`)
-    }
-
-    const reader = res.body!.getReader()
-    const decoder = new TextDecoder('utf-8')
-    let buffer = ''
-    let currentEvent = 'message'
-
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim()
-        if (!line) continue
-        if (line.startsWith('event:')) {
-          currentEvent = line.slice(6).trim()
-        } else if (line.startsWith('data:')) {
-          let payload: any = {}
-          try {
-            payload = JSON.parse(line.slice(5).trim())
-          } catch {
-            continue
-          }
-
-          if (currentEvent === 'system_notice') {
-            const idx = store.state.timeline.indexOf(activeTurn)
-            const sysItem: ChatMessageUI = {
-              localId: `srv_${payload.id || Date.now()}`,
-              serverId: payload.id,
-              role: 'system',
-              senderBotId: botId,
-              senderName: '系统动态',
-              avatarStyle: curBot?.avatar_style || 'cyan',
-              model: selectedModel.value,
-              msgKind: 'system',
-              createdAt: payload.created_at || new Date().toISOString(),
-              content: payload.content || '',
-              reasoning: '',
-              tools: [],
-              statusText: '',
-              isLiveNew: true,
-            }
-            if (idx >= 0) store.state.timeline.splice(idx, 0, sysItem)
-            else store.state.timeline.push(sysItem)
-          } else if (currentEvent === 'bot_turn') {
-            relaySteps.value.forEach((s) => {
-              s.status = 'done'
-            })
-            relaySteps.value.push({
-              id: payload.sender_bot_id,
-              name: payload.sender_name,
-              status: 'active',
-              guest: Boolean(payload.is_temp_guest),
-            })
-            if (Number(payload.step) > 1) {
-              activeTurn.statusText = '已完成'
-              activeTurn.streaming = false
-              activeTurn = createTurn(
-                payload.sender_bot_id,
-                payload.sender_name,
-                payload.avatar_style || 'cyan',
-                payload.role_title || '',
-                Boolean(payload.is_temp_guest)
-              )
-            } else {
-              activeTurn.senderBotId = payload.sender_bot_id
-              activeTurn.senderName = payload.sender_name
-              activeTurn.roleTitle = payload.role_title || ''
-              activeTurn.avatarStyle = payload.avatar_style || 'cyan'
-              activeTurn.isTempGuest = Boolean(payload.is_temp_guest)
-            }
-            streamStatus.value = `协同接力 (${payload.step}/${payload.total_steps}): ${payload.sender_name}`
-          } else if (currentEvent === 'reasoning') {
-            streamStatus.value = '深度思考中...'
-            activeTurn.reasoning += payload.delta || ''
-            scrollToBottom()
-          } else if (currentEvent === 'tool_start') {
-            streamStatus.value = `执行工具: ${payload.name}...`
-            activeTurn.tools.push({
-              id: payload.id,
-              name: payload.name,
-              arguments: payload.arguments,
-              done: false,
-            })
-            scrollToBottom()
-          } else if (currentEvent === 'tool_result') {
-            const found = activeTurn.tools.find((t) => t.id === payload.id)
-            if (found) {
-              found.done = true
-              found.result = payload.result
-              if (payload.duration_ms !== undefined) found.durationMs = Number(payload.duration_ms)
-              if (payload.status) found.status = String(payload.status)
-            }
-          } else if (currentEvent === 'content') {
-            streamStatus.value = '正在生成回复...'
-            activeTurn.content += payload.delta || ''
-            scrollToBottom()
-          } else if (currentEvent === 'model_switch') {
-            streamStatus.value = `${payload.from_label || '当前节点'} 限流或异常，已自动切换至 ${payload.to_label || payload.to_model}`
-          } else if (currentEvent === 'error') {
-            activeTurn.statusText = '异常中断'
-            activeTurn.errorText = payload.error || '未知流式错误'
-            activeTurn.streaming = false
-          } else if (currentEvent === 'done') {
-            activeTurn.streaming = false
-            if (payload.model) activeTurn.model = payload.model
-            const elapsedSec = ((Date.now() - turnStartedAt) / 1000).toFixed(1)
-            activeTurn.statusText =
-              payload.usage && payload.usage.total_tokens
-                ? `${payload.usage.prompt_tokens}+${payload.usage.completion_tokens} Tokens · ${elapsedSec}s`
-                : `已完成 · ${elapsedSec}s`
-          }
-        }
-      }
-    }
-
-    activeTurn.streaming = false
-    relaySteps.value.forEach((s) => {
-      s.status = 'done'
-    })
-    window.setTimeout(() => {
-      if (!store.state.isStreaming) relaySteps.value = []
-    }, 1600)
-    if (activeTurn.statusText === '思考与生成中...') activeTurn.statusText = '已完成'
-    streamStatus.value = '就绪'
-    store.playSubtleChime()
-    await store.refreshWorkspaceSlices(['bots', 'memories', 'todos', 'notes', 'model_health'])
-    // Reload synced server IDs, threads, memories and execution logs quietly
-    if (curBot?.id === store.state.activeBotId) {
-      const synced = await BotHubApi.getBotMessages(curBot.id, store.state.activeThreadId).catch(() => null)
-      if (synced?.threads) store.state.botThreads = synced.threads
-      if (synced?.memories) store.state.botMemories = synced.memories
-      if (synced?.executions) store.state.botExecutions = synced.executions
-      if (synced?.messages && !store.state.isStreaming) {
-        const finalTurnStatus = activeTurn.statusText
-        const mappedSynced = mapServerMessages(synced.messages, curBot)
-        if (mappedSynced.length >= store.state.timeline.length) {
-          if (finalTurnStatus && mappedSynced.length > 0 && mappedSynced[mappedSynced.length - 1].role === 'assistant') {
-            mappedSynced[mappedSynced.length - 1].statusText = finalTurnStatus
-          }
-          store.state.timeline = mappedSynced
-        }
-      }
-    }
-  } catch (err: any) {
-    activeTurn.streaming = false
-    if (err.name === 'AbortError') {
-      activeTurn.statusText = '已手动停止'
-      streamStatus.value = '已手动停止'
-      store.notify('已停止生成')
-    } else {
-      activeTurn.statusText = '异常中断'
-      activeTurn.errorText = err.message
-      streamStatus.value = '发生错误'
-      store.notify(err.message)
-    }
-  } finally {
-    store.state.isStreaming = false
-    abortCtrl = null
-  }
+  const ok = await copyToClipboard(stripMarkdownFormatting(text))
+  store.notify(ok ? '已复制纯文本内容' : '复制失败')
 }
 
 function exportTimelineMarkdown() {
@@ -885,431 +584,172 @@ async function clearTimeline() {
     </div>
 
     <template v-else>
-    <!-- View 1: Persistent Stream (Centered Grok-Style Spotlight Stage when empty -> Bottom-Docked Stream when chatting) -->
-    <Transition :name="streamEnterTransition">
-      <div
-        v-show="store.state.botView === 'stream'"
-        :class="['flex-1 min-h-0 flex flex-col', isStreamEmpty ? 'overflow-y-auto py-2 sm:py-4' : '']"
-      >
-        <BotThreadBar v-if="bot" :bot="bot" @carry-summary="onCarryThreadSummary" />
-
-        <!-- Slide-Down In-Chat Search Bar (Cmd/Ctrl + F) -->
-        <BotChatSearchBar
-          :open="chatSearchOpen"
-          v-model:query="chatSearchQuery"
-          :match-count="chatSearchMatches.length"
-          :cursor="chatSearchCursor"
-          @jump="jumpSearchMatch"
-          @close="closeChatSearch"
-        />
-
-        <!-- Pinned Group Announcement Banner -->
-        <Transition
-          enter-active-class="transition-[opacity,transform] duration-180 ease-[var(--ease-snappy)] motion-reduce:duration-100"
-          enter-from-class="opacity-0 -translate-y-1.5 motion-reduce:translate-y-0"
-          enter-to-class="opacity-100 translate-y-0"
-          leave-active-class="transition-[opacity,transform] duration-130 ease-[var(--ease-in-snappy)] motion-reduce:duration-75"
-          leave-from-class="opacity-100 translate-y-0"
-          leave-to-class="opacity-0 -translate-y-1.5 motion-reduce:translate-y-0"
+      <Transition :name="streamEnterTransition">
+        <div
+          v-show="store.state.botView === 'stream'"
+          :class="['flex-1 min-h-0 flex flex-col', isStreamEmpty ? 'overflow-y-auto py-2 sm:py-4' : '']"
         >
-          <div
-            v-if="isGroupBot && bot?.announcement && !announcementDismissed && !isStreamEmpty"
-            class="mx-4 md:mx-6 mb-1 px-3.5 py-1.5 rounded-2xl border border-[#f2b880]/20 bg-[#f2b880]/[0.06] flex items-center justify-between gap-3 shrink-0"
-          >
-            <button
-              type="button"
-              @click="store.state.showGroupDrawer = true"
-              class="flex items-center gap-2 min-w-0 text-left text-xs text-slate-300 hover:text-white cursor-pointer"
-            >
-              <span class="px-1.5 py-0.5 rounded bg-[#f2b880]/20 text-[#f2b880] font-mono text-[10px] font-semibold shrink-0">
-                群公告
-              </span>
-              <span class="truncate">{{ bot.announcement }}</span>
-            </button>
-            <button
-              type="button"
-              aria-label="暂时收起群公告"
-              @click="announcementDismissed = true"
-              class="w-6 h-6 rounded-full inline-flex items-center justify-center text-slate-500 hover:text-white cursor-pointer shrink-0"
-            >
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </Transition>
+          <BotThreadBar v-if="bot" :bot="bot" @carry-summary="onCarryThreadSummary" />
 
-        <div :class="['relative flex flex-col', isStreamEmpty ? 'shrink-0 mt-auto' : 'flex-1 min-h-0']">
-          <div
-            ref="scrollContainerRef"
-            @scroll="onMessagesScroll"
-            @click="handleMarkdownClick"
-            :class="[
-              'cq-container stream-scroller px-4 md:px-6 flex flex-col gap-6',
-              isStreamEmpty ? 'shrink-0 py-1' : 'stream-edge-fade flex-1 min-h-0 overflow-y-auto py-5'
-            ]"
-          >
-            <BotStarterPanel
-              v-if="isStreamEmpty"
-              :bot="bot"
-              :is-group-bot="isGroupBot"
-              :group-members="groupMembers"
-            />
+          <!-- Slide-Down In-Chat Search Bar (Cmd/Ctrl + F) -->
+          <BotChatSearchBar
+            ref="chatSearchBarRef"
+            :open="chatSearchOpen"
+            v-model:query="chatSearchQuery"
+            :match-count="chatSearchMatches.length"
+            :cursor="chatSearchCursor"
+            @jump="jumpSearchMatch"
+            @close="closeChatSearch"
+          />
 
-            <!-- Messages -->
-            <template v-for="(m, idx) in store.state.timeline" :key="m.localId">
-              <!-- 5-Minute Time Cluster Divider -->
-              <div
-                v-if="shouldShowTimestamp(idx)"
-                class="flex justify-center py-0.5 select-none"
-              >
-                <span class="px-2.5 py-0.5 rounded-full bg-[#fff8ee]/[0.03] text-[10.5px] font-mono text-slate-500">
-                  {{ formatTimelineDivider(m.createdAt) }}
-                </span>
-              </div>
-
-              <!-- Centered System Dynamic Pill -->
-              <div
-                v-if="m.role === 'system' || m.msgKind === 'system'"
-                :class="['max-w-[680px] mx-auto flex justify-center my-0.5', m.isLiveNew ? 'msg-enter' : '']"
-              >
-                <div class="px-3.5 py-1 rounded-full border border-[#fff8ee]/8 bg-[#fff8ee]/[0.035] text-[11px] text-slate-400 text-center whitespace-pre-line leading-relaxed">
-                  {{ m.content }}
-                </div>
-              </div>
-
-              <!-- User Message Pill -->
-              <div
-                v-else-if="m.role === 'user'"
-                :data-msg-id="m.localId"
-                :class="[
-                  'reveal-host max-w-[780px] w-full mx-auto flex flex-col items-end gap-1 rounded-2xl transition-shadow',
-                  m.isLiveNew ? 'msg-enter-user' : '',
-                  shouldDeferMessageRender(idx) ? 'msg-deferred-user' : '',
-                  focusedMatchId === m.localId ? 'ring-1 ring-[#f2b880]/70 p-1' : ''
-                ]"
-              >
-                <div
-                  :title="formatTime(m.createdAt)"
-                  class="msg-bubble-user max-w-[85%] sm:max-w-[72%] rounded-[22px] rounded-tr-md px-4 py-2.5 text-sm text-slate-50 leading-relaxed whitespace-pre-wrap"
-                >
-                  <div
-                    v-if="m.replyPreview"
-                    class="mb-2 pl-2.5 border-l-2 border-[#f2b880]/80 text-xs text-slate-200/90 bg-black/25 rounded-r-lg py-1 pr-2 line-clamp-2"
-                  >
-                    {{ m.replyPreview }}
-                  </div>
-                  <div :class="isLongUserMessage(m.content) && !expandedUserMsgs[m.localId] ? 'line-clamp-5' : ''">
-                    {{ m.content }}
-                  </div>
-                  <button
-                    v-if="isLongUserMessage(m.content)"
-                    type="button"
-                    @click="toggleExpandUserMsg(m.localId)"
-                    class="mt-1.5 font-mono text-[11px] text-[#ffe2be] hover:underline cursor-pointer"
-                  >
-                    {{ expandedUserMsgs[m.localId] ? '收起长消息' : '展开全文' }}
-                  </button>
-                </div>
-                <div class="reveal-actions msg-action-bar inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5">
-                  <button
-                    type="button"
-                    @click="setReplyQuote(m)"
-                    class="px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
-                  >
-                    引用
-                  </button>
-                  <button
-                    type="button"
-                    @click="editResendUserMessage(m)"
-                    class="px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
-                  >
-                    重编
-                  </button>
-                  <button
-                    type="button"
-                    @click="copyMessageContent(m.content)"
-                    class="px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
-                  >
-                    复制
-                  </button>
-                  <button
-                    v-if="m.serverId"
-                    type="button"
-                    @click="store.forkThread(m.serverId)"
-                    class="px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-emerald-300 hover:bg-white/[0.08] cursor-pointer"
-                  >
-                    分支
-                  </button>
-                  <button
-                    v-if="m.serverId"
-                    type="button"
-                    @click="store.deleteSingleMessage(m)"
-                    class="px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-rose-300 hover:bg-rose-500/15 cursor-pointer"
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-
-              <!-- Open Editorial Left-Avatar Bot Message (Unboxed Prose + Subtle Thread Spine + 4-Button Micro Toolbar) -->
-              <article
-                v-else
-                :data-msg-id="m.localId"
-                :class="[
-                  'reveal-host max-w-[780px] w-full mx-auto flex items-start gap-3 sm:gap-3.5 rounded-2xl transition-shadow',
-                  m.isLiveNew ? 'msg-enter-bot' : '',
-                  shouldDeferMessageRender(idx) ? 'msg-deferred-bot' : '',
-                  focusedMatchId === m.localId ? 'ring-1 ring-[#f2b880]/70 bg-[#f2b880]/[0.04] p-2' : ''
-                ]"
-              >
-                <!-- Left Living Companion Gutter + Luminous Thread Spine -->
-                <div class="flex flex-col items-center self-stretch shrink-0 pt-0.5">
-                  <button
-                    type="button"
-                    @click="appendMention(`@${m.senderName} `)"
-                    :title="`点击 @${m.senderName}`"
-                    class="cursor-pointer rounded-full"
-                  >
-                    <BotAvatar
-                      :avatar-style="m.avatarStyle"
-                      :state="m.streaming ? 'working' : (m.msgKind === 'routine' ? 'done' : 'idle')"
-                      size="sm"
-                    />
-                  </button>
-                  <span
-                    v-if="m.reasoning || m.tools.length || m.streaming"
-                    aria-hidden="true"
-                    class="w-px flex-1 mt-2 bg-gradient-to-b from-[#f2b880]/30 via-[#fff8ee]/8 to-transparent"
-                  />
-                </div>
-
-                <!-- Right Editorial Content Column -->
-                <div
-                  :class="[
-                    'flex-1 min-w-0 flex flex-col gap-2',
-                    m.msgKind === 'routine' ? 'vesper-card rounded-2xl border-[#f2b880]/30 p-4' : 'pt-0.5'
-                  ]"
-                >
-                  <div class="flex items-center justify-between gap-2 text-xs text-slate-400">
-                    <div class="flex items-center gap-2 min-w-0">
-                      <button
-                        type="button"
-                        @click="appendMention(`@${m.senderName} `)"
-                        class="text-[#ffe2be] hover:underline font-medium truncate cursor-pointer"
-                      >
-                        {{ m.senderName }}
-                      </button>
-                      <span
-                        v-if="m.roleTitle && isGroupBot"
-                        class="hidden sm:inline-flex font-mono text-[10px] text-slate-500 truncate max-w-[160px]"
-                      >
-                        {{ m.roleTitle }}
-                      </span>
-                      <span
-                        v-if="m.isTempGuest"
-                        class="font-mono text-[10px] px-1.5 py-0.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 text-emerald-300 shrink-0"
-                      >
-                        外援
-                      </span>
-                      <span v-if="m.msgKind === 'routine'" class="font-mono text-[10px] px-2 py-0.5 rounded-full bg-[#f2b880]/14 text-[#ffe2be] shrink-0">
-                        自动汇报
-                      </span>
-                    </div>
-                    <div class="flex items-center gap-2 shrink-0">
-                      <span
-                        v-if="m.model && !m.streaming"
-                        class="hidden sm:inline-flex font-mono text-[10px] text-slate-500"
-                      >
-                        {{ m.model }}
-                      </span>
-                      <button
-                        v-if="isGroupBot && m.senderBotId && m.senderBotId !== bot?.id"
-                        type="button"
-                        @click="store.jumpToBot(m.senderBotId)"
-                        class="reveal-actions font-mono text-[10px] px-2 py-0.5 rounded-full border border-[#fff8ee]/12 text-slate-400 hover:text-[#ffe2be] cursor-pointer"
-                      >
-                        私聊
-                      </button>
-                      <span :class="['font-mono text-[10.5px]', m.errorText ? 'text-rose-400' : 'text-slate-500']">
-                        {{ m.statusText }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <!-- Calm Thinking Waveform -->
-                  <div
-                    v-if="m.streaming && !m.content && !m.reasoning && !m.tools.length"
-                    class="py-1 flex items-center gap-2 text-xs text-slate-400"
-                    aria-live="polite"
-                  >
-                    <span class="thinking-dots inline-flex items-center gap-1" aria-hidden="true">
-                      <span /><span /><span />
-                    </span>
-                    <span>正在构思</span>
-                  </div>
-
-                  <!-- Collapsible Reasoning -->
-                  <details
-                    v-if="m.reasoning"
-                    :open="m.streaming && !m.content"
-                    class="vesper-details well-recessed rounded-2xl px-3.5 py-2 text-xs text-slate-400"
-                  >
-                    <summary class="cursor-pointer flex items-center gap-1.5 font-mono text-amber-300/90 select-none">
-                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron shrink-0">
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
-                      <span>思考过程</span>
-                      <span class="text-[10px] text-amber-300/60">({{ m.reasoning.length }} 字)</span>
-                    </summary>
-                    <div class="mt-2 font-mono whitespace-pre-wrap leading-relaxed text-slate-300/90">
-                      {{ m.reasoning }}
-                    </div>
-                  </details>
-
-                  <!-- Collapsible Merged Tool Call Trajectory -->
-                  <BotToolTrail :tools="m.tools" @copy="copyMessageContent" />
-
-                  <!-- Open Editorial Markdown Body -->
-                  <div v-if="m.content" :class="m.streaming ? 'md-streaming' : ''" v-html="renderSafeMarkdown(m.content)" />
-                  <div v-else-if="m.errorText" class="flex items-center justify-between gap-2 flex-wrap text-sm text-rose-400">
-                    <span>[调用失败] {{ m.errorText }}</span>
-                    <button
-                      v-if="findPrecedingUserPrompt(idx)"
-                      type="button"
-                      @click="sendPrompt(findPrecedingUserPrompt(idx))"
-                      class="px-2.5 py-1 rounded-lg border border-rose-400/45 bg-rose-500/15 hover:bg-rose-500/25 text-xs text-rose-200 cursor-pointer shrink-0"
-                    >
-                      立即重试
-                    </button>
-                  </div>
-
-                  <!-- Streamlined 4-Item Micro-Action Pill + Progressive 'More' Menu -->
-                  <div v-if="!m.streaming && m.content" class="reveal-actions pt-0.5">
-                    <div class="msg-action-bar inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5">
-                      <button
-                        type="button"
-                        @click="copyMessageContent(m.content)"
-                        class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
-                      >
-                        <svg viewBox="0 0 24 24" width="11.5" height="11.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                        <span>复制</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        @click="setReplyQuote(m)"
-                        class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
-                      >
-                        引用
-                      </button>
-
-                      <button
-                        v-if="idx === store.state.timeline.length - 1"
-                        type="button"
-                        @click="continueFromMessage()"
-                        class="px-2.5 py-0.5 rounded-full text-[11px] text-[#f7cba0] hover:bg-[#f2b880]/15 cursor-pointer font-medium"
-                      >
-                        继续深挖
-                      </button>
-                      <button
-                        v-else-if="findPrecedingUserPrompt(idx)"
-                        type="button"
-                        @click="sendPrompt(findPrecedingUserPrompt(idx))"
-                        class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
-                      >
-                        重试
-                      </button>
-
-                      <details class="msg-more-menu relative">
-                        <summary class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-400 hover:text-white hover:bg-white/[0.08] cursor-pointer select-none inline-flex items-center gap-1">
-                          <span>沉淀与更多</span>
-                          <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
-                        </summary>
-                        <div class="aero-glass absolute right-0 sm:left-0 sm:right-auto bottom-full mb-1.5 z-30 min-w-[8.5rem] rounded-xl border border-[#fff8ee]/16 p-1 flex flex-col gap-0.5 shadow-2xl">
-                          <button type="button" @click="saveMessageAsMemory(m); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-emerald-500/15 hover:text-emerald-300 text-left cursor-pointer">存为长期记忆</button>
-                          <button type="button" @click="convertMessageToTodo(m); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-cyan-500/15 hover:text-cyan-200 text-left cursor-pointer">转为个人待办</button>
-                          <button type="button" @click="saveMessageAsNote(m); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-[#f2b880]/15 hover:text-[#ffe2be] text-left cursor-pointer">存为工作文档</button>
-                          <button type="button" @click="openForwardForMessage(m); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-white/[0.08] text-left cursor-pointer">转发给其他 Bot</button>
-                          <button type="button" @click="copyPlainTextContent(m.content); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 hover:bg-white/[0.08] text-left cursor-pointer">复制纯文本</button>
-                          <button v-if="m.serverId" type="button" @click="store.forkThread(m.serverId); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 hover:bg-emerald-500/15 hover:text-emerald-300 text-left cursor-pointer">从此分支新话题</button>
-                          <button v-if="m.serverId" type="button" @click="store.deleteSingleMessage(m); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-rose-300 hover:bg-rose-500/15 text-left cursor-pointer">删除此消息</button>
-                        </div>
-                      </details>
-                    </div>
-                  </div>
-                </div>
-              </article>
-            </template>
-          </div>
-
-          <!-- Spring Floating Scroll-to-Bottom Button -->
+          <!-- Pinned Group Announcement Banner -->
           <Transition
-            enter-active-class="transition duration-250 ease-[var(--ease-spring)]"
-            enter-from-class="opacity-0 translate-y-3 scale-90"
-            enter-to-class="opacity-100 translate-y-0 scale-100"
-            leave-active-class="transition duration-150 ease-in"
-            leave-from-class="opacity-100 translate-y-0 scale-100"
-            leave-to-class="opacity-0 translate-y-2 scale-95"
+            enter-active-class="transition-[opacity,transform] duration-180 ease-[var(--ease-snappy)] motion-reduce:duration-100"
+            enter-from-class="opacity-0 -translate-y-1.5 motion-reduce:translate-y-0"
+            enter-to-class="opacity-100 translate-y-0"
+            leave-active-class="transition-[opacity,transform] duration-130 ease-[var(--ease-in-snappy)] motion-reduce:duration-75"
+            leave-from-class="opacity-100 translate-y-0"
+            leave-to-class="opacity-0 -translate-y-1.5 motion-reduce:translate-y-0"
           >
-            <button
-              v-if="userScrolledUp && !isStreamEmpty"
-              type="button"
-              @click="scrollToBottom(true)"
-              class="btn-tactile-gold absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 min-h-[36px] px-4 rounded-full text-xs font-medium shadow-xl cursor-pointer"
+            <div
+              v-if="isGroupBot && bot?.announcement && !announcementDismissed && !isStreamEmpty"
+              class="mx-4 md:mx-6 mb-1 px-3.5 py-1.5 rounded-2xl border border-[#f2b880]/20 bg-[#f2b880]/[0.06] flex items-center justify-between gap-3 shrink-0"
             >
-              <span
-                v-if="store.state.isStreaming || unreadBelowCount > 0"
-                :class="['w-1.5 h-1.5 rounded-full shrink-0', store.state.isStreaming ? 'bg-[#f2b880] animate-pulse' : 'bg-emerald-400']"
-                aria-hidden="true"
-              />
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-              <span>
-                {{
-                  store.state.isStreaming
-                    ? '正在生成 · 回到底部'
-                    : unreadBelowCount > 0
-                      ? `${unreadBelowCount} 条新消息 · 回到底部`
-                      : '回到底部'
-                }}
-              </span>
-            </button>
+              <button
+                type="button"
+                @click="store.state.showGroupDrawer = true"
+                class="flex items-center gap-2 min-w-0 text-left text-xs text-slate-300 hover:text-white cursor-pointer"
+              >
+                <span class="px-1.5 py-0.5 rounded bg-[#f2b880]/20 text-[#f2b880] font-mono text-[10px] font-semibold shrink-0">
+                  群公告
+                </span>
+                <span class="truncate">{{ bot.announcement }}</span>
+              </button>
+              <button
+                type="button"
+                aria-label="暂时收起群公告"
+                @click="announcementDismissed = true"
+                class="w-6 h-6 rounded-full inline-flex items-center justify-center text-slate-500 hover:text-white cursor-pointer shrink-0"
+              >
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
           </Transition>
+
+          <div :class="['relative flex flex-col', isStreamEmpty ? 'shrink-0 mt-auto' : 'flex-1 min-h-0']">
+            <div
+              ref="scrollContainerRef"
+              @scroll="onMessagesScroll"
+              @click="handleMarkdownClick"
+              :class="[
+                'cq-container stream-scroller px-4 md:px-6 flex flex-col gap-6',
+                isStreamEmpty ? 'shrink-0 py-1' : 'stream-edge-fade flex-1 min-h-0 overflow-y-auto py-5',
+              ]"
+            >
+              <BotStarterPanel
+                v-if="isStreamEmpty"
+                :bot="bot"
+                :is-group-bot="isGroupBot"
+                :group-members="groupMembers"
+              />
+
+              <BotMessageItem
+                v-for="(m, idx) in store.state.timeline"
+                :key="m.localId"
+                :message="m"
+                :show-timestamp="shouldShowTimestamp(idx)"
+                :deferred="shouldDeferMessageRender(idx)"
+                :focused-match="focusedMatchId === m.localId"
+                :is-group-bot="isGroupBot"
+                :active-bot-id="bot?.id"
+                :is-last="idx === store.state.timeline.length - 1"
+                :can-retry="Boolean(findPrecedingUserPrompt(idx))"
+                @quote="setReplyQuote"
+                @edit-resend="editResendUserMessage"
+                @copy-markdown="copyMessageContent"
+                @copy-plain="copyPlainTextContent"
+                @fork="store.forkThread($event)"
+                @delete="store.deleteSingleMessage($event)"
+                @mention="appendMention"
+                @jump-bot="store.jumpToBot($event)"
+                @continue="continueFromMessage"
+                @retry="sendPrompt(findPrecedingUserPrompt(idx))"
+                @save-memory="saveMessageAsMemory"
+                @convert-todo="convertMessageToTodo"
+                @save-note="saveMessageAsNote"
+                @forward="openForwardForMessage"
+              />
+            </div>
+
+            <!-- Spring Floating Scroll-to-Bottom Button -->
+            <Transition
+              enter-active-class="transition duration-250 ease-[var(--ease-spring)]"
+              enter-from-class="opacity-0 translate-y-3 scale-90"
+              enter-to-class="opacity-100 translate-y-0 scale-100"
+              leave-active-class="transition duration-150 ease-in"
+              leave-from-class="opacity-100 translate-y-0 scale-100"
+              leave-to-class="opacity-0 translate-y-2 scale-95"
+            >
+              <button
+                v-if="userScrolledUp && !isStreamEmpty"
+                type="button"
+                @click="scrollToBottom(true)"
+                class="btn-tactile-gold absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 min-h-[36px] px-4 rounded-full text-xs font-medium shadow-xl cursor-pointer"
+              >
+                <span
+                  v-if="store.state.isStreaming || unreadBelowCount > 0"
+                  :class="['w-1.5 h-1.5 rounded-full shrink-0', store.state.isStreaming ? 'bg-[#f2b880] animate-pulse' : 'bg-emerald-400']"
+                  aria-hidden="true"
+                />
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+                <span>
+                  {{
+                    store.state.isStreaming
+                      ? '正在生成 · 回到底部'
+                      : unreadBelowCount > 0
+                        ? `${unreadBelowCount} 条新消息 · 回到底部`
+                        : '回到底部'
+                  }}
+                </span>
+              </button>
+            </Transition>
+          </div>
+
+          <!-- Unified Spotlight / Bottom-Docked Composer -->
+          <BotChatComposer
+            ref="composerRef"
+            :class="isStreamEmpty ? 'mb-auto' : ''"
+            v-model:input-prompt="inputPrompt"
+            v-model:selected-model="selectedModel"
+            v-model:enable-thinking="enableThinking"
+            v-model:reply-target="replyTarget"
+            :stream-status="streamStatus"
+            :relay-steps="relaySteps"
+            :is-group-bot="isGroupBot"
+            :group-members="groupMembers"
+            :last-prompt="lastPrompt"
+            :centered-stage="isStreamEmpty"
+            :starter-chips="starterChips"
+            @submit-prompt="sendPrompt"
+            @stop-stream="stopStream"
+            @clear-timeline="clearTimeline"
+            @summarize-thread="handleSummarizeThread"
+            @pick-starter="runQuickToolStarter"
+          />
         </div>
+      </Transition>
 
-        <!-- Unified Spotlight / Bottom-Docked Composer -->
-        <BotChatComposer
-          ref="composerRef"
-          :class="isStreamEmpty ? 'mb-auto' : ''"
-          v-model:input-prompt="inputPrompt"
-          v-model:selected-model="selectedModel"
-          v-model:enable-thinking="enableThinking"
-          v-model:reply-target="replyTarget"
-          :stream-status="streamStatus"
-          :relay-steps="relaySteps"
-          :is-group-bot="isGroupBot"
-          :group-members="groupMembers"
-          :last-prompt="lastPrompt"
-          :centered-stage="isStreamEmpty"
-          :starter-chips="starterChips"
-          @submit-prompt="sendPrompt"
-          @stop-stream="stopStream"
-          @clear-timeline="clearTimeline"
-          @summarize-thread="handleSummarizeThread"
-          @pick-starter="runQuickToolStarter"
-        />
-      </div>
-    </Transition>
-
-    <!-- Secondary Views: Directional Spatial Transitions -->
-    <Transition :name="botSubViewTransition" mode="out-in">
-      <BotRoutinesTab v-if="store.state.botView === 'routines'" key="routines" />
-      <BotConfigTab v-else-if="store.state.botView === 'config'" key="config" />
-      <BotActivityTab v-else-if="store.state.botView === 'activity'" key="activity" />
-    </Transition>
+      <!-- Secondary Views: Directional Spatial Transitions -->
+      <Transition :name="botSubViewTransition" mode="out-in">
+        <BotRoutinesTab v-if="store.state.botView === 'routines'" key="routines" />
+        <BotConfigTab v-else-if="store.state.botView === 'config'" key="config" />
+        <BotActivityTab v-else-if="store.state.botView === 'activity'" key="activity" />
+      </Transition>
     </template>
 
     <GroupDrawer />

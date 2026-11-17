@@ -103,7 +103,7 @@ function carrySummaryToNewThread() {
         @keydown.enter.prevent="commitRenameThread"
         @keydown.escape.stop="renamingThreadId = null"
         @blur="commitRenameThread"
-        class="w-32 px-2.5 py-0.5 rounded-full border border-[#f2b880]/60 text-[11px] text-white"
+        class="plain-inline-input w-32 bg-transparent px-2.5 py-0.5 rounded-full border border-[#f2b880]/60 text-[11px] text-white focus:outline-none"
       />
       <button
         v-else

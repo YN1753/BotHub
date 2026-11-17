@@ -4,20 +4,20 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import org.json.JSONArray
-import org.json.JSONObject
 
 class BotHubPrefs(context: Context) {
+    private val appContext: Context = context.applicationContext
+
     private val prefs: SharedPreferences =
-        context.getSharedPreferences("vesper_bothub_prefs", Context.MODE_PRIVATE)
+        appContext.getSharedPreferences("vesper_bothub_prefs", Context.MODE_PRIVATE)
 
     private val securePrefs: SharedPreferences by lazy {
         runCatching {
-            val masterKey = MasterKey.Builder(context)
+            val masterKey = MasterKey.Builder(appContext)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
             EncryptedSharedPreferences.create(
-                context,
+                appContext,
                 "vesper_bothub_secure_prefs",
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
@@ -27,8 +27,8 @@ class BotHubPrefs(context: Context) {
     }
 
     var serverUrl: String
-        get() = prefs.getString("server_url", "https://bot.starryheavens.uk")?.trimEnd('/') ?: "https://bot.starryheavens.uk"
-        set(value) = prefs.edit().putString("server_url", value.trim().trimEnd('/')).apply()
+        get() = UrlUtils.normalizeServerUrl(prefs.getString("server_url", UrlUtils.DEFAULT_SERVER_URL))
+        set(value) = prefs.edit().putString("server_url", UrlUtils.normalizeServerUrl(value)).apply()
 
     var bearerToken: String
         get() {
@@ -43,7 +43,12 @@ class BotHubPrefs(context: Context) {
             return legacy
         }
         set(value) {
-            securePrefs.edit().putString("bearer_token", value.trim()).apply()
+            val clean = value.trim()
+            if (clean.isEmpty()) {
+                securePrefs.edit().remove("bearer_token").apply()
+            } else {
+                securePrefs.edit().putString("bearer_token", clean).apply()
+            }
             prefs.edit().remove("bearer_token").apply()
         }
 
@@ -75,46 +80,22 @@ class BotHubPrefs(context: Context) {
         get() = prefs.getBoolean("zero_click_capture_enabled", false)
         set(value) = prefs.edit().putBoolean("zero_click_capture_enabled", value).apply()
 
-    fun saveCachedNotifications(items: List<NotificationItem>) {
-        val arr = JSONArray()
-        items.take(50).forEach { n ->
-            arr.put(
-                JSONObject()
-                    .put("id", n.id)
-                    .put("module_id", n.moduleId)
-                    .put("title", n.title)
-                    .put("summary", n.summary)
-                    .put("markdown_body", n.markdownBody)
-                    .put("priority", n.priority)
-                    .put("created_at", n.createdAt)
-                    .put("read_at", n.readAt)
-            )
+    fun advanceLastEventId(candidateId: Long) {
+        if (candidateId > lastEventId) {
+            lastEventId = candidateId
         }
-        prefs.edit().putString("cached_notifications", arr.toString()).apply()
+    }
+
+    fun clearCredentials() {
+        bearerToken = ""
+    }
+
+    fun saveCachedNotifications(items: List<NotificationItem>) {
+        prefs.edit().putString("cached_notifications", JsonMappers.serializeNotifications(items)).apply()
     }
 
     fun loadCachedNotifications(): List<NotificationItem> {
         val raw = prefs.getString("cached_notifications", "") ?: return emptyList()
-        if (raw.isBlank()) return emptyList()
-        return runCatching {
-            val arr = JSONArray(raw)
-            val list = mutableListOf<NotificationItem>()
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                list.add(
-                    NotificationItem(
-                        id = o.optLong("id"),
-                        moduleId = o.optString("module_id", "system"),
-                        title = o.optString("title", "情报通知"),
-                        summary = o.optString("summary", ""),
-                        markdownBody = o.optString("markdown_body", ""),
-                        priority = o.optString("priority", "normal"),
-                        createdAt = o.optString("created_at", ""),
-                        readAt = o.optString("read_at", "")
-                    )
-                )
-            }
-            list
-        }.getOrDefault(emptyList())
+        return JsonMappers.deserializeNotifications(raw)
     }
 }

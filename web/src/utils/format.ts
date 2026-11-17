@@ -2,6 +2,36 @@ function pad2(n: string | number): string {
   return String(n).padStart(2, '0')
 }
 
+export function parseJsonStringArray(raw?: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map((x) => String(x))
+  if (typeof raw !== 'string' || !raw.trim()) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.map((x) => String(x)) : []
+  } catch {
+    return []
+  }
+}
+
+export function parseJsonRecord(raw?: unknown): Record<string, string> {
+  if (typeof raw !== 'string' || !raw.trim()) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(parsed)) {
+      out[k] = String(v ?? '')
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+export function formatLocalDate(date: Date = new Date()): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+}
+
 export function escapeHtml(s: unknown): string {
   return String(s ?? '')
     .replaceAll('&', '&amp;')
@@ -23,7 +53,7 @@ export function formatTime(str?: string): string {
   if (!str) return '--'
   const d = new Date(str)
   if (Number.isNaN(d.getTime())) return str
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  return `${formatLocalDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 }
 
 export function formatRelativeTime(str?: string): string {
@@ -69,7 +99,7 @@ export function formatDateOnly(str?: string): string {
   if (m) return m[1]
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return s
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+  return formatLocalDate(d)
 }
 
 export function generateSlug(text: string, prefix = 'item'): string {
@@ -79,10 +109,6 @@ export function generateSlug(text: string, prefix = 'item'): string {
     .replace(/[^a-z0-9_-]+/g, '_')
     .replace(/^_+|_+$/g, '')
   return clean || `${prefix}_${Date.now().toString(36).slice(-4)}`
-}
-
-export function shortVersion(ver: string): string {
-  return String(ver || '').replace(/-[0-9a-f]{12,40}$/i, '')
 }
 
 // Append anchor to document.body & defer revokeObjectURL so Safari downloads trigger reliably
@@ -105,7 +131,6 @@ export function describeCron(expr?: string): string {
   if (parts.length !== 5) return `表达式: ${trimmed}`
 
   const [min, hour, dom, mon, dow] = parts
-  const pad = (n: string | number) => String(n).padStart(2, '0')
 
   if (min === '0' && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
     return '每小时整点执行一次'
@@ -119,23 +144,23 @@ export function describeCron(expr?: string): string {
   if (!Number.isNaN(Number(min)) && !Number.isNaN(Number(hour)) && dom === '*' && mon === '*' && dow === '*') {
     const h = parseInt(hour, 10)
     const period = h < 6 ? '凌晨' : h < 12 ? '早间' : h < 14 ? '午间' : h < 18 ? '下午' : '晚间'
-    return `每天 ${period} ${pad(hour)}:${pad(min)} 执行`
+    return `每天 ${period} ${pad2(hour)}:${pad2(min)} 执行`
   }
   if (!Number.isNaN(Number(min)) && !Number.isNaN(Number(hour)) && dom === '*' && mon === '*' && (dow === '1-5' || dow === '1,2,3,4,5')) {
-    return `工作日 (周一至五) ${pad(hour)}:${pad(min)} 执行`
+    return `工作日 (周一至五) ${pad2(hour)}:${pad2(min)} 执行`
   }
   if (!Number.isNaN(Number(min)) && !Number.isNaN(Number(hour)) && dom === '*' && mon === '*' && (dow === '6,0' || dow === '0,6' || dow === '6,7')) {
-    return `周末 (周六日) ${pad(hour)}:${pad(min)} 执行`
+    return `周末 (周六日) ${pad2(hour)}:${pad2(min)} 执行`
   }
   const weekMap: Record<string, string> = { '0': '周日', '1': '周一', '2': '周二', '3': '周三', '4': '周四', '5': '周五', '6': '周六', '7': '周日' }
   if (!Number.isNaN(Number(min)) && !Number.isNaN(Number(hour)) && dom === '*' && mon === '*' && weekMap[dow]) {
-    return `每${weekMap[dow]} ${pad(hour)}:${pad(min)} 执行`
+    return `每${weekMap[dow]} ${pad2(hour)}:${pad2(min)} 执行`
   }
   if (!Number.isNaN(Number(min)) && !Number.isNaN(Number(hour)) && !Number.isNaN(Number(dom)) && mon === '*' && dow === '*') {
-    return `每月 ${pad(dom)} 日 ${pad(hour)}:${pad(min)} 执行`
+    return `每月 ${pad2(dom)} 日 ${pad2(hour)}:${pad2(min)} 执行`
   }
   if (!Number.isNaN(Number(min)) && hour.includes(',') && dom === '*' && mon === '*' && dow === '*') {
-    return `每天 ${hour.split(',').map((h) => `${pad(h)}:${pad(min)}`).join(' 与 ')} 各执行一次`
+    return `每天 ${hour.split(',').map((h) => `${pad2(h)}:${pad2(min)}`).join(' 与 ')} 各执行一次`
   }
   return `定时 Cron: ${trimmed}`
 }
@@ -149,6 +174,14 @@ export function botStateLabel(state?: string): string {
     blocked: '告警',
   }
   return map[String(state || 'idle')] || '待命'
+}
+
+export function botStateDotClass(state?: string): string {
+  if (state === 'thinking') return 'bg-amber-400 animate-pulse'
+  if (state === 'working') return 'bg-[#f2b880] animate-pulse'
+  if (state === 'done') return 'bg-emerald-400'
+  if (state === 'blocked') return 'bg-rose-400'
+  return 'bg-slate-500'
 }
 
 export function summarizeAssetsMonthlyCost(
@@ -202,18 +235,25 @@ export function groupModeLabel(mode?: string): string {
   return '智能协同'
 }
 
-export function formatChatTime(str?: string): string {
-  if (!str) return ''
+function computeLocalDayDiff(
+  str?: string,
+  now: Date = new Date()
+): { d: Date; hm: string; diffDays: number } | null {
+  if (!str) return null
   const d = new Date(str)
-  if (Number.isNaN(d.getTime())) return ''
-  const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
-
+  if (Number.isNaN(d.getTime())) return null
+  const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
   const targetDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const diffDays = Math.round((today - targetDay) / 86400000)
+  const diffDays = Math.round((today - targetDay) / 86_400_000)
+  return { d, hm, diffDays }
+}
 
+export function formatChatTime(str?: string): string {
+  const now = new Date()
+  const info = computeLocalDayDiff(str, now)
+  if (!info) return ''
+  const { d, hm, diffDays } = info
   if (diffDays === 0) return hm
   if (diffDays === 1) return `昨天 ${hm}`
   if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}`
@@ -221,17 +261,10 @@ export function formatChatTime(str?: string): string {
 }
 
 export function formatTimelineDivider(str?: string): string {
-  if (!str) return ''
-  const d = new Date(str)
-  if (Number.isNaN(d.getTime())) return ''
   const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
-
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const targetDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const diffDays = Math.round((today - targetDay) / 86400000)
-
+  const info = computeLocalDayDiff(str, now)
+  if (!info) return ''
+  const { d, hm, diffDays } = info
   if (diffDays === 0) return `今天 ${hm}`
   if (diffDays === 1) return `昨天 ${hm}`
   if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`

@@ -2,6 +2,8 @@
 import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
+import { parseJsonRecord, parseJsonStringArray } from '../utils/format'
+import { clearSearchOnEscape } from '../utils/topLayer'
 import type { Skill, SkillParamField } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -65,7 +67,7 @@ const filteredSkills = computed(() => {
 })
 
 function mountedBotCount(skillId: string): number {
-  return store.state.bots.filter((b) => Array.isArray(b.skill_ids) && b.skill_ids.includes(skillId)).length
+  return store.state.bots.filter((b) => parseJsonStringArray(b.skill_ids).includes(skillId)).length
 }
 
 function resetForm() {
@@ -93,15 +95,10 @@ function loadSkillToEdit(sk: Skill) {
   httpUrl.value = sk.http_url || ''
   enabled.value = sk.enabled !== false
 
-  try {
-    const hObj = JSON.parse(sk.http_headers || '{}')
-    headerRows.value =
-      hObj && typeof hObj === 'object'
-        ? Object.entries(hObj).map(([k, v]) => ({ key: k, value: String(v ?? '') }))
-        : []
-  } catch {
-    headerRows.value = []
-  }
+  headerRows.value = Object.entries(parseJsonRecord(sk.http_headers)).map(([k, v]) => ({
+    key: k,
+    value: v,
+  }))
 
   try {
     const pArr = JSON.parse(sk.params_schema || '[]')
@@ -332,7 +329,7 @@ watch(
             type="search"
             aria-label="筛选技能"
             placeholder="搜索技能名称、slug 或描述..."
-            @keydown.escape="skillSearch.trim() ? ($event.preventDefault(), $event.stopPropagation(), skillSearch = '') : undefined"
+            @keydown.escape="clearSearchOnEscape($event, skillSearch, () => { skillSearch = '' })"
             class="w-full min-h-[34px] rounded-lg border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
           />
 

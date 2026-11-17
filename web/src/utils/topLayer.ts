@@ -76,6 +76,17 @@ export function isImeComposingEnter(event: KeyboardEvent, lastCompositionEndAt: 
   return false
 }
 
+export function clearSearchOnEscape(
+  e: KeyboardEvent,
+  currentVal: string,
+  clearFn: () => void
+): void {
+  if (!currentVal.trim()) return
+  e.preventDefault()
+  e.stopPropagation()
+  clearFn()
+}
+
 export function applySiblingStaggerFallback(container: HTMLElement | null): void {
   if (!container || typeof window === 'undefined') return
   if (window.CSS?.supports?.('animation-delay', 'calc(sibling-index() * 0.1s)')) return

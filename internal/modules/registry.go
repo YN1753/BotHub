@@ -31,26 +31,6 @@ func (r *Registry) RegisterTaskRunner(taskType string, runner TaskRunner) {
 	r.runners[taskType] = runner
 }
 
-// RegisteredTaskTypes returns all registered runner type slugs in insertion/sorted order.
-func (r *Registry) RegisteredTaskTypes() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]string, 0, len(r.taskTemplates))
-	seen := make(map[string]bool)
-	for _, tpl := range r.taskTemplates {
-		if _, ok := r.runners[tpl.Type]; ok && !seen[tpl.Type] {
-			seen[tpl.Type] = true
-			out = append(out, tpl.Type)
-		}
-	}
-	for k := range r.runners {
-		if !seen[k] {
-			out = append(out, k)
-		}
-	}
-	return out
-}
-
 // GetTaskRunner retrieves the TaskRunner for a task type.
 func (r *Registry) GetTaskRunner(taskType string) (TaskRunner, bool) {
 	r.mu.RLock()
@@ -76,26 +56,43 @@ func (r *Registry) TaskTemplates() []TaskTemplate {
 }
 
 // NewDefaultRegistry instantiates and registers all built-in module runners cleanly.
-func NewDefaultRegistry(st *store.Store, push *notifier.Client) *Registry {
+func NewDefaultRegistry(st *store.Store, push *notifier.Client, summarizers ...LightSummarizer) *Registry {
 	reg := NewRegistry()
 
 	morning := NewMorningModule(st, push)
-	reg.RegisterTaskRunner("morning", morning)
-
 	radar := NewRadarModule(st, push)
+	if len(summarizers) > 0 && summarizers[0] != nil {
+		morning.SetSummarizer(summarizers[0])
+		radar.SetSummarizer(summarizers[0])
+	}
+
+	reg.RegisterTaskRunner("morning", morning)
 	reg.RegisterTaskRunner("radar", radar)
-
-	watcher := NewAssetWatcherModule(st, push)
-	reg.RegisterTaskRunner("asset_watcher", watcher)
-
-	botPrompt := NewBotPromptModule(st, push)
-	reg.RegisterTaskRunner("bot_prompt", botPrompt)
+	reg.RegisterTaskRunner("asset_watcher", NewAssetWatcherModule(st, push))
+	reg.RegisterTaskRunner("bot_prompt", NewBotPromptModule(st, push))
 
 	for _, tpl := range BuiltinTemplates() {
 		reg.RegisterTaskTemplate(tpl)
 	}
 
 	return reg
+}
+
+// SetLightSummarizer injects the shared light LLM summarizer into MorningModule and RadarModule.
+func (r *Registry) SetLightSummarizer(sum LightSummarizer) {
+	if r == nil {
+		return
+	}
+	if runner, ok := r.GetTaskRunner("morning"); ok {
+		if mm, ok := runner.(*MorningModule); ok {
+			mm.SetSummarizer(sum)
+		}
+	}
+	if runner, ok := r.GetTaskRunner("radar"); ok {
+		if rm, ok := runner.(*RadarModule); ok {
+			rm.SetSummarizer(sum)
+		}
+	}
 }
 
 // SetBotRoutineExecutor injects the agent routine executor into the registered bot_prompt module.

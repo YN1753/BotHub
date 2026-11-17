@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +19,170 @@ import (
 	"github.com/robfig/cron/v3"
 	_ "modernc.org/sqlite"
 )
+
+func queryNezhaNodesToolSpec() ToolSpec {
+	return ToolSpec{
+		Definition: ToolDefinition{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "query_nezha_nodes",
+				Description: "查询哪吒探针（Nezha）服务器节点的实时在线状态、系统信息、最近心跳与本地算力资产台账。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"keyword": map[string]any{
+							"type":        "string",
+							"description": "可选：按节点名称或备注过滤关键词",
+						},
+					},
+				},
+			},
+		},
+		Timeout:        25 * time.Second,
+		ReadOnly:       true,
+		StatusLabel:    "正在巡检探针节点...",
+		DomainKeywords: []string{"探针", "哪吒", "vps", "节点", "服务器", "cpu", "内存", "负载", "掉线", "宕机", "告警", "延迟", "ssh", "nezha"},
+		Execute: func(ctx context.Context, e *Engine, cleanArgs string) (string, error) {
+			return e.toolQueryNezhaNodes(ctx, cleanArgs)
+		},
+	}
+}
+
+func manageAssetsToolSpec() ToolSpec {
+	return ToolSpec{
+		Definition: ToolDefinition{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "manage_assets",
+				Description: "查询或管理 BotHub 资产台账（VPS、域名、订阅、保号卡）。支持 list（列表）、summary（月度与年度费用分币种汇总）、expiring（查询即将到期）、upsert（新增或修改资产）、delete（删除资产）、sync（立即执行资产外部同步任务）。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"action": map[string]any{
+							"type":        "string",
+							"enum":        []string{"list", "summary", "expiring", "upsert", "delete", "sync"},
+							"description": "操作类型：list | summary | expiring | upsert | delete | sync",
+						},
+						"category": map[string]any{
+							"type":        "string",
+							"description": "可选：按分类过滤或设置分类（例如 compute / domain / life / other 或自定义分类）",
+						},
+						"within_days": map[string]any{
+							"type":        "integer",
+							"description": "当 action=expiring 时，筛选多少天内到期的资产（默认 30）",
+						},
+						"id": map[string]any{
+							"type":        "string",
+							"description": "资产唯一标识 ID（upsert 或 delete 时必填）",
+						},
+						"name": map[string]any{
+							"type":        "string",
+							"description": "资产名称（upsert 时使用）",
+						},
+						"spec": map[string]any{
+							"type":        "string",
+							"description": "规格或区域描述（upsert 时使用）",
+						},
+						"price": map[string]any{
+							"type":        "string",
+							"description": "费用与周期描述，如 $15.00 / 年、¥99 / 月（upsert 时使用）",
+						},
+						"status": map[string]any{
+							"type":        "string",
+							"description": "生命周期状态：生效中 | 已到期 | 已停用（upsert 时使用）",
+						},
+						"due_date": map[string]any{
+							"type":        "string",
+							"description": "到期日期 YYYY-MM-DD（upsert 时使用）",
+						},
+						"auto_renew": map[string]any{
+							"type":        "boolean",
+							"description": "是否自动续费（upsert 时使用）",
+						},
+					},
+					"required": []string{"action"},
+				},
+			},
+		},
+		StatusLabel:    "正在核查资产台账...",
+		DomainKeywords: []string{"资产", "域名", "到期", "续费", "账单", "会员", "cloudflare"},
+		Execute: func(ctx context.Context, e *Engine, cleanArgs string) (string, error) {
+			return e.toolManageAssets(ctx, cleanArgs)
+		},
+	}
+}
+
+func manageTasksToolSpec() ToolSpec {
+	return ToolSpec{
+		Definition: ToolDefinition{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "manage_tasks",
+				Description: "查询或管理 BotHub 自动化调度任务与一次性定时提醒。支持 list、run、upsert（支持周期 cron_expr 或一次性 delay_minutes / run_at 提醒，默认绑定当前 Bot）、toggle、delete。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"action": map[string]any{
+							"type":        "string",
+							"enum":        []string{"list", "run", "upsert", "toggle", "delete"},
+							"description": "操作类型：list | run | upsert | toggle | delete",
+						},
+						"id": map[string]any{
+							"type":        "string",
+							"description": "任务 ID（run / upsert / toggle / delete 时填写，新建也可自动生成）",
+						},
+						"name": map[string]any{
+							"type":        "string",
+							"description": "任务或提醒名称（upsert 时使用）",
+						},
+						"type": map[string]any{
+							"type":        "string",
+							"description": "任务执行器类型，默认 bot_prompt（也支持 morning / radar / asset_watcher）",
+						},
+						"bot_id": map[string]any{
+							"type":        "string",
+							"description": "可选：绑定的 Bot ID，缺省自动绑定当前对话 Bot",
+						},
+						"cron_expr": map[string]any{
+							"type":        "string",
+							"description": "标准 5 段周期 Cron 表达式（与一次性 run_at / delay_minutes 二选一）",
+						},
+						"run_at": map[string]any{
+							"type":        "string",
+							"description": "可选：一次性触发的上海时间 YYYY-MM-DD HH:MM（到点自动执行一次后停用）",
+						},
+						"delay_minutes": map[string]any{
+							"type":        "integer",
+							"description": "可选：多少分钟后触发一次性提醒（自动换算 run_at，如 15 表示 15 分钟后）",
+						},
+						"prompt": map[string]any{
+							"type":        "string",
+							"description": "可选：bot_prompt 类型任务到期时要执行的具体指令内容",
+						},
+						"enabled": map[string]any{
+							"type":        "boolean",
+							"description": "是否启用任务（upsert 或 toggle 时使用）",
+						},
+						"description": map[string]any{
+							"type":        "string",
+							"description": "任务说明（upsert 时使用）",
+						},
+						"params": map[string]any{
+							"type":        "string",
+							"description": "JSON 字符串格式的任务参数（upsert 时使用）",
+						},
+					},
+					"required": []string{"action"},
+				},
+			},
+		},
+		StatusLabel:    "正在安排调度提醒...",
+		DomainKeywords: []string{"定时", "例程", "cron", "日程", "晨报", "调度"},
+		Execute: func(ctx context.Context, e *Engine, cleanArgs string) (string, error) {
+			return e.toolManageTasks(ctx, cleanArgs)
+		},
+	}
+}
 
 func (e *Engine) toolQueryNezhaNodes(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
@@ -113,6 +280,100 @@ func (e *Engine) toolQueryNezhaNodes(ctx context.Context, argsJSON string) (stri
 	}
 	payload, _ := json.Marshal(payloadMap)
 	return string(payload), nil
+}
+
+var reAssetNumber = regexp.MustCompile(`([0-9]+(?:\.[0-9]+)?)`)
+
+func (e *Engine) summarizeAssetsPayload(categoryFilter string) (string, error) {
+	assets, err := e.store.ListAssets()
+	if err != nil {
+		return "", err
+	}
+	type currTotal struct {
+		Currency   string  `json:"currency"`
+		Monthly    float64 `json:"monthly_estimated"`
+		Annualized float64 `json:"annualized_estimated"`
+		Count      int     `json:"priced_items"`
+	}
+	currMap := make(map[string]*currTotal)
+	byCategory := make(map[string]int)
+	var activeCount, expiring30Count, inactiveCount int
+	cat := strings.TrimSpace(categoryFilter)
+
+	for _, a := range assets {
+		if cat != "" && a.Category != cat {
+			continue
+		}
+		if store.NormalizeAssetStatus(a.Status) == "已停用" {
+			inactiveCount++
+			continue
+		}
+		activeCount++
+		catName := strings.TrimSpace(a.Category)
+		if catName == "" {
+			catName = "other"
+		}
+		byCategory[catName]++
+		if a.DueDate != "" && !strings.HasPrefix(a.DueDate, "2099") && a.DaysLeft <= 30 {
+			expiring30Count++
+		}
+		pStr := strings.TrimSpace(a.Price)
+		if pStr == "" {
+			continue
+		}
+		m := reAssetNumber.FindStringSubmatch(pStr)
+		if len(m) < 2 {
+			continue
+		}
+		amt, pErr := strconv.ParseFloat(m[1], 64)
+		if pErr != nil || amt <= 0 {
+			continue
+		}
+		currency := "USD"
+		lowerP := strings.ToLower(pStr)
+		switch {
+		case strings.Contains(pStr, "¥") || strings.Contains(lowerP, "cny") || strings.Contains(lowerP, "rmb") || strings.Contains(pStr, "元"):
+			currency = "CNY"
+		case strings.Contains(pStr, "€") || strings.Contains(lowerP, "eur"):
+			currency = "EUR"
+		case strings.Contains(lowerP, "hkd"):
+			currency = "HKD"
+		}
+		monthly := amt
+		annual := amt * 12
+		switch {
+		case strings.Contains(pStr, "年") || strings.Contains(lowerP, "/yr") || strings.Contains(lowerP, "year") || strings.Contains(lowerP, "/y"):
+			monthly = amt / 12
+			annual = amt
+		case strings.Contains(pStr, "季") || strings.Contains(lowerP, "quarter"):
+			monthly = amt / 3
+			annual = amt * 4
+		case strings.Contains(pStr, "次") || strings.Contains(lowerP, "one"):
+			monthly = 0
+			annual = 0
+		}
+		entry, ok := currMap[currency]
+		if !ok {
+			entry = &currTotal{Currency: currency}
+			currMap[currency] = entry
+		}
+		entry.Monthly = math.Round((entry.Monthly+monthly)*100) / 100
+		entry.Annualized = math.Round((entry.Annualized+annual)*100) / 100
+		entry.Count++
+	}
+
+	breakdown := make([]currTotal, 0, len(currMap))
+	for _, v := range currMap {
+		breakdown = append(breakdown, *v)
+	}
+	out, _ := json.Marshal(map[string]any{
+		"active_count":       activeCount,
+		"inactive_count":     inactiveCount,
+		"expiring_30d_count": expiring30Count,
+		"by_category":        byCategory,
+		"cost_by_currency":   breakdown,
+	})
+	return string(out), nil
 }
 
 func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string, error) {

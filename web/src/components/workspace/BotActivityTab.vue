@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { formatTime } from '../../utils/format'
-import { applySiblingStaggerFallback } from '../../utils/topLayer'
+import { applySiblingStaggerFallback, clearSearchOnEscape } from '../../utils/topLayer'
 
 const store = useAppStore()
 const bot = store.activeBot
@@ -141,7 +141,7 @@ onMounted(() => {
             type="search"
             aria-label="筛选运行脉搏"
             placeholder="筛选日志..."
-            @keydown.escape.stop="activityQuery = ''"
+            @keydown.escape="clearSearchOnEscape($event, activityQuery, () => { activityQuery = '' })"
             class="w-36 min-h-[30px] rounded-xl border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
           />
         </div>

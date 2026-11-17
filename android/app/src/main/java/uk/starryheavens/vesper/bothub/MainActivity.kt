@@ -15,6 +15,8 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
+import uk.starryheavens.vesper.bothub.navigation.AppIntents
+import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 import uk.starryheavens.vesper.bothub.notify.NotificationHelper
 import uk.starryheavens.vesper.bothub.sync.PushSyncWorker
 import uk.starryheavens.vesper.bothub.sync.RealtimePushService
@@ -24,7 +26,8 @@ import uk.starryheavens.vesper.bothub.ui.theme.VesperBotHubTheme
 class MainActivity : FragmentActivity() {
 
     private var sharedTextState by mutableStateOf<String?>(null)
-    private var requestedTabState by mutableStateOf<Int?>(null)
+    private var requestedTabState by mutableStateOf<BotHubTab?>(null)
+    private var requestedNotificationIdState by mutableStateOf<Long?>(null)
     private var pairPayloadState by mutableStateOf<Pair<String, String>?>(null)
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -39,12 +42,12 @@ class MainActivity : FragmentActivity() {
         requestNotificationPermissionIfNeeded()
         PushSyncWorker.schedulePeriodicSync(this)
 
-        val prefs = BotHubPrefs(this)
-        if (prefs.realtimeServiceEnabled && prefs.bearerToken.isNotEmpty()) {
-            runCatching { RealtimePushService.start(this) }
-        }
+        val prefs = BotHubPrefs(applicationContext)
+        RealtimePushService.syncWithPrefs(this, prefs)
 
-        extractIncomingIntent(intent)
+        if (savedInstanceState == null) {
+            extractIncomingIntent(intent)
+        }
 
         val api = BotHubApiClient(prefs)
         setContent {
@@ -56,6 +59,8 @@ class MainActivity : FragmentActivity() {
                     onSharedTextConsumed = { sharedTextState = null },
                     requestedTab = requestedTabState,
                     onRequestedTabConsumed = { requestedTabState = null },
+                    requestedNotificationId = requestedNotificationIdState,
+                    onRequestedNotificationIdConsumed = { requestedNotificationIdState = null },
                     pairPayload = pairPayloadState,
                     onPairPayloadConsumed = { pairPayloadState = null }
                 )
@@ -71,36 +76,38 @@ class MainActivity : FragmentActivity() {
 
     private fun extractIncomingIntent(intent: Intent?) {
         if (intent == null) return
-        if (intent.action == Intent.ACTION_VIEW && intent.data?.scheme == "bothub" && intent.data?.host == "pair") {
-            val pairUrl = intent.data?.getQueryParameter("url")?.trim().orEmpty()
-            val pairCode = intent.data?.getQueryParameter("code")?.trim().orEmpty()
-            if (pairCode.isNotEmpty()) {
-                pairPayloadState = pairUrl to pairCode
-            }
+
+        AppIntents.extractPairPayload(intent)?.let { payload ->
+            pairPayloadState = payload
             return
         }
-        val deepChat = intent.getStringExtra(EXTRA_DEEP_CHAT_TEXT)?.trim()
+
+        val deepChat = intent.getStringExtra(AppIntents.EXTRA_DEEP_CHAT_TEXT)?.trim()
         if (!deepChat.isNullOrEmpty()) {
             sharedTextState = deepChat
-            intent.removeExtra(EXTRA_DEEP_CHAT_TEXT)
+            intent.removeExtra(AppIntents.EXTRA_DEEP_CHAT_TEXT)
             return
         }
-        if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()
-            if (!text.isNullOrEmpty()) {
-                sharedTextState = text
-            }
-            return
-        }
-        val tabIdx = intent.getIntExtra("open_tab", -1)
-        if (tabIdx >= 0) {
-            requestedTabState = tabIdx
-            intent.removeExtra("open_tab")
-        }
-    }
 
-    companion object {
-        const val EXTRA_DEEP_CHAT_TEXT = "extra_deep_chat_text"
+        val shared = AppIntents.extractSharedText(intent)
+        if (shared.isNotEmpty()) {
+            sharedTextState = shared
+            intent.removeExtra(Intent.EXTRA_TEXT)
+            intent.removeExtra(Intent.EXTRA_SUBJECT)
+            return
+        }
+
+        val tabIdx = intent.getIntExtra(AppIntents.EXTRA_OPEN_TAB, -1)
+        BotHubTab.fromIndex(tabIdx)?.let { tab ->
+            requestedTabState = tab
+            intent.removeExtra(AppIntents.EXTRA_OPEN_TAB)
+        }
+
+        val notificationId = intent.getLongExtra(AppIntents.EXTRA_NOTIFICATION_ID, -1L)
+        if (notificationId > 0L) {
+            requestedNotificationIdState = notificationId
+            intent.removeExtra(AppIntents.EXTRA_NOTIFICATION_ID)
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {

@@ -11,10 +11,8 @@ class BootCompletedReceiver : BroadcastReceiver() {
             val prefs = BotHubPrefs(context)
             if (prefs.bearerToken.isNotBlank()) {
                 PushSyncWorker.schedulePeriodicSync(context)
-                if (prefs.realtimeServiceEnabled) {
-                    RealtimePushService.start(context)
-                }
             }
+            RealtimePushService.syncWithPrefs(context, prefs)
         }
     }
 }

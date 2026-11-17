@@ -10,6 +10,138 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
+func rememberFactToolSpec() ToolSpec {
+	return ToolSpec{
+		Definition: ToolDefinition{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "remember_fact",
+				Description: "将与当前会话相关的用户偏好、关系故事、重要约定或核心事实写入隔离的长期记忆库，默认仅绑定当前 Bot/群聊作用域。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"category": map[string]any{
+							"type":        "string",
+							"description": "记忆分类：preference（偏好）/ relation（人际与故事）/ emotion（心情与生活）/ infra（节点与工程）/ schedule（约定）/ insight（洞察）/ general（通用）",
+						},
+						"fact_key": map[string]any{
+							"type":        "string",
+							"description": "简短唯一的事实键名（同作用域下同名会覆盖更新），如 user_tea_habit / deploy_rule",
+						},
+						"content": map[string]any{
+							"type":        "string",
+							"description": "要记住的具体事实内容",
+						},
+						"importance": map[string]any{
+							"type":        "integer",
+							"description": "重要程度 1~5（默认 3，核心约定可设为 5）",
+						},
+						"pinned": map[string]any{
+							"type":        "boolean",
+							"description": "是否置顶为高优先常驻记忆",
+						},
+						"scope": map[string]any{
+							"type":        "string",
+							"description": "可选：'self'（默认，仅当前 Bot/群私有）或 'global'（显式跨全团队共享）",
+						},
+					},
+					"required": []string{"fact_key", "content"},
+				},
+			},
+		},
+		StatusLabel: "正在整理长期记忆...",
+		Execute: func(ctx context.Context, e *Engine, cleanArgs string) (string, error) {
+			return e.toolRememberFact(ctx, cleanArgs)
+		},
+	}
+}
+
+func recallMemoryToolSpec() ToolSpec {
+	return ToolSpec{
+		Definition: ToolDefinition{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "recall_memory",
+				Description: "检索当前 Bot 或群聊专属作用域内的长期记忆（自动隔离其他 Bot 隐私记忆），支持关键词、分类和仅置顶过滤，并按相关性与权重排序。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"query": map[string]any{
+							"type":        "string",
+							"description": "可选：检索关键词（支持空格分隔多关键词；留空则返回当前作用域核心记忆）",
+						},
+						"category": map[string]any{
+							"type":        "string",
+							"description": "可选：按记忆分类过滤，如 preference / infra / schedule / insight / relation / emotion / general",
+						},
+						"pinned_only": map[string]any{
+							"type":        "boolean",
+							"description": "可选：设为 true 时仅返回置顶的高优先记忆",
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "可选：返回最大条数（默认 20，最大 40）",
+						},
+					},
+				},
+			},
+		},
+		ReadOnly:    true,
+		StatusLabel: "正在检索历史记忆...",
+		Execute: func(ctx context.Context, e *Engine, cleanArgs string) (string, error) {
+			return e.toolRecallMemory(ctx, cleanArgs)
+		},
+	}
+}
+
+func manageMemoryToolSpec() ToolSpec {
+	return ToolSpec{
+		Definition: ToolDefinition{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "manage_memory",
+				Description: "对当前 Bot 或群聊作用域内的长期记忆进行整理：更正旧事实(upsert)、置顶或取消置顶(pin)、遗忘过时或错误条目(forget)、合并去重相似记忆(consolidate)、或列出现有记忆键(list)。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"action": map[string]any{
+							"type":        "string",
+							"enum":        []string{"list", "upsert", "pin", "forget", "consolidate"},
+							"description": "操作类型：list | upsert | pin | forget | consolidate",
+						},
+						"fact_key": map[string]any{
+							"type":        "string",
+							"description": "目标记忆事实键名（upsert/pin/forget 时必填）",
+						},
+						"content": map[string]any{
+							"type":        "string",
+							"description": "更新后的记忆内容（upsert 时必填）",
+						},
+						"category": map[string]any{
+							"type":        "string",
+							"description": "记忆分类（preference/relation/emotion/infra/schedule/insight/general）",
+						},
+						"importance": map[string]any{
+							"type":        "integer",
+							"description": "重要度权重 1~5",
+						},
+						"pinned": map[string]any{
+							"type":        "boolean",
+							"description": "是否置顶",
+						},
+					},
+					"required": []string{"action"},
+				},
+			},
+		},
+		StatusLabel:    "正在整理长期记忆...",
+		DomainKeywords: []string{"记忆", "记住", "忘掉", "修改记忆", "置顶"},
+		Execute: func(ctx context.Context, e *Engine, cleanArgs string) (string, error) {
+			return e.toolManageMemory(ctx, cleanArgs)
+		},
+	}
+}
+
 func resolveMemoryTargetScope(sc ToolScope, requestedScope string) string {
 	targetScope := "global"
 	if strings.TrimSpace(sc.TimelineBotID) != "" {

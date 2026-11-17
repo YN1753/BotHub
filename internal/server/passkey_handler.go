@@ -48,7 +48,6 @@ type passkeyCeremonyEntry struct {
 }
 
 type pairCodeEntry struct {
-	code      string
 	expiresAt time.Time
 }
 
@@ -119,7 +118,6 @@ func (ps *passkeyStateStore) createPairCode(ttl time.Duration) (string, error) {
 		}
 	}
 	ps.pairCodes[code] = pairCodeEntry{
-		code:      code,
 		expiresAt: now.Add(ttl),
 	}
 	return code, nil
@@ -265,22 +263,6 @@ func (s *Server) newWebAuthnInstance(rpID, origin string) (*webauthn.WebAuthn, e
 		},
 	}
 	return webauthn.New(cfg)
-}
-
-func (s *Server) ensureAppBearerToken() (string, error) {
-	appToken, _ := s.store.GetConfig(store.KeyAppBearerToken)
-	appToken = strings.TrimSpace(appToken)
-	if appToken != "" {
-		return appToken, nil
-	}
-	generated, err := generateRandomToken()
-	if err != nil {
-		return "", err
-	}
-	if err := s.store.SetConfig(store.KeyAppBearerToken, generated); err != nil {
-		return "", err
-	}
-	return generated, nil
 }
 
 // handleAssetLinks serves /.well-known/assetlinks.json so Android CredentialManager Passkeys
@@ -581,15 +563,7 @@ func (s *Server) handlePasskeyLoginVerify(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "签发会话失败")
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    cookieTok,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   30 * 24 * 3600,
-	})
+	writeSessionCookie(w, r, cookieTok, 30*24*3600)
 
 	appToken, err := s.ensureAppBearerToken()
 	if err != nil {
@@ -630,8 +604,7 @@ func (s *Server) handleRenamePasskey(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "无效请求参数")
+	if !decodeJSON(w, r, 4096, &body) {
 		return
 	}
 	cleanName := notifier.StripEmoji(strings.TrimSpace(body.Name))
@@ -691,8 +664,7 @@ func (s *Server) handleExchangePairCode(w http.ResponseWriter, r *http.Request) 
 	var body struct {
 		Code string `json:"code"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "无效配对请求")
+	if !decodeJSON(w, r, 4096, &body) {
 		return
 	}
 	if !s.passkeys.consumePairCode(body.Code) {

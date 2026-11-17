@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -53,8 +52,7 @@ func (s *Server) handleCreateStash(w http.ResponseWriter, r *http.Request) {
 		Tags           string `json:"tags"`
 		ForceReprocess bool   `json:"force_reprocess"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128*1024)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效收藏请求体")
+	if !decodeJSON(w, r, 128*1024, &req) {
 		return
 	}
 	if strings.TrimSpace(req.RawInput) == "" {
@@ -95,8 +93,7 @@ func (s *Server) handleUpdateStash(w http.ResponseWriter, r *http.Request) {
 		Status   *string `json:"status"`
 		MarkRead *bool   `json:"mark_read"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效更新请求体")
+	if !decodeJSON(w, r, 64*1024, &req) {
 		return
 	}
 

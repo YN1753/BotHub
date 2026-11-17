@@ -3,10 +3,12 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { describeCron, formatDateOnly, summarizeAssetsMonthlyCost, triggerBlobDownload, csvEscapeCell } from '../utils/format'
+import { pickDefaultWorkerBot } from '../utils/botLook'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import type { Asset } from '../types/bothub'
 import SegmentedTabs from './SegmentedTabs.vue'
 import BotAvatar from './BotAvatar.vue'
+import WorkspaceSidebarControls from './ui/WorkspaceSidebarControls.vue'
 
 defineProps<{
   desktopCollapsed?: boolean
@@ -21,9 +23,7 @@ const store = useAppStore()
 const searchQuery = ref('')
 const activeCat = ref('all')
 const expiringOnly = ref(false)
-const autoRenewOnly = ref(false)
 const sortByUrgency = ref(false)
-const assetStatusFilter = ref<'all' | 'active' | 'expired' | 'paused'>('all')
 const taskSearch = ref('')
 const taskStatusFilter = ref<'all' | 'enabled' | 'paused'>('all')
 const syncing = ref(false)
@@ -65,10 +65,6 @@ const filteredAssets = computed(() => {
   const list = store.state.assets.filter((a) => {
     if (activeCat.value !== 'all' && a.category !== activeCat.value) return false
     if (expiringOnly.value && !isExpiringSoon(a)) return false
-    if (autoRenewOnly.value && !a.auto_renew) return false
-    if (assetStatusFilter.value === 'expired' && a.status !== '已到期') return false
-    if (assetStatusFilter.value === 'paused' && a.status !== '已停用') return false
-    if (assetStatusFilter.value === 'active' && (a.status === '已到期' || a.status === '已停用')) return false
     const q = searchQuery.value.trim().toLowerCase()
     if (!q) return true
     return `${a.name} ${a.spec} ${a.status} ${a.extra_config}`.toLowerCase().includes(q)
@@ -87,7 +83,7 @@ const activeCostSummary = computed(() => summarizeAssetsMonthlyCost(filteredAsse
 const healthMetrics = computed(() => {
   const total = store.state.assets.length
   if (!total) {
-    return { healthyPct: 100, okStop: '100%', warnStop: '100%', expiredCount: 0 }
+    return { healthyPct: 100, okStop: '100%', warnStop: '100%' }
   }
   let expired = 0
   let warn = 0
@@ -103,7 +99,6 @@ const healthMetrics = computed(() => {
     healthyPct: okPct,
     okStop: `${okPct}%`,
     warnStop: `${warnPct}%`,
-    expiredCount: expired,
   }
 })
 
@@ -111,8 +106,6 @@ function resetAssetFilters() {
   searchQuery.value = ''
   activeCat.value = 'all'
   expiringOnly.value = false
-  autoRenewOnly.value = false
-  assetStatusFilter.value = 'all'
 }
 
 function daysText(a: Asset): string {
@@ -191,11 +184,7 @@ async function handleSyncAssets() {
 }
 
 async function auditAssetsWithAssistant() {
-  const targetBotId =
-    store.activeBot.value?.id ||
-    store.state.bots.find((b) => !b.is_group && b.bot_mode !== 'companion')?.id ||
-    store.state.bots[0]?.id ||
-    ''
+  const targetBotId = pickDefaultWorkerBot(store.state.bots, store.activeBot.value)
   if (!targetBotId) {
     store.notify('请先创建一个可执行 Bot')
     return
@@ -264,37 +253,11 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
       style="background: radial-gradient(75% 130% at 15% 0%, rgba(242, 184, 128, 0.08) 0%, transparent 62%), rgba(10, 14, 28, 0.45)"
     >
       <div class="flex items-center gap-3 min-w-0">
-        <button
-          type="button"
-          aria-label="打开菜单"
-          class="btn-tactile md:hidden min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-slate-200 cursor-pointer"
-          @click="emit('openMobileMenu')"
-        >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <line x1="3" y1="6" x2="21" y2="6" />
-            <line x1="3" y1="12" x2="21" y2="12" />
-            <line x1="3" y1="18" x2="21" y2="18" />
-          </svg>
-        </button>
-        <button
-          v-if="desktopCollapsed"
-          type="button"
-          aria-label="展开侧边栏"
-          title="展开侧边栏"
-          class="btn-tactile relative hidden md:inline-flex items-center justify-center w-9 h-9 rounded-xl text-slate-200 cursor-pointer"
-          @click="emit('toggleDesktopSidebar')"
-        >
-          <span
-            v-if="store.unreadInboxCount.value > 0 || store.pendingTodoCount.value > 0"
-            class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#f2b880] shadow-[0_0_6px_#f2b880]"
-            aria-hidden="true"
-          />
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <line x1="9" y1="3" x2="9" y2="21" />
-            <polyline points="13 9 16 12 13 15" />
-          </svg>
-        </button>
+        <WorkspaceSidebarControls
+          :desktop-collapsed="desktopCollapsed"
+          @open-mobile-menu="emit('openMobileMenu')"
+          @toggle-desktop-sidebar="emit('toggleDesktopSidebar')"
+        />
         <div class="min-w-0">
           <h1 class="text-base md:text-lg font-semibold text-white truncate">全局资产守望与调度引擎</h1>
           <p class="text-xs text-slate-400/90 truncate">VPS / 域名 / 订阅到期台账与后台自动化调度</p>

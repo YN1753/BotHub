@@ -1,6 +1,7 @@
 package store
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
@@ -8,6 +9,67 @@ import (
 	"errors"
 	"strings"
 )
+
+// ConfigSpec describes the mutability, sensitivity, and validation contract of a configuration key.
+type ConfigSpec struct {
+	Editable  bool
+	Sensitive bool
+	IsURL     bool
+}
+
+// ConfigRegistry is the single source of truth for configuration metadata across store and HTTP handlers.
+var ConfigRegistry = map[string]ConfigSpec{
+	KeyCFAPIToken:        {Editable: true, Sensitive: true},
+	KeyNezhaURL:          {Editable: true, IsURL: true},
+	KeyNezhaDBPath:       {Editable: true},
+	KeyNezhaWebhookToken: {Editable: true, Sensitive: true},
+	KeyBiliSessdata:      {Editable: true, Sensitive: true},
+	KeyDeepSeekAPIKey:    {Editable: true, Sensitive: true},
+	KeyDeepSeekBaseURL:   {Editable: true, IsURL: true},
+	KeyAIModel:           {Editable: true},
+	KeyActivePersona:     {Editable: true},
+	KeyLightAPIKey:       {Editable: true, Sensitive: true},
+	KeyLightBaseURL:      {Editable: true, IsURL: true},
+	KeyLightModel:        {Editable: true},
+	KeyPoolForLight:      {Editable: true},
+	KeyPoolFallback:      {Editable: true},
+	KeyAppBearerToken:    {Editable: true, Sensitive: true},
+	KeyAndroidCertSHA256: {Editable: true},
+	KeyMorningCity:       {Editable: true},
+	KeyRadarHNMinScore:   {Editable: true},
+	KeyRadarLimit:        {Editable: true},
+	KeyPushChannel:       {Editable: false},
+	KeyFreeModelPool:     {Editable: false},
+	KeyPasskeyUserID:     {Editable: false},
+	KeyAdminPassHash:     {Editable: false, Sensitive: true},
+	KeySessionSecret:     {Editable: false, Sensitive: true},
+}
+
+func LookupConfigSpec(key string) (ConfigSpec, bool) {
+	spec, ok := ConfigRegistry[strings.TrimSpace(key)]
+	return spec, ok
+}
+
+// MaskSensitiveConfigs redacts all registered sensitive values in-place using MaskSecretValue.
+func MaskSensitiveConfigs(cfgs map[string]string) {
+	for k, spec := range ConfigRegistry {
+		if !spec.Sensitive {
+			continue
+		}
+		if raw, ok := cfgs[k]; ok && strings.TrimSpace(raw) != "" {
+			cfgs[k] = MaskSecretValue(raw)
+		}
+	}
+}
+
+// GenerateAppBearerToken creates a cryptographically random bh_ prefixed bearer token.
+func GenerateAppBearerToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "bh_" + hex.EncodeToString(b), nil
+}
 
 func (s *Store) GetConfig(key string) (string, error) {
 	trimmed := strings.TrimSpace(key)

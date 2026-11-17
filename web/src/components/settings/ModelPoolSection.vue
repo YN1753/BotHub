@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import type { ModelHealthStats, ModelPoolEntry, UpstreamModelCheck } from '../../types/bothub'
 import ToggleSwitch from '../ToggleSwitch.vue'
+import SecretInput from '../ui/SecretInput.vue'
 
 interface FetchedModelMetaItem {
   usable: UpstreamModelCheck[]
@@ -40,12 +41,10 @@ const emit = defineEmits<{
   'update:poolFallback': [value: boolean]
   'update:verifyOnFetch': [value: boolean]
   'update:poolEntries': [value: ModelPoolEntry[]]
-  'update:probingAll': [value: boolean]
 }>()
 
 const store = useAppStore()
 const expandedPoolId = ref(props.poolEntries[0]?.id || '')
-const poolKeyVisible = ref<Record<string, boolean>>({})
 const probingAll = ref(false)
 
 const poolSummaryChip = computed(() => {
@@ -112,14 +111,12 @@ async function probeAllEnabledPool() {
     return
   }
   probingAll.value = true
-  emit('update:probingAll', true)
   let okCount = 0
   for (const entry of active) {
     await props.probeTarget(entry.id, entry.provider, entry.base_url, entry.api_key, entry.model)
     if (props.probeResults[entry.id]?.ok) okCount++
   }
   probingAll.value = false
-  emit('update:probingAll', false)
   store.notify(`全池测速完成：${okCount}/${active.length} 节点连通`)
 }
 </script>
@@ -301,12 +298,12 @@ async function probeAllEnabledPool() {
         <div v-if="expandedPoolId === entry.id" class="pt-2 border-t border-[#fff8ee]/8 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
           <label class="sm:col-span-2 flex flex-col gap-1 text-slate-400">
             <span>API Key ({{ entry.api_key ? '已配置，留着 **** 不变或覆盖输入新 Key' : '待填入 API Key' }})</span>
-            <div class="relative">
-              <input v-model="entry.api_key" :type="poolKeyVisible[entry.id] ? 'text' : 'password'" placeholder="粘贴对应平台的 API Key..." class="w-full min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] pl-2.5 pr-12 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
-              <button type="button" @click="poolKeyVisible[entry.id] = !poolKeyVisible[entry.id]" class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10.5px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
-                {{ poolKeyVisible[entry.id] ? '隐藏' : '显示' }}
-              </button>
-            </div>
+            <SecretInput
+              v-model="entry.api_key"
+              size="sm"
+              placeholder="粘贴对应平台的 API Key..."
+              toggle-label="节点 API Key"
+            />
           </label>
           <label class="flex flex-col gap-1 text-slate-400">
             <span>显示名称</span>

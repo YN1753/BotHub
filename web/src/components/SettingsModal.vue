@@ -8,6 +8,7 @@ import { checkPasskeyCapabilities, registerPasskeyCeremony } from '../utils/pass
 import type { ModelPoolEntry, UpstreamModelCheck } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
+import SecretInput from './ui/SecretInput.vue'
 
 const SettingsSecurityTab = lazyPanelChunk(() => import('./settings/SettingsSecurityTab.vue'))
 const ModelPoolSection = lazyPanelChunk(() => import('./settings/ModelPoolSection.vue'))
@@ -71,10 +72,6 @@ const pairingApp = ref(false)
 const registeringPasskey = ref(false)
 const passkeyCapable = ref(false)
 const passkeyCount = ref(0)
-const showPrimaryKey = ref(false)
-const showLightKey = ref(false)
-const showCfToken = ref(false)
-const showBiliSess = ref(false)
 const savedSnapshot = ref('')
 
 function currentConfigSnapshot(): string {
@@ -376,12 +373,11 @@ async function handleQuickCreatePasskey() {
                   {{ deepseekKey.trim() ? 'Key 已填入' : '未配置主力 Key' }}
                 </span>
               </div>
-              <div class="relative">
-                <input v-model="deepseekKey" :type="showPrimaryKey ? 'text' : 'password'" placeholder="输入 API Key" class="w-full min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] pl-3 pr-14 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
-                <button type="button" @click="showPrimaryKey = !showPrimaryKey" class="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[11px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
-                  {{ showPrimaryKey ? '隐藏' : '显示' }}
-                </button>
-              </div>
+              <SecretInput
+                v-model="deepseekKey"
+                placeholder="输入 API Key"
+                toggle-label="主力 API Key"
+              />
             </label>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label class="flex flex-col gap-1 text-xs text-slate-300">
@@ -486,12 +482,12 @@ async function handleQuickCreatePasskey() {
                 </label>
                 <label class="flex flex-col gap-1 text-xs text-slate-300">
                   <span>轻量 API Key</span>
-                  <div class="relative">
-                    <input v-model="lightApiKey" :type="showLightKey ? 'text' : 'password'" placeholder="留空自动走免费池" class="w-full min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] pl-3 pr-12 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60" />
-                    <button type="button" @click="showLightKey = !showLightKey" class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10.5px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
-                      {{ showLightKey ? '隐藏' : '显示' }}
-                    </button>
-                  </div>
+                  <SecretInput
+                    v-model="lightApiKey"
+                    size="sm"
+                    placeholder="留空自动走免费池"
+                    toggle-label="轻量 API Key"
+                  />
                 </label>
                 <label class="flex flex-col gap-1 text-xs text-slate-300">
                   <span>轻量模型 ID</span>
@@ -632,21 +628,11 @@ async function handleQuickCreatePasskey() {
             <div class="text-xs font-semibold text-[#f2b880]">域名与生态扩展凭据</div>
             <label class="flex flex-col gap-1 text-xs text-slate-300">
               <span>Cloudflare API Token</span>
-              <div class="relative">
-                <input v-model="cfApiToken" :type="showCfToken ? 'text' : 'password'" class="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] pl-3 pr-14 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
-                <button type="button" @click="showCfToken = !showCfToken" class="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[11px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
-                  {{ showCfToken ? '隐藏' : '显示' }}
-                </button>
-              </div>
+              <SecretInput v-model="cfApiToken" toggle-label="Cloudflare API Token" />
             </label>
             <label class="flex flex-col gap-1 text-xs text-slate-300">
               <span>哔哩哔哩 SESSDATA</span>
-              <div class="relative">
-                <input v-model="biliSessdata" :type="showBiliSess ? 'text' : 'password'" class="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] pl-3 pr-14 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
-                <button type="button" @click="showBiliSess = !showBiliSess" class="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[11px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
-                  {{ showBiliSess ? '隐藏' : '显示' }}
-                </button>
-              </div>
+              <SecretInput v-model="biliSessdata" toggle-label="哔哩哔哩 SESSDATA" />
             </label>
           </div>
 

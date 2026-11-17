@@ -5,15 +5,15 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import uk.starryheavens.vesper.bothub.MainActivity
 import uk.starryheavens.vesper.bothub.R
 import uk.starryheavens.vesper.bothub.data.NotificationItem
+import uk.starryheavens.vesper.bothub.navigation.AppIntents
+import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 
 object NotificationHelper {
     const val CHANNEL_ALERTS = "vesper_bothub_alerts"
@@ -21,7 +21,6 @@ object NotificationHelper {
     const val CHANNEL_SERVICE = "vesper_bothub_service"
 
     fun ensureChannels(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         val alertsChannel = NotificationChannel(
@@ -60,14 +59,14 @@ object NotificationHelper {
             }
         }
 
-        val isHigh = item.priority.equals("high", ignoreCase = true) || item.priority.equals("critical", ignoreCase = true)
+        val isHigh = item.isHighPriority
         val channelId = if (isHigh) CHANNEL_ALERTS else CHANNEL_DAILY
 
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("open_tab", 1)
-            putExtra("notification_id", item.id)
-        }
+        val intent = AppIntents.createMainActivityIntent(
+            context = context,
+            openTab = BotHubTab.INBOX,
+            notificationId = item.id
+        )
         val pendingIntent = PendingIntent.getActivity(
             context,
             item.id.toInt(),
@@ -78,7 +77,7 @@ object NotificationHelper {
         val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(item.title)
-            .setContentText(item.summary.ifEmpty { item.markdownBody.take(100) })
+            .setContentText(item.previewText(maxChars = 100))
             .setStyle(NotificationCompat.BigTextStyle().bigText(item.markdownBody.take(600)))
             .setPriority(if (isHigh) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)

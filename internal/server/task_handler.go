@@ -32,8 +32,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var req store.Task
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效请求体")
+	if !decodeJSON(w, r, 16384, &req) {
 		return
 	}
 	req.ID = strings.TrimSpace(req.ID)
@@ -99,8 +98,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req store.Task
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效请求体")
+	if !decodeJSON(w, r, 16384, &req) {
 		return
 	}
 

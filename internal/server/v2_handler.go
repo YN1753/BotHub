@@ -2,9 +2,7 @@ package server
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,14 +15,6 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
-func generateRandomToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return "bh_" + hex.EncodeToString(b), nil
-}
-
 // handleV2AuthToken exchanges the admin password (or existing app token) for the persistent App Bearer Token.
 func (s *Server) handleV2AuthToken(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
@@ -36,8 +26,7 @@ func (s *Server) handleV2AuthToken(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "无效请求体")
+	if !decodeJSON(w, r, 4096, &body) {
 		return
 	}
 
@@ -53,16 +42,10 @@ func (s *Server) handleV2AuthToken(w http.ResponseWriter, r *http.Request) {
 		s.limiter.recordSuccess(ip)
 	}
 
-	appToken, _ := s.store.GetConfig(store.KeyAppBearerToken)
-	appToken = strings.TrimSpace(appToken)
-	if appToken == "" {
-		generated, err := generateRandomToken()
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "签发 App Token 失败")
-			return
-		}
-		_ = s.store.SetConfig(store.KeyAppBearerToken, generated)
-		appToken = generated
+	appToken, err := s.ensureAppBearerToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "签发 App Token 失败")
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -73,7 +56,7 @@ func (s *Server) handleV2AuthToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleV2RotateAppToken(w http.ResponseWriter, r *http.Request) {
-	generated, err := generateRandomToken()
+	generated, err := store.GenerateAppBearerToken()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "轮换 App Token 失败")
 		return
@@ -92,12 +75,6 @@ func (s *Server) handleV2RotateAppToken(w http.ResponseWriter, r *http.Request) 
 
 // handleV2Events streams real-time notifications via SSE and replays missed notifications when last_event_id > 0.
 func (s *Server) handleV2Events(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "不支持流式连接")
-		return
-	}
-
 	var lastEventID int64
 	if raw := strings.TrimSpace(r.URL.Query().Get("last_event_id")); raw != "" {
 		lastEventID, _ = strconv.ParseInt(raw, 10, 64)
@@ -105,14 +82,10 @@ func (s *Server) handleV2Events(w http.ResponseWriter, r *http.Request) {
 		lastEventID, _ = strconv.ParseInt(rawHeader, 10, 64)
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, no-transform")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	rc := http.NewResponseController(w)
-	_ = rc.SetReadDeadline(time.Time{})
-	_ = rc.SetWriteDeadline(time.Time{})
-	w.WriteHeader(http.StatusOK)
+	flusher, ok := startSSEStream(w)
+	if !ok {
+		return
+	}
 
 	latestID := s.store.LatestNotificationID()
 	initData, _ := json.Marshal(map[string]any{

@@ -18,36 +18,29 @@ const (
 	DefaultDeepSeekBaseURL = "https://api.deepseek.com/v1"
 	DefaultAIModel         = "deepseek-chat"
 	DefaultActivePersona   = "grok"
-	DefaultNezhaDBPath     = "/opt/nezha/dashboard/data/sqlite.db"
 
-	KeyPushChannel         = "push_channel"
-	KeyMorningEnabled      = "morning_enabled"
-	KeyMorningCron         = "morning_cron"
-	KeyMorningCity         = "morning_city"
-	KeyNezhaURL            = "nezha_url"
-	KeyNezhaDBPath         = "nezha_db_path"
-	KeyRadarEnabled        = "radar_enabled"
-	KeyRadarCron           = "radar_cron"
-	KeyRadarHNMinScore     = "radar_hn_min_score"
-	KeyRadarLimit          = "radar_limit"
-	KeyAssetWatcherEnabled = "asset_watcher_enabled"
-	KeyAssetWatcherCron    = "asset_watcher_cron"
-	KeyCFAPIToken          = "cf_api_token"
-	KeyBiliSessdata        = "bili_sessdata"
-	KeyDeepSeekAPIKey      = "deepseek_api_key"
-	KeyDeepSeekBaseURL     = "deepseek_base_url"
-	KeyAIModel             = "ai_model"
-	KeyActivePersona       = "active_persona"
-	KeyLightAPIKey         = "light_api_key"
-	KeyLightBaseURL        = "light_base_url"
-	KeyLightModel          = "light_model"
-	KeyFreeModelPool       = "free_model_pool"
-	KeyPoolForLight        = "pool_for_light"
-	KeyPoolFallback        = "pool_fallback"
-	KeyAppBearerToken      = "app_bearer_token"
-	KeyNezhaWebhookToken   = "nezha_webhook_token"
-	KeyAdminPassHash       = "admin_pass_hash"
-	KeySessionSecret       = "session_secret"
+	KeyPushChannel       = "push_channel"
+	KeyMorningCity       = "morning_city"
+	KeyNezhaURL          = "nezha_url"
+	KeyNezhaDBPath       = "nezha_db_path"
+	KeyRadarHNMinScore   = "radar_hn_min_score"
+	KeyRadarLimit        = "radar_limit"
+	KeyCFAPIToken        = "cf_api_token"
+	KeyBiliSessdata      = "bili_sessdata"
+	KeyDeepSeekAPIKey    = "deepseek_api_key"
+	KeyDeepSeekBaseURL   = "deepseek_base_url"
+	KeyAIModel           = "ai_model"
+	KeyActivePersona     = "active_persona"
+	KeyLightAPIKey       = "light_api_key"
+	KeyLightBaseURL      = "light_base_url"
+	KeyLightModel        = "light_model"
+	KeyFreeModelPool     = "free_model_pool"
+	KeyPoolForLight      = "pool_for_light"
+	KeyPoolFallback      = "pool_fallback"
+	KeyAppBearerToken    = "app_bearer_token"
+	KeyNezhaWebhookToken = "nezha_webhook_token"
+	KeyAdminPassHash     = "admin_pass_hash"
+	KeySessionSecret     = "session_secret"
 )
 
 type Store struct {
@@ -384,7 +377,7 @@ END;`
 	_, _ = s.db.Exec(`UPDATE bots SET state = 'idle' WHERE state = 'working'`)
 	_, _ = s.db.Exec(`UPDATE module_runs SET status = 'error', summary = '服务重启中断，已自动收敛状态', finished_at = ? WHERE status = 'running'`, NowShanghai())
 	_, _ = s.db.Exec(`UPDATE stash_items SET status = CASE WHEN ai_tldr != '' THEN 'ready' ELSE 'failed' END, error_msg = CASE WHEN ai_tldr != '' THEN '' ELSE '服务重启中断后台提炼，可点击重提炼恢复' END, updated_at = ? WHERE status = 'processing'`, NowShanghai())
-	_, _ = s.db.Exec(`DELETE FROM configs WHERE key IN ('wecom_corpid', 'wecom_agentid', 'wecom_secret', 'wecom_touser', 'pushplus_token')`)
+	_, _ = s.db.Exec(`DELETE FROM configs WHERE key IN ('wecom_corpid', 'wecom_agentid', 'wecom_secret', 'wecom_touser', 'pushplus_token', 'morning_enabled', 'morning_cron', 'radar_enabled', 'radar_cron', 'asset_watcher_enabled', 'asset_watcher_cron')`)
 	_, _ = s.db.Exec(`UPDATE configs SET value = 'native' WHERE key = 'push_channel' AND value != 'native'`)
 	if err := s.migratePasskeysTable(); err != nil {
 		return err
@@ -482,41 +475,33 @@ func (s *Store) seedDefaults() error {
 
 	appToken := strings.TrimSpace(os.Getenv("BOTHUB_APP_TOKEN"))
 	if appToken == "" {
-		appBytes := make([]byte, 24)
-		_, _ = rand.Read(appBytes)
-		appToken = "bh2_" + hex.EncodeToString(appBytes)
+		appToken, _ = GenerateAppBearerToken()
 	}
 
 	now := NowShanghai()
 	defaults := map[string]string{
-		KeyPushChannel:         pushChannel,
-		KeyMorningEnabled:      "true",
-		KeyMorningCron:         "0 8 * * *",
-		KeyMorningCity:         "Shanghai",
-		KeyNezhaURL:            "",
-		KeyNezhaDBPath:         nezhaDBPath,
-		KeyRadarEnabled:        "true",
-		KeyRadarCron:           "0 12,20 * * *",
-		KeyRadarHNMinScore:     "120",
-		KeyRadarLimit:          "8",
-		KeyAssetWatcherEnabled: "true",
-		KeyAssetWatcherCron:    "0 3 * * *",
-		KeyCFAPIToken:          "",
-		KeyBiliSessdata:        "",
-		KeyDeepSeekAPIKey:      deepseekKey,
-		KeyDeepSeekBaseURL:     deepseekBaseURL,
-		KeyAIModel:             aiModel,
-		KeyActivePersona:       activePersona,
-		KeyLightAPIKey:         lightKey,
-		KeyLightBaseURL:        lightBaseURL,
-		KeyLightModel:          lightModel,
-		KeyFreeModelPool:       "[]",
-		KeyPoolForLight:        "true",
-		KeyPoolFallback:        "true",
-		KeyAppBearerToken:      appToken,
-		KeyNezhaWebhookToken:   "",
-		KeyAdminPassHash:       HashPassword(adminToken),
-		KeySessionSecret:       hex.EncodeToString(secretBytes),
+		KeyPushChannel:       pushChannel,
+		KeyMorningCity:       "Shanghai",
+		KeyNezhaURL:          "",
+		KeyNezhaDBPath:       nezhaDBPath,
+		KeyRadarHNMinScore:   "120",
+		KeyRadarLimit:        "8",
+		KeyCFAPIToken:        "",
+		KeyBiliSessdata:      "",
+		KeyDeepSeekAPIKey:    deepseekKey,
+		KeyDeepSeekBaseURL:   deepseekBaseURL,
+		KeyAIModel:           aiModel,
+		KeyActivePersona:     activePersona,
+		KeyLightAPIKey:       lightKey,
+		KeyLightBaseURL:      lightBaseURL,
+		KeyLightModel:        lightModel,
+		KeyFreeModelPool:     "[]",
+		KeyPoolForLight:      "true",
+		KeyPoolFallback:      "true",
+		KeyAppBearerToken:    appToken,
+		KeyNezhaWebhookToken: "",
+		KeyAdminPassHash:     HashPassword(adminToken),
+		KeySessionSecret:     hex.EncodeToString(secretBytes),
 	}
 
 	for k, v := range defaults {

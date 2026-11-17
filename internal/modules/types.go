@@ -13,13 +13,6 @@ type RunResult struct {
 	ItemsPushed int
 }
 
-type Module interface {
-	ID() string
-	Name() string
-	Description() string
-	Run(ctx context.Context) (RunResult, error)
-}
-
 type TaskRunner interface {
 	RunWithTask(ctx context.Context, task store.Task) (RunResult, error)
 }

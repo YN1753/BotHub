@@ -46,8 +46,7 @@ func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 	var req store.Skill
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效技能请求体")
+	if !decodeJSON(w, r, 64*1024, &req) {
 		return
 	}
 	req.ID = strings.TrimSpace(req.ID)
@@ -103,8 +102,7 @@ func (s *Server) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 		ParamsSchema *string `json:"params_schema"`
 		Enabled      *bool   `json:"enabled"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效更新请求体")
+	if !decodeJSON(w, r, 64*1024, &req) {
 		return
 	}
 
@@ -227,7 +225,7 @@ func (s *Server) handleTestSkill(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Args map[string]any `json:"args"`
 	}
-	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req)
+	_ = decodeOptionalJSON(w, r, 16*1024, &req)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()

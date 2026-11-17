@@ -1,5 +1,8 @@
 import { reactive, computed } from 'vue'
 import { BotHubApi } from '../api/client'
+import { playSubtleChime as playAudioChime } from '../utils/audio'
+import { mapServerMessage, mapServerMessages, type ChatMessageUI } from '../utils/chatMapper'
+import { parseJsonRecord } from '../utils/format'
 import type {
   AgentMemory,
   AgentMessage,
@@ -11,7 +14,6 @@ import type {
   ModelHealthStats,
   ModelPoolEntry,
   NotificationItem,
-  Persona,
   PushLog,
   SelectOption,
   Skill,
@@ -23,57 +25,22 @@ import type {
   WorkNote,
 } from '../types/bothub'
 
+export { mapServerMessages, type ChatMessageUI }
+
 export type MainWorkspace = 'bots' | 'ops'
 export type BotSubView = 'stream' | 'routines' | 'config' | 'activity'
 
-export interface ChatMessageUI {
-  localId: string
-  serverId?: number
-  role: 'user' | 'assistant' | 'system'
-  senderBotId: string
-  senderName: string
-  roleTitle?: string
-  avatarStyle: string
-  model: string
-  msgKind: 'chat' | 'routine' | 'system'
-  createdAt: string
-  content: string
-  reasoning: string
-  tools: Array<{
-    id: string
-    name: string
-    arguments: string
-    result?: string
-    durationMs?: number
-    status?: string
-    done: boolean
-  }>
-  replyToId?: number
-  replyPreview?: string
-  isTempGuest?: boolean
-  statusText: string
-  usageText?: string
-  errorText?: string
-  streaming?: boolean
-  isLiveNew?: boolean
-}
+const TOAST_DURATION_MS = 3200
 
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.32.0',
+  version: 'v2.35.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
-  serverNow: '--',
   stats: {
-    total_assets: 0,
-    total_pushes: 0,
     sent_pushes: 0,
-    seen_items: 0,
-    total_memories: 0,
-    total_notifications: 0,
-    unread_notifications: 0,
   },
   bots: [] as Bot[],
   skills: [] as Skill[],
@@ -83,7 +50,6 @@ const state = reactive({
   stashTags: [] as StashTagCount[],
   modelPool: [] as ModelPoolEntry[],
   availableTools: [] as AvailableToolMeta[],
-  personas: [] as Persona[],
   modelHealth: {} as Record<string, ModelHealthStats>,
   assets: [] as Asset[],
   tasks: [] as Task[],
@@ -108,7 +74,7 @@ const state = reactive({
   ambientMotionPaused: localStorage.getItem('bothub_ambient_paused') === '1',
   draftsByBot: (() => {
     try {
-      return JSON.parse(sessionStorage.getItem('bothub_drafts') || '{}') as Record<string, string>
+      return parseJsonRecord(sessionStorage.getItem('bothub_drafts'))
     } catch {
       return {} as Record<string, string>
     }
@@ -140,112 +106,51 @@ const state = reactive({
 
 let sseSource: EventSource | null = null
 let toastTimer: number | null = null
+let toastStartedAt = 0
+let toastRemainingMs = TOAST_DURATION_MS
+let toastPaused = false
+
+function scheduleToastDismiss(delayMs: number) {
+  if (toastTimer !== null) {
+    window.clearTimeout(toastTimer)
+  }
+  toastStartedAt = Date.now()
+  toastRemainingMs = delayMs
+  toastTimer = window.setTimeout(() => {
+    state.toastMessage = ''
+    toastTimer = null
+  }, delayMs)
+}
 
 function notify(msg: string) {
   state.toastMessage = msg
   state.toastSeq += 1
+  toastPaused = false
+  scheduleToastDismiss(TOAST_DURATION_MS)
+}
+
+function pauseToast() {
+  if (!state.toastMessage || toastPaused) return
+  toastPaused = true
   if (toastTimer !== null) {
     window.clearTimeout(toastTimer)
+    toastTimer = null
   }
-  toastTimer = window.setTimeout(() => {
-    state.toastMessage = ''
-  }, 3200)
+  const elapsed = Date.now() - toastStartedAt
+  toastRemainingMs = Math.max(400, toastRemainingMs - elapsed)
 }
 
-function mapServerMessage(m: AgentMessage, fallbackBot?: Bot): ChatMessageUI {
-  const sender =
-    state.bots.find((b) => b.id === (m.sender_bot_id || m.bot_id)) || fallbackBot
-  let parsedTools: ChatMessageUI['tools'] = []
-  try {
-    const raw = JSON.parse(m.tool_calls || '[]')
-    if (Array.isArray(raw)) {
-      parsedTools = raw.map((tc: any, idx: number) => ({
-        id: tc.id || `tool_${idx}`,
-        name: tc.function?.name || 'tool',
-        arguments: tc.function?.arguments || '{}',
-        done: true,
-      }))
-    }
-  } catch {
-    parsedTools = []
-  }
-  const kind = m.msg_kind === 'system' || m.role === 'system' ? 'system' : m.msg_kind === 'routine' ? 'routine' : 'chat'
-  const role: ChatMessageUI['role'] =
-    kind === 'system' ? 'system' : m.role === 'user' ? 'user' : 'assistant'
+function resumeToast() {
+  if (!state.toastMessage || !toastPaused) return
+  toastPaused = false
+  scheduleToastDismiss(toastRemainingMs)
+}
 
+function mapOptions() {
   return {
-    localId: `srv_${m.id}`,
-    serverId: m.id,
-    role,
-    senderBotId: m.sender_bot_id || m.bot_id || sender?.id || '',
-    senderName: sender?.name || 'BotHub',
-    roleTitle: sender?.role_title || '',
-    avatarStyle: sender?.avatar_style || 'cyan',
-    model: m.model_used || sender?.model || state.configs.ai_model || '',
-    msgKind: kind,
-    createdAt: m.created_at,
-    content: m.content || '',
-    reasoning: m.reasoning_content || '',
-    tools: parsedTools,
-    replyToId: m.reply_to_id || undefined,
-    replyPreview: m.reply_preview || undefined,
-    statusText: kind === 'routine' ? '例程主动汇报' : '已完成',
+    bots: state.bots,
+    defaultModel: state.configs.ai_model,
   }
-}
-
-// Reconstructs full assistant turn by joining tool_calls with their corresponding role="tool" outputs
-// and merging multi-round tool turns from the same sender into a single clean timeline bubble.
-export function mapServerMessages(msgs: AgentMessage[], fallbackBot?: Bot): ChatMessageUI[] {
-  const toolResultByCallID = new Map<string, string>()
-  for (const m of msgs) {
-    if (m.role === 'tool' && m.tool_call_id) {
-      toolResultByCallID.set(m.tool_call_id, m.content || '')
-    }
-  }
-
-  const out: ChatMessageUI[] = []
-  for (const m of msgs) {
-    if (m.role !== 'user' && m.role !== 'assistant' && m.role !== 'system') {
-      continue
-    }
-    const mapped = mapServerMessage(m, fallbackBot)
-    if (mapped.tools.length > 0) {
-      for (const tc of mapped.tools) {
-        if (toolResultByCallID.has(tc.id)) {
-          tc.result = toolResultByCallID.get(tc.id)
-        }
-      }
-    }
-
-    const prev = out.length > 0 ? out[out.length - 1] : null
-    if (
-      prev &&
-      prev.role === 'assistant' &&
-      mapped.role === 'assistant' &&
-      prev.senderBotId === mapped.senderBotId &&
-      prev.tools.length > 0
-    ) {
-      // Merge subsequent round (tool trace / final answer) into the ongoing assistant turn
-      prev.serverId = mapped.serverId
-      prev.localId = mapped.localId
-      if (mapped.reasoning && !prev.reasoning.includes(mapped.reasoning)) {
-        prev.reasoning = prev.reasoning ? `${prev.reasoning}\n${mapped.reasoning}` : mapped.reasoning
-      }
-      if (mapped.tools.length > 0) {
-        prev.tools.push(...mapped.tools)
-      }
-      if (mapped.content) {
-        prev.content = mapped.content
-      }
-      if (mapped.model) {
-        prev.model = mapped.model
-      }
-      prev.createdAt = mapped.createdAt
-      continue
-    }
-    out.push(mapped)
-  }
-  return out
 }
 
 export function useAppStore() {
@@ -285,7 +190,6 @@ export function useAppStore() {
     }
     const baseOpts: SelectOption[] = []
 
-    // If user only set up Free Pool (without Primary Key), put free-pool first as smart default
     if (!hasPrimaryKey && enabledNodes.length > 0) {
       baseOpts.push({
         value: 'free-pool',
@@ -377,6 +281,7 @@ export function useAppStore() {
     'notifications',
     'push_logs',
     'stats',
+    'configs',
     'model_health',
     'workhub',
     'ops',
@@ -415,7 +320,6 @@ export function useAppStore() {
     const jobs: Promise<void>[] = [
       BotHubApi.dashboardSlice(sliceBatch)
         .then((data) => {
-          if (data.server_now) state.serverNow = data.server_now
           if (data.todos !== undefined) state.todos = data.todos || []
           if (data.notes !== undefined) state.notes = data.notes || []
           if (data.stash !== undefined) state.stash = data.stash || []
@@ -432,7 +336,10 @@ export function useAppStore() {
           if (data.skills !== undefined) state.skills = data.skills || []
           if (data.notifications !== undefined) state.notifications = data.notifications || []
           if (data.push_logs !== undefined) state.pushLogs = data.push_logs || []
-          if (data.stats !== undefined && data.stats) state.stats = data.stats
+          if (data.configs !== undefined && data.configs) state.configs = data.configs
+          if (data.stats?.sent_pushes !== undefined) {
+            state.stats.sent_pushes = Number(data.stats.sent_pushes) || 0
+          }
           if (data.model_health !== undefined && data.model_health) state.modelHealth = data.model_health
         })
         .catch(() => {
@@ -486,8 +393,9 @@ export function useAppStore() {
         state.commit = data.commit || state.commit
         state.buildTime = data.build_time || state.buildTime
         state.uptimeSec = Number(data.uptime_sec) || 0
-        state.serverNow = data.server_now || '--'
-        state.stats = data.stats || state.stats
+        if (data.stats?.sent_pushes !== undefined) {
+          state.stats.sent_pushes = Number(data.stats.sent_pushes) || 0
+        }
         state.bots = data.bots || []
         state.skills = data.skills || []
         state.todos = data.todos || []
@@ -496,7 +404,6 @@ export function useAppStore() {
         state.stashTags = data.stash_tags || []
         state.modelPool = data.model_pool || []
         state.availableTools = data.available_tools || []
-        state.personas = data.personas || []
         state.modelHealth = data.model_health || {}
         state.assets = data.assets || []
         state.tasks = data.tasks || []
@@ -569,7 +476,7 @@ export function useAppStore() {
         const idx = state.bots.findIndex((b) => b.id === botId)
         if (idx >= 0) state.bots[idx] = { ...state.bots[idx], ...res.bot }
       }
-      state.timeline = mapServerMessages(res.messages || [], res.bot || bot)
+      state.timeline = mapServerMessages(res.messages || [], res.bot || bot, mapOptions())
     } catch (err: any) {
       if (seq !== latestSelectSeq) return
       notify(err.message || '加载 Bot 对话流失败')
@@ -612,7 +519,7 @@ export function useAppStore() {
       state.activeThreadId = res.thread.id
       state.botView = 'stream'
       const bot = state.bots.find((b) => b.id === state.activeBotId)
-      state.timeline = mapServerMessages(res.messages || [], bot)
+      state.timeline = mapServerMessages(res.messages || [], bot, mapOptions())
       notify(`已从该节点分支出新话题「${res.thread.title}」`)
       return res.thread
     } catch (err: any) {
@@ -737,6 +644,11 @@ export function useAppStore() {
     return state.draftsByBot[draftStorageKey(botId, threadId)] || ''
   }
 
+  function playSubtleChime() {
+    if (!state.soundEnabled) return
+    playAudioChime()
+  }
+
   function toggleSound() {
     state.soundEnabled = !state.soundEnabled
     localStorage.setItem('bothub_sound', state.soundEnabled ? '1' : '0')
@@ -748,30 +660,6 @@ export function useAppStore() {
     state.ambientMotionPaused = !state.ambientMotionPaused
     localStorage.setItem('bothub_ambient_paused', state.ambientMotionPaused ? '1' : '0')
     notify(state.ambientMotionPaused ? '已暂停背景漂浮与待机动效' : '已恢复背景漂浮与待机动效')
-  }
-
-  function playSubtleChime() {
-    if (!state.soundEnabled || typeof window === 'undefined') return
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-      if (!AudioCtx) return
-      const ctx = new AudioCtx()
-      const now = ctx.currentTime
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.type = 'sine'
-      osc.frequency.setValueAtTime(587.33, now)
-      osc.frequency.exponentialRampToValueAtTime(880, now + 0.09)
-      gain.gain.setValueAtTime(0.035, now)
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      osc.start(now)
-      osc.stop(now + 0.24)
-      window.setTimeout(() => ctx.close().catch(() => {}), 300)
-    } catch {
-      // ignore autoplay block
-    }
   }
 
   function startSSE() {
@@ -842,7 +730,7 @@ export function useAppStore() {
         const sameThread = (msg.thread_id || '') === (state.activeThreadId || '')
         if (msg.bot_id === state.activeBotId && sameThread && (!state.isStreaming || msg.role === 'system')) {
           if (!state.timeline.some((t) => msg.id && t.serverId === msg.id)) {
-            state.timeline.push({ ...mapServerMessage(msg), isLiveNew: true })
+            state.timeline.push({ ...mapServerMessage(msg, undefined, mapOptions()), isLiveNew: true })
           }
         } else if (msg.bot_id !== state.activeBotId) {
           const target = state.bots.find((b) => b.id === msg.bot_id)
@@ -909,6 +797,8 @@ export function useAppStore() {
     unreadStashCount,
     expiringAssetCount,
     notify,
+    pauseToast,
+    resumeToast,
     checkAuth,
     login,
     completeSessionActivation,

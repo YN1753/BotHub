@@ -7,11 +7,7 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
-const (
-	PersonaGrok      = "grok"
-	PersonaButler    = "butler"
-	PersonaArchitect = "architect"
-)
+const PersonaGrok = "grok"
 
 type Persona struct {
 	ID           string `json:"id"`

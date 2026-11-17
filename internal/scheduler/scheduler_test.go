@@ -15,11 +15,6 @@ type onceRunner struct {
 	hits atomic.Int32
 }
 
-func (o *onceRunner) ID() string { return "once_mod" }
-func (o *onceRunner) Run(_ context.Context) (modules.RunResult, error) {
-	o.hits.Add(1)
-	return modules.RunResult{Summary: "一次性提醒已送达"}, nil
-}
 func (o *onceRunner) RunWithTask(_ context.Context, _ store.Task) (modules.RunResult, error) {
 	o.hits.Add(1)
 	return modules.RunResult{Summary: "一次性提醒已送达"}, nil
@@ -27,10 +22,6 @@ func (o *onceRunner) RunWithTask(_ context.Context, _ store.Task) (modules.RunRe
 
 type panicRunner struct{}
 
-func (panicRunner) ID() string { return "panic_mod" }
-func (panicRunner) Run(_ context.Context) (modules.RunResult, error) {
-	panic("simulated module panic")
-}
 func (panicRunner) RunWithTask(_ context.Context, _ store.Task) (modules.RunResult, error) {
 	panic("simulated task panic")
 }

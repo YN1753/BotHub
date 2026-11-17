@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, useId, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
-import { botStateLabel } from '../../utils/format'
+import { botStateDotClass, botStateLabel } from '../../utils/format'
 import { closePopoverWithTransition } from '../../utils/topLayer'
 import type { Bot } from '../../types/bothub'
 import BotAvatar from '../BotAvatar.vue'
 import BotGroupAvatar from '../BotGroupAvatar.vue'
 import SegmentedTabs from '../SegmentedTabs.vue'
+import WorkspaceSidebarControls from '../ui/WorkspaceSidebarControls.vue'
 
 defineProps<{
   bot: Bot | null
@@ -134,38 +135,12 @@ onBeforeUnmount(() => {
   <header class="relative z-20 px-3.5 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pb-1.5 flex items-center justify-between gap-2 shrink-0">
     <!-- Left Floating Identity + Inline Topic Switcher Capsule -->
     <div class="flex items-center gap-2 min-w-0">
-      <button
-        type="button"
-        aria-label="打开菜单"
-        class="btn-tactile md:hidden min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-full text-slate-200 cursor-pointer shrink-0"
-        @click="emit('openMobileMenu')"
-      >
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <line x1="3" y1="6" x2="21" y2="6" />
-          <line x1="3" y1="12" x2="21" y2="12" />
-          <line x1="3" y1="18" x2="21" y2="18" />
-        </svg>
-      </button>
-
-      <button
-        v-if="desktopCollapsed"
-        type="button"
-        aria-label="展开侧边栏"
-        title="展开侧边栏"
-        class="btn-tactile relative hidden md:inline-flex items-center justify-center w-9 h-9 rounded-full text-slate-200 cursor-pointer shrink-0"
-        @click="emit('toggleDesktopSidebar')"
-      >
-        <span
-          v-if="store.unreadInboxCount.value > 0 || store.pendingTodoCount.value > 0"
-          class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#f2b880] shadow-[0_0_6px_#f2b880]"
-          aria-hidden="true"
-        />
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <line x1="9" y1="3" x2="9" y2="21" />
-          <polyline points="13 9 16 12 13 15" />
-        </svg>
-      </button>
+      <WorkspaceSidebarControls
+        :desktop-collapsed="desktopCollapsed"
+        shape="pill"
+        @open-mobile-menu="emit('openMobileMenu')"
+        @toggle-desktop-sidebar="emit('toggleDesktopSidebar')"
+      />
 
       <div ref="topicWrapRef" class="relative flex items-center min-w-0">
         <div class="well-recessed rounded-full pl-1.5 pr-2 py-1 flex items-center gap-2 min-w-0">
@@ -187,7 +162,7 @@ onBeforeUnmount(() => {
             v-if="bot?.state && bot.state !== 'idle'"
             class="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#f2b880]/15 text-[#ffe2be] font-mono text-[10px] leading-none shrink-0"
           >
-            <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880] animate-pulse" aria-hidden="true" />
+            <span :class="['w-1.5 h-1.5 rounded-full', botStateDotClass(bot?.state)]" aria-hidden="true" />
             <span>{{ botStateLabel(bot?.state) }}</span>
           </span>
 

@@ -110,28 +110,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "会话签发失败")
 		return
 	}
-	isSecure := isSecureRequest(r)
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecure,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   cookieMaxAge,
-	})
+	writeSessionCookie(w, r, token, cookieMaxAge)
 	writeJSON(w, http.StatusOK, map[string]any{"authenticated": true})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-	})
+	writeSessionCookie(w, r, "", -1)
 	writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
 }
 
@@ -145,32 +129,15 @@ func (s *Server) rotateSessionSecretAndReissue(w http.ResponseWriter, r *http.Re
 	}
 	s.KickPushSubscribers()
 
-	isSecure := isSecureRequest(r)
 	if !keepCurrent {
-		http.SetCookie(w, &http.Cookie{
-			Name:     sessionCookieName,
-			Value:    "",
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   isSecure,
-			SameSite: http.SameSiteLaxMode,
-			MaxAge:   -1,
-		})
+		writeSessionCookie(w, r, "", -1)
 		return nil
 	}
 	token, err := s.issueSessionCookie()
 	if err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecure,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   7 * 24 * 3600,
-	})
+	writeSessionCookie(w, r, token, 7*24*3600)
 	return nil
 }
 
@@ -197,7 +164,10 @@ func (s *Server) handleUpdatePassword(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		NewPassword string `json:"new_password"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil || len(strings.TrimSpace(body.NewPassword)) < 6 {
+	if !decodeJSON(w, r, 4096, &body) {
+		return
+	}
+	if len(strings.TrimSpace(body.NewPassword)) < 6 {
 		writeError(w, http.StatusBadRequest, "新密钥至少 6 位")
 		return
 	}
@@ -251,7 +221,7 @@ func (s *Server) verifyAppToken(raw string) bool {
 
 func (s *Server) verifyPassword(raw string) bool {
 	stored, err := s.store.GetConfig(store.KeyAdminPassHash)
-	return err == nil && stored != "" && subtle.ConstantTimeCompare([]byte(store.HashPassword(raw)), []byte(stored)) == 1
+	return err == nil && stored != "" && store.VerifyPassword(raw, stored)
 }
 
 func (s *Server) issueSessionCookie() (string, error) {

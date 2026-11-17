@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { BotHubApi } from '../../api/client'
 import { useAppStore } from '../../stores/useAppStore'
+import { copyToClipboard } from '../../utils/clipboard'
 import type { Skill, SkillParamField } from '../../types/bothub'
 
 const props = defineProps<{
@@ -54,12 +55,8 @@ function formatTestOutput(raw: string): string {
 }
 
 async function copyTestOutput(raw: string) {
-  try {
-    await navigator.clipboard.writeText(formatTestOutput(raw))
-    store.notify('已复制响应内容')
-  } catch {
-    store.notify('复制失败')
-  }
+  const ok = await copyToClipboard(formatTestOutput(raw))
+  store.notify(ok ? '已复制响应内容' : '复制失败')
 }
 
 async function runLiveTest() {

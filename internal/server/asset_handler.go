@@ -45,8 +45,7 @@ func (s *Server) handleListAssetTemplates(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 	var req store.Asset
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效请求体")
+	if !decodeJSON(w, r, 16384, &req) {
 		return
 	}
 	req.ID = strings.TrimSpace(req.ID)
@@ -105,8 +104,7 @@ func (s *Server) handleUpdateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req store.Asset
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效请求体")
+	if !decodeJSON(w, r, 16384, &req) {
 		return
 	}
 

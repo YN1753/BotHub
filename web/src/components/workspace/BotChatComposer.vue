@@ -3,33 +3,17 @@ import { ref, computed, watch, nextTick, useId, onBeforeUnmount } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
 import { formatDurationMs } from '../../utils/format'
+import { buildSlashCommands, filterSlashCommands, type SlashCmdItem } from '../../utils/slashCommands'
 import { isImeComposingEnter } from '../../utils/topLayer'
 import { pulseBotListening } from '../../utils/botGaze'
+import type { ReplyQuoteTarget } from '../../composables/useBotChatStream'
 import type { Bot } from '../../types/bothub'
 import BotAvatar from '../BotAvatar.vue'
 import CustomSelect from '../CustomSelect.vue'
 import BotComposerDropdown from './BotComposerDropdown.vue'
+import BotRelayStrip, { type RelayStepItem } from './BotRelayStrip.vue'
 
-export interface ReplyQuoteTarget {
-  serverId: number
-  senderName: string
-  preview: string
-}
-
-export interface RelayStepItem {
-  id: string
-  name: string
-  status: 'done' | 'active'
-  guest?: boolean
-}
-
-interface SlashCmdItem {
-  cmd: string
-  title: string
-  desc: string
-  prompt?: string
-  action?: 'open_drawer' | 'clear_timeline' | 'new_thread' | 'summarize_thread' | 'open_skills' | 'open_workhub'
-}
+export type { RelayStepItem, ReplyQuoteTarget }
 
 export interface StarterChipItem {
   id: string
@@ -137,161 +121,13 @@ const mentionCandidates = computed(() => {
     }))
 })
 
-const slashCommands = computed<SlashCmdItem[]>(() => {
-  const b = bot.value
-  const items: SlashCmdItem[] = []
-  let allowedTools: string[] = []
-  let boundSkills: string[] = []
-  try {
-    const parsed = JSON.parse(b?.allowed_tools || '[]')
-    if (Array.isArray(parsed)) allowedTools = parsed
-  } catch {
-    allowedTools = []
-  }
-  try {
-    const parsed = JSON.parse(b?.skill_ids || '[]')
-    if (Array.isArray(parsed)) boundSkills = parsed
-  } catch {
-    boundSkills = []
-  }
+const slashCommands = computed<SlashCmdItem[]>(() =>
+  buildSlashCommands(bot.value, store.state.skills || [])
+)
 
-  for (const sk of store.state.skills || []) {
-    if (!sk.enabled || !boundSkills.includes(sk.id)) continue
-    items.push({
-      cmd: `/${sk.slug}`,
-      title: `技能 · ${sk.name}`,
-      desc: sk.description || (sk.kind === 'webhook' ? `调用外部技能 skill_${sk.slug}` : '按专属技能规范响应'),
-      prompt: sk.kind === 'webhook' ? `请使用 skill_${sk.slug} 工具协助处理当前问题：` : `请遵循「${sk.name}」技能规范回答：`,
-    })
-  }
-
-  if (allowedTools.includes('manage_assets')) {
-    items.push({
-      cmd: '/assets',
-      title: '资产全面审计',
-      desc: '盘点 VPS、域名与订阅到期风险',
-      prompt: '请调用工具盘点当前全部数字资产与临期风险并给出续费建议。',
-    })
-  }
-  if (allowedTools.includes('query_nezha_nodes')) {
-    items.push({
-      cmd: '/nezha',
-      title: '探针节点巡检',
-      desc: '查看哪吒节点在线率与负载情况',
-      prompt: '请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线与健康状态。',
-    })
-  }
-  if (allowedTools.includes('web_search')) {
-    items.push({
-      cmd: '/search',
-      title: '全网检索',
-      desc: '联网搜索最新资讯与公开资料',
-      prompt: '请帮我联网搜索：',
-    })
-  }
-  if (allowedTools.includes('manage_tasks')) {
-    items.push({
-      cmd: '/tasks',
-      title: '调度队列核查',
-      desc: '检查各自动化例程状态与下次触发时间',
-      prompt: '请核查当前所有自动化调度任务的运行状态与上次执行摘要。',
-    })
-    items.push({
-      cmd: '/remind',
-      title: '创建定时/单次提醒',
-      desc: '设定一次性定时提醒或周期性自动汇报任务',
-      prompt: '请帮我设定一个定时提醒：',
-    })
-  }
-  if (allowedTools.includes('manage_todos')) {
-    items.push({
-      cmd: '/todo',
-      title: '记录或核查个人待办',
-      desc: '添加行动项、查看未完成或勾选完结事项',
-      prompt: '请帮我整理或记录以下待办事项：',
-    })
-    items.push({
-      cmd: '/plan',
-      title: '目标拆解与批量排期',
-      desc: '把复杂目标一键拆解成多条带截止日的待办子任务',
-      prompt: '请调用 manage_todos(action="batch_add") 将以下目标拆解为可执行的分步行动清单并设定优先级：',
-    })
-  }
-  if (allowedTools.includes('manage_notes')) {
-    items.push({
-      cmd: '/note',
-      title: '整理产出工作文档',
-      desc: '将方案、总结或草稿沉淀到工作文档交付区',
-      prompt: '请将以下内容整理为结构化 Markdown 工作文档并保存：',
-    })
-  }
-  if (allowedTools.includes('manage_stash')) {
-    items.push({
-      cmd: '/stash',
-      title: '检索或收纳收藏与闪念',
-      desc: '全文搜索之前收藏的文章/B站视频，或秒收新链接与灵感',
-      prompt: '请调用 manage_stash 检索或收纳以下内容：',
-    })
-  }
-  if (allowedTools.includes('consult_bot')) {
-    items.push({
-      cmd: '/consult',
-      title: '协调团队成员协办',
-      desc: '调用其他专精 Bot 协助完成子任务并汇总',
-      prompt: '请协调工作区里最合适的专业成员共同处理：',
-    })
-  }
-  if (allowedTools.includes('workspace_briefing')) {
-    items.push({
-      cmd: '/briefing',
-      title: '今日行动全景简报',
-      desc: '汇总逾期/今日待办、临期资产与未读预警并排期',
-      prompt: '请调用 workspace_briefing 为我梳理今日重点待办、日程与风险，并给出行动建议。',
-    })
-  }
-  if (allowedTools.includes('calculate_eval')) {
-    items.push({
-      cmd: '/calc',
-      title: '精确表达式计算',
-      desc: '使用高精度计算引擎核算费用、比例或复利',
-      prompt: '请调用 calculate_eval 精确计算：',
-    })
-  }
-  if (allowedTools.includes('manage_memory') || allowedTools.includes('recall_memory')) {
-    items.push({
-      cmd: '/memories',
-      title: '回忆关键信息',
-      desc: '检索与当前会话相关的历史重要记忆',
-      prompt: '请先检索我们的历史记忆，梳理目前你记住的关键事实与约定。',
-    })
-  }
-  if (allowedTools.includes('manage_memory')) {
-    items.push({
-      cmd: '/consolidate',
-      title: '清理并合并重复记忆',
-      desc: '梳理当前作用域的冗余记忆条目并合并去重',
-      prompt: '请先调用 manage_memory(action="consolidate") 合并当前作用域内的重复冗余记忆，再简报整理结果。',
-    })
-  }
-
-  items.push(
-    { cmd: '/workhub', title: '打开个人行动台', desc: '管理待办清单与 Bot 产出的 Markdown 文档', action: 'open_workhub' },
-    { cmd: '/thread', title: '新建独立话题', desc: '在当前会话内开启一条干净的新话题线', action: 'new_thread' },
-    { cmd: '/summarize', title: '总结话题并存记忆', desc: '提炼当前话题核心结论并沉淀到专属记忆库', action: 'summarize_thread' },
-    { cmd: '/skills', title: '打开自定义技能工坊', desc: '管理 Playbook 与 Webhook 外部技能工具', action: 'open_skills' },
-    { cmd: '/invite', title: '拉人进群 / 群设置', desc: '打开右侧群成员与协同策略抽屉', action: 'open_drawer' },
-    { cmd: '/clear', title: '清空当前对话', desc: '清空当前话题聊天时间线', action: 'clear_timeline' }
-  )
-  return items
-})
-
-const filteredSlashCommands = computed(() => {
-  const val = promptModel.value.trim().toLowerCase()
-  if (!val.startsWith('/')) return []
-  return slashCommands.value.filter(
-    (c) => c.cmd.toLowerCase().includes(val) || c.title.toLowerCase().includes(val.slice(1))
-  )
-})
+const filteredSlashCommands = computed(() =>
+  filterSlashCommands(slashCommands.value, promptModel.value)
+)
 
 function focus() {
   textareaRef.value?.focus()
@@ -393,7 +229,7 @@ function pickSlashCommand(item: SlashCmdItem) {
   }
   if (item.action === 'new_thread') {
     promptModel.value = ''
-    store.createThread('')
+    void store.createThread('')
     return
   }
   if (item.action === 'summarize_thread') {
@@ -530,39 +366,8 @@ function handleComposerKeydown(e: KeyboardEvent) {
 
 <template>
   <div class="relative px-3 sm:px-6 pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] sm:pb-5">
-    <!-- Live Multi-Bot Relay Strip during Group Collaboration -->
-    <Transition
-      enter-active-class="transition-[opacity,transform] duration-200 ease-[var(--ease-spring)] motion-reduce:duration-100"
-      enter-from-class="opacity-0 translate-y-2 scale-96 motion-reduce:translate-y-0 motion-reduce:scale-100"
-      enter-to-class="opacity-100 translate-y-0 scale-100"
-      leave-active-class="transition-[opacity,transform] duration-150 ease-in motion-reduce:duration-75"
-      leave-from-class="opacity-100 translate-y-0 scale-100"
-      leave-to-class="opacity-0 translate-y-1.5 scale-96 motion-reduce:translate-y-0 motion-reduce:scale-100"
-    >
-      <div
-        v-if="relaySteps.length > 0"
-        class="origin-bottom max-w-[820px] w-full mx-auto mb-2 px-3 py-1.5 rounded-full border border-[#f2b880]/25 bg-[#080d1c]/90 backdrop-blur-md flex items-center gap-2 overflow-x-auto no-scrollbar text-[11px]"
-      >
-        <span class="font-mono text-slate-400 shrink-0">协同接力:</span>
-        <template v-for="(step, sidx) in relaySteps" :key="step.id + sidx">
-          <span v-if="sidx > 0" class="text-slate-600 shrink-0">-&gt;</span>
-          <span
-            :class="[
-              'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full shrink-0 transition-colors duration-200',
-              step.status === 'active'
-                ? 'bg-[#f2b880]/15 text-[#f2b880] font-medium'
-                : 'bg-emerald-400/10 text-emerald-300'
-            ]"
-          >
-            <span :class="['w-1.5 h-1.5 rounded-full', step.status === 'active' ? 'bg-[#f2b880] animate-pulse' : 'bg-emerald-400']" />
-            <span>{{ step.name }}</span>
-            <span v-if="step.guest" class="text-[9.5px] opacity-80">(外援)</span>
-          </span>
-        </template>
-      </div>
-    </Transition>
+    <BotRelayStrip :steps="relaySteps" />
 
-    <!-- Interactive @Mention & /Slash Autocomplete Popover -->
     <BotComposerDropdown
       :is-group-bot="isGroupBot"
       :group-member-count="groupMembers.length"
@@ -600,10 +405,9 @@ function handleComposerKeydown(e: KeyboardEvent) {
       @submit.prevent="emit('submitPrompt')"
       :class="[
         'composer-dock max-w-[780px] w-full mx-auto rounded-[24px] px-4 sm:px-4.5 pt-3.5 pb-2.5 flex flex-col gap-2',
-        store.state.isStreaming ? 'is-streaming' : ''
+        store.state.isStreaming ? 'is-streaming' : '',
       ]"
     >
-      <!-- Quote-Reply Preview Bar inside Composer -->
       <Transition
         enter-active-class="transition-[opacity,transform] duration-180 ease-[var(--ease-spring)] motion-reduce:duration-100"
         enter-from-class="opacity-0 -translate-y-1.5 scale-98 motion-reduce:translate-y-0 motion-reduce:scale-100"
@@ -661,13 +465,13 @@ function handleComposerKeydown(e: KeyboardEvent) {
             :title="selectedModel.startsWith('pool:') || selectedModel === 'free-pool' ? '深度思考开关主要作用于 DeepSeek Flash / 支持 thinking 的中转站' : '开启或关闭深度推理思考链'"
             :class="[
               'min-h-[40px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880]',
-              enableThinking ? 'btn-tactile-gold' : 'btn-tactile text-slate-400'
+              enableThinking ? 'btn-tactile-gold' : 'btn-tactile text-slate-400',
             ]"
           >
             <span
               :class="[
                 'w-1.5 h-1.5 rounded-full transition-colors',
-                enableThinking ? 'bg-[#f2b880] shadow-[0_0_8px_#f2b880]' : 'bg-slate-500'
+                enableThinking ? 'bg-[#f2b880] shadow-[0_0_8px_#f2b880]' : 'bg-slate-500',
               ]"
               aria-hidden="true"
             />
@@ -734,7 +538,6 @@ function handleComposerKeydown(e: KeyboardEvent) {
       </div>
     </form>
 
-    <!-- Grok / Perplexity-Style Curated Quick Chips Underneath Centered Empty-Stage Console -->
     <div
       v-if="centeredStage && starterChips && starterChips.length > 0"
       class="max-w-[760px] w-full mx-auto mt-3.5 flex flex-wrap items-center justify-center gap-2"
@@ -746,13 +549,13 @@ function handleComposerKeydown(e: KeyboardEvent) {
         @click="emit('pickStarter', chip.id)"
         :class="[
           'min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs cursor-pointer',
-          chip.highlight ? 'btn-tactile-gold font-medium' : 'btn-tactile text-slate-300'
+          chip.highlight ? 'btn-tactile-gold font-medium' : 'btn-tactile text-slate-300',
         ]"
       >
         <span
           :class="[
             'w-1.5 h-1.5 rounded-full shrink-0',
-            chip.highlight ? 'bg-[#f2b880] shadow-[0_0_6px_#f2b880]' : 'bg-slate-400/80'
+            chip.highlight ? 'bg-[#f2b880] shadow-[0_0_6px_#f2b880]' : 'bg-slate-400/80',
           ]"
           aria-hidden="true"
         />

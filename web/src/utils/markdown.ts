@@ -1,4 +1,5 @@
 import { escapeHtml } from './format.ts'
+import { copyToClipboard } from './clipboard.ts'
 
 export function renderSafeMarkdown(raw: string): string {
   const src = String(raw || '').replace(/\r\n/g, '\n')
@@ -131,35 +132,13 @@ export function renderSafeMarkdown(raw: string): string {
   return `<div class="md-body">${html.join('')}</div>`
 }
 
-function copyTextWithFallback(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text)
-  }
-  return new Promise((resolve, reject) => {
-    try {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.setAttribute('readonly', 'true')
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
-      ta.select()
-      const ok = document.execCommand('copy')
-      document.body.removeChild(ta)
-      if (ok) resolve()
-      else reject(new Error('execCommand copy failed'))
-    } catch (err) {
-      reject(err)
-    }
-  })
-}
-
 export function handleMarkdownCodeCopy(e: MouseEvent, onCopied?: () => void): void {
   const target = e.target as HTMLElement | null
   const btn = target?.closest('.md-copy-code-btn') as HTMLButtonElement | null
   if (!btn) return
   const code = btn.closest('.md-code-wrap')?.querySelector('pre code')?.textContent || ''
-  copyTextWithFallback(code).then(() => {
+  void copyToClipboard(code).then((ok) => {
+    if (!ok) return
     const prevTimer = Number(btn.dataset.copyTimer || 0)
     if (prevTimer) window.clearTimeout(prevTimer)
     btn.textContent = '已复制'
@@ -173,5 +152,5 @@ export function handleMarkdownCodeCopy(e: MouseEvent, onCopied?: () => void): vo
       delete btn.dataset.copyTimer
     }, 1500)
     btn.dataset.copyTimer = String(timer)
-  }).catch(() => {})
+  })
 }

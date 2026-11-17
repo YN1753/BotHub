@@ -15,7 +15,6 @@ type StreamEvent struct {
 // Hub manages active SSE subscribers and broadcasts newly created notifications and bot events in real time.
 type Hub struct {
 	mu            sync.RWMutex
-	clients       map[chan store.Notification]func()
 	eventClients  map[chan StreamEvent]func()
 	done          chan struct{}
 	closed        bool
@@ -29,7 +28,6 @@ func (h *Hub) DroppedCount() uint64 {
 
 func NewHub() *Hub {
 	return &Hub{
-		clients:      make(map[chan store.Notification]func()),
 		eventClients: make(map[chan StreamEvent]func()),
 		done:         make(chan struct{}),
 	}
@@ -44,10 +42,7 @@ func (h *Hub) Done() <-chan struct{} {
 // while keeping the Hub open for subsequent authenticated connections.
 func (h *Hub) KickSubscribers() {
 	h.mu.Lock()
-	cancels := make([]func(), 0, len(h.clients)+len(h.eventClients))
-	for _, cancel := range h.clients {
-		cancels = append(cancels, cancel)
-	}
+	cancels := make([]func(), 0, len(h.eventClients))
 	for _, cancel := range h.eventClients {
 		cancels = append(cancels, cancel)
 	}
@@ -67,30 +62,6 @@ func (h *Hub) CloseAll() {
 	}
 	h.mu.Unlock()
 	h.KickSubscribers()
-}
-
-// Subscribe registers a new notification subscriber channel and returns an unsubscribe closure.
-func (h *Hub) Subscribe() (<-chan store.Notification, func()) {
-	ch := make(chan store.Notification, 64)
-	var once sync.Once
-	unsubscribe := func() {
-		once.Do(func() {
-			h.mu.Lock()
-			delete(h.clients, ch)
-			close(ch)
-			h.mu.Unlock()
-		})
-	}
-
-	h.mu.Lock()
-	if h.closed {
-		close(ch)
-		h.mu.Unlock()
-		return ch, func() {}
-	}
-	h.clients[ch] = unsubscribe
-	h.mu.Unlock()
-	return ch, unsubscribe
 }
 
 // SubscribeEvents registers a general typed SSE event subscriber (notifications, bot_state, bot_message).
@@ -117,6 +88,22 @@ func (h *Hub) SubscribeEvents() (<-chan StreamEvent, func()) {
 	return ch, unsubscribe
 }
 
+func (h *Hub) sendEventNonBlocking(ch chan StreamEvent, ev StreamEvent) {
+	select {
+	case ch <- ev:
+	default:
+		h.droppedEvents.Add(1)
+		select {
+		case <-ch:
+		default:
+		}
+		select {
+		case ch <- ev:
+		default:
+		}
+	}
+}
+
 // PublishEvent fans out any typed SSE event to all connected SubscribeEvents listeners.
 // When a slow subscriber's buffer is full, it evicts the oldest queued event so the latest state wins.
 func (h *Hub) PublishEvent(event string, data any) {
@@ -127,65 +114,18 @@ func (h *Hub) PublishEvent(event string, data any) {
 	}
 	ev := StreamEvent{Event: event, Data: data}
 	for ch := range h.eventClients {
-		select {
-		case ch <- ev:
-		default:
-			h.droppedEvents.Add(1)
-			select {
-			case <-ch:
-			default:
-			}
-			select {
-			case ch <- ev:
-			default:
-			}
-		}
+		h.sendEventNonBlocking(ch, ev)
 	}
 }
 
 // Publish fans out a notification to all connected subscribers without blocking.
 func (h *Hub) Publish(n store.Notification) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if h.closed {
-		return
-	}
-	for ch := range h.clients {
-		select {
-		case ch <- n:
-		default:
-			h.droppedEvents.Add(1)
-			select {
-			case <-ch:
-			default:
-			}
-			select {
-			case ch <- n:
-			default:
-			}
-		}
-	}
-	ev := StreamEvent{Event: "notification", Data: n}
-	for ch := range h.eventClients {
-		select {
-		case ch <- ev:
-		default:
-			h.droppedEvents.Add(1)
-			select {
-			case <-ch:
-			default:
-			}
-			select {
-			case ch <- ev:
-			default:
-			}
-		}
-	}
+	h.PublishEvent("notification", n)
 }
 
 // SubscriberCount returns the number of currently connected SSE listeners.
 func (h *Hub) SubscriberCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return len(h.clients) + len(h.eventClients)
+	return len(h.eventClients)
 }

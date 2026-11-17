@@ -1,18 +1,11 @@
 <script setup lang="ts">
 import type { Bot } from '../../types/bothub'
+import type { SlashCmdItem } from '../../utils/slashCommands'
 import BotAvatar from '../BotAvatar.vue'
 
 interface MentionCandidateItem {
   bot: Bot
   inRoom: boolean
-}
-
-interface SlashCommandItem {
-  cmd: string
-  title: string
-  desc: string
-  prompt?: string
-  action?: 'open_drawer' | 'clear_timeline' | 'new_thread' | 'summarize_thread' | 'open_skills' | 'open_workhub'
 }
 
 defineProps<{
@@ -23,7 +16,7 @@ defineProps<{
   mentionCandidates: MentionCandidateItem[]
   mentionHighlight: number
   slashOpen: boolean
-  slashCommands: SlashCommandItem[]
+  slashCommands: SlashCmdItem[]
   slashHighlight: number
 }>()
 
@@ -31,7 +24,7 @@ const emit = defineEmits<{
   pickMentionText: [text: string]
   pickMentionCandidate: [bot: Bot]
   inviteFromMentionAndPick: [bot: Bot]
-  pickSlashCommand: [cmd: SlashCommandItem]
+  pickSlashCommand: [cmd: SlashCmdItem]
 }>()
 </script>
 

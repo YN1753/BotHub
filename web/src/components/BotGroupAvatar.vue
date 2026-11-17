@@ -150,7 +150,6 @@ const isHeroInteractive = computed(() => props.size === 'xl' || props.size === '
     :class="[
       'bot-mochi-cluster shrink-0 relative inline-block select-none overflow-visible',
       containerSizeClass,
-      hasActiveSpeaker ? 'cluster-has-speaker' : '',
       touchPeeking ? 'is-touch-peeking' : '',
     ]"
   >

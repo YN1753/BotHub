@@ -1,0 +1,529 @@
+/* ============================================================================
+   Seamless Monolithic GrokBot Spirit System + Snuggled Mochi Group Cluster
+   ============================================================================ */
+.mochi-cluster-item {
+  --peek-mult: 1;
+  transform:
+    translate3d(calc(var(--m-tx, 0%) * var(--peek-mult)), calc(var(--m-ty, 0%) * var(--peek-mult)), 0)
+    scale(var(--m-sc, 0.72))
+    rotate(var(--m-rot, 0deg));
+  filter: drop-shadow(0 2px 3.5px rgba(3, 5, 13, 0.68));
+}
+
+.mochi-cluster-item.is-front-lead {
+  filter: drop-shadow(0 -1.5px 4px rgba(3, 5, 13, 0.74)) drop-shadow(0 4px 8px rgba(3, 5, 13, 0.55));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mochi-cluster-item {
+    transition:
+      transform 420ms ease-out,
+      filter 240ms ease-out;
+    transition-timing-function: var(--ease-spring), ease-out;
+  }
+
+  .bot-mochi-cluster.is-touch-peeking .mochi-cluster-item.is-peeking-buddy {
+    --peek-mult: 1.16;
+  }
+  .bot-mochi-cluster.is-touch-peeking .mochi-cluster-item.is-front-lead {
+    --peek-mult: 1.07;
+  }
+
+  @media (hover: hover) {
+    .bot-mochi-cluster:hover .mochi-cluster-item.is-peeking-buddy,
+    .group:hover .bot-mochi-cluster .mochi-cluster-item.is-peeking-buddy {
+      --peek-mult: 1.15;
+    }
+    .bot-mochi-cluster:hover .mochi-cluster-item.is-front-lead,
+    .group:hover .bot-mochi-cluster .mochi-cluster-item.is-front-lead {
+      --peek-mult: 1.06;
+    }
+  }
+
+  .mochi-cluster-item.is-speaking-hop .bot-svg {
+    animation: mochiSpeakerBounce 0.95s ease-in-out infinite;
+  }
+}
+
+@keyframes mochiSpeakerBounce {
+  0%, 100% {
+    transform: translate3d(0, 0.8px, 0) scale(1.04, 0.96);
+  }
+  50% {
+    transform: translate3d(0, -3.2px, 0) scale(0.96, 1.06);
+  }
+}
+
+.bot-avatar-root {
+  --gx: 0;
+  --gy: 0;
+}
+
+.bot-avatar-root.bot-gaze-global {
+  --gx: var(--bot-global-gx, 0);
+  --gy: var(--bot-global-gy, 0);
+}
+
+.bot-avatar-root.bot-gaze-local {
+  --gx: var(--local-gx, 0);
+  --gy: var(--local-gy, 0);
+}
+
+.bot-aura {
+  background: radial-gradient(
+    circle var(--in-oklab),
+    var(--bot-glow, rgba(242, 184, 128, 0.38)) 0%,
+    transparent 70%
+  );
+  transition:
+    opacity 260ms ease-out,
+    transform 320ms var(--ease-snappy);
+}
+
+.bot-svg {
+  filter: drop-shadow(0 6px 11px rgba(3, 6, 15, 0.52));
+}
+
+.bot-float-rig,
+.bot-act-rig,
+.bot-head,
+.bot-face-rig,
+.bot-eye-gaze,
+.bot-eye-pair,
+.bot-eye-l,
+.bot-eye-r,
+.bot-inner-aurora,
+.bot-inner-aurora-alt,
+.bot-ground-shadow,
+.bot-sparkle-a,
+.bot-sparkle-b,
+.bot-thought-1,
+.bot-thought-2,
+.bot-thought-3,
+.bot-work-arc-l,
+.bot-work-arc-r,
+.bot-emote-alert {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.bot-act-rig,
+.bot-head {
+  transform-origin: 50% 82%;
+}
+
+.bot-avatar-root:focus-visible {
+  border-radius: 9999px;
+  outline: 2px solid #f2b880;
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+.bot-blush {
+  opacity: 0.72;
+  transition: opacity 220ms ease-out;
+}
+
+.bot-avatar-done .bot-blush,
+.bot-stunt-shy .bot-blush,
+.bot-stunt-dance .bot-blush,
+.bot-avatar-root:hover .bot-blush,
+.group:hover .bot-avatar-root .bot-blush {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bot-face-rig {
+    transform: translate3d(calc(var(--gx) * 2.2px), calc(var(--gy) * 1.6px), 0);
+    transition: transform 140ms ease-out;
+  }
+
+  .bot-avatar-idle .bot-eye-gaze,
+  .bot-avatar-done .bot-eye-gaze {
+    transform: translate3d(calc(var(--gx) * 1.7px), calc(var(--gy) * 1.25px), 0);
+    transition: transform 120ms ease-out;
+  }
+
+  .bot-specular {
+    transition: transform 180ms ease-out;
+    transform: translate3d(calc(var(--gx) * -1.4px), calc(var(--gy) * -1px), 0);
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  .bot-avatar-root .bot-float-rig {
+    animation: botSoftBodyFloat 3.6s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+  .bot-avatar-root .bot-ground-shadow {
+    animation: botShadowBreath 3.6s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+
+  /* 6 Distinct Archetype Idle Personality Choreographies */
+  .bot-kind-butler.bot-avatar-idle .bot-act-rig {
+    animation: botActButler 6.2s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+  .bot-kind-sentinel.bot-avatar-idle .bot-act-rig {
+    animation: botActSentinel 5.6s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+  .bot-kind-radar.bot-avatar-idle .bot-act-rig {
+    animation: botActRadar 6.6s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+  .bot-kind-critic.bot-avatar-idle .bot-act-rig {
+    animation: botActCritic 5.1s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+  .bot-kind-swarm.bot-avatar-idle .bot-act-rig {
+    animation: botActSwarm 6s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+  .bot-kind-visor.bot-avatar-idle .bot-act-rig {
+    animation: botActVisor 5.4s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+
+  .bot-avatar-root .bot-inner-aurora {
+    animation: botAuroraDrift 5.8s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+  .bot-inner-aurora-alt {
+    animation: botAuroraAlt 2.2s ease-in-out infinite;
+  }
+
+  .bot-avatar-root .bot-eye-pair {
+    animation: botDoubleBlink 5.2s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+  .bot-avatar-idle .bot-eye-l {
+    animation: botIdleCuriosityL 7.4s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+
+  .bot-avatar-idle:not(.bot-gaze-local):not(.bot-gaze-global) .bot-eye-gaze {
+    animation: botIdleGlance 6.4s ease-in-out var(--bot-delay, 0s) infinite;
+  }
+
+  html[data-bot-listening="true"] .bot-avatar-idle .bot-head {
+    transform: translate3d(0, 1.2px, 0) scale(1.05, 0.96);
+    transition: transform 260ms ease-out;
+    transition-timing-function: var(--ease-spring);
+  }
+  html[data-bot-listening="true"] .bot-avatar-idle .bot-eye-pair {
+    transform: scaleY(1.12);
+  }
+  html[data-bot-listening="true"] .bot-avatar-idle .bot-blush {
+    opacity: 0.95;
+  }
+
+  .bot-head {
+    transition: transform 340ms ease-out;
+    transition-timing-function: var(--ease-spring);
+  }
+  .bot-avatar-root:hover .bot-head,
+  .group:hover .bot-avatar-root .bot-head {
+    transform: translate3d(0, -2px, 0) scale(1.055, 1.035);
+  }
+  .bot-avatar-root:hover .bot-aura,
+  .group:hover .bot-avatar-root .bot-aura {
+    opacity: 0.95;
+    transform: scale(1.2);
+  }
+
+  .bot-avatar-interactive {
+    transition: transform 340ms ease-out;
+    transition-timing-function: var(--ease-spring);
+  }
+  .bot-avatar-interactive:hover {
+    transform: translateY(-2px) scale(1.06) rotate(-2.5deg);
+  }
+
+  /* 4 Interactive Click / Tap Stunt Choreographies */
+  .bot-stunt-hop .bot-head {
+    animation: botStuntHop 600ms var(--ease-bot-bounce);
+  }
+  .bot-stunt-flip .bot-head {
+    transform-origin: 50% 54%;
+    animation: botStuntFlip 740ms var(--ease-snappy);
+  }
+  .bot-stunt-dance .bot-head {
+    animation: botStuntDance 800ms ease-in-out;
+  }
+  .bot-stunt-shy .bot-head {
+    animation: botStuntShy 840ms ease-in-out;
+  }
+
+  /* Geometric Vector Emote Particle Animations */
+  .bot-sparkle-a {
+    animation: botSparkleTwinkle 1.1s ease-in-out infinite;
+  }
+  .bot-sparkle-b {
+    animation: botSparkleTwinkle 1.1s ease-in-out -0.45s infinite;
+  }
+  .bot-thought-1 {
+    animation: botThoughtRise 1.8s ease-in-out infinite;
+  }
+  .bot-thought-2 {
+    animation: botThoughtRise 1.8s ease-in-out 0.25s infinite;
+  }
+  .bot-thought-3 {
+    animation: botThoughtRise 1.8s ease-in-out 0.5s infinite;
+  }
+  .bot-work-arc-l,
+  .bot-work-arc-r {
+    animation: botWorkArcPulse 1.1s ease-in-out infinite;
+  }
+  .bot-emote-alert {
+    animation: botAlertBeacon 1s ease-in-out infinite;
+  }
+
+  /* State: Thinking */
+  .bot-avatar-thinking .bot-act-rig {
+    animation: botThinkSway 2.3s ease-in-out infinite;
+  }
+  .bot-avatar-thinking .bot-eye-gaze {
+    animation: botLookThought 2s ease-in-out infinite;
+  }
+  .bot-avatar-thinking .bot-eye-r {
+    animation: botThinkSquintR 2s ease-in-out infinite;
+  }
+
+  /* State: Working */
+  .bot-avatar-working .bot-float-rig {
+    animation: botWorkPulse 1.2s ease-in-out infinite;
+  }
+  .bot-avatar-working .bot-act-rig {
+    animation: botWorkHustle 1.2s ease-in-out infinite;
+  }
+  .bot-avatar-working .bot-inner-aurora {
+    animation: botAuroraWork 1.4s ease-in-out infinite;
+  }
+  .bot-avatar-working .bot-eye-gaze {
+    animation: botScan 1.05s ease-in-out infinite;
+  }
+
+  /* State: Done */
+  .bot-avatar-done .bot-act-rig {
+    animation: botHappyNod 2.1s var(--ease-spring) infinite;
+  }
+
+  /* State: Blocked */
+  .bot-avatar-blocked {
+    animation: botAlertPulse 1.5s ease-in-out infinite;
+  }
+  .bot-avatar-blocked .bot-act-rig {
+    animation: botAlertShake 2s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bot-head,
+  .bot-face-rig,
+  .bot-eye-gaze,
+  .bot-specular,
+  .bot-avatar-interactive {
+    transition: none;
+  }
+}
+
+/* WCAG 2.2.2 user-controlled pause for persistent ambient Bot idle motion */
+[data-ambient-paused="true"] .bot-avatar-idle .bot-float-rig,
+[data-ambient-paused="true"] .bot-avatar-idle .bot-act-rig,
+[data-ambient-paused="true"] .bot-avatar-idle .bot-ground-shadow,
+[data-ambient-paused="true"] .bot-avatar-idle .bot-inner-aurora,
+[data-ambient-paused="true"] .bot-avatar-idle .bot-eye-pair,
+[data-ambient-paused="true"] .bot-avatar-idle .bot-eye-l,
+[data-ambient-paused="true"] .bot-avatar-idle .bot-eye-gaze {
+  animation-play-state: paused !important;
+}
+
+@keyframes botSoftBodyFloat {
+  0%, 100% {
+    transform: translate3d(0, 1.4px, 0) scale(1.03, 0.97);
+  }
+  50% {
+    transform: translate3d(0, -2.6px, 0) scale(0.975, 1.03);
+  }
+}
+
+@keyframes botActButler {
+  0%, 46%, 100% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1, 1); }
+  54% { transform: rotate(-6.5deg) translate3d(-1px, -0.5px, 0) scale(0.98, 1.02); }
+  66% { transform: rotate(4.5deg) translate3d(1px, 1px, 0) scale(1.05, 0.95); }
+  75% { transform: rotate(0deg) translate3d(0, -3.5px, 0) scale(0.95, 1.06); }
+  84% { transform: translate3d(0, 0.8px, 0) scale(1.04, 0.96); }
+}
+
+@keyframes botActSentinel {
+  0%, 40%, 100% { transform: rotate(0deg) scale(1, 1); }
+  48% { transform: translate3d(0, -2px, 0) scale(0.95, 1.07); }
+  57% { transform: rotate(7.5deg) translate3d(1.2px, -1px, 0) scale(0.98, 1.03); }
+  67% { transform: rotate(-6.5deg) translate3d(-1.2px, -1px, 0) scale(0.98, 1.03); }
+  77% { transform: rotate(3deg) scale(1.03, 0.97); }
+}
+
+@keyframes botActRadar {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  25% { transform: translate3d(2.2px, -1.6px, 0) rotate(4.5deg) scale(0.98, 1.02); }
+  50% { transform: translate3d(0, 0.8px, 0) rotate(0deg) scale(1.02, 0.98); }
+  75% { transform: translate3d(-2.2px, -1.6px, 0) rotate(-4.5deg) scale(0.98, 1.02); }
+}
+
+@keyframes botActCritic {
+  0%, 44%, 100% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1, 1); }
+  51% { transform: translate3d(0, 1.8px, 0) scale(1.09, 0.9); }
+  59% { transform: translate3d(-1.5px, -4.4px, 0) rotate(-5deg) scale(0.94, 1.07); }
+  66% { transform: translate3d(0, 1.2px, 0) scale(1.07, 0.93); }
+  74% { transform: translate3d(1.5px, -3.2px, 0) rotate(5deg) scale(0.96, 1.05); }
+  83% { transform: translate3d(0, 0.6px, 0) scale(1.03, 0.97); }
+}
+
+@keyframes botActSwarm {
+  0%, 38%, 100% { transform: scale(1, 1) rotate(0deg); }
+  52% { transform: translate3d(0, -1.5px, 0) scale(1.08, 1.04) rotate(3deg); }
+  68% { transform: translate3d(0, 0.8px, 0) scale(0.96, 0.98) rotate(-3deg); }
+  82% { transform: scale(1.03, 1.01) rotate(1deg); }
+}
+
+@keyframes botActVisor {
+  0%, 45%, 100% { transform: scale(1, 1) rotate(0deg); }
+  54% { transform: translate3d(0, 1.6px, 0) scale(1.11, 0.88); }
+  64% { transform: translate3d(0, -3.6px, 0) scale(0.91, 1.1) rotate(-4deg); }
+  74% { transform: translate3d(0, 1px, 0) scale(1.06, 0.94) rotate(3deg); }
+  84% { transform: scale(0.98, 1.02); }
+}
+
+@keyframes botWorkPulse {
+  0%, 100% {
+    transform: translate3d(0, 1px, 0) scale(1.045, 0.96);
+  }
+  50% {
+    transform: translate3d(0, -2.8px, 0) scale(0.965, 1.04);
+  }
+}
+
+@keyframes botWorkHustle {
+  0%, 100% { transform: rotate(-3.5deg); }
+  50% { transform: rotate(3.5deg); }
+}
+
+@keyframes botShadowBreath {
+  0%, 100% { transform: scaleX(1.06); opacity: 0.58; }
+  50% { transform: scaleX(0.78); opacity: 0.24; }
+}
+
+@keyframes botAuroraDrift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-7px, -6px, 0) scale(1.18); }
+}
+
+@keyframes botAuroraWork {
+  0%, 100% { transform: translate3d(2px, 2px, 0) scale(1.05); }
+  50% { transform: translate3d(-9px, -8px, 0) scale(1.3); }
+}
+
+@keyframes botAuroraAlt {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.9); opacity: 0.55; }
+  50% { transform: translate3d(8px, 7px, 0) scale(1.22); opacity: 0.95; }
+}
+
+@keyframes botDoubleBlink {
+  0%, 34%, 39%, 82%, 86.5%, 88.5%, 93%, 100% { transform: scaleY(1); }
+  36.5%, 84.5%, 90.8% { transform: scaleY(0.08); }
+}
+
+@keyframes botIdleCuriosityL {
+  0%, 56%, 76%, 100% { transform: scaleY(1); }
+  62%, 70% { transform: scaleY(0.74); }
+}
+
+@keyframes botIdleGlance {
+  0%, 28%, 100% { transform: translate3d(0, 0, 0); }
+  36%, 48% { transform: translate3d(2.4px, -0.9px, 0); }
+  58%, 70% { transform: translate3d(-2.2px, 0.4px, 0); }
+  78%, 86% { transform: translate3d(0.8px, -1.4px, 0); }
+}
+
+@keyframes botStuntHop {
+  0% { transform: scale(1, 1); }
+  18% { transform: translate3d(0, 3px, 0) scale(1.18, 0.82); }
+  48% { transform: translate3d(0, -6.5px, 0) scale(0.9, 1.12) rotate(-4deg); }
+  76% { transform: translate3d(0, 1px, 0) scale(1.06, 0.94) rotate(2deg); }
+  100% { transform: translate3d(0, 0, 0) scale(1, 1); }
+}
+
+@keyframes botStuntFlip {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1, 1); }
+  18% { transform: translate3d(0, 3.2px, 0) rotate(-12deg) scale(1.16, 0.84); }
+  56% { transform: translate3d(0, -7px, 0) rotate(195deg) scale(0.94, 1.06); }
+  82% { transform: translate3d(0, 1.4px, 0) rotate(368deg) scale(1.1, 0.9); }
+  100% { transform: translate3d(0, 0, 0) rotate(360deg) scale(1, 1); }
+}
+
+@keyframes botStuntDance {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1, 1); }
+  16% { transform: translate3d(-2.5px, -3px, 0) rotate(-11deg) scale(0.96, 1.05); }
+  33% { transform: translate3d(0, 1.2px, 0) scale(1.08, 0.92); }
+  50% { transform: translate3d(2.5px, -3px, 0) rotate(11deg) scale(0.96, 1.05); }
+  67% { transform: translate3d(0, 1.2px, 0) scale(1.08, 0.92); }
+  84% { transform: translate3d(-1.8px, -2px, 0) rotate(-7deg) scale(0.98, 1.03); }
+}
+
+@keyframes botStuntShy {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1, 1); }
+  22%, 68% { transform: translate3d(0, 4.2px, 0) scale(1.22, 0.76); }
+  38% { transform: translate3d(-1.4px, 4.2px, 0) scale(1.22, 0.76) rotate(-2.5deg); }
+  54% { transform: translate3d(1.4px, 4.2px, 0) scale(1.22, 0.76) rotate(2.5deg); }
+  84% { transform: translate3d(0, -1.8px, 0) scale(0.95, 1.05); }
+}
+
+@keyframes botSparkleTwinkle {
+  0%, 100% { transform: scale(0.65) rotate(0deg); opacity: 0.45; }
+  50% { transform: scale(1.18) rotate(18deg); opacity: 1; }
+}
+
+@keyframes botThoughtRise {
+  0%, 100% { transform: translate3d(0, 1.2px, 0) scale(0.82); opacity: 0.35; }
+  50% { transform: translate3d(0.8px, -1.8px, 0) scale(1.08); opacity: 0.96; }
+}
+
+@keyframes botWorkArcPulse {
+  0%, 100% { transform: scale(0.94); opacity: 0.35; }
+  50% { transform: scale(1.06); opacity: 0.92; }
+}
+
+@keyframes botAlertBeacon {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(0, -2.2px, 0) scale(1.14); }
+}
+
+@keyframes botThinkSway {
+  0%, 100% { transform: rotate(0deg) scale(1, 1); }
+  35% { transform: rotate(-5.5deg) translate3d(0, -1.2px, 0) scale(0.98, 1.025); }
+  72% { transform: rotate(4deg) scale(1.02, 0.985); }
+}
+
+@keyframes botLookThought {
+  0%, 100% { transform: translate3d(-1.2px, -2.2px, 0); }
+  50% { transform: translate3d(2.2px, -2.8px, 0); }
+}
+
+@keyframes botThinkSquintR {
+  0%, 100% { transform: scaleY(0.72); }
+  50% { transform: scaleY(0.88); }
+}
+
+@keyframes botHappyNod {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1, 1); }
+  26% { transform: translate3d(0, -2.8px, 0) scale(0.96, 1.05); }
+  52% { transform: translate3d(0, 0.8px, 0) scale(1.04, 0.97); }
+}
+
+@keyframes botAlertShake {
+  0%, 80%, 100% { transform: translate3d(0, 0, 0); }
+  84% { transform: translate3d(-1.8px, 0, 0); }
+  88% { transform: translate3d(1.8px, 0, 0); }
+  92% { transform: translate3d(-1.2px, 0, 0); }
+}
+
+@keyframes botScan {
+  0%, 100% { transform: translate3d(-2.5px, 0, 0) scaleY(0.84); }
+  50% { transform: translate3d(2.5px, 0, 0) scaleY(0.84); }
+}
+
+@keyframes botAlertPulse {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(248, 113, 113, 0.42)); }
+  50% { filter: drop-shadow(0 0 12px rgba(248, 113, 113, 0.9)); }
+}

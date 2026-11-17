@@ -1,7 +1,5 @@
 export type BotState = 'idle' | 'thinking' | 'working' | 'blocked' | 'done'
 
-export type AvatarStyle = 'cyan' | 'indigo' | 'amber' | 'emerald' | 'violet'
-
 export type BotMode = 'worker' | 'companion' | 'hybrid'
 export type MemoryPolicy = 'standard' | 'isolated'
 
@@ -9,7 +7,7 @@ export interface Bot {
   id: string
   name: string
   role_title: string
-  avatar_style: AvatarStyle | string
+  avatar_style: string
   system_prompt: string
   model: string
   enable_thinking: boolean
@@ -81,19 +79,6 @@ export interface BotExecutionLog {
   status: string
   duration_ms: number
   created_at: string
-}
-
-export interface ToolTrace {
-  id: string
-  name: string
-  arguments: string
-  result: string
-}
-
-export interface TokenUsage {
-  prompt_tokens: number
-  completion_tokens: number
-  total_tokens: number
 }
 
 export interface AgentMessage {
@@ -265,12 +250,6 @@ export interface TaskTemplate {
   fields?: TaskTemplateField[]
 }
 
-export interface Persona {
-  id: string
-  name: string
-  description: string
-}
-
 export interface NotificationItem {
   id: number
   source: string
@@ -330,7 +309,7 @@ export interface DashboardPayload {
   commit: string
   build_time: string
   uptime_sec: number
-  server_now: string
+  server_now?: string
   tasks: Task[]
   bots: Bot[]
   skills?: Skill[]
@@ -340,7 +319,6 @@ export interface DashboardPayload {
   stash_tags?: StashTagCount[]
   model_pool?: ModelPoolEntry[]
   available_tools?: AvailableToolMeta[]
-  personas?: Persona[]
   model_health?: Record<string, ModelHealthStats>
   templates: TaskTemplate[]
   agent_memories: AgentMemory[]
@@ -349,13 +327,7 @@ export interface DashboardPayload {
   assets: Asset[]
   push_logs: PushLog[]
   stats: {
-    total_assets: number
-    total_pushes: number
     sent_pushes: number
-    seen_items: number
-    total_memories: number
-    total_notifications: number
-    unread_notifications: number
   }
 }
 

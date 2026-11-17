@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -37,8 +36,7 @@ func (s *Server) handleListTodos(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateTodo(w http.ResponseWriter, r *http.Request) {
 	var req store.TodoItem
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32*1024)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效待办请求体")
+	if !decodeJSON(w, r, 32*1024, &req) {
 		return
 	}
 	req.BotID = strings.TrimSpace(req.BotID)
@@ -77,8 +75,7 @@ func (s *Server) handleUpdateTodo(w http.ResponseWriter, r *http.Request) {
 		DueAt    *string `json:"due_at"`
 		Tags     *string `json:"tags"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32*1024)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效更新请求体")
+	if !decodeJSON(w, r, 32*1024, &req) {
 		return
 	}
 	if req.BotID != nil {
@@ -154,8 +151,7 @@ func (s *Server) handleListNotes(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateNote(w http.ResponseWriter, r *http.Request) {
 	var req store.WorkNote
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256*1024)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效文档请求体")
+	if !decodeJSON(w, r, 256*1024, &req) {
 		return
 	}
 	req.BotID = strings.TrimSpace(req.BotID)
@@ -191,8 +187,7 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 		Category *string `json:"category"`
 		Pinned   *bool   `json:"pinned"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256*1024)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效更新请求体")
+	if !decodeJSON(w, r, 256*1024, &req) {
 		return
 	}
 	if req.Title != nil {

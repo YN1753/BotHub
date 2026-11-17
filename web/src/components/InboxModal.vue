@@ -4,7 +4,7 @@ import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { formatRelativeTime, formatTime } from '../utils/format'
 import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
-import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
+import { applySiblingStaggerFallback, clearSearchOnEscape, trackSpotlight } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 
@@ -201,7 +201,7 @@ watch(
           type="search"
           aria-label="搜索收件箱情报"
           placeholder="搜索情报关键词..."
-          @keydown.escape="inboxQuery.trim() ? ($event.preventDefault(), $event.stopPropagation(), inboxQuery = '') : undefined"
+          @keydown.escape="clearSearchOnEscape($event, inboxQuery, () => { inboxQuery = '' })"
           class="w-36 sm:w-44 min-h-[34px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/55"
         />
         <button

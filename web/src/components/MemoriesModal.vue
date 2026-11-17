@@ -3,7 +3,8 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { formatTime, triggerBlobDownload } from '../utils/format'
-import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
+import { copyToClipboard } from '../utils/clipboard'
+import { applySiblingStaggerFallback, clearSearchOnEscape, trackSpotlight } from '../utils/topLayer'
 import type { AgentMemory } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
@@ -305,12 +306,8 @@ async function togglePin(m: AgentMemory) {
 }
 
 async function copyMemoryContent(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    store.notify('已复制记忆内容')
-  } catch {
-    store.notify('复制失败')
-  }
+  const ok = await copyToClipboard(text)
+  store.notify(ok ? '已复制记忆内容' : '复制失败')
 }
 
 async function handleDelete(id: number) {
@@ -447,7 +444,7 @@ watch(
           type="search"
           placeholder="搜索键名、内容或 Bot 专属域..."
           aria-label="搜索长期记忆"
-          @keydown.escape="searchQuery.trim() ? ($event.preventDefault(), $event.stopPropagation(), searchQuery = '') : undefined"
+          @keydown.escape="clearSearchOnEscape($event, searchQuery, () => { searchQuery = '' })"
           class="w-full sm:w-52 min-h-[34px] rounded-xl border border-[#fff8ee]/12 bg-[#060914] px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60"
         />
         <div class="w-44">
@@ -591,9 +588,9 @@ watch(
       <div v-if="filteredMemories.length === 0" class="py-10 text-center flex flex-col items-center gap-2 text-sm text-slate-500">
         <span>{{ store.state.memories.length ? '当前筛选下无记忆条目' : '尚未写入长期记忆条目' }}</span>
         <button
-          v-if="searchQuery || filterCat !== 'all' || filterScope !== 'all' || pinnedOnly || coreOnly"
+          v-if="searchQuery || filterCat !== 'all' || filterScope !== 'all' || pinnedOnly || coreOnly || unrecalledOnly"
           type="button"
-          @click="searchQuery = ''; filterCat = 'all'; filterScope = 'all'; pinnedOnly = false; coreOnly = false"
+          @click="searchQuery = ''; filterCat = 'all'; filterScope = 'all'; pinnedOnly = false; coreOnly = false; unrecalledOnly = false"
           class="px-3 py-1 rounded-full border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] cursor-pointer"
         >
           重置记忆筛选

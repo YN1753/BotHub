@@ -16,6 +16,13 @@ const emit = defineEmits<{
 
 const inputRef = ref<HTMLInputElement | null>(null)
 
+function focus() {
+  inputRef.value?.focus()
+  inputRef.value?.select()
+}
+
+defineExpose({ focus })
+
 watch(
   () => props.open,
   (isOpen) => {
@@ -56,7 +63,7 @@ watch(
         @keydown.enter.exact.prevent="emit('jump', 1)"
         @keydown.shift.enter.prevent="emit('jump', -1)"
         @keydown.escape="emit('close')"
-        class="flex-1 min-w-0 bg-transparent text-xs text-white placeholder-slate-500 py-1 focus:outline-none"
+        class="plain-inline-input flex-1 min-w-0 bg-transparent text-xs text-white placeholder-slate-500 py-1 focus:outline-none"
       />
       <span v-if="query.trim()" class="font-mono text-[11px] text-slate-400 shrink-0">
         {{ matchCount ? `${cursor + 1}/${matchCount}` : '0/0' }}

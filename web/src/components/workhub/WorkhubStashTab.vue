@@ -2,13 +2,13 @@
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
+import { pickDefaultWorkerBot } from '../../utils/botLook'
 import { formatTime } from '../../utils/format'
 import type { StashItem, StashTagCount } from '../../types/bothub'
 import SegmentedTabs from '../SegmentedTabs.vue'
 
 const emit = defineEmits<{
   closeModal: []
-  goTodos: []
 }>()
 
 const store = useAppStore()
@@ -290,7 +290,7 @@ async function convertToTodo(item: StashItem) {
 }
 
 async function sendToBotChat(item: StashItem) {
-  const targetBotId = store.activeBot.value?.id || store.state.bots[0]?.id || ''
+  const targetBotId = pickDefaultWorkerBot(store.state.bots, store.activeBot.value)
   if (!targetBotId) {
     store.notify('请先创建一个 Bot')
     return

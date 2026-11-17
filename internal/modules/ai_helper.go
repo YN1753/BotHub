@@ -14,11 +14,59 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
+// LightSummarizer decouples scheduled modules from agent.Engine while sharing health-aware light LLM routing.
+type LightSummarizer interface {
+	Summarize(ctx context.Context, sysPrompt, userPrompt string) (string, error)
+}
+
+// LightSummarizerFunc adapts a plain function to LightSummarizer.
+type LightSummarizerFunc func(ctx context.Context, sysPrompt, userPrompt string) (string, error)
+
+func (f LightSummarizerFunc) Summarize(ctx context.Context, sysPrompt, userPrompt string) (string, error) {
+	return f(ctx, sysPrompt, userPrompt)
+}
+
 var sharedAIHTTPClient = NewHTTPClient(40 * time.Second)
+
+func appendGlobalMemories(st *store.Store, systemPrompt string) string {
+	if st == nil {
+		return systemPrompt
+	}
+	// Inject ONLY global shared memories so private bot:<id> memories never leak into global tasks
+	memories, _ := st.ListScopedMemories([]string{"global"}, "", 20)
+	if len(memories) == 0 {
+		return systemPrompt
+	}
+	var memBuf strings.Builder
+	memBuf.WriteString("\n\n[用户长期记忆与技术栈背景]\n")
+	for _, m := range memories {
+		memBuf.WriteString(fmt.Sprintf("- [%s] %s: %s\n", m.Category, m.FactKey, m.Content))
+	}
+	return systemPrompt + memBuf.String()
+}
+
+func summarizeModuleContent(ctx context.Context, st *store.Store, sum LightSummarizer, systemPrompt, userPrompt string) (string, error) {
+	enrichedPrompt := appendGlobalMemories(st, systemPrompt)
+	if sum != nil {
+		out, err := sum.Summarize(ctx, enrichedPrompt, userPrompt)
+		if err != nil {
+			return "", err
+		}
+		return notifier.StripEmoji(strings.TrimSpace(out)), nil
+	}
+	return summarizeDirect(ctx, st, enrichedPrompt, userPrompt)
+}
 
 // SummarizeWithDeepSeek invokes explicit lightweight model config, or enabled Free Model Pool entries
 // (when pool_for_light is active), or falls back to Primary DeepSeek Flash / Relay station.
 func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, userPrompt string) (string, error) {
+	if st == nil {
+		return "", fmt.Errorf("store is nil")
+	}
+	return summarizeDirect(ctx, st, appendGlobalMemories(st, systemPrompt), userPrompt)
+}
+
+func summarizeDirect(ctx context.Context, st *store.Store, systemPrompt, userPrompt string) (string, error) {
 	if st == nil {
 		return "", fmt.Errorf("store is nil")
 	}
@@ -101,19 +149,7 @@ func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, u
 		return "", fmt.Errorf("api_key not configured")
 	}
 
-	// Inject ONLY global shared memories so private bot:<id> memories never leak into global tasks
-	memories, _ := st.ListScopedMemories([]string{"global"}, "", 20)
-	if len(memories) > 0 {
-		var memBuf strings.Builder
-		memBuf.WriteString("\n\n[用户长期记忆与技术栈背景]\n")
-		for _, m := range memories {
-			memBuf.WriteString(fmt.Sprintf("- [%s] %s: %s\n", m.Category, m.FactKey, m.Content))
-		}
-		systemPrompt += memBuf.String()
-	}
-
 	var lastErr error
-
 	for _, c := range candidates {
 		if ctx.Err() != nil {
 			return "", ctx.Err()

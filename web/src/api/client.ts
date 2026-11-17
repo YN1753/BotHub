@@ -177,7 +177,6 @@ export const BotHubApi = {
     apiRequest('/api/system/import', { method: 'POST', body: JSON.stringify(payload) }),
 
   // Assets
-  listAssets: () => apiRequest<{ assets: Asset[] }>('/api/assets'),
   createAsset: (payload: Partial<Asset>) =>
     apiRequest('/api/assets', { method: 'POST', body: JSON.stringify(payload) }),
   updateAsset: (id: string, payload: Partial<Asset>) =>
@@ -188,7 +187,6 @@ export const BotHubApi = {
     apiRequest<{ summary: string }>('/api/modules/asset_watcher/run', { method: 'POST' }),
 
   // Tasks / Routines
-  listTasks: () => apiRequest<{ tasks: Task[] }>('/api/tasks'),
   createTask: (payload: Partial<Task>) =>
     apiRequest('/api/tasks', { method: 'POST', body: JSON.stringify(payload) }),
   updateTask: (id: string, payload: Partial<Task>) =>
@@ -320,7 +318,6 @@ export const BotHubApi = {
     }),
 
   // Custom Skills
-  listSkills: () => apiRequest<{ ok: boolean; skills: Skill[] }>('/api/v2/skills'),
   createSkill: (payload: Partial<Skill>) =>
     apiRequest<{ ok: boolean; skill: Skill }>('/api/v2/skills', {
       method: 'POST',
@@ -351,12 +348,6 @@ export const BotHubApi = {
 
   // Personal Assistant Workbench (Briefing, Todos & Notes)
   getBriefing: () => apiRequest<{ ok: boolean; briefing: WorkspaceBriefing }>('/api/v2/briefing'),
-  listTodos: (status = 'all', botId = '') => {
-    const params = new URLSearchParams()
-    if (status) params.set('status', status)
-    if (botId) params.set('bot_id', botId)
-    return apiRequest<{ ok: boolean; todos: TodoItem[] }>(`/api/v2/todos?${params.toString()}`)
-  },
   createTodo: (payload: Partial<TodoItem>) =>
     apiRequest<{ ok: boolean; todo: TodoItem }>('/api/v2/todos', {
       method: 'POST',

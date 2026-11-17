@@ -3,10 +3,13 @@ import assert from 'node:assert/strict'
 import {
   formatDurationMs,
   formatUptime,
+  formatLocalDate,
+  parseJsonStringArray,
+  parseJsonRecord,
+  botStateDotClass,
   truncateText,
   describeCron,
   generateSlug,
-  shortVersion,
   escapeHtml,
   csvEscapeCell,
   groupModeLabel,
@@ -14,12 +17,27 @@ import {
   scoreOmnisearchMatch,
 } from '../src/utils/format.ts'
 import { formatToolDisplayName, groupAvailableTools } from '../src/utils/toolMeta.ts'
-import { parseAvatarStyle, composeAvatarStyle, getColorPalette, resolveGroupMemberBots } from '../src/utils/botLook.ts'
+import {
+  parseAvatarStyle,
+  composeAvatarStyle,
+  getColorPalette,
+  resolveGroupMemberBots,
+  pickDefaultWorkerBot,
+  resolveScopedMemories,
+} from '../src/utils/botLook.ts'
 import { clampUnit, computeNormalizedGaze } from '../src/utils/botGaze.ts'
 import { renderSafeMarkdown } from '../src/utils/markdown.ts'
 import { shouldReloadOnPreloadError, installPreloadErrorRecovery } from '../src/utils/lazyComponent.ts'
-import { isImeComposingEnter, isPointOutsideRect, closePopoverWithTransition } from '../src/utils/topLayer.ts'
-import { resolveTabSlideTransition, runViewTransition } from '../src/utils/motion.ts'
+import {
+  isImeComposingEnter,
+  isPointOutsideRect,
+  closePopoverWithTransition,
+  clearSearchOnEscape,
+} from '../src/utils/topLayer.ts'
+import { resolveTabSlideTransition } from '../src/utils/motion.ts'
+import { mapServerMessages } from '../src/utils/chatMapper.ts'
+import { buildSlashCommands, filterSlashCommands } from '../src/utils/slashCommands.ts'
+import { isValidBase64Url } from '../src/utils/passkey.ts'
 
 test('format utilities produce expected strings', () => {
   assert.equal(formatDurationMs(420), '420ms')
@@ -33,8 +51,9 @@ test('format utilities produce expected strings', () => {
   assert.equal(describeCron('*/15 * * * *'), '每隔 15 分钟轮询一次')
   assert.equal(groupModeLabel('parallel'), '全员并发')
   assert.equal(groupModeLabel('smart'), '智能协同')
+  assert.equal(groupModeLabel('sequential'), '全员接力')
+  assert.equal(groupModeLabel('mention_only'), '仅 @点名')
   assert.equal(generateSlug('My Check_Skill!'), 'my_check_skill')
-  assert.equal(shortVersion('v2.22.0-abcdef12345678'), 'v2.22.0')
   assert.equal(escapeHtml('<script>"a&b"'), '&lt;script&gt;&quot;a&amp;b&quot;')
   assert.equal(csvEscapeCell('=CMD("calc")'), '"\'=CMD(""calc"")"')
   assert.equal(csvEscapeCell('+SUM(A1:A2)'), '"\'+SUM(A1:A2)"')
@@ -50,6 +69,33 @@ test('format utilities produce expected strings', () => {
     ]),
     '$6/月 + ¥30/月'
   )
+})
+
+test('parseJsonStringArray, parseJsonRecord, formatLocalDate and botStateDotClass handle edge cases', () => {
+  assert.deepEqual(parseJsonStringArray('["manage_todos", "web_search"]'), ['manage_todos', 'web_search'])
+  assert.deepEqual(parseJsonStringArray([1, 'two']), ['1', 'two'])
+  assert.deepEqual(parseJsonStringArray('{"not":"array"}'), [])
+  assert.deepEqual(parseJsonStringArray('malformed-json'), [])
+  assert.deepEqual(parseJsonStringArray(''), [])
+  assert.deepEqual(parseJsonStringArray(undefined), [])
+
+  assert.deepEqual(parseJsonRecord('{"X-Token":"abc","port":8080}'), { 'X-Token': 'abc', port: '8080' })
+  assert.deepEqual(parseJsonRecord('["array"]'), {})
+  assert.deepEqual(parseJsonRecord('bad-json'), {})
+  assert.deepEqual(parseJsonRecord(null), {})
+
+  // Local midnight date formatting must use local calendar fields rather than UTC slice
+  const localMidnight = new Date(2026, 0, 5, 0, 15, 0)
+  assert.equal(formatLocalDate(localMidnight), '2026-01-05')
+  const localLateNight = new Date(2026, 10, 18, 23, 59, 59)
+  assert.equal(formatLocalDate(localLateNight), '2026-11-18')
+
+  assert.equal(botStateDotClass('thinking'), 'bg-amber-400 animate-pulse')
+  assert.equal(botStateDotClass('working'), 'bg-[#f2b880] animate-pulse')
+  assert.equal(botStateDotClass('done'), 'bg-emerald-400')
+  assert.equal(botStateDotClass('blocked'), 'bg-rose-400')
+  assert.equal(botStateDotClass('idle'), 'bg-slate-500')
+  assert.equal(botStateDotClass(undefined), 'bg-slate-500')
 })
 
 test('scoreOmnisearchMatch ranks exact, prefix, title, subtitle and body hits', () => {
@@ -82,7 +128,7 @@ test('toolMeta groups and formats builtin & skill names cleanly', () => {
   assert.equal(grouped[1].id, 'extra')
 })
 
-test('botLook parses styles and resolves group members cleanly', () => {
+test('botLook parses styles, resolves group members, picks worker bots and scopes memories', () => {
   assert.deepEqual(parseAvatarStyle('visor:indigo'), { shape: 'visor', color: 'indigo' })
   assert.deepEqual(parseAvatarStyle('sentinel:obsidian'), { shape: 'sentinel', color: 'obsidian' })
   assert.deepEqual(parseAvatarStyle('cyan'), { shape: 'butler', color: 'gold' })
@@ -95,13 +141,142 @@ test('botLook parses styles and resolves group members cleanly', () => {
   assert.equal(clampUnit(-3), -1)
 
   const bots = [
-    { id: 'b1', name: 'Alice', is_group: false },
-    { id: 'b2', name: 'Bob', is_group: false },
+    { id: 'b1', name: 'Companion', is_group: false, bot_mode: 'companion' },
+    { id: 'b2', name: 'Worker', is_group: false, bot_mode: 'worker' },
     { id: 'g1', name: 'Team', is_group: true, member_ids: '["b2","missing"]' },
   ] as any[]
   const resolved = resolveGroupMemberBots(bots[2], bots)
   assert.equal(resolved.length, 1)
   assert.equal(resolved[0].id, 'b2')
+
+  assert.equal(pickDefaultWorkerBot(bots, null), 'b2')
+  assert.equal(pickDefaultWorkerBot(bots, bots[0]), 'b1')
+  assert.equal(pickDefaultWorkerBot(bots, bots[0], 'b2'), 'b2')
+  assert.equal(pickDefaultWorkerBot(bots, null, 'nonexistent'), 'b2')
+
+  const allMems = [
+    { id: 1, scope: 'global', fact_key: 'tz' },
+    { id: 2, scope: 'bot:b1', fact_key: 'nick' },
+    { id: 3, scope: 'bot:b2', fact_key: 'ops' },
+  ] as any[]
+  assert.equal(resolveScopedMemories({ id: 'b1', memory_policy: 'isolated' } as any, [], allMems).length, 1)
+  assert.equal(resolveScopedMemories({ id: 'b1', memory_policy: 'standard' } as any, [], allMems).length, 2)
+  assert.equal(resolveScopedMemories({ id: 'b1', memory_policy: 'isolated' } as any, [allMems[1]], allMems).length, 1)
+})
+
+test('mapServerMessages joins tool outputs and merges consecutive tool rounds per sender', () => {
+  const bots = [
+    { id: 'ops', name: 'Ops Bot', role_title: 'SRE', avatar_style: 'visor:obsidian', model: 'deepseek-chat' },
+    { id: 'res', name: 'Researcher', role_title: 'Analyst', avatar_style: 'radar:indigo', model: 'deepseek-reasoner' },
+  ] as any[]
+
+  const rawMsgs = [
+    { id: 1, bot_id: 'ops', role: 'user', content: 'Check nodes', created_at: '2026-11-18T01:00:00Z' },
+    {
+      id: 2,
+      bot_id: 'ops',
+      sender_bot_id: 'ops',
+      role: 'assistant',
+      reasoning_content: 'Querying nezha...',
+      content: '',
+      tool_calls: JSON.stringify([{ id: 'call_1', function: { name: 'query_nezha_nodes', arguments: '{}' } }]),
+      created_at: '2026-11-18T01:00:01Z',
+    },
+    {
+      id: 3,
+      bot_id: 'ops',
+      role: 'tool',
+      tool_call_id: 'call_1',
+      content: '{"online":4}',
+      created_at: '2026-11-18T01:00:02Z',
+    },
+    {
+      id: 4,
+      bot_id: 'ops',
+      sender_bot_id: 'ops',
+      role: 'assistant',
+      reasoning_content: 'Summarizing result...',
+      content: 'All 4 nodes are online.',
+      created_at: '2026-11-18T01:00:03Z',
+    },
+    {
+      id: 5,
+      bot_id: 'ops',
+      sender_bot_id: 'res',
+      role: 'assistant',
+      content: 'Traffic looks normal.',
+      created_at: '2026-11-18T01:00:04Z',
+    },
+    {
+      id: 6,
+      bot_id: 'ops',
+      role: 'assistant',
+      msg_kind: 'routine',
+      content: 'Morning digest ready.',
+      created_at: '2026-11-18T08:00:00Z',
+    },
+  ] as any[]
+
+  const timeline = mapServerMessages(rawMsgs, bots[0], { bots, defaultModel: 'primary' })
+  assert.equal(timeline.length, 4)
+  assert.equal(timeline[0].role, 'user')
+
+  // Msg 2 + Msg 3 + Msg 4 merged into one clean assistant bubble for 'ops'
+  assert.equal(timeline[1].serverId, 4)
+  assert.equal(timeline[1].senderBotId, 'ops')
+  assert.equal(timeline[1].content, 'All 4 nodes are online.')
+  assert.equal(timeline[1].tools.length, 1)
+  assert.equal(timeline[1].tools[0].name, 'query_nezha_nodes')
+  assert.equal(timeline[1].tools[0].result, '{"online":4}')
+  assert.match(timeline[1].reasoning, /Querying nezha/)
+  assert.match(timeline[1].reasoning, /Summarizing result/)
+
+  // Distinct sender 'res' stays a separate turn
+  assert.equal(timeline[2].senderBotId, 'res')
+  assert.equal(timeline[2].senderName, 'Researcher')
+
+  // Routine message preserves msgKind & statusText
+  assert.equal(timeline[3].msgKind, 'routine')
+  assert.equal(timeline[3].statusText, '例程主动汇报')
+})
+
+test('slashCommands builds tool-gated commands, bound skills and filters cleanly', () => {
+  const bot = {
+    id: 'b1',
+    allowed_tools: '["manage_todos","web_search"]',
+    skill_ids: '["sk1","sk_disabled"]',
+  } as any
+  const skills = [
+    { id: 'sk1', slug: 'weather', name: '天气查询', kind: 'webhook', enabled: true },
+    { id: 'sk_disabled', slug: 'off', name: '已停用', kind: 'prompt', enabled: false },
+  ] as any[]
+
+  const cmds = buildSlashCommands(bot, skills)
+  assert.equal(cmds[0].cmd, '/weather')
+  assert.equal(cmds.some((c) => c.cmd === '/off'), false)
+  assert.equal(cmds.some((c) => c.cmd === '/todo'), true)
+  assert.equal(cmds.some((c) => c.cmd === '/search'), true)
+  assert.equal(cmds.some((c) => c.cmd === '/nezha'), false)
+  assert.equal(cmds.some((c) => c.cmd === '/clear'), true)
+
+  assert.deepEqual(filterSlashCommands(cmds, 'hello'), [])
+  assert.equal(filterSlashCommands(cmds, '/wea').length, 1)
+  assert.equal(filterSlashCommands(cmds, '/待办').some((c) => c.cmd === '/todo'), true)
+})
+
+test('isValidBase64Url validates WebAuthn credential & user identifiers strictly', () => {
+  assert.equal(isValidBase64Url('AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_'), true)
+  assert.equal(isValidBase64Url('YWI'), true)
+  assert.equal(isValidBase64Url('YWJj'), true)
+  assert.equal(isValidBase64Url('YWJjZA'), true)
+  assert.equal(isValidBase64Url(''), false)
+  assert.equal(isValidBase64Url('a'), false) // length % 4 === 1 is invalid Base64URL
+  assert.equal(isValidBase64Url('YWJjZ'), false) // length 5 (% 4 === 1)
+  assert.equal(isValidBase64Url('ab+cd'), false)
+  assert.equal(isValidBase64Url('ab/cd'), false)
+  assert.equal(isValidBase64Url('YWJj='), false)
+  assert.equal(isValidBase64Url(null), false)
+  assert.equal(isValidBase64Url(12345), false)
 })
 
 test('renderSafeMarkdown sanitizes XSS and renders structured blocks', () => {
@@ -168,7 +343,7 @@ test('preload error recovery guards against reload loops and storage exceptions'
   assert.equal(reloadCount, 1)
 })
 
-test('topLayer IME and hit-test helpers handle edge cases accurately', () => {
+test('topLayer IME, Escape clear and hit-test helpers handle edge cases accurately', () => {
   assert.equal(isImeComposingEnter({ isComposing: true, keyCode: 13, timeStamp: 100 } as KeyboardEvent, null), true)
   assert.equal(isImeComposingEnter({ isComposing: false, keyCode: 229, timeStamp: 100 } as KeyboardEvent, null), true)
   assert.equal(isImeComposingEnter({ isComposing: false, keyCode: 13, timeStamp: 120 } as KeyboardEvent, 95), true)
@@ -178,6 +353,24 @@ test('topLayer IME and hit-test helpers handle edge cases accurately', () => {
   assert.equal(isPointOutsideRect(50, 50, rect), false)
   assert.equal(isPointOutsideRect(5, 50, rect), true)
   assert.equal(isPointOutsideRect(50, 125, rect), true)
+
+  let cleared = 0
+  let stopped = 0
+  clearSearchOnEscape(
+    { preventDefault: () => {}, stopPropagation: () => { stopped += 1 } } as unknown as KeyboardEvent,
+    '',
+    () => { cleared += 1 }
+  )
+  assert.equal(cleared, 0)
+  assert.equal(stopped, 0)
+
+  clearSearchOnEscape(
+    { preventDefault: () => {}, stopPropagation: () => { stopped += 1 } } as unknown as KeyboardEvent,
+    'query',
+    () => { cleared += 1 }
+  )
+  assert.equal(cleared, 1)
+  assert.equal(stopped, 1)
 })
 
 test('directional motion and popover exit helpers degrade gracefully', async () => {
@@ -185,12 +378,6 @@ test('directional motion and popover exit helpers degrade gracefully', async () 
   assert.equal(resolveTabSlideTransition('config', 'stream', tabs), 'vesper-slide-forward')
   assert.equal(resolveTabSlideTransition('routines', 'activity', tabs), 'vesper-slide-backward')
   assert.equal(resolveTabSlideTransition('stream', 'stream', tabs), 'vesper-slide-forward')
-
-  let updated = false
-  runViewTransition(() => {
-    updated = true
-  }, 'forward')
-  assert.equal(updated, true)
 
   let hidden = false
   const attrs = new Set<string>()

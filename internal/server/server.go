@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/agent"
+	"github.com/YN1753/vesper/bothub/internal/modules"
 	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/scheduler"
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -47,6 +48,7 @@ func New(
 	}
 	if sched != nil {
 		sched.SetBotRoutineExecutor(eng)
+		sched.SetLightSummarizer(modules.LightSummarizerFunc(eng.CallLightModel))
 	}
 
 	return &Server{
@@ -63,6 +65,10 @@ func New(
 		passkeys:           newPasskeyStateStore(),
 		nezhaAlertCooldown: make(map[string]time.Time),
 	}, nil
+}
+
+func (s *Server) Agent() *agent.Engine {
+	return s.agent
 }
 
 func (s *Server) ClosePushStream() {

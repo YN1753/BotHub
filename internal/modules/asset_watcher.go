@@ -18,7 +18,6 @@ import (
 
 // AssetSyncAdapter defines an extensible synchronization plugin for external asset providers.
 type AssetSyncAdapter interface {
-	ID() string
 	Matches(asset store.Asset, extra map[string]any) bool
 	Sync(ctx context.Context, st *store.Store, client *http.Client, asset *store.Asset, extra map[string]any) bool
 }
@@ -42,17 +41,6 @@ func NewAssetWatcherModule(st *store.Store, push *notifier.Client) *AssetWatcher
 		},
 	}
 }
-
-// RegisterAdapter allows registering additional custom asset sync adapters cleanly without modifying core watcher logic.
-func (w *AssetWatcherModule) RegisterAdapter(adapter AssetSyncAdapter) {
-	if adapter != nil {
-		w.adapters = append(w.adapters, adapter)
-	}
-}
-
-func (w *AssetWatcherModule) ID() string          { return "asset_watcher" }
-func (w *AssetWatcherModule) Name() string        { return "数字资产守望" }
-func (w *AssetWatcherModule) Description() string { return "巡检资产台账周期与扩展适配器状态，触发临期与续费提醒" }
 
 func (w *AssetWatcherModule) Run(ctx context.Context) (RunResult, error) {
 	return w.RunWithTask(ctx, store.Task{
@@ -171,7 +159,6 @@ func (w *AssetWatcherModule) syncSingleAsset(ctx context.Context, asset *store.A
 
 type cloudflareDomainAdapter struct{}
 
-func (a *cloudflareDomainAdapter) ID() string { return "cloudflare_domain" }
 func (a *cloudflareDomainAdapter) Matches(asset store.Asset, extra map[string]any) bool {
 	adapter, _ := extra["sync_adapter"].(string)
 	accountID, _ := extra["account_id"].(string)
@@ -228,7 +215,6 @@ func (a *cloudflareDomainAdapter) Sync(ctx context.Context, st *store.Store, cli
 
 type bilibiliVIPAdapter struct{}
 
-func (b *bilibiliVIPAdapter) ID() string { return "bilibili_vip" }
 func (b *bilibiliVIPAdapter) Matches(_ store.Asset, extra map[string]any) bool {
 	adapter, _ := extra["sync_adapter"].(string)
 	platform, _ := extra["platform"].(string)
@@ -279,7 +265,6 @@ func (b *bilibiliVIPAdapter) Sync(ctx context.Context, st *store.Store, client *
 
 type anchorDayAdapter struct{}
 
-func (a *anchorDayAdapter) ID() string { return "monthly_anchor" }
 func (a *anchorDayAdapter) Matches(asset store.Asset, extra map[string]any) bool {
 	if !asset.AutoRenew {
 		return false

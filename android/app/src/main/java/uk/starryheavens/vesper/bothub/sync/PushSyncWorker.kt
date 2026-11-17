@@ -29,17 +29,11 @@ class PushSyncWorker(
 
         return api.fetchNotifications(afterId = lastId, limit = 30).fold(
             onSuccess = { items ->
-                if (items.isNotEmpty()) {
-                    var maxId = lastId
-                    for (item in items) {
-                        if (lastId > 0L && item.readAt.isEmpty()) {
-                            NotificationHelper.showNotification(applicationContext, item)
-                        }
-                        if (item.id > maxId) {
-                            maxId = item.id
-                        }
+                for (item in items) {
+                    if (lastId > 0L && item.isUnread) {
+                        NotificationHelper.showNotification(applicationContext, item)
                     }
-                    prefs.lastEventId = maxId
+                    prefs.advanceLastEventId(item.id)
                 }
                 Result.success()
             },

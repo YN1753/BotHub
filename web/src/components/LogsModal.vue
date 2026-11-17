@@ -2,7 +2,8 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { formatTime, formatRelativeTime, triggerBlobDownload } from '../utils/format'
-import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
+import { copyToClipboard } from '../utils/clipboard'
+import { applySiblingStaggerFallback, clearSearchOnEscape, trackSpotlight } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 
@@ -31,12 +32,8 @@ const filteredLogs = computed(() => {
 })
 
 async function copyPayload(content: string) {
-  try {
-    await navigator.clipboard.writeText(content)
-    store.notify('已复制推送报文内容')
-  } catch {
-    store.notify('复制失败')
-  }
+  const ok = await copyToClipboard(content)
+  store.notify(ok ? '已复制推送报文内容' : '复制失败')
 }
 
 function exportLogsJson() {
@@ -113,7 +110,7 @@ watch(
         type="search"
         aria-label="筛选推送流水"
         placeholder="搜索标题、模块或报文..."
-        @keydown.escape.stop="logQuery = ''"
+        @keydown.escape="clearSearchOnEscape($event, logQuery, () => { logQuery = '' })"
         class="w-full sm:w-52 min-h-[34px] rounded-xl border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
       />
     </div>

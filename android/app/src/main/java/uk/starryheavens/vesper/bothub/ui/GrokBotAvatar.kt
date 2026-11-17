@@ -15,7 +15,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -216,15 +215,8 @@ private fun buildFourPointSparkle(cx: Float, cy: Float, r: Float): Path = Path()
     close()
 }
 
-fun resolveGroupMembers(groupBot: BotItem, allBots: List<BotItem>): List<BotItem> {
-    val specialists = allBots.filter { !it.isGroup }
-    if (groupBot.memberIds.isNotEmpty()) {
-        val byId = specialists.associateBy { it.id }
-        val found = groupBot.memberIds.mapNotNull { byId[it] }
-        if (found.isNotEmpty()) return found
-    }
-    return specialists.take(4)
-}
+fun resolveGroupMembers(groupBot: BotItem, allBots: List<BotItem>): List<BotItem> =
+    groupBot.resolveGroupMembers(allBots)
 
 /**
  * Native Jetpack Compose Monolithic Soft-Body GrokBot Avatar.
@@ -271,7 +263,6 @@ fun GrokBotAvatar(
 
     val p = masterPhase + seedPhase
     val floatWave = sin(p * 1.5f)
-    val actWave = sin(p)
 
     // 6 distinct archetype personality offsets + state choreographies
     var rigDx = 0f

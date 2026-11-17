@@ -37,6 +37,15 @@ func (e *Engine) SetHub(hub *pushstream.Hub) {
 	e.hub = hub
 }
 
+func (e *Engine) publishAssistantUpdate(kind string) {
+	if e != nil && e.hub != nil {
+		e.hub.PublishEvent("assistant_update", map[string]any{
+			"kind": kind,
+			"time": store.NowShanghai(),
+		})
+	}
+}
+
 func NewEngine(st *store.Store, sched TaskController) *Engine {
 	return &Engine{
 		store:     st,
@@ -95,7 +104,6 @@ type apiMessage struct {
 	ReasoningContent string        `json:"reasoning_content,omitempty"`
 	ToolCalls        []apiToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string        `json:"tool_call_id,omitempty"`
-	Name             string        `json:"name,omitempty"`
 }
 
 type apiToolCall struct {
@@ -302,13 +310,13 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 		return nil, fmt.Errorf("消息内容不能为空")
 	}
 
+	if strings.TrimSpace(req.BotID) != "" {
+		return e.chatStreamForBot(ctx, req, emit)
+	}
+
 	targets, err := e.ResolveChatTargets(req.Model)
 	if err != nil {
 		return nil, err
-	}
-
-	if strings.TrimSpace(req.BotID) != "" {
-		return e.chatStreamForBot(ctx, req, targets[0].BaseURL, targets[0].APIKey, emit)
 	}
 
 	activeTarget := targets[0]
@@ -637,11 +645,7 @@ func (e *Engine) distillMemoryWithScope(scope, botMode, userMsg, assistantReply 
 	if err != nil {
 		return
 	}
-	clean := strings.TrimSpace(raw)
-	clean = strings.TrimPrefix(clean, "```json")
-	clean = strings.TrimPrefix(clean, "```")
-	clean = strings.TrimSuffix(clean, "```")
-	clean = strings.TrimSpace(clean)
+	clean := stripJSONCodeFence(raw)
 
 	var parsed struct {
 		Save       bool   `json:"save"`
@@ -728,11 +732,7 @@ func (e *Engine) SummarizeThreadToMemory(ctx context.Context, bot *store.Bot, th
 		userText := fmt.Sprintf("话题：%s\n对话：\n%s", threadTitle, transcript.String())
 		raw, lErr := e.CallLightModel(ctx, sys, userText)
 		if lErr == nil {
-			clean := strings.TrimSpace(raw)
-			clean = strings.TrimPrefix(clean, "```json")
-			clean = strings.TrimPrefix(clean, "```")
-			clean = strings.TrimSuffix(clean, "```")
-			clean = strings.TrimSpace(clean)
+			clean := stripJSONCodeFence(raw)
 			var parsed struct {
 				Summary       string `json:"summary"`
 				FactKey       string `json:"fact_key"`
@@ -895,17 +895,6 @@ func trimContextMessages(messages []apiMessage) ([]apiMessage, bool) {
 	trimmed = append(trimmed, messages[:sysEnd]...)
 	trimmed = append(trimmed, tail[cut:]...)
 	return trimmed, true
-}
-
-func (e *Engine) streamSingleRound(
-	ctx context.Context,
-	baseURL, apiKey, model string,
-	messages []apiMessage,
-	tools []ToolDefinition,
-	thinking *thinkingConfig,
-	onDelta func(deltaReasoning, deltaContent string),
-) (string, string, []apiToolCall, *TokenUsage, error) {
-	return e.streamSingleRoundWithProvider(ctx, "deepseek", baseURL, apiKey, model, messages, tools, thinking, onDelta)
 }
 
 func foldSystemIntoUserMessages(messages []apiMessage) []apiMessage {

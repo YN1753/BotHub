@@ -1,4 +1,7 @@
-import type { Bot } from '../types/bothub'
+import type { AgentMemory, Bot } from '../types/bothub'
+import { botStateDotClass, parseJsonStringArray } from './format.ts'
+
+export { botStateDotClass }
 
 export type BotShape = 'butler' | 'sentinel' | 'radar' | 'critic' | 'swarm' | 'visor'
 export type BotColor = 'gold' | 'indigo' | 'emerald' | 'amber' | 'violet' | 'obsidian'
@@ -14,9 +17,6 @@ export interface ColorOption {
   label: string
   ring: string
   glow: string
-  fill: string
-  eye: string
-  visor: string
   shellHi: string
   shellMid: string
   shellDeep: string
@@ -41,9 +41,6 @@ export const BOT_COLORS: ColorOption[] = [
     label: '奶白暖杏',
     ring: '#f2b880',
     glow: 'rgba(242, 184, 128, 0.44)',
-    fill: 'rgba(242, 184, 128, 0.18)',
-    eye: '#141928',
-    visor: 'rgba(242, 184, 128, 0.25)',
     shellHi: '#ffffff',
     shellMid: '#f6ede2',
     shellDeep: '#d8c2aa',
@@ -57,9 +54,6 @@ export const BOT_COLORS: ColorOption[] = [
     label: '冰透星蓝',
     ring: '#a5b4fc',
     glow: 'rgba(147, 197, 253, 0.44)',
-    fill: 'rgba(165, 180, 252, 0.18)',
-    eye: '#11182d',
-    visor: 'rgba(165, 180, 252, 0.25)',
     shellHi: '#ffffff',
     shellMid: '#e6eeff',
     shellDeep: '#b2c5f2',
@@ -73,9 +67,6 @@ export const BOT_COLORS: ColorOption[] = [
     label: '薄荷青玉',
     ring: '#34d399',
     glow: 'rgba(52, 211, 153, 0.42)',
-    fill: 'rgba(52, 211, 153, 0.18)',
-    eye: '#0d211d',
-    visor: 'rgba(52, 211, 153, 0.25)',
     shellHi: '#ffffff',
     shellMid: '#e2faef',
     shellDeep: '#9edbc3',
@@ -89,9 +80,6 @@ export const BOT_COLORS: ColorOption[] = [
     label: '蜜桃晨曦',
     ring: '#fbbf24',
     glow: 'rgba(251, 191, 36, 0.44)',
-    fill: 'rgba(251, 191, 36, 0.18)',
-    eye: '#221612',
-    visor: 'rgba(251, 191, 36, 0.25)',
     shellHi: '#fffefb',
     shellMid: '#ffefd6',
     shellDeep: '#efc48e',
@@ -105,9 +93,6 @@ export const BOT_COLORS: ColorOption[] = [
     label: '雾粉星紫',
     ring: '#d8b4fe',
     glow: 'rgba(216, 180, 254, 0.44)',
-    fill: 'rgba(216, 180, 254, 0.18)',
-    eye: '#1c132b',
-    visor: 'rgba(216, 180, 254, 0.25)',
     shellHi: '#ffffff',
     shellMid: '#f2e7ff',
     shellDeep: '#c9b1ee',
@@ -121,9 +106,6 @@ export const BOT_COLORS: ColorOption[] = [
     label: '暗夜流光',
     ring: '#38bdf8',
     glow: 'rgba(56, 189, 248, 0.45)',
-    fill: 'rgba(56, 189, 248, 0.16)',
-    eye: '#f0f9ff',
-    visor: 'rgba(56, 189, 248, 0.28)',
     shellHi: '#374669',
     shellMid: '#182036',
     shellDeep: '#090d1a',
@@ -166,14 +148,38 @@ export function resolveGroupMemberBots(groupBot: Bot, allBots: Bot[]): Bot[] {
   for (const b of allBots) {
     if (!b.is_group) specialistMap.set(b.id, b)
   }
-  try {
-    const ids = JSON.parse(groupBot.member_ids || '[]')
-    if (Array.isArray(ids)) {
-      const resolved = ids.map((id: string) => specialistMap.get(id)).filter((x): x is Bot => Boolean(x))
-      if (resolved.length > 0) return resolved
-    }
-  } catch {
-    // ignore malformed member_ids JSON
-  }
+  const ids = parseJsonStringArray(groupBot.member_ids)
+  const resolved = ids.map((id) => specialistMap.get(id)).filter((x): x is Bot => Boolean(x))
+  if (resolved.length > 0) return resolved
   return Array.from(specialistMap.values()).slice(0, 4)
+}
+
+export function pickDefaultWorkerBot(
+  bots: Bot[],
+  activeBot?: Bot | null,
+  preferredBotId?: string
+): string {
+  if (preferredBotId && bots.some((b) => b.id === preferredBotId)) {
+    return preferredBotId
+  }
+  if (activeBot?.id) return activeBot.id
+  return (
+    bots.find((b) => !b.is_group && b.bot_mode !== 'companion')?.id ||
+    bots[0]?.id ||
+    ''
+  )
+}
+
+export function resolveScopedMemories(
+  bot: Bot | null | undefined,
+  botMemories: AgentMemory[],
+  allMemories: AgentMemory[]
+): AgentMemory[] {
+  if (botMemories.length > 0) return botMemories
+  if (!bot) return []
+  const bScope = `bot:${bot.id}`
+  if (bot.memory_policy === 'isolated') {
+    return allMemories.filter((m) => m.scope === bScope)
+  }
+  return allMemories.filter((m) => !m.scope || m.scope === 'global' || m.scope === bScope)
 }

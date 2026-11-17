@@ -2,13 +2,15 @@
 import { ref, onMounted } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
-import { formatUptime, triggerBlobDownload } from '../../utils/format'
+import { copyToClipboard } from '../../utils/clipboard'
+import { formatLocalDate, formatUptime, triggerBlobDownload } from '../../utils/format'
 import {
   checkPasskeyCapabilities,
   registerPasskeyCeremony,
   syncAcceptedPasskeys,
   type PasskeyCredentialItem,
 } from '../../utils/passkey'
+import SecretInput from '../ui/SecretInput.vue'
 
 const emit = defineEmits<{
   close: []
@@ -16,7 +18,6 @@ const emit = defineEmits<{
 
 const store = useAppStore()
 const newPassword = ref('')
-const showNewPassword = ref(false)
 const exportingMode = ref<'' | 'full' | 'redacted'>('')
 const revokingDevices = ref(false)
 
@@ -133,7 +134,7 @@ async function handleExportBackup(maskSecrets = false) {
       throw new Error(`导出备份失败 (${res.status})`)
     }
     const blob = await res.blob()
-    const dateTag = new Date().toISOString().slice(0, 10)
+    const dateTag = formatLocalDate(new Date())
     const filename = maskSecrets
       ? `vesper_bothub_backup_redacted_${dateTag}.json`
       : `vesper_bothub_backup_${dateTag}.json`
@@ -161,12 +162,8 @@ async function handleRevokeOtherDevices() {
 
 async function copyBuildDiagnostic() {
   const info = `${store.state.version} (${store.state.commit}) · uptime ${formatUptime(store.state.uptimeSec)}`
-  try {
-    await navigator.clipboard.writeText(info)
-    store.notify('已复制版本诊断信息')
-  } catch {
-    store.notify('复制失败')
-  }
+  const ok = await copyToClipboard(info)
+  store.notify(ok ? '已复制版本诊断信息' : '复制失败')
 }
 
 async function handleLogout() {
@@ -287,28 +284,17 @@ async function handleImportBackup(e: Event) {
     <form @submit.prevent="handleUpdatePassword" class="modal-section flex flex-col gap-2.5">
       <label for="settings-new-password" class="text-xs font-semibold text-[#f2b880]">兜底访问密码管理</label>
       <div class="flex flex-col sm:flex-row gap-2">
-        <div class="relative flex-1 flex items-center">
-          <input
-            id="settings-new-password"
-            v-model="newPassword"
-            name="new-password"
-            :type="showNewPassword ? 'text' : 'password'"
-            autocomplete="new-password"
-            enterkeyhint="done"
-            minlength="6"
-            placeholder="输入新密钥 (至少6位)"
-            required
-            class="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] pl-3 pr-14 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60"
-          />
-          <button
-            type="button"
-            @click="showNewPassword = !showNewPassword"
-            :aria-label="showNewPassword ? '隐藏新密钥' : '显示新密钥'"
-            class="absolute right-2 px-2 py-1 rounded-lg text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer"
-          >
-            {{ showNewPassword ? '隐藏' : '显示' }}
-          </button>
-        </div>
+        <SecretInput
+          id="settings-new-password"
+          v-model="newPassword"
+          name="new-password"
+          autocomplete="new-password"
+          enterkeyhint="done"
+          :minlength="6"
+          placeholder="输入新密钥 (至少6位)"
+          toggle-label="新密钥"
+          required
+        />
         <button type="submit" class="min-h-[44px] sm:min-h-[40px] px-4 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer shrink-0">
           更新密码
         </button>

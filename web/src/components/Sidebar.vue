@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
-import { botStateLabel, formatChatTime } from '../utils/format'
+import { botStateDotClass, botStateLabel, formatChatTime } from '../utils/format'
 import { resolveGroupMemberBots } from '../utils/botLook'
 import { applySiblingStaggerFallback } from '../utils/topLayer'
 import type { Bot } from '../types/bothub'
@@ -77,14 +77,6 @@ function botDraftPreview(b: Bot): string {
     if (k.startsWith(prefix) && v) return v
   }
   return ''
-}
-
-function stateDotClass(state: string): string {
-  if (state === 'thinking') return 'bg-amber-400 animate-pulse'
-  if (state === 'working') return 'bg-[#f2b880] animate-pulse'
-  if (state === 'done') return 'bg-emerald-400'
-  if (state === 'blocked') return 'bg-rose-400'
-  return 'bg-slate-500'
 }
 
 async function handlePickBot(id: string) {
@@ -380,7 +372,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
                     v-else-if="b.state !== 'idle'"
                     class="inline-flex items-center gap-1 font-mono text-[10px] text-[#f2b880]"
                   >
-                    <span :class="['w-1.5 h-1.5 rounded-full', stateDotClass(b.state)]" aria-hidden="true" />
+                    <span :class="['w-1.5 h-1.5 rounded-full', botStateDotClass(b.state)]" aria-hidden="true" />
                     <span>{{ botStateLabel(b.state) }}</span>
                   </span>
                   <span v-else class="font-mono text-[10px] text-slate-500">

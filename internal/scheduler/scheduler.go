@@ -30,9 +30,6 @@ type TaskStatus struct {
 	LastRun     *store.ModuleRun `json:"last_run,omitempty"`
 }
 
-// ModuleStatus alias for backward compatibility
-type ModuleStatus = TaskStatus
-
 // Scheduler coordinates cron jobs, one-shot reminders, and manual task triggers.
 // Loosely-coupled with execution logic via modules.Registry.
 type Scheduler struct {
@@ -59,6 +56,12 @@ func (s *Scheduler) SetBotRoutineExecutor(exec modules.BotRoutineExecutor) {
 	}
 }
 
+func (s *Scheduler) SetLightSummarizer(sum modules.LightSummarizer) {
+	if s != nil && s.registry != nil {
+		s.registry.SetLightSummarizer(sum)
+	}
+}
+
 // NewWithRegistry creates a Scheduler backed by a dynamic module Registry.
 func NewWithRegistry(st *store.Store, reg *modules.Registry) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -72,17 +75,6 @@ func NewWithRegistry(st *store.Store, reg *modules.Registry) *Scheduler {
 		runCancel: cancel,
 		loc:       modules.ShanghaiLocation(),
 	}
-}
-
-// New retains backward compatibility for existing initializations.
-func New(st *store.Store, mods ...modules.Module) *Scheduler {
-	reg := modules.NewRegistry()
-	for _, m := range mods {
-		if r, ok := m.(modules.TaskRunner); ok {
-			reg.RegisterTaskRunner(m.ID(), r)
-		}
-	}
-	return NewWithRegistry(st, reg)
 }
 
 func (s *Scheduler) Start() error {
@@ -424,12 +416,4 @@ func (s *Scheduler) TaskTemplates() []modules.TaskTemplate {
 		return nil
 	}
 	return s.registry.TaskTemplates()
-}
-
-// TaskTypes exposes registered runnable task type slugs dynamically.
-func (s *Scheduler) TaskTypes() []string {
-	if s == nil || s.registry == nil {
-		return nil
-	}
-	return s.registry.RegisteredTaskTypes()
 }

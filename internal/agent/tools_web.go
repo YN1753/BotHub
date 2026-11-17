@@ -28,6 +28,9 @@ var (
 	reMultiNewline = regexp.MustCompile(`\n{3,}`)
 	reMetaDesc1    = regexp.MustCompile(`(?is)<meta[^>]+name=["'](?:description|og:description)["'][^>]+content=["']([^"']{1,400})["']`)
 	reMetaDesc2    = regexp.MustCompile(`(?is)<meta[^>]+content=["']([^"']{1,400})["'][^>]+name=["'](?:description|og:description)["']`)
+	reHTMLTitle    = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
+	reDDGResult    = regexp.MustCompile(`(?is)<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>`)
+	reDDGSnippet   = regexp.MustCompile(`(?is)<a[^>]+class="result__snippet"[^>]*>(.*?)</a>`)
 
 	htmlBlockBreakReplacer = strings.NewReplacer(
 		"</p>", "\n",
@@ -43,6 +46,80 @@ var (
 
 	sharedSafeHTTPClient = newSafeHTTPClient()
 )
+
+func readURLToolSpec() ToolSpec {
+	return ToolSpec{
+		Definition: ToolDefinition{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "read_url",
+				Description: "抓取指定网页 URL 的正文内容并转换为纯文本摘要，用于阅读文章、文档或监控页面。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"url": map[string]any{
+							"type":        "string",
+							"description": "要抓取的完整 HTTP/HTTPS 网页地址",
+						},
+					},
+					"required": []string{"url"},
+				},
+			},
+		},
+		Timeout:        25 * time.Second,
+		ReadOnly:       true,
+		StatusLabel:    "正在精读网页正文...",
+		DomainKeywords: []string{"网页", "url", "链接", "http", "文章"},
+		ErrorHint:      "该目标地址不可访问或受策略拦截，请勿编造正文，如实向用户说明或更换公开来源",
+		RetryErrorHint: "目标站点访问超时，可更换关键词或改用另一参考源",
+		Execute: func(ctx context.Context, e *Engine, cleanArgs string) (string, error) {
+			return e.toolReadURL(ctx, cleanArgs)
+		},
+	}
+}
+
+func webSearchToolSpec() ToolSpec {
+	return ToolSpec{
+		Definition: ToolDefinition{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "web_search",
+				Description: "通过互联网搜索关键词获取最新资讯、技术方案或公开信息。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"query": map[string]any{
+							"type":        "string",
+							"description": "搜索关键词",
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "返回结果条数（默认 5，最大 10）",
+						},
+					},
+					"required": []string{"query"},
+				},
+			},
+		},
+		Timeout:        25 * time.Second,
+		ReadOnly:       true,
+		StatusLabel:    "正在检索全网资料...",
+		DomainKeywords: []string{"github", "开源", "趋势", "雷达", "新闻", "前沿", "hn", "hacker", "搜索", "推荐", "查一下"},
+		ErrorHint:      "该目标地址不可访问或受策略拦截，请勿编造正文，如实向用户说明或更换公开来源",
+		RetryErrorHint: "目标站点访问超时，可更换关键词或改用另一参考源",
+		Execute: func(ctx context.Context, e *Engine, cleanArgs string) (string, error) {
+			return e.toolWebSearch(ctx, cleanArgs)
+		},
+	}
+}
+
+func extractHTMLTitle(rawHTML string) string {
+	m := reHTMLTitle.FindStringSubmatch(rawHTML)
+	if len(m) < 2 {
+		return ""
+	}
+	return notifier.StripEmoji(strings.TrimSpace(reMultiSpace.ReplaceAllString(html.UnescapeString(reHTMLTags.ReplaceAllString(m[1], " ")), " ")))
+}
 
 func extractHTMLMetaDesc(rawHTML string) string {
 	for _, rx := range []*regexp.Regexp{reMetaDesc1, reMetaDesc2} {
@@ -153,31 +230,41 @@ func (e *Engine) safeFetchClient() *http.Client {
 	return sharedSafeHTTPClient
 }
 
-func (e *Engine) fetchTextWithClient(ctx context.Context, client *http.Client, targetURL, accept string) (int, string, string, error) {
+// fetchWebResource performs SSRF-protected GET fetching shared across read_url and Smart Stash extractors.
+func (e *Engine) fetchWebResource(ctx context.Context, targetURL, accept string, headers map[string]string) (int, string, string, string, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, targetURL, nil)
 	if err != nil {
-		return 0, "", "", err
+		return 0, "", "", "", err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; VesperBotHub/2.0)")
 	if accept == "" {
 		accept = "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8"
 	}
 	req.Header.Set("Accept", accept)
+	for k, v := range headers {
+		if strings.TrimSpace(v) != "" {
+			req.Header.Set(k, v)
+		}
+	}
 
-	resp, err := client.Do(req)
+	resp, err := e.safeFetchClient().Do(req)
 	if err != nil {
-		return 0, "", "", err
+		return 0, "", "", "", err
 	}
 	defer resp.Body.Close()
 
+	finalURL := targetURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL = resp.Request.URL.String()
+	}
 	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 	if err != nil {
-		return resp.StatusCode, "", "", err
+		return resp.StatusCode, finalURL, "", "", err
 	}
-	return resp.StatusCode, strings.ToLower(resp.Header.Get("Content-Type")), string(bodyBytes), nil
+	return resp.StatusCode, finalURL, strings.ToLower(resp.Header.Get("Content-Type")), string(bodyBytes), nil
 }
 
 func parseGitHubRepo(parsed *url.URL) (owner, repo string, ok bool) {
@@ -213,7 +300,6 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 		maxChars = MaxReadURLChars
 	}
 
-	client := e.safeFetchClient()
 	var statusCode int
 	var text string
 	var pageTitle string
@@ -223,7 +309,7 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 	// Fast-path: GitHub repository root URL -> fetch raw README.md directly
 	if owner, repo, ok := parseGitHubRepo(parsed); ok && !e.allowLocalhostForTest {
 		rawURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/HEAD/README.md", owner, repo)
-		if sc, _, body, gErr := e.fetchTextWithClient(ctx, client, rawURL, "text/plain"); gErr == nil && sc >= 200 && sc < 300 && strings.TrimSpace(body) != "" {
+		if sc, _, _, body, gErr := e.fetchWebResource(ctx, rawURL, "text/plain", nil); gErr == nil && sc >= 200 && sc < 300 && strings.TrimSpace(body) != "" {
 			statusCode = sc
 			pageTitle = fmt.Sprintf("%s/%s", owner, repo)
 			text = notifier.StripEmoji(strings.TrimSpace(body))
@@ -232,7 +318,7 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 	}
 
 	if text == "" {
-		sc, contentType, rawBody, fErr := e.fetchTextWithClient(ctx, client, target, "")
+		sc, _, contentType, rawBody, fErr := e.fetchWebResource(ctx, target, "", nil)
 		if fErr != nil {
 			return "", fmt.Errorf("请求网页失败: %w", fErr)
 		}
@@ -248,7 +334,7 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 		// Fallback: if CSR/SPA page yields very little text, try Jina Reader Markdown extraction
 		if len([]rune(text)) < 200 && !e.allowLocalhostForTest && !strings.Contains(strings.ToLower(parsed.Hostname()), "r.jina.ai") {
 			jinaURL := "https://r.jina.ai/" + target
-			if jsc, _, jBody, jErr := e.fetchTextWithClient(ctx, client, jinaURL, "text/plain"); jErr == nil && jsc >= 200 && jsc < 300 {
+			if jsc, _, _, jBody, jErr := e.fetchWebResource(ctx, jinaURL, "text/plain", nil); jErr == nil && jsc >= 200 && jsc < 300 {
 				jClean := notifier.StripEmoji(strings.TrimSpace(jBody))
 				if len([]rune(jClean)) > len([]rune(text)) {
 					text = jClean
@@ -293,6 +379,80 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 	return string(payload), nil
 }
 
+func unwrapDDGRedirectURL(raw string) string {
+	raw = html.UnescapeString(strings.TrimSpace(raw))
+	if strings.HasPrefix(raw, "//") {
+		raw = "https:" + raw
+	}
+	if parsed, err := url.Parse(raw); err == nil {
+		if uddg := parsed.Query().Get("uddg"); uddg != "" {
+			return uddg
+		}
+	}
+	return raw
+}
+
+func (e *Engine) searchDuckDuckGoHTML(ctx context.Context, query string, limit int) []struct {
+	Title   string
+	URL     string
+	Snippet string
+} {
+	if e.allowLocalhostForTest || limit <= 0 {
+		return nil
+	}
+	ddgURL := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ddgURL, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; VesperBotHub/2.16)")
+	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+
+	resp, err := e.safeFetchClient().Do(req)
+	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		return nil
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	if err != nil {
+		return nil
+	}
+	raw := string(bodyBytes)
+	titleMatches := reDDGResult.FindAllStringSubmatch(raw, limit)
+	snippetMatches := reDDGSnippet.FindAllStringSubmatch(raw, limit)
+
+	out := make([]struct {
+		Title   string
+		URL     string
+		Snippet string
+	}, 0, len(titleMatches))
+	for i, m := range titleMatches {
+		targetURL := unwrapDDGRedirectURL(m[1])
+		title := notifier.StripEmoji(strings.TrimSpace(stripHTMLToText(m[2])))
+		if targetURL == "" || title == "" {
+			continue
+		}
+		snippet := ""
+		if i < len(snippetMatches) {
+			snippet = notifier.StripEmoji(strings.TrimSpace(stripHTMLToText(snippetMatches[i][1])))
+		}
+		out = append(out, struct {
+			Title   string
+			URL     string
+			Snippet string
+		}{
+			Title:   title,
+			URL:     targetURL,
+			Snippet: snippet,
+		})
+	}
+	return out
+}
+
 func canonicalSearchURL(raw string) string {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -333,6 +493,8 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 		Source  string `json:"source"`
 	}
 
+	client := e.safeFetchClient()
+
 	// Fan out across 4 independent public search providers concurrently (slots preserve priority rank)
 	buckets := make([][]searchItem, 4)
 	var wg sync.WaitGroup
@@ -349,7 +511,7 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 			return
 		}
 		req.Header.Set("User-Agent", "VesperBotHub/2.26")
-		resp, err := e.httpClient.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			return
 		}
@@ -438,7 +600,7 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 			return
 		}
 		req.Header.Set("User-Agent", "VesperBotHub/2.26")
-		resp, err := e.httpClient.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			return
 		}
@@ -487,7 +649,7 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 			return
 		}
 		req.Header.Set("User-Agent", "VesperBotHub/2.26")
-		resp, err := e.httpClient.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			return
 		}

@@ -2,7 +2,8 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { trackSpotlight } from '../utils/topLayer'
+import { groupModeLabel, parseJsonStringArray } from '../utils/format'
+import { clearSearchOnEscape, trackSpotlight } from '../utils/topLayer'
 import { groupAvailableTools } from '../utils/toolMeta'
 import type { BotMode, MemoryPolicy } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
@@ -99,7 +100,7 @@ const STARTER_ARCHETYPES: Array<{
     name: 'Ops 哨兵',
     role: 'VPS 探针监控与数字资产审计官',
     mode: 'worker',
-    avatar: 'visor:cyan',
+    avatar: 'visor:obsidian',
     traits: '严谨客观、先查实时探针和账单工具再汇报结论',
     prompt: '你是基础设施运维与资产合规助手。涉及服务器负载、域名到期、续费成本时必须优先调用 query_nezha_nodes 与 manage_assets 获取实时数据，严禁使用 Emoji。',
     tools: ['query_nezha_nodes', 'manage_assets', 'manage_tasks', 'send_notification', 'remember_fact', 'recall_memory', 'datetime_calc', 'calculate_eval'],
@@ -119,7 +120,7 @@ const STARTER_ARCHETYPES: Array<{
     name: '深夜酒馆',
     role: '温柔真诚的日常聊天老友',
     mode: 'companion',
-    avatar: 'spark:rose',
+    avatar: 'swarm:violet',
     traits: '像真人发微信一样自然松弛，不列死板条框',
     prompt: '你是用户信任的生活伙伴，陪聊解闷、倾听日常并悄悄记住关键约定。语气真实温暖、简短接梗，严禁列报告式大纲或使用 Emoji。',
     tools: ['remember_fact', 'recall_memory'],
@@ -247,18 +248,8 @@ async function handleSubmit() {
           derivedModel = b.model
         }
         if (b.bot_mode !== 'companion') allCompanion = false
-        try {
-          const ts = JSON.parse(b.allowed_tools || '[]')
-          if (Array.isArray(ts)) ts.forEach((t) => toolSet.add(String(t)))
-        } catch {
-          // ignore
-        }
-        try {
-          const ss = JSON.parse(b.skill_ids || '[]')
-          if (Array.isArray(ss)) ss.forEach((s) => skillSet.add(String(s)))
-        } catch {
-          // ignore
-        }
+        parseJsonStringArray(b.allowed_tools).forEach((t) => toolSet.add(t))
+        parseJsonStringArray(b.skill_ids).forEach((s) => skillSet.add(s))
       })
 
       const res = await BotHubApi.createBot({
@@ -463,7 +454,7 @@ async function handleSubmit() {
                     type="search"
                     aria-label="搜索工具"
                     placeholder="筛选工具..."
-                    @keydown.escape.stop="toolSearch = ''"
+                    @keydown.escape="clearSearchOnEscape($event, toolSearch, () => { toolSearch = '' })"
                     class="w-28 min-h-[26px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
                   />
                   <button
@@ -649,7 +640,7 @@ async function handleSubmit() {
             {{ BOT_MODE_TABS.find((t) => t.id === botMode)?.label }} · {{ allowedTools.length }} 工具 · {{ selectedSkillIds.length }} 技能
           </template>
           <template v-else>
-            已拉起 {{ groupMembers.length }} 位群成员 · {{ groupMode }}
+            已拉起 {{ groupMembers.length }} 位群成员 · {{ groupModeLabel(groupMode) }}
           </template>
         </span>
         <div class="flex items-center gap-2 ml-auto">

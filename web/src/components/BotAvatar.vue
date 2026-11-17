@@ -365,7 +365,7 @@ const inlineVars = computed(() => {
                   <!-- Parallel GrokBot Capsule Eyes (Directly on the Seamless Face) -->
                   <g class="bot-eye-gaze">
                     <!-- Blocked / Alert Angled Capsules -->
-                    <g v-if="state === 'blocked' && !isWinking" class="bot-eyes-alert">
+                    <g v-if="state === 'blocked' && !isWinking">
                       <rect
                         x="18.6"
                         y="22.4"
@@ -387,13 +387,13 @@ const inlineVars = computed(() => {
                     </g>
 
                     <!-- Shy Peek Squinted Horizontal Pill Eyes -->
-                    <g v-else-if="activeStunt === 'shy'" class="bot-eyes-shy">
+                    <g v-else-if="activeStunt === 'shy'">
                       <rect x="17.2" y="27.2" width="7.2" height="3.6" rx="1.8" :fill="eyeFill" />
                       <rect x="31.6" y="27.2" width="7.2" height="3.6" rx="1.8" :fill="eyeFill" />
                     </g>
 
                     <!-- Done / Poke Happy Curved Crescent Pills -->
-                    <g v-else-if="effectiveState === 'done'" class="bot-eyes-happy">
+                    <g v-else-if="effectiveState === 'done'">
                       <path
                         d="M 16.8 28.8 C 17.6 23.4, 24.8 23.4, 25.6 28.8 C 25.8 30.1, 24.2 30.8, 23.4 29.7 C 22.3 27.6, 20.1 27.6, 19 29.7 C 18.2 30.8, 16.6 30.1, 16.8 28.8 Z"
                         :fill="eyeFill"
@@ -482,9 +482,9 @@ const inlineVars = computed(() => {
             />
 
             <!-- Expressive Geometric Vector Emotes (Outside ClipPath — Zero Unicode Emojis) -->
-            <g class="bot-emotes" pointer-events="none">
+            <g pointer-events="none">
               <!-- Happy / Stunt Twinkling Starlight Motes -->
-              <g v-if="showSparkles" class="bot-emote-sparkles">
+              <g v-if="showSparkles">
                 <path
                   d="M 48.5 8.5 Q 48.5 12.2 52.2 12.2 Q 48.5 12.2 48.5 15.9 Q 48.5 12.2 44.8 12.2 Q 48.5 12.2 48.5 8.5 Z"
                   :fill="palette.ring"
@@ -499,14 +499,14 @@ const inlineVars = computed(() => {
               </g>
 
               <!-- Thinking Rising Soft Thought Pearls -->
-              <g v-if="showThoughtBubbles" class="bot-emote-thoughts">
+              <g v-if="showThoughtBubbles">
                 <circle cx="44.5" cy="14.5" r="1.5" :fill="palette.shellHi" opacity="0.78" class="bot-thought-1" />
                 <circle cx="48.5" cy="10.2" r="2.2" :fill="palette.shellHi" opacity="0.88" class="bot-thought-2" />
                 <circle cx="52.2" cy="5.4" r="3" :fill="auroraColor" opacity="0.92" class="bot-thought-3" />
               </g>
 
               <!-- Working Kinetic Focus Arcs -->
-              <g v-if="showWorkArcs" class="bot-emote-work">
+              <g v-if="showWorkArcs">
                 <path
                   d="M 5.2 23 A 24 24 0 0 1 11.5 9.5"
                   :stroke="auroraColor"

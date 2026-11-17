@@ -2,7 +2,10 @@
 import { computed, ref, watch } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
+import { resolveScopedMemories } from '../../utils/botLook'
+import { parseJsonStringArray } from '../../utils/format'
 import { groupAvailableTools } from '../../utils/toolMeta'
+import { clearSearchOnEscape } from '../../utils/topLayer'
 import type { AgentMemory, BotMode, MemoryPolicy } from '../../types/bothub'
 import BotAvatar from '../BotAvatar.vue'
 import BotAvatarPicker from '../BotAvatarPicker.vue'
@@ -78,14 +81,7 @@ const hasProfileChanges = computed(() => {
   const normModel = !b.model || b.model === 'deepseek-flash' ? 'primary' : b.model
   const normMode = (b.bot_mode as BotMode) || 'hybrid'
   const normPolicy = (b.memory_policy as MemoryPolicy) || 'standard'
-  const parseSorted = (raw?: string) => {
-    try {
-      const a = JSON.parse(raw || '[]')
-      return Array.isArray(a) ? a.toSorted().join(',') : ''
-    } catch {
-      return ''
-    }
-  }
+  const parseSorted = (raw?: string) => parseJsonStringArray(raw).toSorted().join(',')
   return (
     cfgName.value.trim() !== (b.name || '') ||
     cfgRole.value.trim() !== (b.role_title || '') ||
@@ -103,17 +99,9 @@ const hasProfileChanges = computed(() => {
   )
 })
 
-const scopedMemories = computed(() => {
-  const serverMems = store.state.botMemories || []
-  if (serverMems.length > 0) return serverMems
-  const cur = bot.value
-  if (!cur) return []
-  const bScope = `bot:${cur.id}`
-  if (cur.memory_policy === 'isolated') {
-    return store.state.memories.filter((m) => m.scope === bScope)
-  }
-  return store.state.memories.filter((m) => !m.scope || m.scope === 'global' || m.scope === bScope)
-})
+const scopedMemories = computed(() =>
+  resolveScopedMemories(bot.value, store.state.botMemories || [], store.state.memories)
+)
 
 watch(
   bot,
@@ -131,24 +119,9 @@ watch(
     cfgTraits.value = b.traits || ''
     cfgGroupMode.value = b.group_mode || 'smart'
     editingMemId.value = null
-    try {
-      const arr = JSON.parse(b.allowed_tools || '[]')
-      cfgTools.value = Array.isArray(arr) ? arr : []
-    } catch {
-      cfgTools.value = []
-    }
-    try {
-      const sArr = JSON.parse(b.skill_ids || '[]')
-      cfgSkillIds.value = Array.isArray(sArr) ? sArr : []
-    } catch {
-      cfgSkillIds.value = []
-    }
-    try {
-      const mArr = JSON.parse(b.member_ids || '[]')
-      cfgMembers.value = Array.isArray(mArr) ? mArr : []
-    } catch {
-      cfgMembers.value = []
-    }
+    cfgTools.value = parseJsonStringArray(b.allowed_tools)
+    cfgSkillIds.value = parseJsonStringArray(b.skill_ids)
+    cfgMembers.value = parseJsonStringArray(b.member_ids)
   },
   { immediate: true }
 )
@@ -375,7 +348,7 @@ function openScopedMemoriesManager() {
                   type="search"
                   aria-label="筛选工具"
                   placeholder="筛选工具..."
-                  @keydown.escape.stop="cfgToolFilter = ''"
+                  @keydown.escape="clearSearchOnEscape($event, cfgToolFilter, () => { cfgToolFilter = '' })"
                   class="w-32 min-h-[26px] rounded-lg border border-[#fff8ee]/12 bg-[#060a16] px-2 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
                 />
                 <button

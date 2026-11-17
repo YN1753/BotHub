@@ -16,8 +16,7 @@ import (
 
 func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	var req agent.ChatRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效对话请求体")
+	if !decodeJSON(w, r, 64*1024, &req) {
 		return
 	}
 	req.Message = strings.TrimSpace(req.Message)
@@ -26,20 +25,10 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	flusher, ok := w.(http.Flusher)
+	flusher, ok := startSSEStream(w)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "当前连接不支持流式输出")
 		return
 	}
-
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, no-transform")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	rc := http.NewResponseController(w)
-	_ = rc.SetReadDeadline(time.Time{})
-	_ = rc.SetWriteDeadline(time.Time{})
-	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
 	ctx, cancel := context.WithTimeout(r.Context(), 180*time.Second)
@@ -168,8 +157,7 @@ func (s *Server) handleSaveAgentMemory(w http.ResponseWriter, r *http.Request) {
 		Importance int    `json:"importance"`
 		Pinned     bool   `json:"pinned"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效请求体")
+	if !decodeJSON(w, r, 16384, &req) {
 		return
 	}
 	key := notifier.StripEmoji(strings.TrimSpace(req.FactKey))
@@ -229,8 +217,7 @@ func (s *Server) handleUpdateAgentMemory(w http.ResponseWriter, r *http.Request)
 		Importance *int    `json:"importance"`
 		Pinned     *bool   `json:"pinned"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效请求体")
+	if !decodeJSON(w, r, 16384, &req) {
 		return
 	}
 
@@ -295,8 +282,7 @@ func (s *Server) handlePruneAgentMemories(w http.ResponseWriter, r *http.Request
 		Scope   string `json:"scope"`
 		MaxKeep int    `json:"max_keep"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效请求体")
+	if !decodeJSON(w, r, 8192, &req) {
 		return
 	}
 	scope := strings.TrimSpace(req.Scope)
@@ -326,8 +312,7 @@ func (s *Server) handleConsolidateAgentMemories(w http.ResponseWriter, r *http.R
 	var req struct {
 		Scope string `json:"scope"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效请求体")
+	if !decodeJSON(w, r, 4096, &req) {
 		return
 	}
 	scope := strings.TrimSpace(req.Scope)

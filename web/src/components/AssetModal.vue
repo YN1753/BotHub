@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { generateSlug } from '../utils/format'
+import { generateSlug, parseJsonRecord } from '../utils/format'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
@@ -224,14 +224,9 @@ watch(
         dueDay.value = m[3]
       }
     }
-    try {
-      const obj = JSON.parse(item.extra_config || '{}')
-      extraRows.value = Object.entries(obj)
-        .filter(([k]) => k.trim() !== '')
-        .map(([k, v]) => ({ key: k, value: String(v ?? '') }))
-    } catch {
-      extraRows.value = []
-    }
+    extraRows.value = Object.entries(parseJsonRecord(item.extra_config))
+      .filter(([k]) => k.trim() !== '')
+      .map(([k, v]) => ({ key: k, value: v }))
   }
 )
 

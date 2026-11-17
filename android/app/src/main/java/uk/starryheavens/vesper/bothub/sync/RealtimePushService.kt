@@ -3,7 +3,6 @@ package uk.starryheavens.vesper.bothub.sync
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -14,14 +13,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import okhttp3.Request
-import org.json.JSONObject
 import uk.starryheavens.vesper.bothub.R
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
+import uk.starryheavens.vesper.bothub.data.JsonMappers
 import uk.starryheavens.vesper.bothub.notify.NotificationHelper
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 class RealtimePushService : Service() {
 
@@ -38,7 +34,7 @@ class RealtimePushService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
-        startForeground(9001, ongoing)
+        startForeground(FOREGROUND_NOTIFICATION_ID, ongoing)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -47,10 +43,12 @@ class RealtimePushService : Service() {
                 val prefs = BotHubPrefs(applicationContext)
                 val api = BotHubApiClient(prefs)
                 while (isActive) {
-                    if (prefs.bearerToken.isNotEmpty()) {
-                        runCatching {
-                            connectSSE(prefs, api)
-                        }
+                    if (prefs.bearerToken.isEmpty() || !prefs.realtimeServiceEnabled) {
+                        stopSelf()
+                        break
+                    }
+                    runCatching {
+                        connectSSE(prefs, api)
                     }
                     delay(8000L)
                 }
@@ -59,43 +57,19 @@ class RealtimePushService : Service() {
         return START_STICKY
     }
 
-    private fun connectSSE(prefs: BotHubPrefs, api: BotHubApiClient) {
-        val lastId = prefs.lastEventId
-        val url = "${prefs.serverUrl}/api/v2/events?last_event_id=$lastId"
-        val req = Request.Builder()
-            .url(url)
-            .header("Accept", "text/event-stream")
-            .header("Authorization", "Bearer ${prefs.bearerToken}")
-            .get()
-            .build()
-
-        api.httpClient.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) return
-            val stream = resp.body?.byteStream() ?: return
-            val reader = BufferedReader(InputStreamReader(stream, Charsets.UTF_8))
-            var currentEvent = "message"
-            var line: String?
-
-            while (reader.readLine().also { line = it } != null) {
-                val trimmed = line?.trim().orEmpty()
-                if (trimmed.isEmpty()) continue
-                if (trimmed.startsWith("event:")) {
-                    currentEvent = trimmed.removePrefix("event:").trim()
-                } else if (trimmed.startsWith("data:")) {
-                    val dataStr = trimmed.removePrefix("data:").trim()
-                    val obj = runCatching { JSONObject(dataStr) }.getOrNull() ?: continue
-                    if (currentEvent == "connected") {
-                        val serverLatest = obj.optLong("latest_id", 0L)
-                        if (prefs.lastEventId == 0L && serverLatest > 0L) {
-                            prefs.lastEventId = serverLatest
-                        }
-                    } else if (currentEvent == "notification") {
-                        val item = BotHubApiClient.parseSingleNotification(obj)
-                        if (item.id > prefs.lastEventId) {
-                            prefs.lastEventId = item.id
-                        }
-                        NotificationHelper.showNotification(applicationContext, item)
+    private suspend fun connectSSE(prefs: BotHubPrefs, api: BotHubApiClient) {
+        api.openNotificationEventStream(prefs.lastEventId) { event, obj ->
+            when (event) {
+                "connected" -> {
+                    val serverLatest = obj.optLong("latest_id", 0L)
+                    if (prefs.lastEventId == 0L && serverLatest > 0L) {
+                        prefs.advanceLastEventId(serverLatest)
                     }
+                }
+                "notification" -> {
+                    val item = JsonMappers.parseNotification(obj)
+                    prefs.advanceLastEventId(item.id)
+                    NotificationHelper.showNotification(applicationContext, item)
                 }
             }
         }
@@ -110,12 +84,27 @@ class RealtimePushService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        private const val FOREGROUND_NOTIFICATION_ID = 9001
+
         fun start(context: Context) {
-            val svcIntent = Intent(context, RealtimePushService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(svcIntent)
+            runCatching {
+                val appContext = context.applicationContext
+                appContext.startForegroundService(Intent(appContext, RealtimePushService::class.java))
+            }
+        }
+
+        fun stop(context: Context) {
+            runCatching {
+                val appContext = context.applicationContext
+                appContext.stopService(Intent(appContext, RealtimePushService::class.java))
+            }
+        }
+
+        fun syncWithPrefs(context: Context, prefs: BotHubPrefs = BotHubPrefs(context)) {
+            if (prefs.realtimeServiceEnabled && prefs.bearerToken.isNotEmpty()) {
+                start(context)
             } else {
-                context.startService(svcIntent)
+                stop(context)
             }
         }
     }

@@ -573,19 +573,7 @@ func (s *Store) UpsertStashItemFull(item StashItem) (StashItem, error) {
 	return item, err
 }
 
-func (s *Store) IncrementStashRead(id string) (*StashItem, error) {
-	trimmed := strings.TrimSpace(id)
-	if trimmed == "" {
-		return nil, errors.New("id is required")
-	}
-	now := NowShanghai()
-	_, err := s.db.Exec(`UPDATE stash_items SET read_count = read_count + 1, last_reviewed_at = ?, updated_at = ? WHERE id = ?`, now, now, trimmed)
-	if err != nil {
-		return nil, err
-	}
-	return s.GetStashItem(trimmed)
-}
-
+// DeleteStashItem deletes a stash item by ID.
 func (s *Store) DeleteStashItem(id string) (bool, error) {
 	res, err := s.db.Exec(`DELETE FROM stash_items WHERE id = ?`, strings.TrimSpace(id))
 	if err != nil {

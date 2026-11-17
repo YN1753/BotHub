@@ -104,12 +104,6 @@ func (s *Store) IsSeen(source, itemKey string) (bool, error) {
 	return exists == 1, err
 }
 
-func (s *Store) MarkSeen(source, itemKey, title, url string) error {
-	_, err := s.db.Exec(`INSERT OR IGNORE INTO seen_items (source, item_key, title, url, first_seen_at) VALUES (?, ?, ?, ?, ?)`,
-		source, itemKey, title, url, NowShanghai())
-	return err
-}
-
 func (s *Store) BatchMarkSeen(items []SeenItem) error {
 	if len(items) == 0 {
 		return nil

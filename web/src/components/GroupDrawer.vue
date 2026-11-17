@@ -2,7 +2,9 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { trackSpotlight } from '../utils/topLayer'
+import { copyToClipboard } from '../utils/clipboard'
+import { groupModeLabel, parseJsonStringArray } from '../utils/format'
+import { clearSearchOnEscape, trackSpotlight } from '../utils/topLayer'
 import type { Bot } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
 import BotGroupAvatar from './BotGroupAvatar.vue'
@@ -18,15 +20,9 @@ const specialistBots = computed(() =>
   store.state.bots.filter((b) => !b.is_group)
 )
 
-const currentMemberIds = computed<string[]>(() => {
-  if (!bot.value) return []
-  try {
-    const arr = JSON.parse(bot.value.member_ids || '[]')
-    return Array.isArray(arr) ? arr : []
-  } catch {
-    return []
-  }
-})
+const currentMemberIds = computed<string[]>(() =>
+  bot.value ? parseJsonStringArray(bot.value.member_ids) : []
+)
 
 const currentMembers = computed<Bot[]>(() => {
   const map = new Map(specialistBots.value.map((b) => [b.id, b]))
@@ -246,16 +242,12 @@ async function copyGroupRosterSummary() {
   if (!bot.value) return
   const lines = [
     `群聊名称: ${bot.value.name}`,
-    `协同策略: ${editMode.value}`,
+    `协同策略: ${groupModeLabel(editMode.value)}`,
     `成员名单 (${currentMembers.value.length}): ${currentMembers.value.map((m) => `${m.name} (${m.role_title})`).join('、')}`,
     editAnnouncement.value.trim() ? `群公告: ${editAnnouncement.value.trim()}` : '',
   ].filter(Boolean)
-  try {
-    await navigator.clipboard.writeText(lines.join('\n'))
-    store.notify('已复制群成员与协同配置摘要')
-  } catch {
-    store.notify('复制失败')
-  }
+  const ok = await copyToClipboard(lines.join('\n'))
+  store.notify(ok ? '已复制群成员与协同配置摘要' : '复制失败')
 }
 
 async function handleClearTimeline() {
@@ -429,6 +421,7 @@ async function handleDisbandGroup() {
                   v-model="inviteQuery"
                   type="search"
                   placeholder="搜索..."
+                  @keydown.escape="clearSearchOnEscape($event, inviteQuery, () => { inviteQuery = '' })"
                   class="w-28 min-h-[26px] rounded-md border border-[#fff8ee]/12 bg-[#050811] px-2 text-[11px] text-white"
                 />
               </div>
@@ -575,6 +568,7 @@ async function handleDisbandGroup() {
               v-model="inviteQuery"
               type="search"
               placeholder="搜索成员名字或职责..."
+              @keydown.escape="clearSearchOnEscape($event, inviteQuery, () => { inviteQuery = '' })"
               class="min-h-[34px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white focus:border-[#f2b880]/60"
             />
             <div class="flex flex-col gap-1.5">

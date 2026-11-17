@@ -37,7 +37,7 @@ func (c *Client) Hub() *pushstream.Hub {
 
 func inferPriority(moduleID string) string {
 	switch strings.ToLower(strings.TrimSpace(moduleID)) {
-	case "nezha_webhook", "asset_watcher", "asset_warn", "ssl_check", "http_ping":
+	case "nezha_webhook", "asset_watcher", "asset_warn":
 		return "high"
 	default:
 		return "normal"

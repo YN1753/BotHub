@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { describeCron, generateSlug } from '../utils/format'
+import { describeCron, generateSlug, parseJsonRecord } from '../utils/format'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
@@ -180,16 +180,7 @@ watch(
       runAt.value = ''
       parseCronExpr(t.cron_expr || '0 8 * * *')
     }
-    try {
-      const parsed = JSON.parse(t.params || '{}')
-      const m: Record<string, string> = {}
-      Object.entries(parsed).forEach(([k, v]) => {
-        m[k] = String(v ?? '')
-      })
-      paramsMap.value = m
-    } catch {
-      paramsMap.value = {}
-    }
+    paramsMap.value = parseJsonRecord(t.params)
   }
 )
 

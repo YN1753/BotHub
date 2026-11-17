@@ -2,8 +2,11 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
+import { pickDefaultWorkerBot } from '../../utils/botLook'
+import { copyToClipboard } from '../../utils/clipboard'
 import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../../utils/markdown'
 import { formatTime, triggerBlobDownload } from '../../utils/format'
+import { clearSearchOnEscape } from '../../utils/topLayer'
 import type { WorkNote } from '../../types/bothub'
 
 const emit = defineEmits<{
@@ -33,13 +36,6 @@ watch(
   },
   { immediate: true }
 )
-
-function handleNoteSearchEscape(e: KeyboardEvent) {
-  if (!noteSearch.value.trim()) return
-  e.preventDefault()
-  e.stopPropagation()
-  noteSearch.value = ''
-}
 
 const filteredNotes = computed(() => {
   const q = noteSearch.value.trim().toLowerCase()
@@ -132,12 +128,8 @@ async function removeNote(id: string) {
 }
 
 async function copyNoteMarkdown(n: WorkNote) {
-  try {
-    await navigator.clipboard.writeText(`# ${n.title}\n\n${n.content}`)
-    store.notify('已复制文档 Markdown')
-  } catch {
-    store.notify('复制失败')
-  }
+  const ok = await copyToClipboard(`# ${n.title}\n\n${n.content}`)
+  store.notify(ok ? '已复制文档 Markdown' : '复制失败')
 }
 
 function downloadNoteMarkdown(n: WorkNote) {
@@ -146,7 +138,7 @@ function downloadNoteMarkdown(n: WorkNote) {
 }
 
 function quoteNoteToChat(n: WorkNote) {
-  const targetBotId = n.bot_id || store.activeBot.value?.id || store.state.bots[0]?.id || ''
+  const targetBotId = pickDefaultWorkerBot(store.state.bots, store.activeBot.value, n.bot_id)
   if (!targetBotId) {
     store.notify('请先创建一个 Bot')
     return
@@ -157,7 +149,7 @@ function quoteNoteToChat(n: WorkNote) {
 }
 
 async function refineNoteWithBot(n: WorkNote) {
-  const targetBotId = n.bot_id || store.activeBot.value?.id || store.state.bots[0]?.id || ''
+  const targetBotId = pickDefaultWorkerBot(store.state.bots, store.activeBot.value, n.bot_id)
   if (!targetBotId) {
     store.notify('请先创建一个 Bot')
     return
@@ -177,7 +169,7 @@ async function refineNoteWithBot(n: WorkNote) {
           type="search"
           aria-label="搜索文档"
           placeholder="搜索文档..."
-          @keydown.escape="handleNoteSearchEscape"
+          @keydown.escape="clearSearchOnEscape($event, noteSearch, () => { noteSearch = '' })"
           class="flex-1 min-w-0 min-h-[34px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white"
         />
         <button

@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { resolveGroupMemberBots } from '../utils/botLook'
-import { trackSpotlight } from '../utils/topLayer'
+import { clearSearchOnEscape, trackSpotlight } from '../utils/topLayer'
 import type { Bot } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import BotAvatar from './BotAvatar.vue'
@@ -97,7 +97,7 @@ async function submitForward(jumpAfter: boolean) {
             type="search"
             aria-label="筛选转发目标"
             placeholder="搜索目标会话..."
-            @keydown.escape.stop="targetQuery = ''"
+            @keydown.escape="clearSearchOnEscape($event, targetQuery, () => { targetQuery = '' })"
             class="w-44 min-h-[30px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
           />
         </div>

@@ -22,7 +22,7 @@ import (
 
 // Injected during build via -ldflags
 var (
-	Version   = "v2.34.1"
+	Version   = "v2.35.0"
 	Commit    = "dev"
 	BuildTime = "local"
 )
@@ -72,15 +72,17 @@ func main() {
 
 	sched := scheduler.NewWithRegistry(st, registry)
 	sched.SetHub(pushClient.Hub())
-	if err := sched.Start(); err != nil {
-		log.Fatalf("[bothub] failed to start scheduler: %v", err)
-	}
-	defer sched.Stop()
 
 	srvHandler, err := server.New(st, sched, pushClient, staticFiles, Version, Commit, BuildTime)
 	if err != nil {
 		log.Fatalf("[bothub] failed to initialize http server: %v", err)
 	}
+	registry.SetLightSummarizer(modules.LightSummarizerFunc(srvHandler.Agent().CallLightModel))
+
+	if err := sched.Start(); err != nil {
+		log.Fatalf("[bothub] failed to start scheduler: %v", err)
+	}
+	defer sched.Stop()
 
 	httpSrv := &http.Server{
 		Addr:              *addr,

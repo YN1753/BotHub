@@ -298,6 +298,10 @@ onBeforeUnmount(() => {
         :key="store.state.toastSeq"
         role="status"
         aria-live="polite"
+        @mouseenter="store.pauseToast"
+        @mouseleave="store.resumeToast"
+        @focusin="store.pauseToast"
+        @focusout="store.resumeToast"
         :class="[
           'toast-host overflow-hidden fixed top-[max(0.875rem,env(safe-area-inset-top,0.875rem))] left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-[60] max-w-[min(92vw,24rem)] flex items-center gap-2.5 rounded-xl bg-[#0a0f1f]/96 px-3.5 py-2.5 text-xs text-slate-100 shadow-2xl backdrop-blur-xl border',
           /失败|错误|异常|超时|失效|无法/.test(store.state.toastMessage)

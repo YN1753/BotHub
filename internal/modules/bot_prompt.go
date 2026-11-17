@@ -33,14 +33,6 @@ func (m *BotPromptModule) SetExecutor(exec BotRoutineExecutor) {
 	m.exec = exec
 }
 
-func (m *BotPromptModule) ID() string          { return "bot_prompt" }
-func (m *BotPromptModule) Name() string        { return "AI Bot 自主定时指令" }
-func (m *BotPromptModule) Description() string { return "定时唤醒指定 Bot，结合其人格、专属记忆与绑定工具主动思考并发送汇报或问候" }
-
-func (m *BotPromptModule) Run(ctx context.Context) (RunResult, error) {
-	return RunResult{}, fmt.Errorf("bot_prompt 需要通过绑定了 bot_id 的调度任务执行")
-}
-
 func (m *BotPromptModule) RunWithTask(ctx context.Context, task store.Task) (RunResult, error) {
 	botID := strings.TrimSpace(task.BotID)
 	if botID == "" {

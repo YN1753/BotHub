@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
@@ -16,18 +17,28 @@ import (
 )
 
 type MorningModule struct {
-	store *store.Store
-	push  *notifier.Client
-	http  *http.Client
+	store      *store.Store
+	push       *notifier.Client
+	http       *http.Client
+	mu         sync.RWMutex
+	summarizer LightSummarizer
 }
 
 func NewMorningModule(st *store.Store, push *notifier.Client) *MorningModule {
 	return &MorningModule{store: st, push: push, http: NewHTTPClient(15 * time.Second)}
 }
 
-func (m *MorningModule) ID() string          { return "morning" }
-func (m *MorningModule) Name() string        { return "每日早报小秘书" }
-func (m *MorningModule) Description() string { return "汇总目标城市气象建议、每日格言、节点脉搏与临期资产" }
+func (m *MorningModule) SetSummarizer(sum LightSummarizer) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.summarizer = sum
+}
+
+func (m *MorningModule) getSummarizer() LightSummarizer {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.summarizer
+}
 
 type weatherInfo struct {
 	City        string
@@ -144,9 +155,9 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 		sb.WriteString("\n")
 	}
 
-	// Optional AI synthesis when DeepSeek API Key is configured
+	// Optional AI synthesis when Light/Pool/DeepSeek API Key is configured
 	sysPrompt := "你是 Vesper BotHub 的晨间参谋。请基于提供的今日气象、哪吒节点脉搏、个人待办清单与临期资产原始数据，用不超过 160 字输出「今日执更要点与行动优先级建议」（分 2-3 条简明要点）。严禁输出任何 Emoji 或特殊装饰符号。"
-	if aiInsight, aiErr := SummarizeWithDeepSeek(ctx, m.store, sysPrompt, sb.String()); aiErr == nil && aiInsight != "" {
+	if aiInsight, aiErr := summarizeModuleContent(ctx, m.store, m.getSummarizer(), sysPrompt, sb.String()); aiErr == nil && aiInsight != "" {
 		sb.WriteString("#### AI 执更参谋锐评\n")
 		sb.WriteString(aiInsight)
 		sb.WriteString("\n\n")

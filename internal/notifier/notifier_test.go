@@ -45,7 +45,7 @@ func TestNativeAppDispatch(t *testing.T) {
 	defer st.Close()
 
 	client := NewClient(st)
-	ch, unsub := client.Hub().Subscribe()
+	ch, unsub := client.Hub().SubscribeEvents()
 	defer unsub()
 
 	if err := client.SendMarkdown(context.Background(), "asset_watcher", "节点告警 🚀", "测试通知内容"); err != nil {
@@ -53,7 +53,14 @@ func TestNativeAppDispatch(t *testing.T) {
 	}
 
 	select {
-	case notif := <-ch:
+	case ev := <-ch:
+		if ev.Event != "notification" {
+			t.Fatalf("expected notification event, got %q", ev.Event)
+		}
+		notif, ok := ev.Data.(store.Notification)
+		if !ok {
+			t.Fatalf("expected store.Notification payload, got %T", ev.Data)
+		}
 		if notif.Title != "节点告警" {
 			t.Errorf("expected cleaned title, got %q", notif.Title)
 		}

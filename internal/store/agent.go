@@ -517,10 +517,6 @@ func (s *Store) MergeDuplicateMemories(scope string) (int64, error) {
 
 // Scoped Memory CRUD
 
-func (s *Store) SaveAgentMemory(category, factKey, content string) error {
-	return s.SaveAgentMemoryWithScope("global", category, factKey, content)
-}
-
 func (s *Store) SaveAgentMemoryWithScope(scope, category, factKey, content string) error {
 	return s.SaveAgentMemoryDetailed(scope, category, factKey, content, 3, false)
 }
