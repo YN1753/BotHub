@@ -21,9 +21,12 @@ const store = useAppStore()
 const searchQuery = ref('')
 const activeCat = ref('all')
 const expiringOnly = ref(false)
+const taskSearch = ref('')
+const taskStatusFilter = ref<'all' | 'enabled' | 'paused'>('all')
 const syncing = ref(false)
 const assetGridRef = ref<HTMLElement | null>(null)
 const taskGridRef = ref<HTMLElement | null>(null)
+const taskSectionRef = ref<HTMLElement | null>(null)
 
 const CATEGORY_LABELS: Record<string, string> = {
   compute: '算力基建',
@@ -95,13 +98,28 @@ function resetAssetFilters() {
   expiringOnly.value = false
 }
 
+const filteredTasks = computed(() =>
+  store.state.tasks.filter((t) => {
+    if (taskStatusFilter.value === 'enabled' && !t.enabled) return false
+    if (taskStatusFilter.value === 'paused' && t.enabled) return false
+    const q = taskSearch.value.trim().toLowerCase()
+    if (!q) return true
+    return `${t.name} ${t.description} ${t.cron_expr || ''} ${t.bot_id || ''}`.toLowerCase().includes(q)
+  })
+)
+
+function focusEnabledTasks() {
+  taskStatusFilter.value = taskStatusFilter.value === 'enabled' ? 'all' : 'enabled'
+  taskSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 onMounted(() => {
   applySiblingStaggerFallback(assetGridRef.value)
   applySiblingStaggerFallback(taskGridRef.value)
 })
 
 watch(() => filteredAssets.value.length, () => nextTick(() => applySiblingStaggerFallback(assetGridRef.value)))
-watch(() => store.state.tasks.length, () => nextTick(() => applySiblingStaggerFallback(taskGridRef.value)))
+watch(() => filteredTasks.value.length, () => nextTick(() => applySiblingStaggerFallback(taskGridRef.value)))
 
 async function handleSyncAssets() {
   syncing.value = true
@@ -253,15 +271,26 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
         </span>
       </button>
 
-      <div class="min-h-[52px] px-4 md:px-6 py-2 flex items-center justify-between gap-2">
+      <button
+        type="button"
+        :aria-pressed="taskStatusFilter === 'enabled'"
+        @click="focusEnabledTasks"
+        title="点击定位并筛选已启用调度任务"
+        :class="[
+          'min-h-[52px] px-4 md:px-6 py-2 flex items-center justify-between gap-2 hover:bg-white/[0.03] cursor-pointer text-left transition-colors',
+          taskStatusFilter === 'enabled' ? 'bg-[#f2b880]/10' : ''
+        ]"
+      >
         <div class="flex items-center gap-2 min-w-0">
           <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880] shrink-0" aria-hidden="true" />
-          <span class="text-xs text-slate-400 truncate">启用调度例程</span>
+          <span class="text-xs text-slate-400 truncate">
+            {{ taskStatusFilter === 'enabled' ? '筛选中 · 启用任务' : '启用调度例程' }}
+          </span>
         </div>
         <span class="font-mono text-base font-bold text-white">
           {{ store.state.tasks.filter((t) => t.enabled).length }}
         </span>
-      </div>
+      </button>
 
       <button
         type="button"
@@ -391,21 +420,63 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
         </div>
 
         <!-- Tasks Engine Section -->
-        <div class="flex flex-col gap-3.5 pb-4">
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="text-base font-semibold text-white">自动化情报与调度任务</h2>
-            <button
-              type="button"
-              @click="store.state.editingTask = null"
-              class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/12 text-slate-200 hover:border-[#f2b880]/40 hover:text-[#f2b880] text-xs cursor-pointer"
-            >
-              + 创建任务
-            </button>
+        <div ref="taskSectionRef" class="flex flex-col gap-3.5 pb-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-base font-semibold text-white">
+              自动化情报与调度任务
+              <span class="ml-1.5 text-xs font-mono text-slate-500">({{ filteredTasks.length }})</span>
+            </h2>
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="inline-flex rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-0.5 text-[11px]">
+                <button
+                  type="button"
+                  @click="taskStatusFilter = 'all'"
+                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', taskStatusFilter === 'all' ? 'bg-[#f2b880]/20 text-[#f2b880]' : 'text-slate-400 hover:text-white']"
+                >
+                  全部
+                </button>
+                <button
+                  type="button"
+                  @click="taskStatusFilter = 'enabled'"
+                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', taskStatusFilter === 'enabled' ? 'bg-emerald-400/20 text-emerald-300' : 'text-slate-400 hover:text-white']"
+                >
+                  已启用
+                </button>
+                <button
+                  type="button"
+                  @click="taskStatusFilter = 'paused'"
+                  :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', taskStatusFilter === 'paused' ? 'bg-slate-400/20 text-slate-200' : 'text-slate-400 hover:text-white']"
+                >
+                  已暂停
+                </button>
+              </div>
+              <button
+                type="button"
+                @click="store.state.editingTask = null"
+                class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/12 text-slate-200 hover:border-[#f2b880]/40 hover:text-[#f2b880] text-xs cursor-pointer"
+              >
+                + 创建任务
+              </button>
+            </div>
+          </div>
+
+          <input
+            v-if="store.state.tasks.length > 0"
+            v-model="taskSearch"
+            type="search"
+            aria-label="搜索调度任务"
+            placeholder="搜索任务名称、Cron 或关联 Bot..."
+            @keydown.escape="taskSearch = ''"
+            class="w-full sm:w-72 min-h-[44px] sm:min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#070a16]/85 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
+          />
+
+          <div v-if="filteredTasks.length === 0" class="vesper-card rounded-2xl p-6 text-center text-xs text-slate-400">
+            {{ store.state.tasks.length ? '当前筛选条件下无匹配调度任务' : '暂无自动化调度任务' }}
           </div>
 
           <div ref="taskGridRef" class="ops-task-grid stagger-list">
             <article
-              v-for="t in store.state.tasks"
+              v-for="t in filteredTasks"
               :key="t.id"
               @pointermove="trackSpotlight"
               class="stagger-item luxury-card vesper-card-interactive rounded-2xl p-4 flex flex-col gap-3"

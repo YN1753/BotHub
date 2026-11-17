@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, useId } from 'vue'
+import { ref, useId, onMounted } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { trackSpotlight } from '../utils/topLayer'
 import BotAvatar from './BotAvatar.vue'
@@ -9,8 +9,18 @@ const passwordId = useId()
 const hostLabel = typeof window !== 'undefined' && window.location.host ? window.location.host : 'Vesper BotHub'
 const password = ref('')
 const showPassword = ref(false)
+const capsLockOn = ref(false)
 const loading = ref(false)
 const errorMsg = ref('')
+const inputEl = ref<HTMLInputElement | null>(null)
+
+function checkCapsLock(e: KeyboardEvent) {
+  capsLockOn.value = typeof e.getModifierState === 'function' && e.getModifierState('CapsLock')
+}
+
+onMounted(() => {
+  inputEl.value?.focus()
+})
 
 async function handleSubmit() {
   if (!password.value.trim() || loading.value) return
@@ -21,6 +31,8 @@ async function handleSubmit() {
     password.value = ''
   } catch (err: any) {
     errorMsg.value = err.message || '密钥验证失败'
+    inputEl.value?.focus()
+    inputEl.value?.select()
   } finally {
     loading.value = false
   }
@@ -47,12 +59,16 @@ async function handleSubmit() {
         <label :for="passwordId" class="sr-only">访问密钥</label>
         <div class="relative">
           <input
+            ref="inputEl"
             :id="passwordId"
             v-model="password"
             :type="showPassword ? 'text' : 'password'"
             placeholder="输入访问密钥..."
             autocomplete="current-password"
+            :aria-invalid="errorMsg ? 'true' : undefined"
             required
+            @keydown="checkCapsLock"
+            @keyup="checkCapsLock"
             class="w-full min-h-[44px] rounded-xl border border-[#fff8ee]/12 bg-[#070a14]/85 pl-3.5 pr-12 py-2.5 font-mono text-sm text-white placeholder-slate-500 focus:border-[#f2b880]/60"
           />
           <button
@@ -64,6 +80,9 @@ async function handleSubmit() {
             {{ showPassword ? '隐藏' : '显示' }}
           </button>
         </div>
+        <p v-if="capsLockOn" class="text-[11px] font-mono text-amber-300/90">
+          大写锁定 (Caps Lock) 已开启
+        </p>
         <button
           type="submit"
           :disabled="loading"

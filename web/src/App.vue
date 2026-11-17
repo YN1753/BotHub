@@ -21,10 +21,25 @@ import ForwardModal from './components/ForwardModal.vue'
 const store = useAppStore()
 const mobileSidebarOpen = ref(false)
 const desktopCollapsed = ref(localStorage.getItem('bothub_sidebar_collapsed') === '1')
+const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
+
+function handleOnlineStatus() {
+  isOnline.value = typeof navigator !== 'undefined' ? navigator.onLine : true
+  if (isOnline.value && store.state.authenticated) {
+    store.startSSE()
+    void store.loadDashboard(false)
+  }
+}
 
 function toggleDesktopSidebar() {
   desktopCollapsed.value = !desktopCollapsed.value
   localStorage.setItem('bothub_sidebar_collapsed', desktopCollapsed.value ? '1' : '0')
+}
+
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
 }
 
 function handleGlobalKeydown(e: KeyboardEvent) {
@@ -35,6 +50,13 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     }
     return
   }
+  if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey && !isEditableElement(e.target)) {
+    if (store.state.authenticated && !document.querySelector('dialog[open]')) {
+      e.preventDefault()
+      store.state.showQuickSwitcher = true
+      return
+    }
+  }
   if (e.key === 'Escape' && mobileSidebarOpen.value) {
     mobileSidebarOpen.value = false
   }
@@ -43,10 +65,14 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 onMounted(() => {
   store.checkAuth()
   window.addEventListener('keydown', handleGlobalKeydown)
+  window.addEventListener('online', handleOnlineStatus)
+  window.addEventListener('offline', handleOnlineStatus)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
+  window.removeEventListener('online', handleOnlineStatus)
+  window.removeEventListener('offline', handleOnlineStatus)
 })
 </script>
 
@@ -121,6 +147,16 @@ onBeforeUnmount(() => {
     <TaskModal />
     <QuickSwitcherModal />
     <ForwardModal />
+
+    <!-- Offline Banner -->
+    <div
+      v-if="!isOnline"
+      role="status"
+      class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 rounded-full border border-rose-400/45 bg-[#120912]/95 px-4 py-1.5 text-xs text-rose-200 shadow-2xl backdrop-blur-xl"
+    >
+      <span class="w-2 h-2 rounded-full bg-rose-400 animate-pulse" aria-hidden="true" />
+      <span>网络连接已断开，正在等待恢复...</span>
+    </div>
 
     <!-- Non-intrusive Top Toast Banner -->
     <Transition

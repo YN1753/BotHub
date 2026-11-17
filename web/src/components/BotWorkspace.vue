@@ -40,6 +40,7 @@ const routinesGridRef = ref<HTMLElement | null>(null)
 const activityListRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const formRef = ref<HTMLFormElement | null>(null)
+const renameInputRef = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
 const userScrolledUp = ref(false)
 
 const moreBtnRef = ref<HTMLButtonElement | null>(null)
@@ -1010,6 +1011,13 @@ function handleComposerKeydown(e: KeyboardEvent) {
     }
   }
 
+  if (e.key === 'Escape' && replyTarget.value) {
+    e.preventDefault()
+    e.stopPropagation()
+    replyTarget.value = null
+    return
+  }
+
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     if (isImeComposingEnter(e, lastCompositionEndAt)) return
@@ -1164,10 +1172,44 @@ function handleMarkdownClick(e: MouseEvent) {
 async function copyMessageContent(text: string) {
   try {
     await navigator.clipboard.writeText(text)
-    store.notify('已复制回复全文')
+    store.notify('已复制回复 Markdown 全文')
   } catch {
     store.notify('复制失败')
   }
+}
+
+function stripMarkdownFormatting(raw: string): string {
+  return String(raw || '')
+    .replace(/```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1 ($2)')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^>\s?/gm, '')
+    .replace(/^[-*]\s+\[([ xX])\]\s+/gm, (_, mark: string) => (mark.toLowerCase() === 'x' ? '[已完成] ' : '[待办] '))
+    .trim()
+}
+
+async function copyPlainTextContent(text: string) {
+  try {
+    await navigator.clipboard.writeText(stripMarkdownFormatting(text))
+    store.notify('已复制纯文本内容')
+  } catch {
+    store.notify('复制失败')
+  }
+}
+
+function clearDraftPrompt() {
+  inputPrompt.value = ''
+  if (store.state.activeBotId) {
+    store.setBotDraft(store.state.activeBotId, '', store.state.activeThreadId)
+  }
+  nextTick(() => {
+    autoResizeTextarea()
+    textareaRef.value?.focus()
+  })
 }
 
 function stopStream() {
@@ -1507,6 +1549,12 @@ async function saveBotProfile() {
 function startRenameThread(id: string, curTitle: string) {
   renamingThreadId.value = id
   renameThreadTitle.value = curTitle
+  nextTick(() => {
+    const raw = renameInputRef.value
+    const el = Array.isArray(raw) ? raw[0] : raw
+    el?.focus()
+    el?.select()
+  })
 }
 
 async function commitRenameThread() {
@@ -1611,8 +1659,10 @@ function stateBadgeClass(state?: string): string {
       </div>
 
       <div v-if="bot" class="flex items-center gap-2 max-w-full ml-auto">
-        <!-- Gliding Physics Segmented Control -->
-        <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="Bot 子视图" />
+        <!-- Gliding Physics Segmented Control (Desktop/Tablet) -->
+        <div class="hidden sm:inline-flex">
+          <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="Bot 子视图" />
+        </div>
 
         <!-- Quick Personal Assistant Workhub Pill -->
         <button
@@ -1725,6 +1775,29 @@ function stateBadgeClass(state?: string): string {
       </div>
     </header>
 
+    <!-- Dedicated Mobile View Switcher + Workhub Strip (<640px) -->
+    <div
+      v-if="bot"
+      class="sm:hidden px-3 py-1.5 border-b border-[#fff8ee]/8 bg-[#060913]/80 flex items-center justify-between gap-2 shrink-0"
+    >
+      <div class="min-w-0 flex-1 overflow-x-auto no-scrollbar">
+        <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="移动端 Bot 子视图" />
+      </div>
+      <button
+        type="button"
+        @click="store.state.showWorkhubModal = true"
+        class="min-h-[34px] inline-flex items-center gap-1 px-2.5 rounded-full border border-[#fff8ee]/12 bg-[#0a0f1e] text-[11px] text-slate-300 shrink-0 cursor-pointer"
+      >
+        <span>行动台</span>
+        <span
+          v-if="store.pendingTodoCount.value > 0"
+          class="px-1.5 py-0.5 rounded-full bg-cyan-400/20 text-cyan-200 font-mono text-[9.5px] leading-none"
+        >
+          {{ store.pendingTodoCount.value }}
+        </span>
+      </button>
+    </div>
+
     <!-- Empty Team Onboarding View when 0 Bots exist -->
     <div v-if="!bot" class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-10 flex items-center justify-center">
       <div class="max-w-lg w-full">
@@ -1790,10 +1863,12 @@ function stateBadgeClass(state?: string): string {
           >
             <input
               v-if="renamingThreadId === th.id"
+              ref="renameInputRef"
               v-model="renameThreadTitle"
               type="text"
+              aria-label="重命名话题"
               @keydown.enter.prevent="commitRenameThread"
-              @keydown.escape="renamingThreadId = null"
+              @keydown.escape.stop="renamingThreadId = null"
               @blur="commitRenameThread"
               class="w-32 px-2 py-0.5 rounded-lg border border-[#f2b880]/60 bg-[#070a16] text-[11px] text-white"
             />
@@ -1808,6 +1883,7 @@ function stateBadgeClass(state?: string): string {
             >
               <button
                 type="button"
+                title="点击切换话题 · 双击重命名"
                 @click="store.switchThread(th.id)"
                 @dblclick="startRenameThread(th.id, th.title)"
                 class="px-2.5 py-1 text-[11px] whitespace-nowrap cursor-pointer font-medium"
@@ -2315,6 +2391,13 @@ function stateBadgeClass(state?: string): string {
                       复制全文
                     </button>
                     <button
+                      type="button"
+                      @click="copyPlainTextContent(m.content)"
+                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                    >
+                      复制纯文本
+                    </button>
+                    <button
                       v-if="m.serverId"
                       type="button"
                       @click="store.forkThread(m.serverId)"
@@ -2597,6 +2680,21 @@ function stateBadgeClass(state?: string): string {
               </div>
 
               <div class="flex items-center gap-2 shrink-0">
+                <span
+                  v-if="inputPrompt.length > 80"
+                  class="hidden sm:inline font-mono text-[10.5px] text-slate-500 tabular-nums"
+                >
+                  {{ inputPrompt.length }} 字
+                </span>
+                <button
+                  v-if="inputPrompt.trim().length > 20 && !store.state.isStreaming"
+                  type="button"
+                  @click="clearDraftPrompt"
+                  title="清空当前输入框草稿"
+                  class="hidden sm:inline-flex px-2 py-1 rounded-full text-[11px] text-slate-500 hover:text-slate-200 hover:bg-white/[0.05] cursor-pointer"
+                >
+                  清空
+                </button>
                 <button
                   v-if="store.state.isStreaming"
                   type="button"

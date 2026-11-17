@@ -56,6 +56,30 @@ const biliSessdata = ref('')
 const newPassword = ref('')
 const saving = ref(false)
 const testingPush = ref(false)
+const savedSnapshot = ref('')
+
+function currentConfigSnapshot(): string {
+  return JSON.stringify({
+    deepseekKey: deepseekKey.value.trim(),
+    deepseekBaseUrl: deepseekBaseUrl.value.trim(),
+    aiModel: aiModel.value.trim(),
+    poolForLight: poolForLight.value,
+    poolFallback: poolFallback.value,
+    poolEntries: poolEntries.value,
+    lightBaseUrl: lightBaseUrl.value.trim(),
+    lightApiKey: lightApiKey.value.trim(),
+    lightModel: lightModel.value.trim(),
+    nezhaUrl: nezhaUrl.value.trim(),
+    nezhaDbPath: nezhaDbPath.value.trim(),
+    appBearerToken: appBearerToken.value.trim(),
+    cfApiToken: cfApiToken.value.trim(),
+    biliSessdata: biliSessdata.value.trim(),
+  })
+}
+
+const hasUnsavedChanges = computed(() =>
+  Boolean(savedSnapshot.value) && currentConfigSnapshot() !== savedSnapshot.value
+)
 
 watch(
   () => store.state.showSettingsModal,
@@ -81,6 +105,7 @@ watch(
     appBearerToken.value = c['app_bearer_token'] || ''
     cfApiToken.value = c['cf_api_token'] || ''
     biliSessdata.value = c['bili_sessdata'] || ''
+    savedSnapshot.value = currentConfigSnapshot()
   }
 )
 
@@ -114,6 +139,7 @@ async function saveAllConfig() {
     store.notify('AI 引擎、免费模型池与凭据已安全保存')
     await store.loadDashboard(false)
     poolEntries.value = (store.state.modelPool || []).map((x) => ({ ...x }))
+    savedSnapshot.value = currentConfigSnapshot()
   } catch (err: any) {
     store.notify(err.message)
   } finally {
@@ -907,6 +933,24 @@ async function handleImportBackup(e: Event) {
           </div>
         </div>
       </Transition>
+    </div>
+
+    <div
+      v-if="hasUnsavedChanges && activeTab !== 'security'"
+      class="shrink-0 flex items-center justify-between gap-3 rounded-xl border border-[#f2b880]/40 bg-[#f2b880]/10 px-3.5 py-2.5 text-xs"
+    >
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="w-2 h-2 rounded-full bg-[#f2b880] animate-pulse shrink-0" aria-hidden="true" />
+        <span class="text-[#f7cba0] truncate">检测到配置改动，记得保存后生效</span>
+      </div>
+      <button
+        type="button"
+        :disabled="saving"
+        @click="saveAllConfig"
+        class="min-h-[34px] px-4 rounded-lg bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer shrink-0 disabled:opacity-50"
+      >
+        {{ saving ? '保存中...' : '立即保存全部改动' }}
+      </button>
     </div>
   </BaseModal>
 </template>

@@ -114,8 +114,21 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
       <div class="p-3.5 pt-[max(0.875rem,env(safe-area-inset-top,0.875rem))] pb-2 flex flex-col gap-2.5">
         <div class="flex items-center justify-between px-1">
           <div class="flex items-center gap-2 min-w-0">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] shrink-0" aria-hidden="true" />
+            <span
+              :title="store.state.sseConnected ? 'SSE 实时事件通道在线' : 'SSE 通道重连中'"
+              :class="[
+                'w-2 h-2 rounded-full shrink-0',
+                store.state.sseConnected ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-amber-400 animate-pulse'
+              ]"
+              aria-hidden="true"
+            />
             <strong class="text-base font-semibold tracking-tight text-white truncate">Vesper BotHub</strong>
+            <span
+              v-if="!store.state.sseConnected"
+              class="font-mono text-[9.5px] px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 border border-amber-400/30 shrink-0"
+            >
+              重连中
+            </span>
           </div>
           <div class="flex items-center gap-1 shrink-0">
             <span class="font-mono text-[11px] text-slate-500">{{ shortVersion(store.state.version) }}</span>
@@ -410,6 +423,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
       <div class="p-2.5 border-t border-[#fff8ee]/8 grid grid-cols-4 gap-1 pb-[max(0.625rem,env(safe-area-inset-bottom,0.625rem))]">
         <button
           type="button"
+          title="记忆仓库与提炼视图"
           @click="store.state.showMemoriesModal = true; emit('closeMobile')"
           class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1 rounded-xl text-[11.5px] text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.04] cursor-pointer"
         >
@@ -418,6 +432,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
         </button>
         <button
           type="button"
+          title="Playbook 与 Webhook 技能市场"
           @click="store.state.showSkillsModal = true; emit('closeMobile')"
           class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1 rounded-xl text-[11.5px] text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.04] cursor-pointer"
         >
@@ -426,6 +441,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
         </button>
         <button
           type="button"
+          title="系统推送与任务运行流水"
           @click="store.state.showLogsModal = true; emit('closeMobile')"
           class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1 rounded-xl text-[11.5px] text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.04] cursor-pointer"
         >
@@ -434,6 +450,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
         </button>
         <button
           type="button"
+          title="AI 引擎、模型池与安全设置"
           @click="store.state.showSettingsModal = true; emit('closeMobile')"
           class="min-h-[44px] sm:min-h-[36px] flex items-center justify-center gap-1 rounded-xl text-[11.5px] text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.04] cursor-pointer"
         >

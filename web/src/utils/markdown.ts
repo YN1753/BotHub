@@ -19,6 +19,8 @@ export function renderSafeMarkdown(raw: string): string {
     let out = escapeHtml(text)
     out = out.replace(/`([^`\n]+)`/g, '<code class="md-inline-code">$1</code>')
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    out = out.replace(/~~([^~\n]+)~~/g, '<del class="md-del">$1</del>')
+    out = out.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
     out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     return out
   }
@@ -64,7 +66,7 @@ export function renderSafeMarkdown(raw: string): string {
       i--
       const thead = `<thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead>`
       const tbody = `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>`
-      html.push(`<table>${thead}${tbody}</table>`)
+      html.push(`<div class="md-table-wrap"><table>${thead}${tbody}</table></div>`)
       continue
     }
     if (/^---+$/.test(trimmed)) {
@@ -82,6 +84,20 @@ export function renderSafeMarkdown(raw: string): string {
       closeList()
       const lvl = hMatch[1].length
       html.push(`<h${lvl}>${formatInline(hMatch[2])}</h${lvl}>`)
+      continue
+    }
+    const taskMatch = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/)
+    if (taskMatch) {
+      if (!inList || listType !== 'ul') {
+        closeList()
+        html.push('<ul class="md-task-list">')
+        inList = true
+        listType = 'ul'
+      }
+      const checked = taskMatch[1].toLowerCase() === 'x'
+      html.push(
+        `<li class="md-task-item${checked ? ' is-done' : ''}"><span class="md-task-box" aria-hidden="true">${checked ? '&#10003;' : ''}</span><span>${formatInline(taskMatch[2])}</span></li>`
+      )
       continue
     }
     const ulMatch = trimmed.match(/^[-*]\s+(.+)$/)

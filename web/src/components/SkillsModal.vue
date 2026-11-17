@@ -48,6 +48,23 @@ const testing = ref(false)
 const testResult = ref<{ statusCode?: number; latencyMs?: number; output: string; error?: string } | null>(null)
 
 const skills = computed(() => store.state.skills || [])
+const skillSearch = ref('')
+
+const filteredSkills = computed(() => {
+  const q = skillSearch.value.trim().toLowerCase()
+  if (!q) return skills.value
+  return skills.value.filter(
+    (sk) =>
+      sk.name.toLowerCase().includes(q) ||
+      sk.slug.toLowerCase().includes(q) ||
+      (sk.description || '').toLowerCase().includes(q) ||
+      (sk.http_url || '').toLowerCase().includes(q)
+  )
+})
+
+function mountedBotCount(skillId: string): number {
+  return store.state.bots.filter((b) => Array.isArray(b.skill_ids) && b.skill_ids.includes(skillId)).length
+}
 
 function resetForm() {
   editingId.value = null
@@ -400,7 +417,7 @@ watch(
                 placeholder="参数名 key"
                 class="sm:col-span-3 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 font-mono text-[11px] text-white"
               />
-              <div class="sm:col-span-3">
+              <div class="sm:col-span-2">
                 <CustomSelect v-model="p.type" :options="PARAM_TYPE_OPTIONS" aria-label="参数类型" />
               </div>
               <input
@@ -496,17 +513,30 @@ watch(
       <!-- Right: Skill Library & Live Test -->
       <div class="lg:col-span-6 flex flex-col gap-3">
         <div class="rounded-xl border border-[#fff8ee]/10 bg-[#060914] p-4 flex flex-col gap-2.5">
-          <div class="flex items-center justify-between">
-            <h4 class="text-xs font-semibold text-white">已创建的技能 ({{ skills.length }})</h4>
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <h4 class="text-xs font-semibold text-white">已创建的技能 ({{ filteredSkills.length }}<span v-if="skillSearch.trim()"> / {{ skills.length }}</span>)</h4>
             <span class="text-[11px] text-slate-500">Webhook 技能自动编译为 skill_ 工具</span>
           </div>
+
+          <input
+            v-if="skills.length > 0"
+            v-model="skillSearch"
+            type="search"
+            aria-label="筛选技能"
+            placeholder="搜索技能名称、slug 或描述..."
+            @keydown.escape.stop="skillSearch = ''"
+            class="w-full min-h-[34px] rounded-lg border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
+          />
 
           <div v-if="skills.length === 0" class="py-8 text-center text-xs text-slate-500 leading-relaxed">
             当前没有任何技能。你可以在左侧创建一个习惯指令 Playbook，或接入外部 REST API Webhook 成为 Bot 的专属实时工具。
           </div>
+          <div v-else-if="filteredSkills.length === 0" class="py-6 text-center text-xs text-slate-500">
+            没有匹配「{{ skillSearch }}」的技能
+          </div>
 
           <article
-            v-for="sk in skills"
+            v-for="sk in filteredSkills"
             :key="sk.id"
             class="rounded-xl border border-[#fff8ee]/10 bg-[#050811] p-3 flex flex-col gap-2"
           >
@@ -523,6 +553,12 @@ watch(
                     ]"
                   >
                     {{ sk.kind === 'webhook' ? `${sk.http_method || 'GET'} skill_${sk.slug}` : 'Playbook' }}
+                  </span>
+                  <span
+                    v-if="mountedBotCount(sk.id) > 0"
+                    class="px-1.5 py-0.5 rounded border border-emerald-400/25 bg-emerald-500/10 text-[10px] text-emerald-300"
+                  >
+                    {{ mountedBotCount(sk.id) }} 个 Bot 已挂载
                   </span>
                   <span v-if="!sk.enabled" class="text-[10px] text-slate-500">已停用</span>
                 </div>

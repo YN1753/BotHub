@@ -364,6 +364,11 @@ function handleKeydown(e: KeyboardEvent) {
           </span>
         </button>
       </div>
+
+      <div class="flex items-center justify-between gap-2 pt-2 border-t border-[#fff8ee]/8 text-[10.5px] font-mono text-slate-500">
+        <span>匹配 {{ entries.length }} 项</span>
+        <span class="hidden sm:inline">↑↓ 选择 · Enter 确认 · Esc 关闭 · ? 呼出</span>
+      </div>
     </div>
   </BaseModal>
 </template>

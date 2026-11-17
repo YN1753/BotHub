@@ -26,6 +26,15 @@ const openAbove = ref(false)
 const highlightedIndex = ref(0)
 const rootEl = ref<HTMLElement | null>(null)
 const triggerEl = ref<HTMLButtonElement | null>(null)
+const listboxEl = ref<HTMLElement | null>(null)
+
+async function scrollHighlightedIntoView() {
+  await nextTick()
+  const box = listboxEl.value
+  if (!box) return
+  const target = box.querySelector<HTMLElement>(`[data-option-idx="${highlightedIndex.value}"]`)
+  target?.scrollIntoView({ block: 'nearest' })
+}
 
 const currentLabel = computed(() => {
   const found = props.options.find((o) => o.value === props.modelValue)
@@ -53,7 +62,7 @@ async function toggleOpen() {
   syncHighlightToValue()
   measureDirection()
   open.value = true
-  await nextTick()
+  await scrollHighlightedIntoView()
 }
 
 function selectOption(val: string) {
@@ -75,6 +84,7 @@ function handleTriggerKeydown(e: KeyboardEvent) {
       syncHighlightToValue()
       measureDirection()
       open.value = true
+      void scrollHighlightedIntoView()
       return
     }
     const len = props.options.length
@@ -83,16 +93,19 @@ function handleTriggerKeydown(e: KeyboardEvent) {
       e.key === 'ArrowDown'
         ? (highlightedIndex.value + 1) % len
         : (highlightedIndex.value - 1 + len) % len
+    void scrollHighlightedIntoView()
     return
   }
   if (e.key === 'Home' && open.value) {
     e.preventDefault()
     highlightedIndex.value = 0
+    void scrollHighlightedIntoView()
     return
   }
   if (e.key === 'End' && open.value) {
     e.preventDefault()
     highlightedIndex.value = Math.max(0, props.options.length - 1)
+    void scrollHighlightedIntoView()
     return
   }
   if ((e.key === 'Enter' || e.key === ' ') && open.value) {
@@ -164,6 +177,7 @@ onBeforeUnmount(() => {
       <div
         v-if="open"
         :id="listboxId"
+        ref="listboxEl"
         role="listbox"
         :class="[
           'absolute left-0 z-50 w-full min-w-[180px] max-h-60 overflow-y-auto rounded-xl border border-[#fff8ee]/14 bg-[#090d1b]/96 backdrop-blur-xl shadow-2xl p-1',
@@ -173,6 +187,7 @@ onBeforeUnmount(() => {
         <button
           v-for="(opt, idx) in options"
           :key="opt.value"
+          :data-option-idx="idx"
           type="button"
           role="option"
           :aria-selected="opt.value === modelValue"

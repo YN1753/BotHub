@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { trackSpotlight } from '../utils/topLayer'
@@ -80,6 +80,16 @@ watch(
 function closeDrawer() {
   store.state.showGroupDrawer = false
 }
+
+function handleDrawerKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && store.state.showGroupDrawer) {
+    e.preventDefault()
+    closeDrawer()
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', handleDrawerKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', handleDrawerKeydown))
 
 async function inviteMember(memberBot: Bot) {
   if (!bot.value || busyMemberId.value) return
@@ -270,6 +280,8 @@ async function handleDisbandGroup() {
   >
     <aside
       v-if="store.state.showGroupDrawer && bot"
+      role="dialog"
+      aria-modal="true"
       aria-label="群聊与会话详情"
       class="fixed inset-y-0 right-0 z-50 w-[min(24rem,94vw)] bg-[#080c18]/96 backdrop-blur-2xl border-l border-[#fff8ee]/12 shadow-[-20px_0_60px_rgba(0,0,0,0.65)] flex flex-col overflow-hidden"
     >
@@ -413,10 +425,14 @@ async function handleDisbandGroup() {
             </div>
 
             <label class="flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>群公告（将置顶提示在聊天气泡上方）</span>
+              <div class="flex items-center justify-between">
+                <span>群公告（将置顶提示在聊天气泡上方）</span>
+                <span class="font-mono text-[10px] text-slate-500">{{ editAnnouncement.length }} / 240</span>
+              </div>
               <textarea
                 v-model="editAnnouncement"
                 rows="2"
+                maxlength="240"
                 placeholder="填写群内协作规范、值守说明或本群聚焦目标..."
                 class="auto-size-textarea rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-xs text-white focus:border-[#f2b880]/60 resize-y"
               />

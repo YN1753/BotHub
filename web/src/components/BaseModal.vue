@@ -21,6 +21,7 @@ const emit = defineEmits<{
 }>()
 
 const titleId = useId()
+const subtitleId = useId()
 const dialogRef = ref<HTMLDialogElement | null>(null)
 let pressedOutside = false
 
@@ -115,6 +116,7 @@ onBeforeUnmount(() => {
     ref="dialogRef"
     :closedby="closableByBackdrop ? 'any' : 'closerequest'"
     :aria-labelledby="titleId"
+    :aria-describedby="subtitle ? subtitleId : undefined"
     :class="['vesper-dialog', sizeClassMap[maxWidth]]"
     @cancel="handleNativeCancel"
     @close="handleNativeClose"
@@ -132,13 +134,14 @@ onBeforeUnmount(() => {
           <h3 :id="titleId" class="text-base sm:text-lg font-semibold text-white tracking-tight">
             {{ title }}
           </h3>
-          <p v-if="subtitle" class="text-xs text-slate-400 mt-0.5">
+          <p v-if="subtitle" :id="subtitleId" class="text-xs text-slate-400 mt-0.5">
             {{ subtitle }}
           </p>
         </div>
 
         <div class="flex items-center gap-2 shrink-0 flex-wrap">
           <slot name="header-actions" />
+          <kbd class="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded border border-[#fff8ee]/10 bg-[#050811]/70 text-[10px] font-mono text-slate-500">Esc</kbd>
           <button
             type="button"
             aria-label="关闭窗口"

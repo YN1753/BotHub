@@ -71,9 +71,17 @@ img, video {
   block-size: auto;
 }
 
-/* Suppress distracting focus boxes globally while keeping clean border highlights on inputs */
-:where(a, button, input, select, textarea, summary, [tabindex]):focus,
-:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+/* Suppress pointer focus rings while keeping a crisp champagne-gold ring for keyboard navigation */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus:not(:focus-visible) {
+  outline: none;
+}
+
+:where(a, button, select, summary, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(242, 184, 128, 0.65);
+}
+
+:where(input, textarea):focus-visible {
   outline: none;
 }
 
@@ -904,21 +912,62 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   color: #ede9e0;
 }
+.md-body .md-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin: 0.6rem 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 248, 238, 0.1);
+}
 .md-body table {
   width: 100%;
   border-collapse: collapse;
-  margin: 0.6rem 0;
+  margin: 0;
   font-size: 0.8rem;
 }
 .md-body th, .md-body td {
-  border: 1px solid rgba(255, 248, 238, 0.14);
+  border: 1px solid rgba(255, 248, 238, 0.12);
   padding: 0.45rem 0.65rem;
   text-align: left;
+  white-space: nowrap;
 }
 .md-body th {
   background: rgba(242, 184, 128, 0.08);
   color: #fbf7f0;
   font-weight: 600;
+}
+.md-body .md-del {
+  color: #94a3b8;
+  text-decoration: line-through;
+}
+.md-body .md-task-list {
+  list-style: none;
+  padding-left: 0.15rem;
+}
+.md-body .md-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin: 0.28rem 0;
+}
+.md-body .md-task-item.is-done > span:last-child {
+  color: #94a3b8;
+  text-decoration: line-through;
+}
+.md-body .md-task-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  margin-top: 0.22rem;
+  border-radius: 4px;
+  border: 1px solid rgba(242, 184, 128, 0.45);
+  background: rgba(242, 184, 128, 0.08);
+  color: #f2b880;
+  font-size: 0.65rem;
+  line-height: 1;
+  flex-shrink: 0;
 }
 .md-body .md-hr {
   height: 1px;

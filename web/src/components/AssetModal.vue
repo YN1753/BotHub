@@ -100,10 +100,24 @@ const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => {
   const m = String(i + 1).padStart(2, '0')
   return { value: m, label: `${m} 月` }
 })
-const DAY_OPTIONS = Array.from({ length: 31 }, (_, i) => {
-  const d = String(i + 1).padStart(2, '0')
-  return { value: d, label: `${d} 日` }
+const dayOptions = computed(() => {
+  const y = Number(dueYear.value) || 2026
+  const m = Number(dueMonth.value) || 1
+  const maxDay = new Date(y, m, 0).getDate()
+  return Array.from({ length: maxDay }, (_, i) => {
+    const d = String(i + 1).padStart(2, '0')
+    return { value: d, label: `${d} 日` }
+  })
 })
+
+watch([dueYear, dueMonth], ([yStr, mStr]) => {
+  const maxDay = new Date(Number(yStr) || 2026, Number(mStr) || 1, 0).getDate()
+  if (Number(dueDay.value) > maxDay) {
+    dueDay.value = String(maxDay).padStart(2, '0')
+  }
+})
+
+const pricePreview = computed(() => formatStructuredPrice())
 
 function normalizeStatus(raw?: string): '生效中' | '已到期' | '已停用' {
   const s = String(raw || '').trim()
@@ -366,6 +380,9 @@ async function handleDelete() {
             <CustomSelect v-model="billingCycle" :options="CYCLE_OPTIONS" aria-label="计费周期" />
           </div>
         </div>
+        <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 px-0.5">
+          <span>账单展示预览: <strong class="text-[#f2b880]">{{ pricePreview }}</strong></span>
+        </div>
       </div>
 
       <!-- Section 2: Due Date & Alert Rules -->
@@ -393,7 +410,7 @@ async function handleDelete() {
               </div>
               <div class="flex flex-col gap-1 text-xs text-slate-300">
                 <span>到期日期</span>
-                <CustomSelect v-model="dueDay" :options="DAY_OPTIONS" aria-label="到期日期" />
+                <CustomSelect v-model="dueDay" :options="dayOptions" aria-label="到期日期" />
               </div>
             </div>
             <div class="flex items-center gap-1.5 flex-wrap">

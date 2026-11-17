@@ -11,11 +11,20 @@ import BotGroupAvatar from './BotGroupAvatar.vue'
 const store = useAppStore()
 const selectedId = ref('')
 const note = ref('')
+const targetQuery = ref('')
 const sending = ref(false)
 
 const targets = computed(() =>
   store.state.bots.filter((b) => b.id !== store.state.activeBotId)
 )
+
+const filteredTargets = computed(() => {
+  const q = targetQuery.value.trim().toLowerCase()
+  if (!q) return targets.value
+  return targets.value.filter(
+    (b) => b.name.toLowerCase().includes(q) || (b.role_title || '').toLowerCase().includes(q)
+  )
+})
 
 const specialistMap = computed(() => {
   const m = new Map<string, Bot>()
@@ -43,6 +52,7 @@ watch(
   (val) => {
     if (!val) return
     note.value = ''
+    targetQuery.value = ''
     selectedId.value = targets.value[0]?.id || ''
   }
 )
@@ -95,10 +105,24 @@ async function submitForward(jumpAfter: boolean) {
       </div>
 
       <div class="flex flex-col gap-1.5 min-h-0">
-        <span class="text-xs font-medium text-slate-300">选择接收会话</span>
-        <div class="max-h-52 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5 pr-0.5">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-medium text-slate-300">选择接收会话</span>
+          <input
+            v-if="targets.length > 4"
+            v-model="targetQuery"
+            type="search"
+            aria-label="筛选转发目标"
+            placeholder="搜索目标会话..."
+            @keydown.escape.stop="targetQuery = ''"
+            class="w-44 min-h-[30px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
+          />
+        </div>
+        <div v-if="filteredTargets.length === 0" class="py-6 text-center text-xs text-slate-500">
+          没有匹配的目标会话
+        </div>
+        <div v-else class="max-h-52 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5 pr-0.5">
           <button
-            v-for="b in targets"
+            v-for="b in filteredTargets"
             :key="b.id"
             type="button"
             @pointermove="trackSpotlight"

@@ -10,6 +10,7 @@ import SegmentedTabs from './SegmentedTabs.vue'
 
 const store = useAppStore()
 const activeFilter = ref<'all' | 'morning' | 'radar' | 'asset' | 'alert'>('all')
+const onlyUnread = ref(false)
 const listRef = ref<HTMLElement | null>(null)
 
 const FILTER_TABS = [
@@ -27,6 +28,7 @@ const desktopNotify = ref(
 
 const filtered = computed(() =>
   store.state.notifications.filter((n) => {
+    if (onlyUnread.value && n.read_at) return false
     if (activeFilter.value === 'all') return true
     const s = n.source.toLowerCase()
     if (activeFilter.value === 'morning') return s.includes('morning')
@@ -171,13 +173,26 @@ watch(
       </button>
     </template>
 
-    <div class="shrink-0">
+    <div class="shrink-0 flex items-center justify-between gap-2 flex-wrap">
       <SegmentedTabs v-model="activeFilter" :items="FILTER_TABS" variant="subtle" aria-label="情报分类筛选" />
+      <button
+        type="button"
+        :aria-pressed="onlyUnread"
+        @click="onlyUnread = !onlyUnread"
+        :class="[
+          'min-h-[34px] px-3 rounded-xl border text-xs cursor-pointer transition-colors',
+          onlyUnread
+            ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
+            : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+        ]"
+      >
+        仅看未读 ({{ store.unreadInboxCount.value }})
+      </button>
     </div>
 
     <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
       <div v-if="filtered.length === 0" class="py-12 text-center text-sm text-slate-500">
-        当前分类下暂无情报消息
+        {{ onlyUnread ? '当前分类下的情报已全部阅读' : '当前分类下暂无情报消息' }}
       </div>
       <article
         v-for="n in filtered"
@@ -185,7 +200,7 @@ watch(
         @pointermove="trackSpotlight"
         :class="[
           'stagger-item luxury-card rounded-xl p-3.5',
-          !n.read_at ? 'border-l-[3px] border-l-[#f2b880]' : ''
+          n.priority === 'high' ? 'border-l-[3px] border-l-rose-400' : !n.read_at ? 'border-l-[3px] border-l-[#f2b880]' : ''
         ]"
       >
         <div class="flex items-start justify-between gap-2 flex-wrap">
@@ -195,6 +210,12 @@ watch(
               class="w-2 h-2 rounded-full bg-[#f2b880] shadow-[0_0_8px_#f2b880] shrink-0"
               title="未读"
             />
+            <span
+              v-if="n.priority === 'high'"
+              class="font-mono text-[10px] px-1.5 py-0.5 rounded border border-rose-400/45 bg-rose-500/15 text-rose-300 shrink-0"
+            >
+              高优
+            </span>
             <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-[#f2b880]/28 bg-[#f2b880]/10 text-[#f2b880] shrink-0">
               {{ n.source }}
             </span>

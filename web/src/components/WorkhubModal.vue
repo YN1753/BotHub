@@ -576,6 +576,8 @@ async function refineNoteWithBot(n: WorkNote) {
               v-model="editTodoTitle"
               type="text"
               placeholder="待办标题"
+              @keydown.enter.prevent="saveEditTodo(t)"
+              @keydown.escape.stop="editingTodoId = null"
               class="sm:col-span-6 min-h-[34px] rounded-lg border border-[#f2b880]/40 bg-[#050811] px-2.5 text-xs text-white"
             />
             <div class="sm:col-span-2">
@@ -585,6 +587,8 @@ async function refineNoteWithBot(n: WorkNote) {
               v-model="editTodoDueAt"
               type="text"
               placeholder="截止 YYYY-MM-DD"
+              @keydown.enter.prevent="saveEditTodo(t)"
+              @keydown.escape.stop="editingTodoId = null"
               class="sm:col-span-2 min-h-[34px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2 font-mono text-xs text-white"
             />
             <div class="sm:col-span-2">
@@ -593,7 +597,9 @@ async function refineNoteWithBot(n: WorkNote) {
             <input
               v-model="editTodoNotes"
               type="text"
-              placeholder="补充步骤或备注..."
+              placeholder="补充步骤或备注 (Enter 保存 · Esc 取消)..."
+              @keydown.enter.prevent="saveEditTodo(t)"
+              @keydown.escape.stop="editingTodoId = null"
               class="sm:col-span-10 min-h-[34px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white"
             />
             <button
