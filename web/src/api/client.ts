@@ -11,6 +11,7 @@ import type {
   Task,
   TodoItem,
   WorkNote,
+  WorkspaceBriefing,
 } from '../types/bothub'
 
 export async function apiRequest<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -248,7 +249,8 @@ export const BotHubApi = {
   markAllNotificationsRead: () =>
     apiRequest('/api/v2/notifications/read-all', { method: 'POST' }),
 
-  // Personal Assistant Workbench (Todos & Notes)
+  // Personal Assistant Workbench (Briefing, Todos & Notes)
+  getBriefing: () => apiRequest<{ ok: boolean; briefing: WorkspaceBriefing }>('/api/v2/briefing'),
   listTodos: (status = 'all', botId = '') => {
     const params = new URLSearchParams()
     if (status) params.set('status', status)

@@ -154,6 +154,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v2/webhook/nezha", s.handleNezhaWebhook)
 
 	// Personal Assistant Workbench (Todos & Workspace Notes)
+	mux.HandleFunc("GET /api/v2/briefing", s.requireAuth(s.handleGetBriefing))
 	mux.HandleFunc("GET /api/v2/todos", s.requireAuth(s.handleListTodos))
 	mux.HandleFunc("POST /api/v2/todos", s.requireAuth(s.handleCreateTodo))
 	mux.HandleFunc("POST /api/v2/todos/clear-done", s.requireAuth(s.handleClearDoneTodos))

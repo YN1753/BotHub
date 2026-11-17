@@ -304,6 +304,13 @@ func TestV2SkillsThreadsScopedMemoriesAndBackup(t *testing.T) {
 		t.Fatalf("expected todos and notes in dashboard payload, got: %s", recDash.Body.String())
 	}
 
+	reqBrief := httptest.NewRequest(http.MethodGet, "/api/v2/briefing", nil)
+	recBrief := httptest.NewRecorder()
+	s.handleGetBriefing(recBrief, reqBrief)
+	if recBrief.Code != http.StatusOK || !strings.Contains(recBrief.Body.String(), `"open_todo_count"`) {
+		t.Fatalf("expected briefing payload, got (%d): %s", recBrief.Code, recBrief.Body.String())
+	}
+
 	// 10. Delete thread removes thread & its messages
 	reqDelTh := httptest.NewRequest(http.MethodDelete, "/api/v2/bots/"+botID+"/threads/"+th1ID, nil)
 	reqDelTh.SetPathValue("id", botID)

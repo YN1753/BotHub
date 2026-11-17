@@ -226,3 +226,15 @@ func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 	s.publishAssistantEvent("notes")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": ok})
 }
+
+func (s *Server) handleGetBriefing(w http.ResponseWriter, r *http.Request) {
+	briefing, err := s.store.BuildWorkspaceBriefing()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "聚合今日简报失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"briefing": briefing,
+	})
+}

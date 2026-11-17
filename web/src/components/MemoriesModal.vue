@@ -31,6 +31,8 @@ const editCategory = ref('preference')
 const editImportance = ref(3)
 const editPinned = ref(false)
 const editScope = ref('global')
+const selectedIds = ref<number[]>([])
+const bulkBusy = ref(false)
 
 const memoryStats = computed(() => {
   const list = filteredMemories.value
@@ -193,6 +195,81 @@ async function toggleScopePromote(m: AgentMemory) {
   }
 }
 
+function toggleSelectMem(id: number) {
+  if (selectedIds.value.includes(id)) {
+    selectedIds.value = selectedIds.value.filter((x) => x !== id)
+  } else {
+    selectedIds.value = [...selectedIds.value, id]
+  }
+}
+
+function toggleSelectAllFiltered() {
+  const visible = filteredMemories.value.map((m) => m.id)
+  if (visible.length > 0 && visible.every((id) => selectedIds.value.includes(id))) {
+    selectedIds.value = []
+  } else {
+    selectedIds.value = visible
+  }
+}
+
+async function runBulkScope(targetScope: string) {
+  if (!selectedIds.value.length || bulkBusy.value) return
+  bulkBusy.value = true
+  try {
+    await Promise.all(selectedIds.value.map((id) => BotHubApi.updateMemory(id, { scope: targetScope })))
+    selectedIds.value = []
+    store.notify(targetScope === 'global' ? '已批量迁入全局共享记忆' : '已批量迁移作用域')
+    await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
+  } catch (err: any) {
+    store.notify(err.message || '批量迁移失败')
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+async function runBulkDelete() {
+  if (!selectedIds.value.length || bulkBusy.value) return
+  if (!window.confirm(`确定删除已选中的 ${selectedIds.value.length} 条记忆吗？`)) return
+  bulkBusy.value = true
+  try {
+    await Promise.all(selectedIds.value.map((id) => BotHubApi.deleteMemory(id)))
+    selectedIds.value = []
+    store.notify('已批量移除选中记忆')
+    await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
+  } catch (err: any) {
+    store.notify(err.message || '批量删除失败')
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+function exportVisibleMemoriesMarkdown() {
+  const list = filteredMemories.value
+  if (list.length === 0) {
+    store.notify('当前筛选视图暂无记忆可导出')
+    return
+  }
+  const lines: string[] = [
+    `# Vesper BotHub 记忆导出 (${filterScope.value === 'all' ? '全部作用域' : scopeLabel(filterScope.value)})`,
+    '',
+    `共 ${list.length} 条，导出于 ${new Date().toLocaleString()}`,
+    '',
+  ]
+  for (const m of list) {
+    lines.push(
+      `- **[${m.fact_key}]** (${m.category} · ${scopeLabel(m.scope)} · 权重 W${m.importance || 3}${m.pinned ? ' · 置顶' : ''}): ${m.content}`
+    )
+  }
+  const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `bothub_memories_${Date.now()}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+  store.notify('已导出记忆清单 Markdown')
+}
+
 async function togglePin(m: AgentMemory) {
   try {
     await BotHubApi.updateMemory(m.id, { pinned: !m.pinned })
@@ -335,9 +412,54 @@ watch(
       <SegmentedTabs v-model="filterCat" :items="FILTER_TABS" variant="subtle" aria-label="记忆分类筛选" />
     </div>
 
-    <div class="flex items-center justify-between gap-2 px-1 text-[11px] font-mono text-slate-400 shrink-0">
-      <span>当前视图 {{ memoryStats.total }} 条 · 置顶核心 {{ memoryStats.pinned }} 条 · 累计召回 {{ memoryStats.recalls }} 次</span>
-      <span>支持跨作用域升降迁与权重排序</span>
+    <div class="flex items-center justify-between gap-2 flex-wrap px-1 text-[11px] font-mono text-slate-400 shrink-0">
+      <div class="flex items-center gap-2.5 flex-wrap">
+        <span>当前视图 {{ memoryStats.total }} 条 · 置顶 {{ memoryStats.pinned }} 条 · 累计召回 {{ memoryStats.recalls }} 次</span>
+        <button
+          v-if="filteredMemories.length > 0"
+          type="button"
+          @click="toggleSelectAllFiltered"
+          class="text-cyan-300 hover:underline cursor-pointer"
+        >
+          {{ filteredMemories.every((m) => selectedIds.includes(m.id)) ? '取消全选' : '全选本页' }}
+        </button>
+      </div>
+      <div class="flex items-center gap-2">
+        <template v-if="selectedIds.length > 0">
+          <button
+            type="button"
+            :disabled="bulkBusy"
+            @click="runBulkScope('global')"
+            class="px-2 py-0.5 rounded border border-cyan-400/40 text-cyan-200 hover:bg-cyan-500/12 cursor-pointer disabled:opacity-50"
+          >
+            批量升全局 ({{ selectedIds.length }})
+          </button>
+          <button
+            v-if="store.activeBot.value"
+            type="button"
+            :disabled="bulkBusy"
+            @click="runBulkScope(`bot:${store.activeBot.value.id}`)"
+            class="px-2 py-0.5 rounded border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/12 cursor-pointer disabled:opacity-50"
+          >
+            批量收归当前Bot
+          </button>
+          <button
+            type="button"
+            :disabled="bulkBusy"
+            @click="runBulkDelete"
+            class="px-2 py-0.5 rounded border border-rose-400/40 text-rose-300 hover:bg-rose-500/12 cursor-pointer disabled:opacity-50"
+          >
+            批量移除
+          </button>
+        </template>
+        <button
+          type="button"
+          @click="exportVisibleMemoriesMarkdown"
+          class="text-slate-300 hover:text-[#f2b880] cursor-pointer"
+        >
+          导出 .md
+        </button>
+      </div>
     </div>
 
     <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
@@ -352,6 +474,13 @@ watch(
       >
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
+            <input
+              type="checkbox"
+              :checked="selectedIds.includes(m.id)"
+              @change="toggleSelectMem(m.id)"
+              :aria-label="`选择记忆 ${m.fact_key}`"
+              class="accent-[#f2b880] cursor-pointer shrink-0"
+            />
             <span
               v-if="m.pinned"
               class="font-mono text-[10px] px-1.5 py-0.5 rounded border border-amber-400/50 bg-amber-400/15 text-amber-200 shrink-0"

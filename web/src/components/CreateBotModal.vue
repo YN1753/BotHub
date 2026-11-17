@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { trackSpotlight } from '../utils/topLayer'
+import { groupAvailableTools } from '../utils/toolMeta'
 import type { BotMode, MemoryPolicy } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import BotAvatar from './BotAvatar.vue'
@@ -58,6 +59,7 @@ const groupAnnouncement = ref('')
 const saving = ref(false)
 
 const availableTools = computed(() => store.state.availableTools || [])
+const groupedTools = computed(() => groupAvailableTools(availableTools.value))
 const availableSkills = computed(() => (store.state.skills || []).filter((s) => s.enabled !== false))
 
 const availableSpecialistBots = computed(() =>
@@ -324,17 +326,50 @@ async function handleSubmit() {
               />
             </label>
 
-            <div class="flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>内置工具白名单 ({{ allowedTools.length }}/{{ availableTools.length }})</span>
-              <div class="flex flex-wrap gap-1.5">
-                <label
-                  v-for="tool in availableTools"
-                  :key="tool.id"
-                  class="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-[#fff8ee]/12 bg-[#050811]/80 text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0] transition-colors"
-                >
-                  <input v-model="allowedTools" type="checkbox" :value="tool.id" class="accent-[#f2b880]" />
-                  <span>{{ tool.description }}</span>
-                </label>
+            <div class="flex flex-col gap-2 text-xs text-slate-300">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <span>内置工具白名单 ({{ allowedTools.length }}/{{ availableTools.length }})</span>
+                <div class="flex items-center gap-1.5 text-[11px]">
+                  <button
+                    type="button"
+                    @click="allowedTools = availableTools.map((t) => t.id)"
+                    class="text-[#f2b880] hover:underline cursor-pointer"
+                  >
+                    全选
+                  </button>
+                  <span class="text-slate-600">·</span>
+                  <button
+                    type="button"
+                    @click="allowedTools = availableTools.filter((t) => ['manage_todos','manage_notes','manage_tasks','workspace_briefing','send_notification','web_search','read_url','calculate_eval','datetime_calc','remember_fact','recall_memory','manage_memory','consult_bot'].includes(t.id)).map((t) => t.id)"
+                    class="text-cyan-300 hover:underline cursor-pointer"
+                  >
+                    个人总助推荐
+                  </button>
+                  <span class="text-slate-600">·</span>
+                  <button
+                    type="button"
+                    @click="allowedTools = []"
+                    class="text-slate-400 hover:underline cursor-pointer"
+                  >
+                    清空
+                  </button>
+                </div>
+              </div>
+              <div class="flex flex-col gap-2">
+                <div v-for="grp in groupedTools" :key="grp.id" class="flex flex-col gap-1">
+                  <span class="text-[10.5px] font-mono text-slate-500">{{ grp.label }}</span>
+                  <div class="flex flex-wrap gap-1.5">
+                    <label
+                      v-for="tool in grp.tools"
+                      :key="tool.id"
+                      :title="tool.description"
+                      class="min-h-[32px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-[#fff8ee]/12 bg-[#050811]/80 text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0] transition-colors"
+                    >
+                      <input v-model="allowedTools" type="checkbox" :value="tool.id" class="accent-[#f2b880]" />
+                      <span>{{ tool.shortLabel }}</span>
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
 

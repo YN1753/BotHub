@@ -906,7 +906,8 @@ func (e *Engine) runSingleBotTurn(
 	var totalUsage TokenUsage
 	hasUsage := false
 
-	const maxRounds = 5
+	const maxRounds = 8
+	endedWithTools := false
 	for round := 0; round < maxRounds; round++ {
 		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(ctx, targets, messages, tools, thinkFlag, emit, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
@@ -942,6 +943,7 @@ func (e *Engine) runSingleBotTurn(
 		}
 		persistTimeline := msgKind != "delegate"
 		if len(toolCalls) == 0 {
+			endedWithTools = false
 			if persistTimeline {
 				_, _ = e.store.AppendAgentMessage(store.AgentMessage{
 					SessionID:        "bot:" + timelineBotID,
@@ -958,6 +960,7 @@ func (e *Engine) runSingleBotTurn(
 			}
 			break
 		}
+		endedWithTools = true
 
 		tcBytes, _ := json.Marshal(toolCalls)
 		if persistTimeline {
@@ -981,7 +984,7 @@ func (e *Engine) runSingleBotTurn(
 			ToolCalls:        toolCalls,
 		})
 
-		e.emitBotState(actingBot.ID, store.BotStateWorking, "正在调用工具...")
+		e.emitBotState(actingBot.ID, store.BotStateWorking, humanToolStatus(toolCalls[0].Function.Name))
 
 		allReadOnly := len(toolCalls) > 1
 		for _, tc := range toolCalls {
@@ -1042,7 +1045,7 @@ func (e *Engine) runSingleBotTurn(
 		} else {
 			for idx, tc := range toolCalls {
 				if timelineBotID != "" && timelineBotID != actingBot.ID {
-					e.emitBotState(timelineBotID, store.BotStateWorking, fmt.Sprintf("%s: 调用 %s...", actingBot.Name, tc.Function.Name))
+					e.emitBotState(timelineBotID, store.BotStateWorking, fmt.Sprintf("%s: %s", actingBot.Name, humanToolStatus(tc.Function.Name)))
 				}
 				runOne(idx, tc)
 			}
@@ -1113,6 +1116,57 @@ func (e *Engine) runSingleBotTurn(
 		}
 	}
 
+	// Guarantee a final user-facing synthesis if the tool loop hit maxRounds while still emitting tool calls
+	if endedWithTools && ctx.Err() == nil {
+		messages = append(messages, apiMessage{
+			Role:    "system",
+			Content: "已达到本轮最大工具调用步数。请立即根据以上收集到的全部工具结果直接给出完整、清晰的中文最终答复，不要再发起新的工具调用。",
+		})
+		sReasoning, sContent, _, sUsage, usedTarget, sErr := e.streamRoundWithFailover(ctx, targets, messages, nil, thinkFlag, emit, func(deltaReasoning, deltaContent string) {
+			if deltaReasoning != "" {
+				clean := notifier.StripEmoji(deltaReasoning)
+				totalReasoning.WriteString(clean)
+				if emit != nil {
+					emit("reasoning", map[string]any{"delta": clean, "sender_bot_id": actingBot.ID})
+				}
+			}
+			if deltaContent != "" {
+				clean := notifier.StripEmoji(deltaContent)
+				finalContent.WriteString(clean)
+				if emit != nil {
+					emit("content", map[string]any{"delta": clean, "sender_bot_id": actingBot.ID})
+				}
+			}
+		})
+		if sErr == nil {
+			activeTarget = usedTarget
+			if sUsage != nil {
+				hasUsage = true
+				totalUsage.PromptTokens += sUsage.PromptTokens
+				totalUsage.CompletionTokens += sUsage.CompletionTokens
+				totalUsage.TotalTokens += sUsage.TotalTokens
+			}
+			msgKind := strings.TrimSpace(req.MsgKind)
+			if msgKind == "" {
+				msgKind = "chat"
+			}
+			if msgKind != "delegate" {
+				_, _ = e.store.AppendAgentMessage(store.AgentMessage{
+					SessionID:        "bot:" + timelineBotID,
+					BotID:            timelineBotID,
+					ThreadID:         threadID,
+					SenderBotID:      actingBot.ID,
+					MsgKind:          msgKind,
+					Role:             "assistant",
+					Content:          notifier.StripEmoji(sContent),
+					ReasoningContent: notifier.StripEmoji(totalReasoning.String() + sReasoning),
+					ToolCalls:        "[]",
+					ModelUsed:        activeTarget.Model,
+				})
+			}
+		}
+	}
+
 	preview := truncateTitle(finalContent.String())
 	e.emitBotState(actingBot.ID, store.BotStateIdle, preview)
 
@@ -1126,6 +1180,9 @@ func (e *Engine) runSingleBotTurn(
 	}
 	if req.MsgKind != "routine" && req.MsgKind != "delegate" && !rememberedInTurn && strings.TrimSpace(finalContent.String()) != "" {
 		go e.distillMemoryWithScope("bot:"+timelineBotID, actingBot.BotMode, userMsg, finalContent.String())
+	}
+	if req.MsgKind == "chat" && threadID != "" && len(history) >= 22 {
+		go e.maybeAutoSummarizeThread(actingBot, timelineBotID, threadID, len(history))
 	}
 
 	resp := &ChatResponse{
@@ -1150,9 +1207,67 @@ func (e *Engine) runSingleBotTurn(
 	return resp, nil
 }
 
+func humanToolStatus(name string) string {
+	switch name {
+	case "web_search":
+		return "正在检索全网资料..."
+	case "read_url":
+		return "正在精读网页正文..."
+	case "query_nezha_nodes":
+		return "正在巡检探针节点..."
+	case "manage_assets":
+		return "正在核查资产台账..."
+	case "manage_tasks":
+		return "正在安排调度提醒..."
+	case "manage_todos":
+		return "正在梳理待办清单..."
+	case "manage_notes":
+		return "正在编写工作文档..."
+	case "send_notification":
+		return "正在推送收件箱通知..."
+	case "consult_bot":
+		return "正在协同队友协办..."
+	case "workspace_briefing":
+		return "正在汇总今日行动简报..."
+	case "calculate_eval":
+		return "正在精确核算数值..."
+	case "datetime_calc":
+		return "正在推算日期与排期..."
+	case "remember_fact", "manage_memory":
+		return "正在整理长期记忆..."
+	case "recall_memory":
+		return "正在检索历史记忆..."
+	default:
+		if strings.HasPrefix(name, "skill_") {
+			return "正在执行自定义技能..."
+		}
+		return "正在调用工具..."
+	}
+}
+
+func (e *Engine) maybeAutoSummarizeThread(actingBot *store.Bot, timelineBotID, threadID string, historyLen int) {
+	if e == nil || e.store == nil || actingBot == nil || threadID == "" || !e.hasLightTarget() {
+		return
+	}
+	th, err := e.store.GetBotThread(timelineBotID, threadID)
+	if err != nil || th == nil {
+		return
+	}
+	if strings.TrimSpace(th.Summary) != "" && historyLen%16 != 0 {
+		return
+	}
+	msgs, err := e.store.ListBotMessagesByThread(timelineBotID, threadID, 60)
+	if err != nil || len(msgs) < 16 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	_, _, _ = e.SummarizeThreadToMemory(ctx, actingBot, th, msgs, false)
+}
+
 func (e *Engine) isReadOnlyTool(name string) bool {
 	switch name {
-	case "read_url", "web_search", "query_nezha_nodes", "recall_memory", "datetime_calc":
+	case "read_url", "web_search", "query_nezha_nodes", "recall_memory", "datetime_calc", "workspace_briefing", "calculate_eval":
 		return true
 	}
 	if strings.HasPrefix(name, "skill_") {

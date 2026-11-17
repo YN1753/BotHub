@@ -72,6 +72,37 @@ async function askBotAnalyze(n: { id: number; source: string; title: string; sum
   await store.jumpToBot(picked.id, `请深度分析这条系统情报并给出建议：\n标题：${n.title}\n摘要：${n.summary}`)
 }
 
+async function convertInboxToTodo(n: { id: number; title: string; summary: string; markdown: string; priority: string }) {
+  await markRead(n.id)
+  try {
+    await BotHubApi.createTodo({
+      title: n.title,
+      notes: (n.summary || n.markdown || '').slice(0, 260),
+      priority: n.priority === 'high' ? 'high' : 'normal',
+      status: 'pending',
+    })
+    await store.loadDashboard(false)
+    store.notify('已转入个人待办清单')
+  } catch (err: any) {
+    store.notify(err.message || '转待办失败')
+  }
+}
+
+async function saveInboxToNote(n: { id: number; source: string; title: string; summary: string; markdown: string }) {
+  await markRead(n.id)
+  try {
+    await BotHubApi.createNote({
+      title: n.title,
+      category: n.source || 'inbox',
+      content: n.markdown || n.summary || n.title,
+    })
+    await store.loadDashboard(false)
+    store.notify(`已归档至工作文档《${n.title}》`)
+  } catch (err: any) {
+    store.notify(err.message || '存文档失败')
+  }
+}
+
 async function markRead(id: number) {
   const item = store.state.notifications.find((n) => n.id === id)
   if (!item || item.read_at) return
@@ -182,13 +213,29 @@ watch(
             </summary>
             <div class="mt-2 pt-2 border-t border-[#fff8ee]/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
           </details>
-          <button
-            type="button"
-            @click="askBotAnalyze(n)"
-            class="min-h-[32px] sm:min-h-[26px] px-2.5 py-0.5 rounded-lg border border-[#f2b880]/30 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-[11px] text-[#f2b880] cursor-pointer shrink-0 self-start"
-          >
-            让 Bot 分析 ->
-          </button>
+          <div class="flex items-center gap-1.5 shrink-0 self-start">
+            <button
+              type="button"
+              @click="convertInboxToTodo(n)"
+              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-cyan-400/30 bg-cyan-500/8 hover:bg-cyan-500/18 text-[11px] text-cyan-200 cursor-pointer"
+            >
+              转待办
+            </button>
+            <button
+              type="button"
+              @click="saveInboxToNote(n)"
+              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-[#fff8ee]/12 hover:border-[#f2b880]/40 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+            >
+              存文档
+            </button>
+            <button
+              type="button"
+              @click="askBotAnalyze(n)"
+              class="min-h-[32px] sm:min-h-[26px] px-2.5 py-0.5 rounded-lg border border-[#f2b880]/30 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-[11px] text-[#f2b880] cursor-pointer"
+            >
+              让 Bot 分析 ->
+            </button>
+          </div>
         </div>
       </article>
     </div>

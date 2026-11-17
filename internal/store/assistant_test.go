@@ -91,4 +91,30 @@ func TestTodosNotesAndTaskNoHardcodedButler(t *testing.T) {
 	if ok, _ := st.DeleteNote(n1.ID); !ok {
 		t.Fatalf("expected DeleteNote to return true")
 	}
+
+	// 4. Memory key normalization & DeleteBot referential scrubbing (groups, todos, notes)
+	_ = st.SaveAgentMemoryDetailed("bot:bot_muse", "general", " User City ", "杭州", 3, false)
+	_ = st.SaveAgentMemoryDetailed("bot:bot_muse", "general", "user_city", "杭州西湖", 4, true)
+	mems, _ := st.ListScopedMemories([]string{"bot:bot_muse"}, "", 10)
+	if len(mems) != 1 || mems[0].FactKey != "user_city" || mems[0].Content != "杭州西湖" {
+		t.Fatalf("expected normalized memory keys to merge cleanly, got %+v", mems)
+	}
+
+	_ = st.SaveBot(Bot{ID: "bot_temp", Name: "Temp", RoleTitle: "临时"})
+	_ = st.SaveBot(Bot{ID: "grp_test", Name: "群", RoleTitle: "群", IsGroup: true, MemberIDs: `["bot_muse","bot_temp"]`})
+	_, _ = st.SaveTodo(TodoItem{BotID: "bot_temp", Title: "跟进交接"})
+	if err := st.DeleteBot("bot_temp"); err != nil {
+		t.Fatalf("delete bot failed: %v", err)
+	}
+	grp, _ := st.GetBot("grp_test")
+	if grp == nil || len(grp.MemberIDList()) != 1 || grp.MemberIDList()[0] != "bot_muse" {
+		t.Fatalf("expected deleted bot scrubbed from group member_ids, got %+v", grp)
+	}
+
+	// 5. Workspace briefing aggregation
+	_, _ = st.SaveTodo(TodoItem{Title: "历史逾期事项", Priority: TodoPriorityHigh, DueAt: "2020-01-01"})
+	brief, err := st.BuildWorkspaceBriefing()
+	if err != nil || brief == nil || len(brief.OverdueTodos) == 0 {
+		t.Fatalf("expected overdue todo in workspace briefing, err=%v brief=%+v", err, brief)
+	}
 }

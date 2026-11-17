@@ -199,6 +199,21 @@ export interface WorkNote {
   updated_at: string
 }
 
+export interface WorkspaceBriefing {
+  generated_at: string
+  today: string
+  weekday: string
+  open_todo_count: number
+  overdue_todos: TodoItem[]
+  due_today_todos: TodoItem[]
+  high_priority_todos: TodoItem[]
+  expiring_assets: Asset[]
+  enabled_tasks: Task[]
+  unread_alerts: NotificationItem[]
+  unread_count: number
+  recent_notes: WorkNote[]
+}
+
 export interface TaskTemplateField {
   key: string
   label: string

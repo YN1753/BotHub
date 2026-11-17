@@ -238,12 +238,37 @@ func (s *Store) SaveBot(b Bot) error {
 }
 
 func (s *Store) DeleteBot(id string) error {
-	_, _ = s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ?`, id)
-	_, _ = s.db.Exec(`DELETE FROM bot_threads WHERE bot_id = ?`, id)
-	_, _ = s.db.Exec(`DELETE FROM bot_execution_logs WHERE bot_id = ?`, id)
-	_, _ = s.db.Exec(`DELETE FROM agent_memories WHERE scope = ?`, "bot:"+id)
-	_, _ = s.db.Exec(`UPDATE tasks SET bot_id = '' WHERE bot_id = ?`, id)
-	_, err := s.db.Exec(`DELETE FROM bots WHERE id = ?`, id)
+	trimmed := strings.TrimSpace(id)
+	_, _ = s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ?`, trimmed)
+	_, _ = s.db.Exec(`DELETE FROM bot_threads WHERE bot_id = ?`, trimmed)
+	_, _ = s.db.Exec(`DELETE FROM bot_execution_logs WHERE bot_id = ?`, trimmed)
+	_, _ = s.db.Exec(`DELETE FROM agent_memories WHERE scope = ?`, "bot:"+trimmed)
+	_, _ = s.db.Exec(`UPDATE tasks SET bot_id = '' WHERE bot_id = ?`, trimmed)
+	_, _ = s.db.Exec(`UPDATE todos SET bot_id = '' WHERE bot_id = ?`, trimmed)
+	_, _ = s.db.Exec(`UPDATE notes SET bot_id = '' WHERE bot_id = ?`, trimmed)
+	if bots, err := s.ListBots(); err == nil {
+		for _, b := range bots {
+			if !b.IsGroup {
+				continue
+			}
+			cur := b.MemberIDList()
+			next := make([]string, 0, len(cur))
+			changed := false
+			for _, mid := range cur {
+				if mid == trimmed {
+					changed = true
+					continue
+				}
+				next = append(next, mid)
+			}
+			if changed {
+				raw, _ := json.Marshal(next)
+				b.MemberIDs = string(raw)
+				_ = s.SaveBot(b)
+			}
+		}
+	}
+	_, err := s.db.Exec(`DELETE FROM bots WHERE id = ?`, trimmed)
 	return err
 }
 

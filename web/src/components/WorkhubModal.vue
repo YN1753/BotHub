@@ -4,7 +4,7 @@ import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { renderSafeMarkdown } from '../utils/markdown'
 import { formatTime } from '../utils/format'
-import type { TodoItem, WorkNote } from '../types/bothub'
+import type { TodoItem, WorkNote, WorkspaceBriefing } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -14,6 +14,7 @@ const store = useAppStore()
 const TAB_ITEMS = [
   { id: 'todos', label: '待办与行动清单' },
   { id: 'notes', label: '工作文档与交付区' },
+  { id: 'briefing', label: '今日简报' },
 ]
 
 const TODO_FILTERS = [
@@ -30,18 +31,27 @@ const PRIORITY_OPTIONS = [
 
 const activeTab = computed({
   get: () => store.state.workhubTab,
-  set: (v: 'todos' | 'notes') => {
+  set: (v: 'todos' | 'notes' | 'briefing') => {
     store.state.workhubTab = v
   },
 })
 
 // Todos state
 const todoFilter = ref<'open' | 'all' | 'done'>('open')
+const filterTodoBotId = ref('')
 const newTodoTitle = ref('')
 const newTodoPriority = ref<'high' | 'normal' | 'low'>('normal')
 const newTodoDueAt = ref('')
 const newTodoBotId = ref('')
 const savingTodo = ref(false)
+
+// Inline Edit Todo state
+const editingTodoId = ref<string | null>(null)
+const editTodoTitle = ref('')
+const editTodoNotes = ref('')
+const editTodoPriority = ref<'high' | 'normal' | 'low'>('normal')
+const editTodoDueAt = ref('')
+const editTodoBotId = ref('')
 
 // Notes state
 const noteSearch = ref('')
@@ -54,15 +64,34 @@ const draftNoteContent = ref('')
 const draftNotePinned = ref(false)
 const savingNote = ref(false)
 
+// Briefing state
+const briefing = ref<WorkspaceBriefing | null>(null)
+const loadingBriefing = ref(false)
+
 const botAssigneeOptions = computed(() => [
   { value: '', label: '未指定执行 Bot' },
   ...store.state.bots.map((b) => ({ value: b.id, label: b.name })),
 ])
 
+const botFilterOptions = computed(() => [
+  { value: '', label: '全部成员待办' },
+  ...store.state.bots.map((b) => ({ value: b.id, label: b.name })),
+])
+
 const todayPrefix = computed(() => new Date().toISOString().slice(0, 10))
+
+function offsetDateStr(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 const filteredTodos = computed(() =>
   store.state.todos.filter((t) => {
+    if (filterTodoBotId.value && (t.bot_id || '') !== filterTodoBotId.value) return false
     if (todoFilter.value === 'open') return t.status !== 'done'
     if (todoFilter.value === 'done') return t.status === 'done'
     return true
@@ -83,16 +112,31 @@ const selectedNote = computed<WorkNote | null>(() => {
   return list.find((n) => n.id === selectedNoteId.value) || list[0]
 })
 
+async function loadBriefing() {
+  if (loadingBriefing.value) return
+  loadingBriefing.value = true
+  try {
+    const res = await BotHubApi.getBriefing()
+    briefing.value = res.briefing
+  } catch (err: any) {
+    store.notify(err.message || '加载今日简报失败')
+  } finally {
+    loadingBriefing.value = false
+  }
+}
+
 watch(
-  () => store.state.showWorkhubModal,
-  (open) => {
-    if (open) {
-      if (!newTodoBotId.value && store.activeBot.value) {
-        newTodoBotId.value = store.activeBot.value.id
-      }
-      if (!selectedNoteId.value && store.state.notes.length > 0) {
-        selectedNoteId.value = store.state.notes[0].id
-      }
+  () => [store.state.showWorkhubModal, activeTab.value] as const,
+  ([open, tab]) => {
+    if (!open) return
+    if (!newTodoBotId.value && store.activeBot.value) {
+      newTodoBotId.value = store.activeBot.value.id
+    }
+    if (!selectedNoteId.value && store.state.notes.length > 0) {
+      selectedNoteId.value = store.state.notes[0].id
+    }
+    if (tab === 'briefing' || !briefing.value) {
+      loadBriefing()
     }
   }
 )
@@ -109,6 +153,7 @@ function isOverdue(t: TodoItem): boolean {
 function closeModal() {
   store.state.showWorkhubModal = false
   editingNote.value = false
+  editingTodoId.value = null
 }
 
 async function handleAddTodo() {
@@ -126,11 +171,39 @@ async function handleAddTodo() {
     newTodoDueAt.value = ''
     newTodoPriority.value = 'normal'
     await store.loadDashboard(false)
+    if (activeTab.value === 'briefing') await loadBriefing()
     store.notify('待办已添加至个人行动清单')
   } catch (err: any) {
     store.notify(err.message || '添加待办失败')
   } finally {
     savingTodo.value = false
+  }
+}
+
+function startEditTodo(t: TodoItem) {
+  editingTodoId.value = t.id
+  editTodoTitle.value = t.title
+  editTodoNotes.value = t.notes || ''
+  editTodoPriority.value = (t.priority as 'high' | 'normal' | 'low') || 'normal'
+  editTodoDueAt.value = t.due_at || ''
+  editTodoBotId.value = t.bot_id || ''
+}
+
+async function saveEditTodo(t: TodoItem) {
+  if (!editTodoTitle.value.trim()) return
+  try {
+    await BotHubApi.updateTodo(t.id, {
+      title: editTodoTitle.value.trim(),
+      notes: editTodoNotes.value.trim(),
+      priority: editTodoPriority.value,
+      due_at: editTodoDueAt.value.trim(),
+      bot_id: editTodoBotId.value,
+    })
+    editingTodoId.value = null
+    await store.loadDashboard(false)
+    store.notify('待办已更新')
+  } catch (err: any) {
+    store.notify(err.message || '更新待办失败')
   }
 }
 
@@ -157,6 +230,7 @@ async function cycleTodoProgress(t: TodoItem) {
 async function removeTodo(id: string) {
   try {
     await BotHubApi.deleteTodo(id)
+    if (editingTodoId.value === id) editingTodoId.value = null
     await store.loadDashboard(false)
   } catch (err: any) {
     store.notify(err.message || '删除失败')
@@ -195,6 +269,21 @@ async function dispatchTodoToBot(t: TodoItem) {
     .join('\n')
   closeModal()
   await store.jumpToBot(targetBotId, detail)
+}
+
+async function planTodayWithBot() {
+  const targetBotId =
+    store.activeBot.value?.id ||
+    store.state.bots.find((b) => !b.is_group && b.bot_mode !== 'companion')?.id ||
+    store.state.bots[0]?.id ||
+    ''
+  if (!targetBotId) {
+    store.notify('请先创建一个可执行 Bot')
+    return
+  }
+  const prompt = '请调用 workspace_briefing 汇总我今天的全部待办、临期资产与未读通知，排出高优推进顺序并给出可直接开干的行动方案。'
+  closeModal()
+  await store.jumpToBot(targetBotId, prompt)
 }
 
 function startNewNote() {
@@ -296,8 +385,8 @@ async function refineNoteWithBot(n: WorkNote) {
 <template>
   <BaseModal
     :open="store.state.showWorkhubModal"
-    title="个人行动台 · 待办与工作文档"
-    subtitle="助手帮你拆解并落地的个人待办、提醒与 Markdown 交付文档均在此同步沉淀"
+    title="个人行动台 · 待办、文档与今日简报"
+    subtitle="助手帮你拆解落地的待办事项、Markdown 交付文档与今日全局聚焦面板"
     max-width="3xl"
     @close="closeModal"
   >
@@ -310,37 +399,75 @@ async function refineNoteWithBot(n: WorkNote) {
 
     <!-- Tab 1: Personal Todos -->
     <div v-if="activeTab === 'todos'" class="flex-1 min-h-0 flex flex-col gap-3">
-      <form @submit.prevent="handleAddTodo" class="modal-section grid grid-cols-1 sm:grid-cols-12 gap-2 shrink-0">
-        <input
-          v-model="newTodoTitle"
-          type="text"
-          required
-          placeholder="记录要办的事，或直接让对话里的助手用 manage_todos 帮你记..."
-          class="sm:col-span-5 min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 text-xs text-white focus:border-[#f2b880]/60"
-        />
-        <div class="sm:col-span-2">
-          <CustomSelect v-model="newTodoPriority" :options="PRIORITY_OPTIONS" compact aria-label="优先级" />
+      <form @submit.prevent="handleAddTodo" class="modal-section flex flex-col gap-2 shrink-0">
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+          <input
+            v-model="newTodoTitle"
+            type="text"
+            required
+            placeholder="记录要办的事，或直接让对话里的助手用 manage_todos 帮你记..."
+            class="sm:col-span-5 min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 text-xs text-white focus:border-[#f2b880]/60"
+          />
+          <div class="sm:col-span-2">
+            <CustomSelect v-model="newTodoPriority" :options="PRIORITY_OPTIONS" compact aria-label="优先级" />
+          </div>
+          <input
+            v-model="newTodoDueAt"
+            type="text"
+            placeholder="截止 YYYY-MM-DD"
+            class="sm:col-span-2 min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
+          />
+          <div class="sm:col-span-2">
+            <CustomSelect v-model="newTodoBotId" :options="botAssigneeOptions" compact aria-label="指派 Bot" />
+          </div>
+          <button
+            type="submit"
+            :disabled="savingTodo"
+            class="sm:col-span-1 min-h-[38px] rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+          >
+            新增
+          </button>
         </div>
-        <input
-          v-model="newTodoDueAt"
-          type="text"
-          placeholder="截止 YYYY-MM-DD"
-          class="sm:col-span-2 min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
-        />
-        <div class="sm:col-span-2">
-          <CustomSelect v-model="newTodoBotId" :options="botAssigneeOptions" compact aria-label="指派 Bot" />
+        <div class="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-400">
+          <span class="font-mono text-[10.5px] text-slate-500">快捷截止:</span>
+          <button
+            type="button"
+            @click="newTodoDueAt = offsetDateStr(0)"
+            class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          >
+            今天
+          </button>
+          <button
+            type="button"
+            @click="newTodoDueAt = offsetDateStr(1)"
+            class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          >
+            明天
+          </button>
+          <button
+            type="button"
+            @click="newTodoDueAt = offsetDateStr(3)"
+            class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          >
+            3天后
+          </button>
+          <button
+            type="button"
+            @click="newTodoDueAt = offsetDateStr(7)"
+            class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          >
+            一周内
+          </button>
         </div>
-        <button
-          type="submit"
-          :disabled="savingTodo"
-          class="sm:col-span-1 min-h-[38px] rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
-        >
-          新增
-        </button>
       </form>
 
-      <div class="flex items-center justify-between gap-2 shrink-0">
-        <SegmentedTabs v-model="todoFilter" :items="TODO_FILTERS" variant="subtle" aria-label="待办状态筛选" />
+      <div class="flex items-center justify-between gap-2 flex-wrap shrink-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <SegmentedTabs v-model="todoFilter" :items="TODO_FILTERS" variant="subtle" aria-label="待办状态筛选" />
+          <div class="w-36">
+            <CustomSelect v-model="filterTodoBotId" :options="botFilterOptions" compact aria-label="按负责 Bot 筛选" />
+          </div>
+        </div>
         <button
           type="button"
           @click="clearDoneTodos"
@@ -357,81 +484,124 @@ async function refineNoteWithBot(n: WorkNote) {
         <article
           v-for="t in filteredTodos"
           :key="t.id"
-          class="luxury-card rounded-xl px-3.5 py-2.5 flex items-start justify-between gap-3"
+          class="luxury-card rounded-xl px-3.5 py-2.5 flex flex-col gap-2"
         >
-          <div class="flex items-start gap-2.5 min-w-0 flex-1">
-            <input
-              type="checkbox"
-              :checked="t.status === 'done'"
-              @change="toggleTodoDone(t)"
-              :aria-label="`完成 ${t.title}`"
-              class="mt-1 accent-[#f2b880] cursor-pointer shrink-0"
-            />
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-1.5 flex-wrap">
-                <span
-                  :class="[
-                    'text-sm font-medium',
-                    t.status === 'done' ? 'line-through text-slate-500' : 'text-white',
-                  ]"
-                >
-                  {{ t.title }}
-                </span>
-                <span
-                  v-if="t.priority === 'high'"
-                  class="px-1.5 py-0.5 rounded font-mono text-[10px] border border-rose-400/45 bg-rose-500/12 text-rose-300"
-                >
-                  高优
-                </span>
-                <span
-                  v-if="t.status === 'doing'"
-                  class="px-1.5 py-0.5 rounded font-mono text-[10px] border border-[#f2b880]/45 bg-[#f2b880]/12 text-[#f7cba0]"
-                >
-                  进行中
-                </span>
-                <span
-                  v-if="t.due_at"
-                  :class="[
-                    'px-1.5 py-0.5 rounded font-mono text-[10px] border',
-                    isOverdue(t)
-                      ? 'border-rose-400/45 bg-rose-500/15 text-rose-300'
-                      : 'border-[#fff8ee]/12 text-slate-400',
-                  ]"
-                >
-                  {{ isOverdue(t) ? '已逾期 ' : '截止 ' }}{{ t.due_at }}
-                </span>
-                <span
-                  v-if="t.bot_id"
-                  class="px-1.5 py-0.5 rounded font-mono text-[10px] bg-cyan-500/10 text-cyan-200 border border-cyan-400/25"
-                >
-                  {{ botNameById(t.bot_id) }}
-                </span>
+          <div class="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
+            <div class="flex items-start gap-2.5 min-w-0 flex-1">
+              <input
+                type="checkbox"
+                :checked="t.status === 'done'"
+                @change="toggleTodoDone(t)"
+                :aria-label="`完成 ${t.title}`"
+                class="mt-1 accent-[#f2b880] cursor-pointer shrink-0"
+              />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span
+                    :class="[
+                      'text-sm font-medium',
+                      t.status === 'done' ? 'line-through text-slate-500' : 'text-white',
+                    ]"
+                  >
+                    {{ t.title }}
+                  </span>
+                  <span
+                    v-if="t.priority === 'high'"
+                    class="px-1.5 py-0.5 rounded font-mono text-[10px] border border-rose-400/45 bg-rose-500/12 text-rose-300"
+                  >
+                    高优
+                  </span>
+                  <span
+                    v-if="t.status === 'doing'"
+                    class="px-1.5 py-0.5 rounded font-mono text-[10px] border border-[#f2b880]/45 bg-[#f2b880]/12 text-[#f7cba0]"
+                  >
+                    进行中
+                  </span>
+                  <span
+                    v-if="t.due_at"
+                    :class="[
+                      'px-1.5 py-0.5 rounded font-mono text-[10px] border',
+                      isOverdue(t)
+                        ? 'border-rose-400/45 bg-rose-500/15 text-rose-300'
+                        : 'border-[#fff8ee]/12 text-slate-400',
+                    ]"
+                  >
+                    {{ isOverdue(t) ? '已逾期 ' : '截止 ' }}{{ t.due_at }}
+                  </span>
+                  <span
+                    v-if="t.bot_id"
+                    class="px-1.5 py-0.5 rounded font-mono text-[10px] bg-cyan-500/10 text-cyan-200 border border-cyan-400/25"
+                  >
+                    {{ botNameById(t.bot_id) }}
+                  </span>
+                </div>
+                <p v-if="t.notes" class="text-xs text-slate-400 mt-1 whitespace-pre-line">{{ t.notes }}</p>
               </div>
-              <p v-if="t.notes" class="text-xs text-slate-400 mt-1 whitespace-pre-line">{{ t.notes }}</p>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap shrink-0">
+              <button
+                type="button"
+                @click="cycleTodoProgress(t)"
+                class="px-2 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+              >
+                {{ t.status === 'pending' ? '推进中' : t.status === 'doing' ? '标完成' : '重开' }}
+              </button>
+              <button
+                type="button"
+                @click="editingTodoId === t.id ? (editingTodoId = null) : startEditTodo(t)"
+                class="px-2 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-white cursor-pointer"
+              >
+                {{ editingTodoId === t.id ? '取消' : '编辑' }}
+              </button>
+              <button
+                v-if="t.status !== 'done'"
+                type="button"
+                @click="dispatchTodoToBot(t)"
+                class="px-2.5 py-1 rounded-lg border border-[#f2b880]/40 bg-[#f2b880]/12 text-[11px] text-[#f7cba0] hover:bg-[#f2b880]/22 cursor-pointer"
+              >
+                派 Bot 推进
+              </button>
+              <button
+                type="button"
+                @click="removeTodo(t.id)"
+                class="px-2 py-1 rounded-lg border border-rose-400/30 text-[11px] text-rose-300 hover:bg-rose-500/15 cursor-pointer"
+              >
+                删
+              </button>
             </div>
           </div>
-          <div class="flex items-center gap-1.5 shrink-0">
+
+          <div v-if="editingTodoId === t.id" class="pt-2 border-t border-[#fff8ee]/8 grid grid-cols-1 sm:grid-cols-12 gap-2">
+            <input
+              v-model="editTodoTitle"
+              type="text"
+              placeholder="待办标题"
+              class="sm:col-span-6 min-h-[34px] rounded-lg border border-[#f2b880]/40 bg-[#050811] px-2.5 text-xs text-white"
+            />
+            <div class="sm:col-span-2">
+              <CustomSelect v-model="editTodoPriority" :options="PRIORITY_OPTIONS" compact aria-label="编辑优先级" />
+            </div>
+            <input
+              v-model="editTodoDueAt"
+              type="text"
+              placeholder="截止 YYYY-MM-DD"
+              class="sm:col-span-2 min-h-[34px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2 font-mono text-xs text-white"
+            />
+            <div class="sm:col-span-2">
+              <CustomSelect v-model="editTodoBotId" :options="botAssigneeOptions" compact aria-label="编辑指派 Bot" />
+            </div>
+            <input
+              v-model="editTodoNotes"
+              type="text"
+              placeholder="补充步骤或备注..."
+              class="sm:col-span-10 min-h-[34px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white"
+            />
             <button
               type="button"
-              @click="cycleTodoProgress(t)"
-              class="px-2 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+              @click="saveEditTodo(t)"
+              class="sm:col-span-2 min-h-[34px] rounded-lg bg-[#f2b880] text-[#070a13] font-semibold text-xs cursor-pointer"
             >
-              {{ t.status === 'pending' ? '标为推进中' : t.status === 'doing' ? '标为完成' : '重开' }}
-            </button>
-            <button
-              v-if="t.status !== 'done'"
-              type="button"
-              @click="dispatchTodoToBot(t)"
-              class="px-2.5 py-1 rounded-lg border border-[#f2b880]/40 bg-[#f2b880]/12 text-[11px] text-[#f7cba0] hover:bg-[#f2b880]/22 cursor-pointer"
-            >
-              派 Bot 推进
-            </button>
-            <button
-              type="button"
-              @click="removeTodo(t.id)"
-              class="px-2 py-1 rounded-lg border border-rose-400/30 text-[11px] text-rose-300 hover:bg-rose-500/15 cursor-pointer"
-            >
-              删
+              保存修改
             </button>
           </div>
         </article>
@@ -439,8 +609,8 @@ async function refineNoteWithBot(n: WorkNote) {
     </div>
 
     <!-- Tab 2: Work Notes / Deliverables -->
-    <div v-else class="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-12 gap-3">
-      <div class="md:col-span-4 min-h-0 flex flex-col gap-2 border-r border-[#fff8ee]/8 pr-2">
+    <div v-else-if="activeTab === 'notes'" class="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-12 gap-3">
+      <div class="md:col-span-4 min-h-0 flex flex-col gap-2 md:border-r md:border-[#fff8ee]/8 md:pr-2">
         <div class="flex items-center gap-2 shrink-0">
           <input
             v-model="noteSearch"
@@ -592,6 +762,106 @@ async function refineNoteWithBot(n: WorkNote) {
           >
             + 创建第一份工作文档
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Live Workspace Daily Briefing -->
+    <div v-else class="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto pr-1">
+      <div class="modal-section flex items-center justify-between gap-3 flex-wrap shrink-0">
+        <div>
+          <div class="text-sm font-semibold text-white">
+            {{ briefing ? `${briefing.today} (${briefing.weekday})` : '今日全景工作简报' }}
+          </div>
+          <div class="text-[11px] font-mono text-slate-400 mt-0.5">
+            动态聚合当前待办、14天内到期资产、启用定时任务、未读预警与最近工作文档
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            :disabled="loadingBriefing"
+            @click="loadBriefing"
+            class="px-3 py-1.5 rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-white cursor-pointer disabled:opacity-50"
+          >
+            {{ loadingBriefing ? '刷新中...' : '刷新简报' }}
+          </button>
+          <button
+            type="button"
+            @click="planTodayWithBot"
+            class="px-3.5 py-1.5 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer"
+          >
+            让助手生成今日行动规划
+          </button>
+        </div>
+      </div>
+
+      <div v-if="briefing" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 shrink-0">
+        <div class="luxury-card rounded-xl p-3">
+          <div class="text-[11px] font-mono text-slate-400">未完待办</div>
+          <div class="text-xl font-semibold text-white mt-0.5">{{ briefing.open_todo_count }}</div>
+          <div class="text-[10.5px] font-mono mt-0.5" :class="briefing.overdue_todos.length ? 'text-rose-300' : 'text-emerald-300'">
+            逾期 {{ briefing.overdue_todos.length }} · 今日 {{ briefing.due_today_todos.length }}
+          </div>
+        </div>
+        <div class="luxury-card rounded-xl p-3">
+          <div class="text-[11px] font-mono text-slate-400">14天内到期资产</div>
+          <div class="text-xl font-semibold mt-0.5" :class="briefing.expiring_assets.length ? 'text-amber-300' : 'text-white'">
+            {{ briefing.expiring_assets.length }}
+          </div>
+          <div class="text-[10.5px] font-mono text-slate-400 mt-0.5">需提前核对续费</div>
+        </div>
+        <div class="luxury-card rounded-xl p-3">
+          <div class="text-[11px] font-mono text-slate-400">运行中例程</div>
+          <div class="text-xl font-semibold text-cyan-200 mt-0.5">{{ briefing.enabled_tasks.length }}</div>
+          <div class="text-[10.5px] font-mono text-slate-400 mt-0.5">自动值守任务</div>
+        </div>
+        <div class="luxury-card rounded-xl p-3">
+          <div class="text-[11px] font-mono text-slate-400">未读情报与告警</div>
+          <div class="text-xl font-semibold mt-0.5" :class="briefing.unread_count ? 'text-[#f2b880]' : 'text-white'">
+            {{ briefing.unread_count }}
+          </div>
+          <div class="text-[10.5px] font-mono text-slate-400 mt-0.5">近况文档 {{ briefing.recent_notes.length }} 份</div>
+        </div>
+      </div>
+
+      <div v-if="briefing" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="vesper-card rounded-xl p-3.5 flex flex-col gap-2">
+          <div class="text-xs font-semibold text-[#f2b880]">今日优先关注待办</div>
+          <div v-if="!briefing.overdue_todos.length && !briefing.due_today_todos.length && !briefing.high_priority_todos.length" class="text-xs text-slate-500">
+            当前无逾期或紧急待办
+          </div>
+          <div
+            v-for="td in [...briefing.overdue_todos, ...briefing.due_today_todos, ...briefing.high_priority_todos].slice(0, 6)"
+            :key="td.id"
+            class="flex items-center justify-between gap-2 text-xs py-1 border-b border-[#fff8ee]/6 last:border-0"
+          >
+            <span class="text-slate-200 truncate">{{ td.title }}</span>
+            <span class="font-mono text-[10px] text-slate-400 shrink-0">{{ td.due_at || td.priority }}</span>
+          </div>
+        </div>
+
+        <div class="vesper-card rounded-xl p-3.5 flex flex-col gap-2">
+          <div class="text-xs font-semibold text-[#f2b880]">资产续费与未读动态</div>
+          <div v-if="!briefing.expiring_assets.length && !briefing.unread_alerts.length" class="text-xs text-slate-500">
+            资产与收件箱均处于健康状态
+          </div>
+          <div
+            v-for="a in briefing.expiring_assets.slice(0, 4)"
+            :key="a.id"
+            class="flex items-center justify-between gap-2 text-xs py-1 border-b border-[#fff8ee]/6"
+          >
+            <span class="text-amber-200 truncate">资产: {{ a.name }}</span>
+            <span class="font-mono text-[10px] text-amber-300 shrink-0">剩余 {{ a.days_left }} 天</span>
+          </div>
+          <div
+            v-for="al in briefing.unread_alerts.slice(0, 4)"
+            :key="al.id"
+            class="flex items-center justify-between gap-2 text-xs py-1 border-b border-[#fff8ee]/6 last:border-0"
+          >
+            <span class="text-slate-200 truncate">{{ al.title }}</span>
+            <span class="font-mono text-[10px] text-slate-400 shrink-0">{{ formatTime(al.created_at) }}</span>
+          </div>
         </div>
       </div>
     </div>

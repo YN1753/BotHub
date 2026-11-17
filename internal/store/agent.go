@@ -360,6 +360,18 @@ func (s *Store) SaveAgentMemoryWithScope(scope, category, factKey, content strin
 	return s.SaveAgentMemoryDetailed(scope, category, factKey, content, 3, false)
 }
 
+// NormalizeMemoryKey canonicalizes memory fact keys so trivial casing/spacing variants merge cleanly.
+func NormalizeMemoryKey(raw string) string {
+	s := strings.TrimSpace(strings.ToLower(raw))
+	s = strings.Join(strings.Fields(s), "_")
+	s = strings.Trim(s, "_")
+	runes := []rune(s)
+	if len(runes) > 80 {
+		s = string(runes[:80])
+	}
+	return s
+}
+
 func (s *Store) SaveAgentMemoryDetailed(scope, category, factKey, content string, importance int, pinned bool) error {
 	now := NowShanghai()
 	scope = strings.TrimSpace(scope)
@@ -370,8 +382,11 @@ func (s *Store) SaveAgentMemoryDetailed(scope, category, factKey, content string
 	if category == "" {
 		category = "general"
 	}
-	factKey = strings.TrimSpace(factKey)
+	factKey = NormalizeMemoryKey(factKey)
 	content = strings.TrimSpace(content)
+	if cRunes := []rune(content); len(cRunes) > 1200 {
+		content = string(cRunes[:1200]) + "..."
+	}
 	if factKey == "" || content == "" {
 		return errors.New("fact_key and content are required")
 	}

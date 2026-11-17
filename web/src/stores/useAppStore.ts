@@ -58,7 +58,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.16.0',
+  version: 'v2.17.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -111,7 +111,7 @@ const state = reactive({
   // Modals & Drawers
   showInboxModal: false,
   showWorkhubModal: false,
-  workhubTab: 'todos' as 'todos' | 'notes',
+  workhubTab: 'todos' as 'todos' | 'notes' | 'briefing',
   showMemoriesModal: false,
   showSkillsModal: false,
   showLogsModal: false,
@@ -588,11 +588,17 @@ export function useAppStore() {
 
   function startSSE() {
     if (sseSource || typeof EventSource === 'undefined') return
+    let hadDisconnect = false
     const latestId = state.notifications.length > 0 ? state.notifications[0].id : 0
     const es = new EventSource(`/api/v2/events?last_event_id=${encodeURIComponent(latestId)}`)
     sseSource = es
     es.onopen = () => {
+      const reconnected = hadDisconnect
+      hadDisconnect = false
       state.sseConnected = true
+      if (reconnected) {
+        loadDashboard(false)
+      }
     }
 
     es.addEventListener('notification', (ev: MessageEvent) => {
@@ -664,6 +670,7 @@ export function useAppStore() {
     })
 
     es.onerror = () => {
+      hadDisconnect = true
       state.sseConnected = false
       if (!state.authenticated) stopSSE()
     }

@@ -159,7 +159,8 @@ func (s *Store) SaveSkill(sk Skill) error {
 }
 
 func (s *Store) DeleteSkill(id string) error {
-	_, err := s.db.Exec(`DELETE FROM skills WHERE id = ?`, strings.TrimSpace(id))
+	trimmed := strings.TrimSpace(id)
+	_, err := s.db.Exec(`DELETE FROM skills WHERE id = ?`, trimmed)
 	if err != nil {
 		return err
 	}
@@ -171,7 +172,7 @@ func (s *Store) DeleteSkill(id string) error {
 			changed := false
 			next := make([]string, 0, len(cur))
 			for _, sid := range cur {
-				if sid == id {
+				if sid == trimmed {
 					changed = true
 					continue
 				}

@@ -495,4 +495,36 @@ func TestAssistantToolsTodosNotesNotificationConsultAndDatetime(t *testing.T) {
 	if len(selected) != 1 {
 		t.Fatalf("expected 1 selected memory, got %d", len(selected))
 	}
+
+	// 8. calculate_eval precision math, percent & error guards
+	calcOut, cErr := eng.ExecuteTool(ctx, "calculate_eval", `{"expression":"round((198.5 * 12) * 85%, 2)"}`)
+	if cErr != nil || !strings.Contains(calcOut, `"formatted":"2024.7"`) {
+		t.Fatalf("calculate_eval failed: err=%v out=%s", cErr, calcOut)
+	}
+	if _, zErr := eng.ExecuteTool(ctx, "calculate_eval", `{"expression":"10 / 0"}`); zErr == nil {
+		t.Fatalf("expected divide-by-zero error")
+	}
+
+	// 9. manage_assets summary multi-currency annualized calculation
+	_ = st.SaveAsset(store.Asset{ID: "vps1", Name: "HK Node", Category: "compute", Price: "$12 / 年", Status: "生效中", DueDate: "2027-01-01"})
+	_ = st.SaveAsset(store.Asset{ID: "sub1", Name: "Cloud Drive", Category: "life", Price: "¥30 / 月", Status: "生效中", DueDate: "2027-01-01"})
+	sumOut, sErr := eng.ExecuteTool(ctx, "manage_assets", `{"action":"summary"}`)
+	if sErr != nil || !strings.Contains(sumOut, `"currency":"USD"`) || !strings.Contains(sumOut, `"currency":"CNY"`) {
+		t.Fatalf("manage_assets summary failed: err=%v out=%s", sErr, sumOut)
+	}
+
+	// 10. workspace_briefing & parallel consult_bot targets fan-out + read-only classification
+	briefOut, bErr := eng.ExecuteTool(ctx, "workspace_briefing", `{}`)
+	if bErr != nil || !strings.Contains(briefOut, `"generated_at"`) {
+		t.Fatalf("workspace_briefing failed: err=%v out=%s", bErr, briefOut)
+	}
+	if !eng.isReadOnlyTool("workspace_briefing") || !eng.isReadOnlyTool("calculate_eval") {
+		t.Fatalf("expected workspace_briefing and calculate_eval marked read-only")
+	}
+
+	_ = st.SaveBot(store.Bot{ID: "bot_research", Name: "情报官", RoleTitle: "调研助手", BotMode: store.BotModeWorker})
+	parOut, pErr := eng.ExecuteTool(ctx, "consult_bot", `{"targets":[{"bot_name":"Ops专员","instruction":"查节点"},{"bot_name":"情报官","instruction":"查资讯"}]}`)
+	if pErr != nil || !strings.Contains(parOut, `"parallel_count":2`) {
+		t.Fatalf("parallel consult_bot failed: err=%v out=%s", pErr, parOut)
+	}
 }

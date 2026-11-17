@@ -107,6 +107,16 @@ const entries = computed<SearchEntry[]>(() => {
       },
     },
     {
+      key: 'act_briefing',
+      category: '快捷操作',
+      title: '查看今日个人工作简报',
+      subtitle: '聚合逾期/今日待办、临期资产、未读预警与最近文档',
+      run: () => {
+        store.state.workhubTab = 'briefing'
+        store.state.showWorkhubModal = true
+      },
+    },
+    {
       key: 'act_workhub',
       category: '快捷操作',
       title: '打开个人行动台 (待办 / 文档)',

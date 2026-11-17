@@ -147,14 +147,14 @@ func BuiltinTools() []ToolDefinition {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "manage_assets",
-				Description: "查询或管理 BotHub 资产台账（VPS、域名、订阅、保号卡）。支持 list（列表）、expiring（查询即将到期）、upsert（新增或修改资产）、delete（删除资产）、sync（立即执行资产外部同步任务）。",
+				Description: "查询或管理 BotHub 资产台账（VPS、域名、订阅、保号卡）。支持 list（列表）、summary（月度与年度费用分币种汇总）、expiring（查询即将到期）、upsert（新增或修改资产）、delete（删除资产）、sync（立即执行资产外部同步任务）。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"action": map[string]any{
 							"type":        "string",
-							"enum":        []string{"list", "expiring", "upsert", "delete", "sync"},
-							"description": "操作类型：list | expiring | upsert | delete | sync",
+							"enum":        []string{"list", "summary", "expiring", "upsert", "delete", "sync"},
+							"description": "操作类型：list | summary | expiring | upsert | delete | sync",
 						},
 						"category": map[string]any{
 							"type":        "string",
@@ -474,24 +474,64 @@ func BuiltinTools() []ToolDefinition {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "consult_bot",
-				Description: "主动协同工作区中的另一位专业 Bot 成员协助完成子任务（如让运维专员查节点、让情报助手做检索，再由你汇总成果），支持最多 2 层深度且自动防循环。",
+				Description: "主动协同工作区中的专业 Bot 成员协助完成子任务。支持单人委派（bot_id / bot_name + instruction）或传入 targets 数组并发委派多位成员同步作业，支持最多 2 层深度且自动防循环。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"bot_id": map[string]any{
 							"type":        "string",
-							"description": "目标成员 Bot ID（与 bot_name 二选一）",
+							"description": "单人委派时：目标成员 Bot ID（与 bot_name 二选一）",
 						},
 						"bot_name": map[string]any{
 							"type":        "string",
-							"description": "目标成员 Bot 名称",
+							"description": "单人委派时：目标成员 Bot 名称",
 						},
 						"instruction": map[string]any{
 							"type":        "string",
-							"description": "委派给对方执行的清晰子任务指令与所需上下文",
+							"description": "单人委派时：清晰的执行指令与上下文",
+						},
+						"targets": map[string]any{
+							"type":        "array",
+							"description": "可选：并发委派多位成员同步协办",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"bot_id":      map[string]any{"type": "string"},
+									"bot_name":    map[string]any{"type": "string"},
+									"instruction": map[string]any{"type": "string"},
+								},
+								"required": []string{"instruction"},
+							},
 						},
 					},
-					"required": []string{"instruction"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "workspace_briefing",
+				Description: "一键汇总用户的今日工作全景简报（逾期与今日到期待办、高优先待办、14天内到期资产、启用中的定时任务、未读通知与近期工作文档），适合个人助手规划今日日程。",
+				Parameters: map[string]any{
+					"type":       "object",
+					"properties": map[string]any{},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "calculate_eval",
+				Description: "高精度数学与财务表达式计算器，支持四则运算、乘方(^)、括号、百分比(如 15%) 及 round/abs/min/max/sqrt/floor/ceil 函数，避免估算误差。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"expression": map[string]any{
+							"type":        "string",
+							"description": "数学表达式，如 (198.5 * 12) * 0.85 或 round(100 / 3, 2)",
+						},
+					},
+					"required": []string{"expression"},
 				},
 			},
 		},
@@ -619,6 +659,10 @@ func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) 
 			out, err = e.toolSendNotification(toolCtx, cleanArgs)
 		case "consult_bot":
 			out, err = e.toolConsultBot(toolCtx, cleanArgs)
+		case "workspace_briefing":
+			out, err = e.toolWorkspaceBriefing(toolCtx, cleanArgs)
+		case "calculate_eval":
+			out, err = e.toolCalculateEval(toolCtx, cleanArgs)
 		case "datetime_calc":
 			out, err = e.toolDatetimeCalc(toolCtx, cleanArgs)
 		default:
@@ -1166,6 +1210,9 @@ func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string,
 			"assets": filtered,
 		})
 		return string(out), nil
+
+	case "summary":
+		return e.summarizeAssetsPayload(args.Category)
 
 	case "expiring":
 		within := args.WithinDays

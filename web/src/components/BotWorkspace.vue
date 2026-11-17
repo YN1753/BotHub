@@ -5,6 +5,7 @@ import { BotHubApi } from '../api/client'
 import { botStateLabel, describeCron, formatTime, formatTimelineDivider, groupModeLabel } from '../utils/format'
 import { renderSafeMarkdown } from '../utils/markdown'
 import { applySiblingStaggerFallback, isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
+import { groupAvailableTools, shortToolLabel } from '../utils/toolMeta'
 import type { AgentMemory, Bot, BotMode, MemoryPolicy } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
 import BotGroupAvatar from './BotGroupAvatar.vue'
@@ -235,6 +236,22 @@ const slashCommands = computed<SlashCmdItem[]>(() => {
       prompt: '请协调工作区里最合适的专业成员共同处理：',
     })
   }
+  if (allowedTools.includes('workspace_briefing')) {
+    items.push({
+      cmd: '/briefing',
+      title: '今日行动全景简报',
+      desc: '汇总逾期/今日待办、临期资产与未读预警并排期',
+      prompt: '请调用 workspace_briefing 为我梳理今日重点待办、日程与风险，并给出行动建议。',
+    })
+  }
+  if (allowedTools.includes('calculate_eval')) {
+    items.push({
+      cmd: '/calc',
+      title: '精确表达式计算',
+      desc: '使用高精度计算引擎核算费用、比例或复利',
+      prompt: '请调用 calculate_eval 精确计算：',
+    })
+  }
   if (allowedTools.includes('manage_memory') || allowedTools.includes('recall_memory')) {
     items.push({
       cmd: '/memories',
@@ -310,7 +327,72 @@ const VIEW_TABS = [
 ]
 
 const availableTools = computed(() => store.state.availableTools || [])
+const groupedTools = computed(() => groupAvailableTools(availableTools.value))
 const availableSkills = computed(() => (store.state.skills || []).filter((s) => s.enabled !== false))
+
+const expandedUserMsgs = ref<Record<string, boolean>>({})
+
+function isLongUserMessage(content: string): boolean {
+  if (!content) return false
+  return content.length > 260 || content.split('\n').length > 6
+}
+
+function toggleExpandUserMsg(localId: string) {
+  expandedUserMsgs.value[localId] = !expandedUserMsgs.value[localId]
+}
+
+function runQuickToolStarter(toolId: string) {
+  switch (toolId) {
+    case 'workspace_briefing':
+      sendPrompt('请调用 workspace_briefing 为我梳理今日重点待办、日程与临期风险，并排出优先次序。')
+      break
+    case 'manage_todos':
+      store.state.workhubTab = 'todos'
+      store.state.showWorkhubModal = true
+      break
+    case 'manage_notes':
+      store.state.workhubTab = 'notes'
+      store.state.showWorkhubModal = true
+      break
+    case 'manage_assets':
+      sendPrompt('请调用 manage_assets(action="summary") 和 expiring 帮我盘点当前数字资产费用与到期风险。')
+      break
+    case 'query_nezha_nodes':
+      sendPrompt('请调用 query_nezha_nodes 帮我巡检全部节点实时在线与负载健康状态。')
+      break
+    case 'manage_tasks':
+      sendPrompt('请调用 manage_tasks 核查当前自动化调度与提醒队列状态。')
+      break
+    case 'recall_memory':
+    case 'manage_memory':
+      sendPrompt('请检索当前作用域的长期记忆，确认你目前记得的核心习惯与约定。')
+      break
+    case 'web_search':
+      inputPrompt.value = '请帮我联网检索：'
+      nextTick(() => {
+        autoResizeTextarea()
+        textareaRef.value?.focus()
+      })
+      break
+    case 'consult_bot':
+      inputPrompt.value = '请帮我协同其他专员一起完成：'
+      nextTick(() => {
+        autoResizeTextarea()
+        textareaRef.value?.focus()
+      })
+      break
+    default:
+      inputPrompt.value = `请使用 ${toolId} 帮我处理：`
+      nextTick(() => {
+        autoResizeTextarea()
+        textareaRef.value?.focus()
+      })
+  }
+}
+
+function continueFromMessage() {
+  sendPrompt('请承接你上一条答复继续深入展开可执行步骤、关键细节与具体产出物。')
+}
 
 const botToolBadges = computed(() => {
   if (!bot.value) return []
@@ -448,20 +530,28 @@ function formatToolLabel(name: string): string {
     manage_notes: '工作文档交付 (manage_notes)',
     send_notification: '主动推送卡片 (send_notification)',
     consult_bot: '团队协同委派 (consult_bot)',
+    workspace_briefing: '今日全景简报 (workspace_briefing)',
+    calculate_eval: '高精度表达式计算 (calculate_eval)',
     datetime_calc: '时间日历推算 (datetime_calc)',
   }
   return builtinNames[name] || name
 }
 
-function parseConsultSummary(raw?: string): { botName: string; roleTitle: string; tools: string[] } | null {
+function parseConsultSummary(raw?: string): { label: string; tools: string[] } | null {
   if (!raw) return null
   try {
     const parsed = JSON.parse(raw)
     if (parsed && parsed.ok && parsed.bot_name) {
       return {
-        botName: String(parsed.bot_name),
-        roleTitle: String(parsed.role_title || ''),
+        label: `委派协办成员: ${parsed.bot_name}${parsed.role_title ? ` (${parsed.role_title})` : ''}`,
         tools: Array.isArray(parsed.tools_used) ? parsed.tools_used.map(String) : [],
+      }
+    }
+    if (parsed && parsed.ok && Array.isArray(parsed.results)) {
+      const names = parsed.results.map((r: any) => r.bot_name || r.bot_id).filter(Boolean)
+      return {
+        label: `并发协办 (${parsed.parallel_count || parsed.results.length} 位成员): ${names.join('、')}`,
+        tools: [],
       }
     }
   } catch {
@@ -1892,15 +1982,38 @@ function stateBadgeClass(state?: string): string {
                 ref="starterGridRef"
                 class="stagger-list mt-2 flex flex-wrap items-center justify-center gap-2 max-w-2xl"
               >
-                <span
+                <button
                   v-for="tool in botToolBadges"
                   :key="tool.id"
-                  :title="tool.desc"
-                  class="stagger-item inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#fff8ee]/10 bg-[#070b18]/80 font-mono text-[11px] text-slate-300"
+                  type="button"
+                  :title="`${tool.desc}（点击立即触发或填入指令）`"
+                  @click="runQuickToolStarter(tool.id)"
+                  class="stagger-item inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#fff8ee]/12 bg-[#070b18]/80 hover:border-[#f2b880]/55 hover:text-[#f7cba0] text-[11px] text-slate-300 cursor-pointer transition-colors"
                 >
                   <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880]/75" aria-hidden="true" />
-                  <span>{{ tool.id }}</span>
+                  <span>{{ shortToolLabel({ id: tool.id, description: tool.desc }) }}</span>
+                </button>
+              </div>
+
+              <div
+                v-if="bot?.bot_mode !== 'companion' && (store.pendingTodoCount.value > 0 || store.expiringAssetCount.value > 0)"
+                class="mt-2 px-4 py-2.5 rounded-2xl border border-[#f2b880]/25 bg-[#f2b880]/[0.06] flex items-center justify-center gap-3 flex-wrap text-xs"
+              >
+                <span class="text-slate-300">
+                  当前工作区共有
+                  <strong v-if="store.pendingTodoCount.value > 0" class="text-cyan-200 font-mono"> {{ store.pendingTodoCount.value }} </strong>
+                  <template v-if="store.pendingTodoCount.value > 0">项未完待办</template>
+                  <template v-if="store.pendingTodoCount.value > 0 && store.expiringAssetCount.value > 0"> · </template>
+                  <strong v-if="store.expiringAssetCount.value > 0" class="text-amber-300 font-mono">{{ store.expiringAssetCount.value }} </strong>
+                  <template v-if="store.expiringAssetCount.value > 0">项 7 日内到期资产</template>
                 </span>
+                <button
+                  type="button"
+                  @click="runQuickToolStarter('workspace_briefing')"
+                  class="px-3 py-1 rounded-lg bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-[11px] cursor-pointer"
+                >
+                  立即梳理今日安排
+                </button>
               </div>
             </div>
 
@@ -1945,7 +2058,17 @@ function stateBadgeClass(state?: string): string {
                   >
                     {{ m.replyPreview }}
                   </div>
-                  {{ m.content }}
+                  <div :class="isLongUserMessage(m.content) && !expandedUserMsgs[m.localId] ? 'line-clamp-5' : ''">
+                    {{ m.content }}
+                  </div>
+                  <button
+                    v-if="isLongUserMessage(m.content)"
+                    type="button"
+                    @click="toggleExpandUserMsg(m.localId)"
+                    class="mt-1.5 font-mono text-[11px] text-[#f2b880] hover:underline cursor-pointer"
+                  >
+                    {{ expandedUserMsgs[m.localId] ? '收起长消息' : '展开全文' }}
+                  </button>
                 </div>
                 <div class="reveal-actions flex items-center gap-1.5 px-1">
                   <button
@@ -2135,8 +2258,7 @@ function stateBadgeClass(state?: string): string {
                           v-if="tc.name === 'consult_bot' && parseConsultSummary(tc.result)"
                           class="mt-1.5 px-2 py-1 rounded border border-cyan-400/25 bg-cyan-500/8 text-[10.5px] text-cyan-200"
                         >
-                          委派协办成员: {{ parseConsultSummary(tc.result)?.botName }}
-                          <template v-if="parseConsultSummary(tc.result)?.roleTitle"> ({{ parseConsultSummary(tc.result)?.roleTitle }})</template>
+                          {{ parseConsultSummary(tc.result)?.label }}
                           <template v-if="parseConsultSummary(tc.result)?.tools.length"> · 使用工具: {{ parseConsultSummary(tc.result)?.tools.join(', ') }}</template>
                         </div>
                         <div v-if="tc.result" class="mt-1 text-slate-300 whitespace-pre-wrap break-all max-h-48 overflow-y-auto border-t border-[#fff8ee]/6 pt-1">出参: {{ formatToolPayload(tc.result) }}</div>
@@ -2199,6 +2321,14 @@ function stateBadgeClass(state?: string): string {
                       class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-emerald-300 hover:border-emerald-400/40 cursor-pointer"
                     >
                       分支话题
+                    </button>
+                    <button
+                      v-if="idx === store.state.timeline.length - 1"
+                      type="button"
+                      @click="continueFromMessage()"
+                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                    >
+                      继续补充
                     </button>
                     <button
                       v-if="findPrecedingUserPrompt(idx)"
@@ -2667,16 +2797,40 @@ function stateBadgeClass(state?: string): string {
                 <textarea v-model="cfgPrompt" rows="4" class="auto-size-textarea rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 resize-y" />
               </label>
               <div class="md:col-span-2 flex flex-col gap-2 text-xs text-slate-300">
-                <span>绑定内置工具集 ({{ cfgTools.length }}/{{ availableTools.length }})</span>
-                <div class="flex flex-wrap gap-2">
-                  <label
-                    v-for="tool in availableTools"
-                    :key="tool.id"
-                    class="min-h-[36px] inline-flex items-center gap-2 px-3 py-1 rounded-xl border border-[#fff8ee]/12 bg-[#060a16]/75 font-mono text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0] transition-colors"
-                  >
-                    <input v-model="cfgTools" type="checkbox" :value="tool.id" class="accent-[#f2b880]" />
-                    <span>{{ tool.description }}</span>
-                  </label>
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <span>绑定内置工具集 ({{ cfgTools.length }}/{{ availableTools.length }})</span>
+                  <div class="flex items-center gap-2 text-[11px]">
+                    <button
+                      type="button"
+                      @click="cfgTools = availableTools.map((t) => t.id)"
+                      class="text-[#f2b880] hover:underline cursor-pointer"
+                    >
+                      全选
+                    </button>
+                    <button
+                      type="button"
+                      @click="cfgTools = []"
+                      class="text-slate-400 hover:underline cursor-pointer"
+                    >
+                      清空
+                    </button>
+                  </div>
+                </div>
+                <div class="flex flex-col gap-2.5">
+                  <div v-for="grp in groupedTools" :key="grp.id" class="flex flex-col gap-1.5">
+                    <span class="text-[10.5px] font-mono text-slate-500">{{ grp.label }}</span>
+                    <div class="flex flex-wrap gap-2">
+                      <label
+                        v-for="tool in grp.tools"
+                        :key="tool.id"
+                        :title="tool.description"
+                        class="min-h-[34px] inline-flex items-center gap-2 px-3 py-1 rounded-xl border border-[#fff8ee]/12 bg-[#060a16]/75 text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0] transition-colors"
+                      >
+                        <input v-model="cfgTools" type="checkbox" :value="tool.id" class="accent-[#f2b880]" />
+                        <span>{{ tool.shortLabel }}</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
               </div>
 

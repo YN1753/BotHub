@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"strings"
+	"time"
 )
 
 const (
@@ -321,4 +322,91 @@ func (s *Store) DeleteNote(id string) (bool, error) {
 	}
 	n, _ := res.RowsAffected()
 	return n > 0, nil
+}
+
+type WorkspaceBriefing struct {
+	GeneratedAt       string         `json:"generated_at"`
+	Today             string         `json:"today"`
+	Weekday           string         `json:"weekday"`
+	OpenTodoCount     int            `json:"open_todo_count"`
+	OverdueTodos      []TodoItem     `json:"overdue_todos"`
+	DueTodayTodos     []TodoItem     `json:"due_today_todos"`
+	HighPriorityTodos []TodoItem     `json:"high_priority_todos"`
+	ExpiringAssets    []Asset        `json:"expiring_assets"`
+	EnabledTasks      []Task         `json:"enabled_tasks"`
+	UnreadAlerts      []Notification `json:"unread_alerts"`
+	UnreadCount       int            `json:"unread_count"`
+	RecentNotes       []WorkNote     `json:"recent_notes"`
+}
+
+// BuildWorkspaceBriefing aggregates live personal todos, expiring assets, active schedules,
+// unread alerts, and recent work deliverables from SQLite as a single source of truth.
+func (s *Store) BuildWorkspaceBriefing() (*WorkspaceBriefing, error) {
+	now := time.Now().In(ShanghaiLocation())
+	today := now.Format("2006-01-02")
+	weekdays := [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+
+	openTodos, err := s.ListTodos("open", "", 150)
+	if err != nil {
+		return nil, err
+	}
+	overdue := make([]TodoItem, 0)
+	dueToday := make([]TodoItem, 0)
+	highPrio := make([]TodoItem, 0)
+	for _, td := range openTodos {
+		dueDay := ""
+		if len(td.DueAt) >= 10 {
+			dueDay = td.DueAt[:10]
+		}
+		if dueDay != "" {
+			if dueDay < today {
+				overdue = append(overdue, td)
+			} else if dueDay == today {
+				dueToday = append(dueToday, td)
+			}
+		}
+		if td.Priority == TodoPriorityHigh {
+			highPrio = append(highPrio, td)
+		}
+	}
+
+	allAssets, _ := s.ListAssets()
+	expiring := make([]Asset, 0)
+	for _, a := range allAssets {
+		if NormalizeAssetStatus(a.Status) == "已停用" {
+			continue
+		}
+		if a.DueDate == "" || strings.HasPrefix(a.DueDate, "2099") {
+			continue
+		}
+		if a.DaysLeft <= 14 {
+			expiring = append(expiring, a)
+		}
+	}
+
+	allTasks, _ := s.ListTasks()
+	enabledTasks := make([]Task, 0)
+	for _, t := range allTasks {
+		if t.Enabled {
+			enabledTasks = append(enabledTasks, t)
+		}
+	}
+
+	unreadAlerts, _ := s.ListNotifications(0, 12, true)
+	recentNotes, _ := s.ListNotes("", "", 6)
+
+	return &WorkspaceBriefing{
+		GeneratedAt:       now.Format("2006-01-02 15:04:05"),
+		Today:             today,
+		Weekday:           weekdays[int(now.Weekday())%7],
+		OpenTodoCount:     len(openTodos),
+		OverdueTodos:      overdue,
+		DueTodayTodos:     dueToday,
+		HighPriorityTodos: highPrio,
+		ExpiringAssets:    expiring,
+		EnabledTasks:      enabledTasks,
+		UnreadAlerts:      unreadAlerts,
+		UnreadCount:       s.CountUnreadNotifications(),
+		RecentNotes:       recentNotes,
+	}, nil
 }

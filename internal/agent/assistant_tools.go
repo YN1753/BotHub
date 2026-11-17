@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -361,33 +365,26 @@ func (e *Engine) toolSendNotification(ctx context.Context, argsJSON string) (str
 	return string(out), nil
 }
 
-func (e *Engine) toolConsultBot(ctx context.Context, argsJSON string) (string, error) {
-	var args struct {
-		BotID       string `json:"bot_id"`
-		BotName     string `json:"bot_name"`
-		Instruction string `json:"instruction"`
-	}
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("解析 consult_bot 参数失败: %w", err)
-	}
-	instruction := notifier.StripEmoji(strings.TrimSpace(args.Instruction))
+type consultTargetArg struct {
+	BotID       string `json:"bot_id"`
+	BotName     string `json:"bot_name"`
+	Instruction string `json:"instruction"`
+}
+
+func (e *Engine) consultSingleBot(
+	ctx context.Context,
+	sc ToolScope,
+	allBots []store.Bot,
+	wantID, wantName, instruction string,
+) (map[string]any, error) {
+	instruction = notifier.StripEmoji(strings.TrimSpace(instruction))
 	if instruction == "" {
-		return "", fmt.Errorf("consult_bot 的 instruction 不能为空")
-	}
-
-	sc := toolScopeFromContext(ctx)
-	if sc.Depth >= 2 {
-		return "", fmt.Errorf("协同委派深度已达上限 (%d 层)，请由当前 Bot 直接综合作答", sc.Depth)
-	}
-
-	allBots, err := e.store.ListBots()
-	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("consult_bot 的 instruction 不能为空")
 	}
 
 	var target *store.Bot
-	wantID := strings.TrimSpace(args.BotID)
-	wantName := strings.TrimSpace(args.BotName)
+	wantID = strings.TrimSpace(wantID)
+	wantName = strings.TrimSpace(wantName)
 	for i := range allBots {
 		b := &allBots[i]
 		if b.IsGroup {
@@ -412,14 +409,14 @@ func (e *Engine) toolConsultBot(ctx context.Context, argsJSON string) (string, e
 		}
 	}
 	if target == nil {
-		return "", fmt.Errorf("未找到目标成员 Bot (bot_id=%q bot_name=%q)", wantID, wantName)
+		return nil, fmt.Errorf("未找到目标成员 Bot (bot_id=%q bot_name=%q)", wantID, wantName)
 	}
 	if target.ID == sc.BotID {
-		return "", fmt.Errorf("不能向当前 Bot 自身发起嵌套协同调用")
+		return nil, fmt.Errorf("不能向当前 Bot 自身发起嵌套协同调用")
 	}
 	for _, seenID := range sc.VisitedBots {
 		if seenID == target.ID {
-			return "", fmt.Errorf("检测到循环委派 (%s 已在本次协同调用链中)", target.Name)
+			return nil, fmt.Errorf("检测到循环委派 (%s 已在本次协同调用链中)", target.Name)
 		}
 	}
 
@@ -467,7 +464,7 @@ func (e *Engine) toolConsultBot(ctx context.Context, argsJSON string) (string, e
 				DurationMs:    durationMs,
 			})
 		}
-		return "", fmt.Errorf("协同调用「%s」失败: %w", target.Name, err)
+		return nil, fmt.Errorf("协同调用「%s」失败: %w", target.Name, err)
 	}
 
 	toolNames := make([]string, 0, len(resp.ToolTraces))
@@ -487,7 +484,7 @@ func (e *Engine) toolConsultBot(ctx context.Context, argsJSON string) (string, e
 		})
 	}
 
-	out, _ := json.Marshal(map[string]any{
+	return map[string]any{
 		"ok":          true,
 		"bot_id":      target.ID,
 		"bot_name":    target.Name,
@@ -496,6 +493,451 @@ func (e *Engine) toolConsultBot(ctx context.Context, argsJSON string) (string, e
 		"tools_used":  toolNames,
 		"duration_ms": durationMs,
 		"reply":       notifier.StripEmoji(resp.Content),
+	}, nil
+}
+
+func (e *Engine) toolConsultBot(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		BotID       string             `json:"bot_id"`
+		BotName     string             `json:"bot_name"`
+		Instruction string             `json:"instruction"`
+		Targets     []consultTargetArg `json:"targets"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("解析 consult_bot 参数失败: %w", err)
+	}
+
+	sc := toolScopeFromContext(ctx)
+	if sc.Depth >= 2 {
+		return "", fmt.Errorf("协同委派深度已达上限 (%d 层)，请由当前 Bot 直接综合作答", sc.Depth)
+	}
+
+	allBots, err := e.store.ListBots()
+	if err != nil {
+		return "", err
+	}
+
+	if len(args.Targets) > 0 {
+		limit := len(args.Targets)
+		if limit > 5 {
+			limit = 5
+		}
+		results := make([]map[string]any, limit)
+		var wg sync.WaitGroup
+		for i := 0; i < limit; i++ {
+			wg.Add(1)
+			go func(idx int, t consultTargetArg) {
+				defer wg.Done()
+				res, cErr := e.consultSingleBot(ctx, sc, allBots, t.BotID, t.BotName, t.Instruction)
+				if cErr != nil {
+					results[idx] = map[string]any{
+						"ok":       false,
+						"bot_id":   t.BotID,
+						"bot_name": t.BotName,
+						"error":    cErr.Error(),
+					}
+				} else {
+					results[idx] = res
+				}
+			}(i, args.Targets[i])
+		}
+		wg.Wait()
+		out, _ := json.Marshal(map[string]any{
+			"ok":             true,
+			"parallel_count": limit,
+			"results":        results,
+		})
+		return string(out), nil
+	}
+
+	res, err := e.consultSingleBot(ctx, sc, allBots, args.BotID, args.BotName, args.Instruction)
+	if err != nil {
+		return "", err
+	}
+	out, _ := json.Marshal(res)
+	return string(out), nil
+}
+
+func (e *Engine) toolWorkspaceBriefing(ctx context.Context, _ string) (string, error) {
+	briefing, err := e.store.BuildWorkspaceBriefing()
+	if err != nil {
+		return "", err
+	}
+	out, _ := json.Marshal(briefing)
+	return string(out), nil
+}
+
+var reAssetNumber = regexp.MustCompile(`([0-9]+(?:\.[0-9]+)?)`)
+
+func (e *Engine) summarizeAssetsPayload(categoryFilter string) (string, error) {
+	assets, err := e.store.ListAssets()
+	if err != nil {
+		return "", err
+	}
+	type currTotal struct {
+		Currency   string  `json:"currency"`
+		Monthly    float64 `json:"monthly_estimated"`
+		Annualized float64 `json:"annualized_estimated"`
+		Count      int     `json:"priced_items"`
+	}
+	currMap := make(map[string]*currTotal)
+	var activeCount, expiring30Count, inactiveCount int
+	cat := strings.TrimSpace(categoryFilter)
+
+	for _, a := range assets {
+		if cat != "" && a.Category != cat {
+			continue
+		}
+		if store.NormalizeAssetStatus(a.Status) == "已停用" {
+			inactiveCount++
+			continue
+		}
+		activeCount++
+		if a.DueDate != "" && !strings.HasPrefix(a.DueDate, "2099") && a.DaysLeft <= 30 {
+			expiring30Count++
+		}
+		pStr := strings.TrimSpace(a.Price)
+		if pStr == "" {
+			continue
+		}
+		m := reAssetNumber.FindStringSubmatch(pStr)
+		if len(m) < 2 {
+			continue
+		}
+		amt, pErr := strconv.ParseFloat(m[1], 64)
+		if pErr != nil || amt <= 0 {
+			continue
+		}
+		currency := "USD"
+		lowerP := strings.ToLower(pStr)
+		switch {
+		case strings.Contains(pStr, "¥") || strings.Contains(lowerP, "cny") || strings.Contains(lowerP, "rmb") || strings.Contains(pStr, "元"):
+			currency = "CNY"
+		case strings.Contains(pStr, "€") || strings.Contains(lowerP, "eur"):
+			currency = "EUR"
+		case strings.Contains(lowerP, "hkd"):
+			currency = "HKD"
+		}
+		monthly := amt
+		annual := amt * 12
+		switch {
+		case strings.Contains(pStr, "年") || strings.Contains(lowerP, "/yr") || strings.Contains(lowerP, "year") || strings.Contains(lowerP, "/y"):
+			monthly = amt / 12
+			annual = amt
+		case strings.Contains(pStr, "季") || strings.Contains(lowerP, "quarter"):
+			monthly = amt / 3
+			annual = amt * 4
+		case strings.Contains(pStr, "次") || strings.Contains(lowerP, "one"):
+			monthly = 0
+			annual = 0
+		}
+		entry, ok := currMap[currency]
+		if !ok {
+			entry = &currTotal{Currency: currency}
+			currMap[currency] = entry
+		}
+		entry.Monthly = math.Round((entry.Monthly+monthly)*100) / 100
+		entry.Annualized = math.Round((entry.Annualized+annual)*100) / 100
+		entry.Count++
+	}
+
+	breakdown := make([]currTotal, 0, len(currMap))
+	for _, v := range currMap {
+		breakdown = append(breakdown, *v)
+	}
+	out, _ := json.Marshal(map[string]any{
+		"active_count":       activeCount,
+		"inactive_count":     inactiveCount,
+		"expiring_30d_count": expiring30Count,
+		"cost_by_currency":   breakdown,
+	})
+	return string(out), nil
+}
+
+// Safe recursive-descent math expression evaluator (no external shells or eval).
+type mathParser struct {
+	src string
+	pos int
+}
+
+func (p *mathParser) skipSpace() {
+	for p.pos < len(p.src) && unicode.IsSpace(rune(p.src[p.pos])) {
+		p.pos++
+	}
+}
+
+func (p *mathParser) peek() byte {
+	p.skipSpace()
+	if p.pos >= len(p.src) {
+		return 0
+	}
+	return p.src[p.pos]
+}
+
+func (p *mathParser) parseExpr() (float64, error) {
+	v, err := p.parseTerm()
+	if err != nil {
+		return 0, err
+	}
+	for {
+		ch := p.peek()
+		if ch != '+' && ch != '-' {
+			break
+		}
+		p.pos++
+		rhs, err := p.parseTerm()
+		if err != nil {
+			return 0, err
+		}
+		if ch == '+' {
+			v += rhs
+		} else {
+			v -= rhs
+		}
+	}
+	return v, nil
+}
+
+func (p *mathParser) parseTerm() (float64, error) {
+	v, err := p.parsePower()
+	if err != nil {
+		return 0, err
+	}
+	for {
+		ch := p.peek()
+		if ch != '*' && ch != '/' && ch != '%' {
+			break
+		}
+		p.pos++
+		rhs, err := p.parsePower()
+		if err != nil {
+			return 0, err
+		}
+		switch ch {
+		case '*':
+			v *= rhs
+		case '/':
+			if rhs == 0 {
+				return 0, fmt.Errorf("除数不能为 0")
+			}
+			v /= rhs
+		case '%':
+			if rhs == 0 {
+				return 0, fmt.Errorf("取模除数不能为 0")
+			}
+			v = math.Mod(v, rhs)
+		}
+	}
+	return v, nil
+}
+
+func (p *mathParser) parsePower() (float64, error) {
+	base, err := p.parseUnary()
+	if err != nil {
+		return 0, err
+	}
+	if p.peek() == '^' {
+		p.pos++
+		exp, err := p.parsePower()
+		if err != nil {
+			return 0, err
+		}
+		return math.Pow(base, exp), nil
+	}
+	return base, nil
+}
+
+func (p *mathParser) parseUnary() (float64, error) {
+	ch := p.peek()
+	if ch == '+' {
+		p.pos++
+		return p.parseUnary()
+	}
+	if ch == '-' {
+		p.pos++
+		v, err := p.parseUnary()
+		return -v, err
+	}
+	return p.parsePrimary()
+}
+
+func (p *mathParser) parsePrimary() (float64, error) {
+	ch := p.peek()
+	if ch == '(' {
+		p.pos++
+		v, err := p.parseExpr()
+		if err != nil {
+			return 0, err
+		}
+		if p.peek() != ')' {
+			return 0, fmt.Errorf("括号未闭合")
+		}
+		p.pos++
+		if p.peek() == '%' {
+			p.pos++
+			v /= 100
+		}
+		return v, nil
+	}
+	if unicode.IsLetter(rune(ch)) {
+		start := p.pos
+		for p.pos < len(p.src) && (unicode.IsLetter(rune(p.src[p.pos])) || unicode.IsDigit(rune(p.src[p.pos])) || p.src[p.pos] == '_') {
+			p.pos++
+		}
+		ident := strings.ToLower(p.src[start:p.pos])
+		if p.peek() != '(' {
+			switch ident {
+			case "pi":
+				return math.Pi, nil
+			case "e":
+				return math.E, nil
+			default:
+				return 0, fmt.Errorf("未知常量: %s", ident)
+			}
+		}
+		p.pos++
+		var args []float64
+		if p.peek() != ')' {
+			for {
+				a, err := p.parseExpr()
+				if err != nil {
+					return 0, err
+				}
+				args = append(args, a)
+				if p.peek() == ',' {
+					p.pos++
+					continue
+				}
+				break
+			}
+		}
+		if p.peek() != ')' {
+			return 0, fmt.Errorf("函数 %s 缺少右括号", ident)
+		}
+		p.pos++
+		return evalMathFunc(ident, args)
+	}
+	if (ch >= '0' && ch <= '9') || ch == '.' {
+		start := p.pos
+		dotSeen := false
+		for p.pos < len(p.src) {
+			c := p.src[p.pos]
+			if c >= '0' && c <= '9' {
+				p.pos++
+			} else if c == '.' && !dotSeen {
+				dotSeen = true
+				p.pos++
+			} else {
+				break
+			}
+		}
+		val, err := strconv.ParseFloat(p.src[start:p.pos], 64)
+		if err != nil {
+			return 0, fmt.Errorf("无效数字: %s", p.src[start:p.pos])
+		}
+		if p.peek() == '%' && (p.pos+1 >= len(p.src) || !(p.src[p.pos+1] >= '0' && p.src[p.pos+1] <= '9')) {
+			// Check whether '%' is postfix percent (followed by operator, end, or ')') rather than modulo
+			after := p.pos + 1
+			for after < len(p.src) && unicode.IsSpace(rune(p.src[after])) {
+				after++
+			}
+			if after >= len(p.src) || strings.ContainsRune("+-*/^),", rune(p.src[after])) {
+				p.pos++
+				val /= 100
+			}
+		}
+		return val, nil
+	}
+	return 0, fmt.Errorf("无法解析表达式位置 %d", p.pos)
+}
+
+func evalMathFunc(name string, args []float64) (float64, error) {
+	switch name {
+	case "abs":
+		if len(args) != 1 {
+			return 0, fmt.Errorf("abs 需要 1 个参数")
+		}
+		return math.Abs(args[0]), nil
+	case "sqrt":
+		if len(args) != 1 || args[0] < 0 {
+			return 0, fmt.Errorf("sqrt 需要 1 个非负参数")
+		}
+		return math.Sqrt(args[0]), nil
+	case "floor":
+		if len(args) != 1 {
+			return 0, fmt.Errorf("floor 需要 1 个参数")
+		}
+		return math.Floor(args[0]), nil
+	case "ceil":
+		if len(args) != 1 {
+			return 0, fmt.Errorf("ceil 需要 1 个参数")
+		}
+		return math.Ceil(args[0]), nil
+	case "round":
+		if len(args) < 1 || len(args) > 2 {
+			return 0, fmt.Errorf("round 需要 1 或 2 个参数")
+		}
+		digits := 0
+		if len(args) == 2 {
+			digits = int(args[1])
+		}
+		factor := math.Pow(10, float64(digits))
+		return math.Round(args[0]*factor) / factor, nil
+	case "min":
+		if len(args) < 1 {
+			return 0, fmt.Errorf("min 至少需要 1 个参数")
+		}
+		m := args[0]
+		for _, v := range args[1:] {
+			if v < m {
+				m = v
+			}
+		}
+		return m, nil
+	case "max":
+		if len(args) < 1 {
+			return 0, fmt.Errorf("max 至少需要 1 个参数")
+		}
+		m := args[0]
+		for _, v := range args[1:] {
+			if v > m {
+				m = v
+			}
+		}
+		return m, nil
+	default:
+		return 0, fmt.Errorf("不支持的函数: %s", name)
+	}
+}
+
+func (e *Engine) toolCalculateEval(_ context.Context, argsJSON string) (string, error) {
+	var args struct {
+		Expression string `json:"expression"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("解析 calculate_eval 参数失败: %w", err)
+	}
+	expr := strings.TrimSpace(args.Expression)
+	if expr == "" {
+		return "", fmt.Errorf("expression 不能为空")
+	}
+	p := &mathParser{src: expr}
+	val, err := p.parseExpr()
+	if err != nil {
+		return "", err
+	}
+	if ch := p.peek(); ch != 0 {
+		return "", fmt.Errorf("表达式末尾存在多余字符: %q", string(ch))
+	}
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		return "", fmt.Errorf("计算结果超出有限实数范围")
+	}
+	rounded := math.Round(val*1e8) / 1e8
+	out, _ := json.Marshal(map[string]any{
+		"ok":         true,
+		"expression": expr,
+		"result":     rounded,
+		"formatted":  strconv.FormatFloat(rounded, 'f', -1, 64),
 	})
 	return string(out), nil
 }
