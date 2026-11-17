@@ -254,7 +254,35 @@ CREATE TABLE IF NOT EXISTS bots (
 	last_summary TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
-);`
+);
+
+CREATE TABLE IF NOT EXISTS todos (
+	id TEXT PRIMARY KEY,
+	bot_id TEXT NOT NULL DEFAULT '',
+	thread_id TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL,
+	notes TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'pending',
+	priority TEXT NOT NULL DEFAULT 'normal',
+	due_at TEXT NOT NULL DEFAULT '',
+	tags TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	completed_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status, priority, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS notes (
+	id TEXT PRIMARY KEY,
+	bot_id TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL,
+	content TEXT NOT NULL DEFAULT '',
+	category TEXT NOT NULL DEFAULT 'general',
+	pinned INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(pinned DESC, updated_at DESC);`
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
 	}
@@ -279,6 +307,7 @@ CREATE TABLE IF NOT EXISTS bots (
 		`ALTER TABLE bots ADD COLUMN skill_ids TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE bots ADD COLUMN traits TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE bots ADD COLUMN active_thread_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE tasks ADD COLUMN run_at TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range alters {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {

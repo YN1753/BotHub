@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/modules"
+	"github.com/YN1753/vesper/bothub/internal/scheduler"
 	"github.com/YN1753/vesper/bothub/internal/store"
 	"github.com/robfig/cron/v3"
 )
@@ -39,15 +40,24 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Type = strings.TrimSpace(req.Type)
 	req.CronExpr = strings.TrimSpace(req.CronExpr)
+	req.RunAt = strings.TrimSpace(req.RunAt)
 
-	if req.ID == "" || req.Name == "" || req.Type == "" || req.CronExpr == "" {
-		writeError(w, http.StatusBadRequest, "任务 ID、名称、模板类型与 Cron 表达式为必填项")
+	if req.ID == "" || req.Name == "" || req.Type == "" || (req.CronExpr == "" && req.RunAt == "") {
+		writeError(w, http.StatusBadRequest, "任务 ID、名称、模板类型与 Cron 表达式或单次触发时间(run_at)为必填项")
 		return
 	}
 
-	if _, err := cron.ParseStandard(req.CronExpr); err != nil {
-		writeError(w, http.StatusBadRequest, "Cron 表达式语法无效: "+err.Error())
-		return
+	if req.RunAt != "" {
+		if _, err := scheduler.ParseRunAt(req.RunAt, nil); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if req.CronExpr != "" {
+		if _, err := cron.ParseStandard(req.CronExpr); err != nil {
+			writeError(w, http.StatusBadRequest, "Cron 表达式语法无效: "+err.Error())
+			return
+		}
 	}
 
 	existing, _ := s.store.GetTask(req.ID)
@@ -96,6 +106,14 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if req.Name != "" { existing.Name = strings.TrimSpace(req.Name) }
 	if req.BotID != "" { existing.BotID = strings.TrimSpace(req.BotID) }
 	if req.Description != "" { existing.Description = strings.TrimSpace(req.Description) }
+	if req.RunAt != "" {
+		if _, err := scheduler.ParseRunAt(req.RunAt, nil); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		existing.RunAt = strings.TrimSpace(req.RunAt)
+		existing.CronExpr = ""
+	}
 	if req.CronExpr != "" {
 		trimmed := strings.TrimSpace(req.CronExpr)
 		if _, err := cron.ParseStandard(trimmed); err != nil {
@@ -103,6 +121,9 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		existing.CronExpr = trimmed
+		if req.RunAt == "" {
+			existing.RunAt = ""
+		}
 	}
 	existing.Enabled = req.Enabled
 	if req.Params != "" {

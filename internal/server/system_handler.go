@@ -76,6 +76,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	notifications, _ := s.store.ListNotifications(0, 40, false)
 	bots, _ := s.store.ListBots()
 	skills, _ := s.store.ListSkills()
+	todos, _ := s.store.ListTodos("all", "", 120)
+	notes, _ := s.store.ListNotes("", "", 80)
 	modelPool := store.MaskModelPool(s.store.GetModelPool())
 	var modelHealth any
 	if s.agent != nil {
@@ -97,6 +99,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"tasks":           tasks,
 		"bots":            bots,
 		"skills":          skills,
+		"todos":           todos,
+		"notes":           notes,
 		"model_pool":      modelPool,
 		"model_health":    modelHealth,
 		"available_tools": agent.AvailableToolsPayload(),
@@ -181,6 +185,8 @@ type BackupData struct {
 	Tasks         []store.Task        `json:"tasks"`
 	Bots          []store.Bot         `json:"bots,omitempty"`
 	Skills        []store.Skill       `json:"skills,omitempty"`
+	Todos         []store.TodoItem    `json:"todos,omitempty"`
+	Notes         []store.WorkNote    `json:"notes,omitempty"`
 	AgentMemories []store.AgentMemory `json:"agent_memories,omitempty"`
 }
 
@@ -197,6 +203,8 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	bots, _ := s.store.ListBots()
 	skills, _ := s.store.ListSkills()
+	todos, _ := s.store.ListTodos("all", "", 300)
+	notes, _ := s.store.ListNotes("", "", 200)
 	memories, _ := s.store.ListAgentMemories("", 500)
 	cfgs, _ := s.store.GetAllConfigs()
 	delete(cfgs, store.KeyAdminPassHash)
@@ -210,6 +218,8 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 		Tasks:         tasks,
 		Bots:          bots,
 		Skills:        skills,
+		Todos:         todos,
+		Notes:         notes,
 		AgentMemories: memories,
 	}
 
@@ -304,7 +314,21 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 7. Reload scheduler
+	// 7. Restore Todos & Notes
+	for _, td := range backup.Todos {
+		if strings.TrimSpace(td.Title) == "" {
+			continue
+		}
+		_, _ = s.store.SaveTodo(td)
+	}
+	for _, nt := range backup.Notes {
+		if strings.TrimSpace(nt.Title) == "" {
+			continue
+		}
+		_, _ = s.store.SaveNote(nt)
+	}
+
+	// 8. Reload scheduler
 	if s.scheduler != nil {
 		_ = s.scheduler.Reload()
 	}

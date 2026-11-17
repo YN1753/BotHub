@@ -207,6 +207,21 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
 
           <button
             type="button"
+            @click="store.state.showWorkhubModal = true; emit('closeMobile')"
+            class="w-full min-h-[44px] sm:min-h-[36px] flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-sm text-slate-300 hover:bg-white/[0.04] hover:text-white cursor-pointer text-left"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+            <span class="flex-1">个人行动台</span>
+            <span
+              v-if="store.pendingTodoCount.value > 0"
+              class="px-1.5 py-0.5 min-w-[20px] text-center rounded-full bg-cyan-400/20 border border-cyan-400/40 text-cyan-200 font-mono text-[10.5px] font-semibold leading-none"
+            >
+              {{ store.pendingTodoCount.value > 99 ? '99+' : store.pendingTodoCount.value }}
+            </span>
+          </button>
+
+          <button
+            type="button"
             @click="store.state.showInboxModal = true; emit('closeMobile')"
             class="w-full min-h-[44px] sm:min-h-[36px] flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-sm text-slate-300 hover:bg-white/[0.04] hover:text-white cursor-pointer text-left"
           >

@@ -8,6 +8,7 @@ import BotWorkspace from './components/BotWorkspace.vue'
 import OpsWorkspace from './components/OpsWorkspace.vue'
 import CreateBotModal from './components/CreateBotModal.vue'
 import InboxModal from './components/InboxModal.vue'
+import WorkhubModal from './components/WorkhubModal.vue'
 import MemoriesModal from './components/MemoriesModal.vue'
 import SkillsModal from './components/SkillsModal.vue'
 import LogsModal from './components/LogsModal.vue'
@@ -111,6 +112,7 @@ onBeforeUnmount(() => {
     <!-- Native <dialog> Modals -->
     <CreateBotModal />
     <InboxModal />
+    <WorkhubModal />
     <MemoriesModal />
     <SkillsModal />
     <LogsModal />

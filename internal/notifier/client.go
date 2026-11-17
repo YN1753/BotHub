@@ -20,6 +20,16 @@ func NewClient(st *store.Store) *Client {
 	}
 }
 
+func NewClientWithHub(st *store.Store, hub *pushstream.Hub) *Client {
+	if hub == nil {
+		hub = pushstream.NewHub()
+	}
+	return &Client{
+		store: st,
+		hub:   hub,
+	}
+}
+
 func (c *Client) Hub() *pushstream.Hub {
 	return c.hub
 }

@@ -22,6 +22,7 @@ type TaskStatus struct {
 	BotID       string           `json:"bot_id"`
 	Description string           `json:"description"`
 	CronExpr    string           `json:"cron_expr"`
+	RunAt       string           `json:"run_at,omitempty"`
 	Enabled     bool             `json:"enabled"`
 	Params      string           `json:"params"`
 	NextRunAt   string           `json:"next_run_at"`
@@ -32,7 +33,7 @@ type TaskStatus struct {
 // ModuleStatus alias for backward compatibility
 type ModuleStatus = TaskStatus
 
-// Scheduler coordinates cron jobs and manual task triggers.
+// Scheduler coordinates cron jobs, one-shot reminders, and manual task triggers.
 // Loosely-coupled with execution logic via modules.Registry.
 type Scheduler struct {
 	store    *store.Store
@@ -40,6 +41,7 @@ type Scheduler struct {
 	hub      *pushstream.Hub
 	cron     *cron.Cron
 	entries  map[string]cron.EntryID
+	timers   map[string]*time.Timer
 	running  map[string]bool
 	mu       sync.Mutex
 	loc      *time.Location
@@ -61,6 +63,7 @@ func NewWithRegistry(st *store.Store, reg *modules.Registry) *Scheduler {
 		store:    st,
 		registry: reg,
 		entries:  make(map[string]cron.EntryID),
+		timers:   make(map[string]*time.Timer),
 		running:  make(map[string]bool),
 		loc:      modules.ShanghaiLocation(),
 	}
@@ -81,9 +84,37 @@ func (s *Scheduler) Start() error {
 	return s.Reload()
 }
 
+func ParseRunAt(raw string, loc *time.Location) (time.Time, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return time.Time{}, fmt.Errorf("empty run_at")
+	}
+	if loc == nil {
+		loc = modules.ShanghaiLocation()
+	}
+	for _, layout := range []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04",
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+	} {
+		if t, err := time.ParseInLocation(layout, trimmed, loc); err == nil {
+			return t, nil
+		}
+	}
+	if t, err := time.Parse(time.RFC3339, trimmed); err == nil {
+		return t.In(loc), nil
+	}
+	return time.Time{}, fmt.Errorf("无效一次性时间格式 %q（请使用 YYYY-MM-DD HH:MM）", trimmed)
+}
+
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
 	c := s.cron
+	for id, tm := range s.timers {
+		tm.Stop()
+		delete(s.timers, id)
+	}
 	s.mu.Unlock()
 	if c != nil {
 		ctx := c.Stop()
@@ -98,6 +129,13 @@ func (s *Scheduler) Reload() error {
 	if s.cron != nil {
 		s.cron.Stop()
 	}
+	for id, tm := range s.timers {
+		tm.Stop()
+		delete(s.timers, id)
+	}
+	if s.timers == nil {
+		s.timers = make(map[string]*time.Timer)
+	}
 
 	tasks, err := s.store.ListTasks()
 	if err != nil {
@@ -108,10 +146,44 @@ func (s *Scheduler) Reload() error {
 	entries := make(map[string]cron.EntryID)
 
 	for _, t := range tasks {
-		if !t.Enabled || t.CronExpr == "" {
+		if !t.Enabled {
 			continue
 		}
 		taskID := t.ID
+		if strings.TrimSpace(t.RunAt) != "" {
+			targetAt, pErr := ParseRunAt(t.RunAt, s.loc)
+			if pErr != nil {
+				return fmt.Errorf("task %s: %w", taskID, pErr)
+			}
+			delay := time.Until(targetAt)
+			if delay < -5*time.Minute {
+				// Stale past one-shot reminder: mark disabled without misfiring hours later
+				t.Enabled = false
+				_ = s.store.SaveTask(t)
+				continue
+			}
+			if delay < 50*time.Millisecond {
+				delay = 50 * time.Millisecond
+			}
+			s.timers[taskID] = time.AfterFunc(delay, func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+				defer cancel()
+				if _, err := s.execute(ctx, taskID, "once"); err != nil {
+					log.Printf("[scheduler] one-shot task %s error: %v", taskID, err)
+				}
+				if latest, gErr := s.store.GetTask(taskID); gErr == nil && latest != nil && latest.Enabled {
+					latest.Enabled = false
+					_ = s.store.SaveTask(*latest)
+				}
+				s.mu.Lock()
+				delete(s.timers, taskID)
+				s.mu.Unlock()
+			})
+			continue
+		}
+		if t.CronExpr == "" {
+			continue
+		}
 		entryID, err := c.AddFunc(t.CronExpr, func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
@@ -276,7 +348,11 @@ func (s *Scheduler) Status() ([]TaskStatus, error) {
 	out := make([]TaskStatus, 0, len(tasks))
 	for _, t := range tasks {
 		nextRun := ""
-		if t.Enabled && s.cron != nil {
+		if t.Enabled && strings.TrimSpace(t.RunAt) != "" {
+			if targetAt, err := ParseRunAt(t.RunAt, s.loc); err == nil {
+				nextRun = targetAt.In(s.loc).Format("2006-01-02 15:04:05")
+			}
+		} else if t.Enabled && s.cron != nil {
 			if eid, ok := s.entries[t.ID]; ok {
 				entry := s.cron.Entry(eid)
 				if !entry.Next.IsZero() {
@@ -298,6 +374,7 @@ func (s *Scheduler) Status() ([]TaskStatus, error) {
 			BotID:       t.BotID,
 			Description: t.Description,
 			CronExpr:    t.CronExpr,
+			RunAt:       t.RunAt,
 			Enabled:     t.Enabled,
 			Params:      t.Params,
 			NextRunAt:   nextRun,

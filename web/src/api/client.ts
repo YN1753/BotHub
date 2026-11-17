@@ -9,6 +9,8 @@ import type {
   ModelPoolEntry,
   Skill,
   Task,
+  TodoItem,
+  WorkNote,
 } from '../types/bothub'
 
 export async function apiRequest<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -245,4 +247,46 @@ export const BotHubApi = {
     apiRequest(`/api/v2/notifications/${encodeURIComponent(String(id))}/read`, { method: 'POST' }),
   markAllNotificationsRead: () =>
     apiRequest('/api/v2/notifications/read-all', { method: 'POST' }),
+
+  // Personal Assistant Workbench (Todos & Notes)
+  listTodos: (status = 'all', botId = '') => {
+    const params = new URLSearchParams()
+    if (status) params.set('status', status)
+    if (botId) params.set('bot_id', botId)
+    return apiRequest<{ ok: boolean; todos: TodoItem[] }>(`/api/v2/todos?${params.toString()}`)
+  },
+  createTodo: (payload: Partial<TodoItem>) =>
+    apiRequest<{ ok: boolean; todo: TodoItem }>('/api/v2/todos', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateTodo: (id: string, payload: Partial<TodoItem>) =>
+    apiRequest<{ ok: boolean; todo: TodoItem }>(`/api/v2/todos/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteTodo: (id: string) =>
+    apiRequest(`/api/v2/todos/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  clearDoneTodos: () =>
+    apiRequest<{ ok: boolean; removed: number }>('/api/v2/todos/clear-done', { method: 'POST' }),
+
+  listNotes: (q = '', botId = '') => {
+    const params = new URLSearchParams()
+    if (q) params.set('q', q)
+    if (botId) params.set('bot_id', botId)
+    const qs = params.toString() ? `?${params.toString()}` : ''
+    return apiRequest<{ ok: boolean; notes: WorkNote[] }>(`/api/v2/notes${qs}`)
+  },
+  createNote: (payload: Partial<WorkNote>) =>
+    apiRequest<{ ok: boolean; note: WorkNote }>('/api/v2/notes', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateNote: (id: string, payload: Partial<WorkNote>) =>
+    apiRequest<{ ok: boolean; note: WorkNote }>(`/api/v2/notes/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteNote: (id: string) =>
+    apiRequest(`/api/v2/notes/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 }

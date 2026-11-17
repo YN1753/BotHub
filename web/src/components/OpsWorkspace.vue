@@ -421,7 +421,7 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                   <div class="min-w-0">
                     <strong class="block text-sm font-semibold text-white truncate">{{ t.name }}</strong>
                     <div class="font-mono text-[11px] text-slate-400 mt-0.5 truncate">
-                      {{ describeCron(t.cron_expr) }} · {{ t.bot_id || '未绑定 Bot' }}
+                      {{ t.run_at ? `单次提醒 ${t.run_at}` : describeCron(t.cron_expr) }} · {{ t.bot_id || '全局后台调度' }}
                     </div>
                   </div>
                 </div>

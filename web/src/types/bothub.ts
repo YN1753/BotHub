@@ -163,6 +163,7 @@ export interface Task {
   bot_id?: string
   description: string
   cron_expr: string
+  run_at?: string
   enabled: boolean
   params: string
   next_run_at?: string
@@ -170,6 +171,32 @@ export interface Task {
   last_run?: ModuleRun
   created_at?: string
   updated_at?: string
+}
+
+export interface TodoItem {
+  id: string
+  bot_id?: string
+  thread_id?: string
+  title: string
+  notes?: string
+  status: 'pending' | 'doing' | 'done' | string
+  priority: 'high' | 'normal' | 'low' | string
+  due_at?: string
+  tags?: string
+  created_at: string
+  updated_at: string
+  completed_at?: string
+}
+
+export interface WorkNote {
+  id: string
+  bot_id?: string
+  title: string
+  content: string
+  category: string
+  pinned: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface TaskTemplateField {
@@ -261,6 +288,8 @@ export interface DashboardPayload {
   tasks: Task[]
   bots: Bot[]
   skills?: Skill[]
+  todos?: TodoItem[]
+  notes?: WorkNote[]
   model_pool?: ModelPoolEntry[]
   available_tools?: AvailableToolMeta[]
   personas?: Persona[]

@@ -55,12 +55,20 @@ func filterToolsForBot(bot *store.Bot, attachedSkills []store.Skill) []ToolDefin
 	return filtered
 }
 
-func buildBotSystemPrompt(bot *store.Bot, attachedSkills []store.Skill, memories []store.AgentMemory, inGroup bool) string {
+func buildBotSystemPrompt(bot *store.Bot, attachedSkills []store.Skill, memories []store.AgentMemory, peerBots []store.Bot, threadTitle string, inGroup bool) string {
 	var sb strings.Builder
 	if prompt := strings.TrimSpace(bot.SystemPrompt); prompt != "" {
 		sb.WriteString(prompt)
 		sb.WriteString("\n\n")
 	}
+
+	now := time.Now().In(store.ShanghaiLocation())
+	sb.WriteString("[当前运行上下文]\n")
+	sb.WriteString(fmt.Sprintf("- 当前时间：%s (%s Asia/Shanghai)\n", now.Format("2006-01-02 15:04"), weekdayCN(now.Weekday())))
+	if strings.TrimSpace(threadTitle) != "" {
+		sb.WriteString(fmt.Sprintf("- 当前话题：%s\n", strings.TrimSpace(threadTitle)))
+	}
+	sb.WriteString("\n")
 
 	mode := store.NormalizeBotMode(bot.BotMode)
 	sb.WriteString("[人格定位与交流方式]\n")
@@ -74,15 +82,25 @@ func buildBotSystemPrompt(bot *store.Bot, attachedSkills []store.Skill, memories
 		sb.WriteString("- 互动准则：你是一个真实、有温度、有自己性格特点的聊天伙伴。像老朋友或正常人类那样自然说话——有情绪共鸣、懂得接梗和轻松吐槽，回复节奏像真人日常聊天，不要端着公文腔、不要强行分条说教或推销建议。\n")
 		sb.WriteString("- 记忆自然化：你记住过往细节是为了像真朋友一样自然延续话题，不要机械背诵记忆条目标题。\n")
 	case store.BotModeWorker:
-		sb.WriteString("- 工作准则：你是干练务实的专业执行者。涉及实时状态、资产、任务或外部技能时，优先调用手头工具查证后再作答，先给明确结论与可执行结果，绝不编造数据。\n")
+		sb.WriteString("- 工作准则：你是干练务实的专业执行者。涉及实时状态、资产、待办、文档、任务或外部技能时，优先调用手头工具查证或直接落地执行，先给明确结论与可验证结果，绝不编造数据。\n")
 	default:
-		sb.WriteString("- 互动与执行准则：日常对话自然真诚、像真人般有温度；当需要查证数据、记录重要约定或执行任务时，主动调用已授权的工具与技能完成。\n")
+		sb.WriteString("- 互动与执行准则：日常对话自然真诚、像真人般有温度；当用户交代要办的事、提醒、资料整理或产出长文档时，像靠谱的个人助手一样主动调用待办(manage_todos)、文档(manage_notes)、定时提醒(manage_tasks)及授权工具直接帮你落地。\n")
 	}
 
 	if inGroup {
 		sb.WriteString("- 群聊协作规范：你正与其他成员同在一个协同群聊里。自然接续前序成员或用户的上下文，重点给出你独特视角的补充或行动，避免重复已经说过的客套话。\n")
 	}
 	sb.WriteString("- 格式约束：严禁使用任何 Emoji 表情或装饰性特殊符号。\n")
+
+	if len(peerBots) > 0 {
+		sb.WriteString("\n[可协同委派的工作区队友 (可通过 consult_bot 呼叫)]\n")
+		for _, p := range peerBots {
+			if p.IsGroup || p.ID == bot.ID {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("- %s (id=%s): %s\n", p.Name, p.ID, p.RoleTitle))
+		}
+	}
 
 	var promptSkills []store.Skill
 	for _, sk := range attachedSkills {
@@ -168,12 +186,14 @@ func extractMatchTokens(text string) []string {
 	return tokens
 }
 
-// selectRelevantMemories scores memories by pin status, importance, query token overlap, and recall affinity.
+// selectRelevantMemories scores memories by pin status, importance, recency decay, query token overlap, and recall affinity.
 func selectRelevantMemories(memories []store.AgentMemory, query string, maxItems int) []store.AgentMemory {
 	if len(memories) <= maxItems || maxItems <= 0 {
 		return memories
 	}
 	queryTokens := extractMatchTokens(query)
+	loc := store.ShanghaiLocation()
+	now := time.Now().In(loc)
 	type scoredMem struct {
 		mem   store.AgentMemory
 		score int
@@ -191,6 +211,21 @@ func selectRelevantMemories(memories []store.AgentMemory, query string, maxItems
 				bonus = 16
 			}
 			pts += bonus
+		}
+		freshRef := m.LastRecalledAt
+		if freshRef == "" {
+			freshRef = m.UpdatedAt
+		}
+		if ts, err := time.ParseInLocation("2006-01-02 15:04:05", freshRef, loc); err == nil {
+			ageHours := now.Sub(ts).Hours()
+			switch {
+			case ageHours <= 72:
+				pts += 12
+			case ageHours <= 24*14:
+				pts += 6
+			case ageHours <= 24*30:
+				pts += 2
+			}
 		}
 		if len(queryTokens) > 0 {
 			haystack := strings.ToLower(m.FactKey + " " + m.Category + " " + m.Content)
@@ -765,15 +800,39 @@ func (e *Engine) runSingleBotTurn(
 	}
 
 	attachedSkills, _ := e.store.GetSkillsByIDs(actingBot.SkillIDList())
-	sysPrompt := buildBotSystemPrompt(actingBot, attachedSkills, memories, timelineBotID != actingBot.ID)
+	tools := filterToolsForBot(actingBot, attachedSkills)
+	hasConsultTool := false
+	for _, td := range tools {
+		if td.Function.Name == "consult_bot" {
+			hasConsultTool = true
+			break
+		}
+	}
+
+	var allBots []store.Bot
+	if timelineBotID != actingBot.ID || hasConsultTool {
+		allBots, _ = e.store.ListBots()
+	}
+
+	var threadTitle, threadSummary string
+	if threadID != "" {
+		if th, _ := e.store.GetBotThread(timelineBotID, threadID); th != nil {
+			threadTitle = th.Title
+			threadSummary = strings.TrimSpace(th.Summary)
+		}
+	}
+
+	var peerBots []store.Bot
+	if hasConsultTool {
+		peerBots = allBots
+	}
+	sysPrompt := buildBotSystemPrompt(actingBot, attachedSkills, memories, peerBots, threadTitle, timelineBotID != actingBot.ID)
 
 	var botNameMap map[string]string
-	if timelineBotID != actingBot.ID {
-		if allBots, bErr := e.store.ListBots(); bErr == nil {
-			botNameMap = make(map[string]string, len(allBots))
-			for _, ab := range allBots {
-				botNameMap[ab.ID] = ab.Name
-			}
+	if timelineBotID != actingBot.ID && len(allBots) > 0 {
+		botNameMap = make(map[string]string, len(allBots))
+		for _, ab := range allBots {
+			botNameMap[ab.ID] = ab.Name
 		}
 	}
 
@@ -782,6 +841,12 @@ func (e *Engine) runSingleBotTurn(
 		Role:    "system",
 		Content: sysPrompt,
 	})
+	if threadSummary != "" && len(history) >= 16 {
+		messages = append(messages, apiMessage{
+			Role:    "system",
+			Content: fmt.Sprintf("[此前较早对话压缩前情摘要]\n%s", threadSummary),
+		})
+	}
 	for _, m := range history {
 		switch m.Role {
 		case "system":
@@ -826,12 +891,14 @@ func (e *Engine) runSingleBotTurn(
 	}
 	messages = append(messages, apiMessage{Role: "user", Content: userMsg})
 
-	tools := filterToolsForBot(actingBot, attachedSkills)
+	parentScope := toolScopeFromContext(ctx)
 	toolCtx := WithToolScope(ctx, ToolScope{
 		BotID:         actingBot.ID,
 		TimelineBotID: timelineBotID,
 		ThreadID:      threadID,
 		MemoryPolicy:  actingBot.MemoryPolicy,
+		Depth:         parentScope.Depth,
+		VisitedBots:   parentScope.VisitedBots,
 	})
 	var totalReasoning strings.Builder
 	var finalContent strings.Builder
@@ -873,7 +940,27 @@ func (e *Engine) runSingleBotTurn(
 		if msgKind == "" {
 			msgKind = "chat"
 		}
+		persistTimeline := msgKind != "delegate"
 		if len(toolCalls) == 0 {
+			if persistTimeline {
+				_, _ = e.store.AppendAgentMessage(store.AgentMessage{
+					SessionID:        "bot:" + timelineBotID,
+					BotID:            timelineBotID,
+					ThreadID:         threadID,
+					SenderBotID:      actingBot.ID,
+					MsgKind:          msgKind,
+					Role:             "assistant",
+					Content:          notifier.StripEmoji(roundContent),
+					ReasoningContent: notifier.StripEmoji(totalReasoning.String()),
+					ToolCalls:        "[]",
+					ModelUsed:        activeTarget.Model,
+				})
+			}
+			break
+		}
+
+		tcBytes, _ := json.Marshal(toolCalls)
+		if persistTimeline {
 			_, _ = e.store.AppendAgentMessage(store.AgentMessage{
 				SessionID:        "bot:" + timelineBotID,
 				BotID:            timelineBotID,
@@ -882,26 +969,11 @@ func (e *Engine) runSingleBotTurn(
 				MsgKind:          msgKind,
 				Role:             "assistant",
 				Content:          notifier.StripEmoji(roundContent),
-				ReasoningContent: notifier.StripEmoji(totalReasoning.String()),
-				ToolCalls:        "[]",
+				ReasoningContent: notifier.StripEmoji(roundReasoning),
+				ToolCalls:        string(tcBytes),
 				ModelUsed:        activeTarget.Model,
 			})
-			break
 		}
-
-		tcBytes, _ := json.Marshal(toolCalls)
-		_, _ = e.store.AppendAgentMessage(store.AgentMessage{
-			SessionID:        "bot:" + timelineBotID,
-			BotID:            timelineBotID,
-			ThreadID:         threadID,
-			SenderBotID:      actingBot.ID,
-			MsgKind:          msgKind,
-			Role:             "assistant",
-			Content:          notifier.StripEmoji(roundContent),
-			ReasoningContent: notifier.StripEmoji(roundReasoning),
-			ToolCalls:        string(tcBytes),
-			ModelUsed:        activeTarget.Model,
-		})
 		messages = append(messages, apiMessage{
 			Role:             "assistant",
 			Content:          notifier.StripEmoji(roundContent),
@@ -1021,16 +1093,18 @@ func (e *Engine) runSingleBotTurn(
 					"sender_bot_id": actingBot.ID,
 				})
 			}
-			_, _ = e.store.AppendAgentMessage(store.AgentMessage{
-				SessionID:   "bot:" + timelineBotID,
-				BotID:       timelineBotID,
-				ThreadID:    threadID,
-				SenderBotID: actingBot.ID,
-				MsgKind:     "chat",
-				Role:        "tool",
-				Content:     toolOutput,
-				ToolCallID:  tc.ID,
-			})
+			if persistTimeline {
+				_, _ = e.store.AppendAgentMessage(store.AgentMessage{
+					SessionID:   "bot:" + timelineBotID,
+					BotID:       timelineBotID,
+					ThreadID:    threadID,
+					SenderBotID: actingBot.ID,
+					MsgKind:     "chat",
+					Role:        "tool",
+					Content:     toolOutput,
+					ToolCallID:  tc.ID,
+				})
+			}
 			messages = append(messages, apiMessage{
 				Role:       "tool",
 				Content:    toolOutput,
@@ -1050,7 +1124,7 @@ func (e *Engine) runSingleBotTurn(
 			break
 		}
 	}
-	if req.MsgKind != "routine" && !rememberedInTurn && strings.TrimSpace(finalContent.String()) != "" {
+	if req.MsgKind != "routine" && req.MsgKind != "delegate" && !rememberedInTurn && strings.TrimSpace(finalContent.String()) != "" {
 		go e.distillMemoryWithScope("bot:"+timelineBotID, actingBot.BotMode, userMsg, finalContent.String())
 	}
 
@@ -1078,7 +1152,7 @@ func (e *Engine) runSingleBotTurn(
 
 func (e *Engine) isReadOnlyTool(name string) bool {
 	switch name {
-	case "read_url", "web_search", "query_nezha_nodes", "recall_memory":
+	case "read_url", "web_search", "query_nezha_nodes", "recall_memory", "datetime_calc":
 		return true
 	}
 	if strings.HasPrefix(name, "skill_") {

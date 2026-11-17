@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -178,7 +179,7 @@ func TestCompanionVsWorkerPromptAndSkills(t *testing.T) {
 		SkillIDs:     `["sk_warm_talk"]`,
 		SystemPrompt: "平时像微信聊天一样互动。",
 	}
-	prompt := buildBotSystemPrompt(&companionBot, []store.Skill{playbook}, nil, false)
+	prompt := buildBotSystemPrompt(&companionBot, []store.Skill{playbook}, nil, nil, "", false)
 	if !strings.Contains(prompt, "真实、有温度、有自己性格特点的聊天伙伴") || !strings.Contains(prompt, "说话简短自然、幽默接梗") || !strings.Contains(prompt, "先接住对方的情绪") {
 		t.Fatalf("expected companion prompt with traits and playbook skill, got:\n%s", prompt)
 	}
@@ -196,7 +197,7 @@ func TestCompanionVsWorkerPromptAndSkills(t *testing.T) {
 		BotMode:      store.BotModeWorker,
 		AllowedTools: `["query_nezha_nodes"]`,
 	}
-	workerPrompt := buildBotSystemPrompt(&workerBot, nil, nil, false)
+	workerPrompt := buildBotSystemPrompt(&workerBot, nil, nil, nil, "", false)
 	if !strings.Contains(workerPrompt, "干练务实的专业执行者") {
 		t.Fatalf("expected worker prompt guidance, got:\n%s", workerPrompt)
 	}
@@ -356,7 +357,142 @@ func TestWebhookSkillDefaultsRequiredValidationHTMLStripAndBatchConcurrency(t *t
 	}
 
 	// 3. Read-only tool batching check
-	if !eng.isReadOnlyTool("skill_html_weather") || !eng.isReadOnlyTool("web_search") || eng.isReadOnlyTool("manage_memory") {
+	if !eng.isReadOnlyTool("skill_html_weather") || !eng.isReadOnlyTool("web_search") || !eng.isReadOnlyTool("datetime_calc") || eng.isReadOnlyTool("manage_memory") {
 		t.Fatalf("read-only tool classification mismatch")
+	}
+}
+
+func TestAssistantToolsTodosNotesNotificationConsultAndDatetime(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "assistant_tools.db"))
+	if err != nil {
+		t.Fatalf("open store failed: %v", err)
+	}
+	defer st.Close()
+
+	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/webhook" {
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			_, _ = w.Write([]byte(`{"echo":"` + fmt.Sprint(body["msg"]) + `"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintln(w, `data: {"choices":[{"delta":{"role":"assistant","content":"已核查节点全部健康运行，平均负载 0.12。"}}]}`)
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, `data: [DONE]`)
+		_, _ = fmt.Fprintln(w)
+	}))
+	defer mockSrv.Close()
+
+	_ = st.SetConfig(store.KeyDeepSeekBaseURL, mockSrv.URL)
+	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "sk-consult-test")
+	_ = st.SetConfig(store.KeyAIModel, "mock-model")
+
+	_ = st.SaveBot(store.Bot{
+		ID:        "bot_muse",
+		Name:      "Muse",
+		RoleTitle: "个人总助",
+		BotMode:   store.BotModeHybrid,
+	})
+	_ = st.SaveBot(store.Bot{
+		ID:        "bot_ops",
+		Name:      "Ops专员",
+		RoleTitle: "运维工程师",
+		BotMode:   store.BotModeWorker,
+	})
+
+	eng := NewEngine(st, nil)
+	eng.allowLocalhostForTest = true
+
+	ctx := WithToolScope(context.Background(), ToolScope{
+		BotID:         "bot_muse",
+		TimelineBotID: "bot_muse",
+		MemoryPolicy:  store.MemoryPolicyIsolated,
+	})
+
+	// 1. manage_todos add / list / complete
+	addRes, err := eng.ExecuteTool(ctx, "manage_todos", `{"action":"add","title":"整理周报并发送","priority":"high","due_at":"2026-11-20"}`)
+	if err != nil || !strings.Contains(addRes, `"ok":true`) {
+		t.Fatalf("manage_todos add failed: %v %s", err, addRes)
+	}
+	compRes, err := eng.ExecuteTool(ctx, "manage_todos", `{"action":"complete","title":"整理周报"}`)
+	if err != nil || !strings.Contains(compRes, `"status":"done"`) {
+		t.Fatalf("manage_todos complete by title failed: %v %s", err, compRes)
+	}
+
+	// 2. manage_notes upsert / get
+	noteRes, err := eng.ExecuteTool(ctx, "manage_notes", `{"action":"upsert","title":"杭州周末行程","content":"- 西湖骑行\n- 龙井品茶","category":"plan","pinned":true}`)
+	if err != nil || !strings.Contains(noteRes, `"ok":true`) {
+		t.Fatalf("manage_notes upsert failed: %v %s", err, noteRes)
+	}
+	getNoteRes, err := eng.ExecuteTool(ctx, "manage_notes", `{"action":"get","title":"杭州周末"}`)
+	if err != nil || !strings.Contains(getNoteRes, "西湖骑行") {
+		t.Fatalf("manage_notes get failed: %v %s", err, getNoteRes)
+	}
+
+	// 3. send_notification creates Inbox entry
+	notifRes, err := eng.ExecuteTool(ctx, "send_notification", `{"title":"服务器续费提醒","markdown_body":"主力节点将于明日到期","priority":"high"}`)
+	if err != nil || !strings.Contains(notifRes, `"priority":"high"`) {
+		t.Fatalf("send_notification failed: %v %s", err, notifRes)
+	}
+	notifs, _ := st.ListNotifications(0, 10, false)
+	if len(notifs) == 0 || notifs[0].ModuleID != "bot:bot_muse" || notifs[0].Priority != "high" {
+		t.Fatalf("expected bot notification saved with module_id bot:bot_muse, got %+v", notifs)
+	}
+
+	// 4. datetime_calc add & cron_next
+	dtRes, err := eng.ExecuteTool(ctx, "datetime_calc", `{"action":"add","base_time":"2026-11-17 10:00","delta_minutes":45}`)
+	if err != nil || !strings.Contains(dtRes, "2026-11-17 10:45") {
+		t.Fatalf("datetime_calc add failed: %v %s", err, dtRes)
+	}
+	cronRes, err := eng.ExecuteTool(ctx, "datetime_calc", `{"action":"cron_next","cron_expr":"30 9 * * *"}`)
+	if err != nil || !strings.Contains(cronRes, "09:30") {
+		t.Fatalf("datetime_calc cron_next failed: %v %s", err, cronRes)
+	}
+
+	// 5. consult_bot runs target bot cleanly without polluting target's DM history, and blocks cycles
+	consultRes, err := eng.ExecuteTool(ctx, "consult_bot", `{"bot_name":"Ops专员","instruction":"汇报当前所有节点状态"}`)
+	if err != nil || !strings.Contains(consultRes, "平均负载 0.12") || !strings.Contains(consultRes, `"bot_id":"bot_ops"`) {
+		t.Fatalf("consult_bot failed: %v %s", err, consultRes)
+	}
+	opsMsgs, _ := st.ListBotMessages("bot_ops", 10)
+	if len(opsMsgs) != 0 {
+		t.Fatalf("expected internal consult_bot not to pollute target bot DM history, got %d messages", len(opsMsgs))
+	}
+	execLogs, _ := st.ListBotExecutions("bot_muse", 10)
+	if len(execLogs) == 0 || execLogs[0].ExecType != "delegate" {
+		t.Fatalf("expected delegate audit log on caller bot_muse, got %+v", execLogs)
+	}
+
+	// Cycle guard check (Depth >= 2)
+	deepCtx := WithToolScope(context.Background(), ToolScope{BotID: "bot_muse", Depth: 2})
+	if _, cErr := eng.ExecuteTool(deepCtx, "consult_bot", `{"bot_id":"bot_ops","instruction":"nested"}`); cErr == nil || !strings.Contains(cErr.Error(), "上限") {
+		t.Fatalf("expected depth guard error, got: %v", cErr)
+	}
+
+	// 6. Webhook JSON string escaping when parameter contains quotes
+	postSkill := store.Skill{
+		ID:           "sk_json_post",
+		Name:         "JSON Echo",
+		Slug:         "json_echo",
+		Kind:         "webhook",
+		HTTPMethod:   "POST",
+		HTTPURL:      mockSrv.URL + "/webhook",
+		Instruction:  `{"msg":"{{msg}}"}`,
+		ParamsSchema: `[{"key":"msg","type":"string","required":true}]`,
+		Enabled:      true,
+	}
+	_, bodyOut, postErr := eng.ExecuteWebhookSkill(context.Background(), postSkill, map[string]any{"msg": `hello "muse"`})
+	if postErr != nil || !strings.Contains(bodyOut, `hello \"muse\"`) && !strings.Contains(bodyOut, `hello "muse"`) {
+		t.Fatalf("expected escaped JSON webhook body roundtrip, err=%v out=%s", postErr, bodyOut)
+	}
+
+	// 7. Webhook SSRF html title check + recency memory scoring
+	_ = st.SaveAgentMemoryDetailed("bot:bot_muse", "general", "old_fact", "旧事实", 3, false)
+	_ = st.SaveAgentMemoryDetailed("bot:bot_muse", "general", "fresh_fact", "刚聊过的新约定", 3, false)
+	allMems, _ := st.ListScopedMemories([]string{"bot:bot_muse"}, "", 10)
+	selected := selectRelevantMemories(allMems, "完全不相关查询", 1)
+	if len(selected) != 1 {
+		t.Fatalf("expected 1 selected memory, got %d", len(selected))
 	}
 }

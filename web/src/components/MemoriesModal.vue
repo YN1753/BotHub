@@ -30,6 +30,18 @@ const editContent = ref('')
 const editCategory = ref('preference')
 const editImportance = ref(3)
 const editPinned = ref(false)
+const editScope = ref('global')
+
+const memoryStats = computed(() => {
+  const list = filteredMemories.value
+  const pinnedCount = list.filter((m) => Boolean(m.pinned)).length
+  const totalRecalls = list.reduce((acc, m) => acc + (m.recall_count || 0), 0)
+  return {
+    total: list.length,
+    pinned: pinnedCount,
+    recalls: totalRecalls,
+  }
+})
 
 const CAT_OPTIONS = [
   { value: 'preference', label: '偏好与习惯 (preference)' },
@@ -142,6 +154,7 @@ async function handleAdd() {
 
 function startEdit(m: AgentMemory) {
   editingMemId.value = m.id
+  editScope.value = m.scope || 'global'
   editContent.value = m.content
   editCategory.value = m.category || 'general'
   editImportance.value = m.importance || 3
@@ -152,6 +165,7 @@ async function saveEdit(m: AgentMemory) {
   if (!editContent.value.trim()) return
   try {
     await BotHubApi.updateMemory(m.id, {
+      scope: editScope.value,
       category: editCategory.value,
       content: editContent.value.trim(),
       importance: Number(editImportance.value) || 3,
@@ -162,6 +176,20 @@ async function saveEdit(m: AgentMemory) {
     await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
   } catch (err: any) {
     store.notify(err.message || '更新记忆失败')
+  }
+}
+
+async function toggleScopePromote(m: AgentMemory) {
+  const curScope = m.scope || 'global'
+  const fallbackBotScope = store.activeBot.value ? `bot:${store.activeBot.value.id}` : ''
+  const nextScope = curScope === 'global' ? (fallbackBotScope || 'global') : 'global'
+  if (nextScope === curScope) return
+  try {
+    await BotHubApi.updateMemory(m.id, { scope: nextScope })
+    store.notify(nextScope === 'global' ? '已提升为全局共享记忆' : '已收归当前 Bot 私有域')
+    await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
+  } catch (err: any) {
+    store.notify(err.message || '迁移作用域失败')
   }
 }
 
@@ -307,6 +335,11 @@ watch(
       <SegmentedTabs v-model="filterCat" :items="FILTER_TABS" variant="subtle" aria-label="记忆分类筛选" />
     </div>
 
+    <div class="flex items-center justify-between gap-2 px-1 text-[11px] font-mono text-slate-400 shrink-0">
+      <span>当前视图 {{ memoryStats.total }} 条 · 置顶核心 {{ memoryStats.pinned }} 条 · 累计召回 {{ memoryStats.recalls }} 次</span>
+      <span>支持跨作用域升降迁与权重排序</span>
+    </div>
+
     <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
       <div v-if="filteredMemories.length === 0" class="py-10 text-center text-sm text-slate-500">
         {{ store.state.memories.length ? '当前筛选下无记忆条目' : '尚未写入长期记忆条目' }}
@@ -343,6 +376,14 @@ watch(
             <span class="font-mono text-[10.5px] text-slate-500">{{ formatTime(m.updated_at) }}</span>
             <button
               type="button"
+              v-if="m.scope !== 'global' || store.activeBot.value"
+              @click="toggleScopePromote(m)"
+              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 text-[11px] text-cyan-200/85 hover:text-cyan-200 hover:border-cyan-400/40 cursor-pointer"
+            >
+              {{ (m.scope || 'global') === 'global' ? '收归私有' : '升为全局' }}
+            </button>
+            <button
+              type="button"
               @click="togglePin(m)"
               class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
             >
@@ -366,7 +407,8 @@ watch(
         </div>
 
         <div v-if="editingMemId === m.id" class="mt-2.5 flex flex-col gap-2 pt-2 border-t border-[#fff8ee]/8">
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+            <CustomSelect v-model="editScope" :options="scopeOptions" aria-label="编辑记忆作用域" />
             <CustomSelect v-model="editCategory" :options="CAT_OPTIONS" aria-label="编辑记忆分类" />
             <CustomSelect
               :model-value="String(editImportance)"

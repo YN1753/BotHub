@@ -72,7 +72,7 @@ func CompileSkillTool(sk store.Skill) ToolDefinition {
 	}
 }
 
-func interpolateSkillTemplate(tpl string, args map[string]any, urlEscape bool) string {
+func interpolateSkillTemplate(tpl string, args map[string]any, urlEscape, jsonStringEscape bool) string {
 	if tpl == "" {
 		return ""
 	}
@@ -88,6 +88,12 @@ func interpolateSkillTemplate(tpl string, args map[string]any, urlEscape bool) s
 		str := fmt.Sprintf("%v", val)
 		if urlEscape {
 			return url.QueryEscape(str)
+		}
+		if jsonStringEscape {
+			b, err := json.Marshal(str)
+			if err == nil && len(b) >= 2 {
+				return string(b[1 : len(b)-1])
+			}
 		}
 		return str
 	})
@@ -119,7 +125,7 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 		}
 	}
 
-	rawURL := strings.TrimSpace(interpolateSkillTemplate(sk.HTTPURL, workingArgs, true))
+	rawURL := strings.TrimSpace(interpolateSkillTemplate(sk.HTTPURL, workingArgs, true, false))
 	if rawURL == "" {
 		return 0, "", fmt.Errorf("技能 %s 未配置 HTTP URL", sk.Name)
 	}
@@ -138,7 +144,8 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 	if hasBody {
 		tpl := strings.TrimSpace(sk.Instruction)
 		if tpl != "" && strings.Contains(tpl, "{{") {
-			bodyText := interpolateSkillTemplate(tpl, workingArgs, false)
+			looksJSON := strings.HasPrefix(tpl, "{") || strings.HasPrefix(tpl, "[")
+			bodyText := interpolateSkillTemplate(tpl, workingArgs, false, looksJSON)
 			bodyReader = strings.NewReader(bodyText)
 		} else {
 			payloadBytes, _ := json.Marshal(workingArgs)
@@ -162,7 +169,7 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 		if k == "" {
 			continue
 		}
-		req.Header.Set(k, interpolateSkillTemplate(hv, workingArgs, false))
+		req.Header.Set(k, interpolateSkillTemplate(hv, workingArgs, false, false))
 	}
 
 	client := e.safeFetchClient()

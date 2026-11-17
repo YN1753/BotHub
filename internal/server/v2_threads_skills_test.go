@@ -282,7 +282,29 @@ func TestV2SkillsThreadsScopedMemoriesAndBackup(t *testing.T) {
 		t.Fatalf("expected routine recorded in bot_execution_logs, got %+v", execLogs)
 	}
 
-	// 9. Delete thread removes thread & its messages
+	// 9. Personal Assistant Todos & Notes endpoints + backup persistence
+	reqTodo := httptest.NewRequest(http.MethodPost, "/api/v2/todos", strings.NewReader(`{"title":"复盘本周监控","priority":"high","due_at":"2026-11-22"}`))
+	recTodo := httptest.NewRecorder()
+	s.handleCreateTodo(recTodo, reqTodo)
+	if recTodo.Code != http.StatusOK || !strings.Contains(recTodo.Body.String(), "复盘本周监控") {
+		t.Fatalf("create todo failed: %d %s", recTodo.Code, recTodo.Body.String())
+	}
+
+	reqNote := httptest.NewRequest(http.MethodPost, "/api/v2/notes", strings.NewReader(`{"title":"个人助手规范","content":"保持务实","category":"plan"}`))
+	recNote := httptest.NewRecorder()
+	s.handleCreateNote(recNote, reqNote)
+	if recNote.Code != http.StatusOK || !strings.Contains(recNote.Body.String(), "个人助手规范") {
+		t.Fatalf("create note failed: %d %s", recNote.Code, recNote.Body.String())
+	}
+
+	reqDash := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	recDash := httptest.NewRecorder()
+	s.handleDashboard(recDash, reqDash)
+	if recDash.Code != http.StatusOK || !strings.Contains(recDash.Body.String(), `"todos"`) || !strings.Contains(recDash.Body.String(), `"notes"`) {
+		t.Fatalf("expected todos and notes in dashboard payload, got: %s", recDash.Body.String())
+	}
+
+	// 10. Delete thread removes thread & its messages
 	reqDelTh := httptest.NewRequest(http.MethodDelete, "/api/v2/bots/"+botID+"/threads/"+th1ID, nil)
 	reqDelTh.SetPathValue("id", botID)
 	reqDelTh.SetPathValue("threadId", th1ID)

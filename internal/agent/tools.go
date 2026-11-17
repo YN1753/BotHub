@@ -32,6 +32,8 @@ type ToolScope struct {
 	TimelineBotID string
 	ThreadID      string
 	MemoryPolicy  string
+	Depth         int
+	VisitedBots   []string
 }
 
 func WithToolScope(ctx context.Context, sc ToolScope) context.Context {
@@ -199,7 +201,7 @@ func BuiltinTools() []ToolDefinition {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "manage_tasks",
-				Description: "查询或管理 BotHub 自动化调度任务。支持 list（查看任务列表与状态）、run（立即手动触发某任务）、upsert（新增或修改任务）、toggle（启停任务）、delete（删除任务）。",
+				Description: "查询或管理 BotHub 自动化调度任务与一次性定时提醒。支持 list、run、upsert（支持周期 cron_expr 或一次性 delay_minutes / run_at 提醒，默认绑定当前 Bot）、toggle、delete。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -210,19 +212,35 @@ func BuiltinTools() []ToolDefinition {
 						},
 						"id": map[string]any{
 							"type":        "string",
-							"description": "任务 ID（run / upsert / toggle / delete 时必填）",
+							"description": "任务 ID（run / upsert / toggle / delete 时填写，新建也可自动生成）",
 						},
 						"name": map[string]any{
 							"type":        "string",
-							"description": "任务名称（upsert 时使用）",
+							"description": "任务或提醒名称（upsert 时使用）",
 						},
 						"type": map[string]any{
 							"type":        "string",
-							"description": "已注册的任务执行器类型，当前支持：morning / radar / asset_watcher",
+							"description": "任务执行器类型，默认 bot_prompt（也支持 morning / radar / asset_watcher）",
+						},
+						"bot_id": map[string]any{
+							"type":        "string",
+							"description": "可选：绑定的 Bot ID，缺省自动绑定当前对话 Bot",
 						},
 						"cron_expr": map[string]any{
 							"type":        "string",
-							"description": "标准 5 段 Cron 表达式（upsert 时使用）",
+							"description": "标准 5 段周期 Cron 表达式（与一次性 run_at / delay_minutes 二选一）",
+						},
+						"run_at": map[string]any{
+							"type":        "string",
+							"description": "可选：一次性触发的上海时间 YYYY-MM-DD HH:MM（到点自动执行一次后停用）",
+						},
+						"delay_minutes": map[string]any{
+							"type":        "integer",
+							"description": "可选：多少分钟后触发一次性提醒（自动换算 run_at，如 15 表示 15 分钟后）",
+						},
+						"prompt": map[string]any{
+							"type":        "string",
+							"description": "可选：bot_prompt 类型任务到期时要执行的具体指令内容",
 						},
 						"enabled": map[string]any{
 							"type":        "boolean",
@@ -332,6 +350,188 @@ func BuiltinTools() []ToolDefinition {
 				},
 			},
 		},
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "manage_todos",
+				Description: "管理用户的个人待办与行动清单（Muse 个人助手核心能力）。支持 list（查看待办）、add（新增待办或拆解行动项）、update（修改优先级/截止时间/状态）、complete（勾选完成，可传 id 或标题关键词）、delete（删除）、clear_done（清理已完成）。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"action": map[string]any{
+							"type":        "string",
+							"enum":        []string{"list", "add", "update", "complete", "delete", "clear_done"},
+							"description": "操作类型：list | add | update | complete | delete | clear_done",
+						},
+						"id": map[string]any{
+							"type":        "string",
+							"description": "待办条目 ID（update/delete 时使用）",
+						},
+						"title": map[string]any{
+							"type":        "string",
+							"description": "待办事项标题（add 必填；complete 也可传标题关键词匹配）",
+						},
+						"notes": map[string]any{
+							"type":        "string",
+							"description": "可选：补充备注或子步骤说明",
+						},
+						"status": map[string]any{
+							"type":        "string",
+							"enum":        []string{"pending", "doing", "done"},
+							"description": "状态：pending | doing | done",
+						},
+						"priority": map[string]any{
+							"type":        "string",
+							"enum":        []string{"high", "normal", "low"},
+							"description": "优先级：high | normal | low",
+						},
+						"due_at": map[string]any{
+							"type":        "string",
+							"description": "可选：截止日期或时间，如 2026-11-20 或 2026-11-20 18:00",
+						},
+						"tags": map[string]any{
+							"type":        "string",
+							"description": "可选：逗号分隔标签，如 工作,财务",
+						},
+						"filter": map[string]any{
+							"type":        "string",
+							"description": "当 action=list 时筛选状态：open（默认未完成）| all | done | doing | pending",
+						},
+					},
+					"required": []string{"action"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "manage_notes",
+				Description: "读写个人工作文档与成果交付区（报告、周报、邮件草稿、行程单、脚本模板等长文成品）。支持 list、search、get、upsert、delete，适合把整理好的 Markdown 成果持久化沉淀而非埋在聊天记录中。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"action": map[string]any{
+							"type":        "string",
+							"enum":        []string{"list", "search", "get", "upsert", "delete"},
+							"description": "操作类型：list | search | get | upsert | delete",
+						},
+						"id": map[string]any{
+							"type":        "string",
+							"description": "文档 ID（更新或读取已有文档时使用）",
+						},
+						"title": map[string]any{
+							"type":        "string",
+							"description": "文档标题",
+						},
+						"content": map[string]any{
+							"type":        "string",
+							"description": "Markdown 格式的文档正文",
+						},
+						"category": map[string]any{
+							"type":        "string",
+							"description": "分类标签，如 deliverable / draft / plan / summary",
+						},
+						"pinned": map[string]any{
+							"type":        "boolean",
+							"description": "是否置顶展示",
+						},
+						"query": map[string]any{
+							"type":        "string",
+							"description": "搜索关键词（search 时使用）",
+						},
+					},
+					"required": []string{"action"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "send_notification",
+				Description: "主动向用户收件箱与桌面推送一条重要卡片通知（支持 high 高优先级提醒），适合在巡检异常、耗时分析完成或紧急提醒时使用。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"title": map[string]any{
+							"type":        "string",
+							"description": "推送标题",
+						},
+						"markdown_body": map[string]any{
+							"type":        "string",
+							"description": "Markdown 格式的推送正文摘要",
+						},
+						"priority": map[string]any{
+							"type":        "string",
+							"enum":        []string{"normal", "high"},
+							"description": "通知优先级：normal | high",
+						},
+					},
+					"required": []string{"title", "markdown_body"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "consult_bot",
+				Description: "主动协同工作区中的另一位专业 Bot 成员协助完成子任务（如让运维专员查节点、让情报助手做检索，再由你汇总成果），支持最多 2 层深度且自动防循环。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"bot_id": map[string]any{
+							"type":        "string",
+							"description": "目标成员 Bot ID（与 bot_name 二选一）",
+						},
+						"bot_name": map[string]any{
+							"type":        "string",
+							"description": "目标成员 Bot 名称",
+						},
+						"instruction": map[string]any{
+							"type":        "string",
+							"description": "委派给对方执行的清晰子任务指令与所需上下文",
+						},
+					},
+					"required": []string{"instruction"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "datetime_calc",
+				Description: "精确获取或推算当前上海时间、星期、相对日期偏移（如 30 分钟后 / 7 天后可用于设定 run_at 提醒）以及预测 Cron 下 5 次执行时刻。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"action": map[string]any{
+							"type":        "string",
+							"enum":        []string{"now", "add", "cron_next"},
+							"description": "操作类型：now | add | cron_next",
+						},
+						"base_time": map[string]any{
+							"type":        "string",
+							"description": "可选：基准时间 YYYY-MM-DD HH:MM（缺省为当前时间）",
+						},
+						"delta_minutes": map[string]any{
+							"type":        "integer",
+							"description": "分钟偏移量（可正可负）",
+						},
+						"delta_hours": map[string]any{
+							"type":        "integer",
+							"description": "小时偏移量（可正可负）",
+						},
+						"delta_days": map[string]any{
+							"type":        "integer",
+							"description": "天数偏移量（可正可负）",
+						},
+						"cron_expr": map[string]any{
+							"type":        "string",
+							"description": "当 action=cron_next 时必填的 5 段 Cron 表达式",
+						},
+					},
+				},
+			},
+		},
 	}
 }
 
@@ -359,7 +559,11 @@ const maxToolOutputRunes = 12000
 
 // ExecuteTool dispatches built-in tools and user-defined custom webhook skills.
 func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) (string, error) {
-	toolCtx, cancel := context.WithTimeout(ctx, 28*time.Second)
+	timeout := 28 * time.Second
+	if name == "consult_bot" {
+		timeout = 55 * time.Second
+	}
+	toolCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cleanArgs := normalizeToolArgsJSON(argsJSON)
@@ -407,6 +611,16 @@ func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) 
 			out, err = e.toolRecallMemory(toolCtx, cleanArgs)
 		case "manage_memory":
 			out, err = e.toolManageMemory(toolCtx, cleanArgs)
+		case "manage_todos":
+			out, err = e.toolManageTodos(toolCtx, cleanArgs)
+		case "manage_notes":
+			out, err = e.toolManageNotes(toolCtx, cleanArgs)
+		case "send_notification":
+			out, err = e.toolSendNotification(toolCtx, cleanArgs)
+		case "consult_bot":
+			out, err = e.toolConsultBot(toolCtx, cleanArgs)
+		case "datetime_calc":
+			out, err = e.toolDatetimeCalc(toolCtx, cleanArgs)
 		default:
 			return "", fmt.Errorf("未知工具: %s", name)
 		}
@@ -566,6 +780,7 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 	client := e.safeFetchClient()
 	var statusCode int
 	var text string
+	var pageTitle string
 	sourceMode := "direct"
 
 	// Fast-path: GitHub repository root URL -> fetch raw README.md directly
@@ -573,6 +788,7 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 		rawURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/HEAD/README.md", owner, repo)
 		if sc, _, body, gErr := e.fetchTextWithClient(ctx, client, rawURL, "text/plain"); gErr == nil && sc >= 200 && sc < 300 && strings.TrimSpace(body) != "" {
 			statusCode = sc
+			pageTitle = fmt.Sprintf("%s/%s", owner, repo)
 			text = notifier.StripEmoji(strings.TrimSpace(body))
 			sourceMode = "github_raw_readme"
 		}
@@ -587,6 +803,7 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 		if strings.Contains(contentType, "json") || strings.Contains(contentType, "plain") {
 			text = notifier.StripEmoji(strings.TrimSpace(rawBody))
 		} else {
+			pageTitle = extractHTMLTitle(rawBody)
 			text = stripHTMLToText(rawBody)
 		}
 
@@ -618,6 +835,9 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 		"char_count":  len([]rune(text)),
 		"truncated":   truncated,
 		"content":     text,
+	}
+	if pageTitle != "" {
+		resultMap["title"] = pageTitle
 	}
 
 	// If any lightweight/fallback model is available and the article is long (> 3000 chars),
@@ -807,6 +1027,20 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 						}
 					}
 				}
+			}
+		}
+	}
+
+	// 4. DuckDuckGo Lite HTML search fallback when structured APIs return fewer than limit results
+	if len(results) < limit {
+		for _, item := range e.searchDuckDuckGoHTML(reqCtx, query, limit-len(results)) {
+			if appendUnique(searchItem{
+				Title:   item.Title,
+				URL:     item.URL,
+				Snippet: item.Snippet,
+				Source:  "Web",
+			}) {
+				break
 			}
 		}
 	}
@@ -1062,14 +1296,18 @@ func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string,
 
 func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Action      string `json:"action"`
-		ID          string `json:"id"`
-		Name        string `json:"name"`
-		Type        string `json:"type"`
-		CronExpr    string `json:"cron_expr"`
-		Enabled     *bool  `json:"enabled"`
-		Description string `json:"description"`
-		Params      string `json:"params"`
+		Action       string `json:"action"`
+		ID           string `json:"id"`
+		Name         string `json:"name"`
+		Type         string `json:"type"`
+		BotID        string `json:"bot_id"`
+		CronExpr     string `json:"cron_expr"`
+		RunAt        string `json:"run_at"`
+		DelayMinutes int    `json:"delay_minutes"`
+		Prompt       string `json:"prompt"`
+		Enabled      *bool  `json:"enabled"`
+		Description  string `json:"description"`
+		Params       string `json:"params"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 manage_tasks 参数失败: %w", err)
@@ -1120,22 +1358,34 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		return string(out), nil
 
 	case "upsert":
+		sc := toolScopeFromContext(ctx)
 		id := strings.TrimSpace(args.ID)
 		if id == "" {
-			return "", fmt.Errorf("upsert 任务时 id 必填")
+			id = fmt.Sprintf("task_%d", time.Now().UnixNano()%100000000)
 		}
 		existing, _ := e.store.GetTask(id)
 		var task store.Task
 		if existing != nil {
 			task = *existing
 		} else {
+			defaultBotID := strings.TrimSpace(args.BotID)
+			if defaultBotID == "" {
+				defaultBotID = strings.TrimSpace(sc.TimelineBotID)
+			}
+			if defaultBotID == "" {
+				defaultBotID = strings.TrimSpace(sc.BotID)
+			}
 			task = store.Task{
 				ID:       id,
-				Type:     "asset_watcher",
+				Type:     "bot_prompt",
+				BotID:    defaultBotID,
 				CronExpr: "0 9 * * *",
 				Enabled:  true,
 				Params:   "{}",
 			}
+		}
+		if strings.TrimSpace(args.BotID) != "" {
+			task.BotID = strings.TrimSpace(args.BotID)
 		}
 		if strings.TrimSpace(args.Name) != "" {
 			task.Name = notifier.StripEmoji(strings.TrimSpace(args.Name))
@@ -1149,12 +1399,25 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		if strings.TrimSpace(args.Description) != "" {
 			task.Description = notifier.StripEmoji(strings.TrimSpace(args.Description))
 		}
-		if strings.TrimSpace(args.CronExpr) != "" {
+		if args.DelayMinutes > 0 {
+			loc := store.ShanghaiLocation()
+			targetAt := time.Now().In(loc).Add(time.Duration(args.DelayMinutes) * time.Minute)
+			task.RunAt = targetAt.Format("2006-01-02 15:04")
+			task.CronExpr = ""
+		} else if strings.TrimSpace(args.RunAt) != "" {
+			runAt := strings.TrimSpace(args.RunAt)
+			if _, err := scheduler.ParseRunAt(runAt, nil); err != nil {
+				return "", err
+			}
+			task.RunAt = runAt
+			task.CronExpr = ""
+		} else if strings.TrimSpace(args.CronExpr) != "" {
 			cronExpr := strings.TrimSpace(args.CronExpr)
 			if _, err := cron.ParseStandard(cronExpr); err != nil {
 				return "", fmt.Errorf("无效 Cron 表达式 %q: %w", cronExpr, err)
 			}
 			task.CronExpr = cronExpr
+			task.RunAt = ""
 		}
 		if args.Enabled != nil {
 			task.Enabled = *args.Enabled
@@ -1166,12 +1429,26 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 			}
 			task.Params = strings.TrimSpace(args.Params)
 		}
+		if p := notifier.StripEmoji(strings.TrimSpace(args.Prompt)); p != "" {
+			paramMap := map[string]any{}
+			if task.Params != "" && task.Params != "{}" {
+				_ = json.Unmarshal([]byte(task.Params), &paramMap)
+			}
+			paramMap["prompt"] = p
+			if b, mErr := json.Marshal(paramMap); mErr == nil {
+				task.Params = string(b)
+			}
+			if task.Description == "" {
+				task.Description = truncateTitle(p)
+			}
+		}
 		if err := e.store.SaveTask(task); err != nil {
 			return "", err
 		}
 		if e.scheduler != nil {
 			_ = e.scheduler.Reload()
 		}
+		e.publishAssistantUpdate("tasks")
 		out, _ := json.Marshal(map[string]any{
 			"ok":   true,
 			"task": task,
@@ -1198,6 +1475,7 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		if e.scheduler != nil {
 			_ = e.scheduler.Reload()
 		}
+		e.publishAssistantUpdate("tasks")
 		out, _ := json.Marshal(map[string]any{
 			"ok":      true,
 			"id":      id,
@@ -1216,6 +1494,7 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		if e.scheduler != nil {
 			_ = e.scheduler.Reload()
 		}
+		e.publishAssistantUpdate("tasks")
 		out, _ := json.Marshal(map[string]any{"ok": true, "deleted_id": id})
 		return string(out), nil
 

@@ -17,6 +17,8 @@ import type {
   Skill,
   Task,
   TaskTemplate,
+  TodoItem,
+  WorkNote,
 } from '../types/bothub'
 
 export type MainWorkspace = 'bots' | 'ops'
@@ -56,7 +58,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.15.0',
+  version: 'v2.16.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -72,6 +74,8 @@ const state = reactive({
   },
   bots: [] as Bot[],
   skills: [] as Skill[],
+  todos: [] as TodoItem[],
+  notes: [] as WorkNote[],
   modelPool: [] as ModelPoolEntry[],
   availableTools: [] as AvailableToolMeta[],
   personas: [] as Persona[],
@@ -106,6 +110,8 @@ const state = reactive({
 
   // Modals & Drawers
   showInboxModal: false,
+  showWorkhubModal: false,
+  workhubTab: 'todos' as 'todos' | 'notes',
   showMemoriesModal: false,
   showSkillsModal: false,
   showLogsModal: false,
@@ -242,6 +248,10 @@ export function useAppStore() {
     state.notifications.filter((n) => !n.read_at).length
   )
 
+  const pendingTodoCount = computed(() =>
+    state.todos.filter((t) => t.status !== 'done').length
+  )
+
   const expiringAssetCount = computed(() =>
     state.assets.filter((a) => {
       if (a.status === '长期有效' || String(a.due_date || '').startsWith('2099')) return false
@@ -334,6 +344,8 @@ export function useAppStore() {
       state.stats = data.stats || state.stats
       state.bots = data.bots || []
       state.skills = data.skills || []
+      state.todos = data.todos || []
+      state.notes = data.notes || []
       state.modelPool = data.model_pool || []
       state.availableTools = data.available_tools || []
       state.personas = data.personas || []
@@ -647,6 +659,10 @@ export function useAppStore() {
       }
     })
 
+    es.addEventListener('assistant_update', () => {
+      loadDashboard(false)
+    })
+
     es.onerror = () => {
       state.sseConnected = false
       if (!state.authenticated) stopSSE()
@@ -666,6 +682,7 @@ export function useAppStore() {
     activeBot,
     modelOptions,
     unreadInboxCount,
+    pendingTodoCount,
     expiringAssetCount,
     notify,
     checkAuth,

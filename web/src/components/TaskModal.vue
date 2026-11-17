@@ -21,12 +21,13 @@ const botId = ref('')
 const enabled = ref(true)
 const description = ref('')
 
-// Visual Cron Builder
-const freq = ref<'daily' | 'weekly' | 'monthly' | 'hourly' | 'custom'>('daily')
+// Visual Cron & One-Shot Builder
+const freq = ref<'daily' | 'weekly' | 'monthly' | 'hourly' | 'once' | 'custom'>('daily')
 const subVal = ref('1')
 const hour = ref('08')
 const minute = ref('00')
 const customCron = ref('0 8 * * *')
+const runAt = ref('')
 
 const paramsMap = ref<Record<string, string>>({})
 const saving = ref(false)
@@ -36,6 +37,7 @@ const FREQ_OPTIONS = [
   { value: 'weekly', label: '每周固定时间' },
   { value: 'monthly', label: '每月固定日期' },
   { value: 'hourly', label: '每小时整点' },
+  { value: 'once', label: '一次性定时提醒 (到点执行)' },
   { value: 'custom', label: '自定义 Cron 表达式' },
 ]
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => {
@@ -70,6 +72,7 @@ const currentFields = computed(() => {
 })
 
 const computedCron = computed(() => {
+  if (freq.value === 'once') return ''
   if (freq.value === 'custom') return customCron.value.trim() || '0 8 * * *'
   const m = String(parseInt(minute.value, 10) || 0)
   const h = String(parseInt(hour.value, 10) || 0)
@@ -126,6 +129,7 @@ watch(
       freq.value = 'daily'
       hour.value = '09'
       minute.value = '00'
+      runAt.value = ''
       const initParams: Record<string, string> = {}
       const tpl = store.state.templates.find((t) => t.type === type.value)
       ;(tpl?.params_schema || tpl?.fields || []).forEach((f) => {
@@ -141,7 +145,13 @@ watch(
     botId.value = t.bot_id || ''
     enabled.value = Boolean(t.enabled)
     description.value = t.description || ''
-    parseCronExpr(t.cron_expr || '0 8 * * *')
+    if (t.run_at) {
+      freq.value = 'once'
+      runAt.value = t.run_at
+    } else {
+      runAt.value = ''
+      parseCronExpr(t.cron_expr || '0 8 * * *')
+    }
     try {
       const parsed = JSON.parse(t.params || '{}')
       const m: Record<string, string> = {}
@@ -161,6 +171,10 @@ function closeModal() {
 
 async function handleSubmit() {
   if (!name.value.trim() || saving.value) return
+  if (freq.value === 'once' && !runAt.value.trim()) {
+    store.notify('请填写一次性触发时间 (YYYY-MM-DD HH:MM)')
+    return
+  }
   saving.value = true
   try {
     const finalID = isNew.value ? id.value.trim() || generateSlug(name.value, type.value) : id.value
@@ -170,7 +184,8 @@ async function handleSubmit() {
       name: name.value.trim(),
       type: type.value,
       bot_id: botId.value,
-      cron_expr: computedCron.value,
+      cron_expr: freq.value === 'once' ? '' : computedCron.value,
+      run_at: freq.value === 'once' ? runAt.value.trim() : '',
       enabled: enabled.value,
       description: description.value.trim() || tpl?.description || '',
       params: JSON.stringify(paramsMap.value),
@@ -244,7 +259,7 @@ async function handleDelete() {
               下次: {{ (store.state.editingTask as any).next_run_at }}
             </span>
             <span class="inline-flex items-center gap-1.5 font-mono text-[11px] px-2.5 py-0.5 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f7cba0]">
-              {{ describeCron(computedCron) }} ({{ computedCron }})
+              {{ freq === 'once' ? `单次提醒: ${runAt || '待设时间'}` : `${describeCron(computedCron)} (${computedCron})` }}
             </span>
           </div>
         </div>
@@ -262,7 +277,7 @@ async function handleDelete() {
             <span>日期选择</span>
             <CustomSelect v-model="subVal" :options="MONTH_DAY_OPTIONS" aria-label="日期选择" />
           </div>
-          <div v-if="freq !== 'custom'" class="grid grid-cols-2 gap-2">
+          <div v-if="freq !== 'custom' && freq !== 'once'" class="grid grid-cols-2 gap-2">
             <div v-if="freq !== 'hourly'" class="flex flex-col gap-1 text-xs text-slate-300">
               <span>小时</span>
               <CustomSelect v-model="hour" :options="HOUR_OPTIONS" aria-label="小时" />
@@ -272,6 +287,10 @@ async function handleDelete() {
               <CustomSelect v-model="minute" :options="MIN_OPTIONS" aria-label="分钟" />
             </div>
           </div>
+          <label v-if="freq === 'once'" class="flex flex-col gap-1 text-xs text-slate-300">
+            <span>单次触发时间 (上海时间 YYYY-MM-DD HH:MM)</span>
+            <input v-model="runAt" type="text" placeholder="2026-11-18 09:30" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+          </label>
           <label v-if="freq === 'custom'" class="sm:col-span-2 flex flex-col gap-1 text-xs text-slate-300">
             <span>Cron 表达式</span>
             <input v-model="customCron" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />

@@ -153,6 +153,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/webhook/nezha", s.handleNezhaWebhook)
 	mux.HandleFunc("POST /api/v2/webhook/nezha", s.handleNezhaWebhook)
 
+	// Personal Assistant Workbench (Todos & Workspace Notes)
+	mux.HandleFunc("GET /api/v2/todos", s.requireAuth(s.handleListTodos))
+	mux.HandleFunc("POST /api/v2/todos", s.requireAuth(s.handleCreateTodo))
+	mux.HandleFunc("POST /api/v2/todos/clear-done", s.requireAuth(s.handleClearDoneTodos))
+	mux.HandleFunc("POST /api/v2/todos/{id}", s.requireAuth(s.handleUpdateTodo))
+	mux.HandleFunc("DELETE /api/v2/todos/{id}", s.requireAuth(s.handleDeleteTodo))
+	mux.HandleFunc("GET /api/v2/notes", s.requireAuth(s.handleListNotes))
+	mux.HandleFunc("POST /api/v2/notes", s.requireAuth(s.handleCreateNote))
+	mux.HandleFunc("POST /api/v2/notes/{id}", s.requireAuth(s.handleUpdateNote))
+	mux.HandleFunc("DELETE /api/v2/notes/{id}", s.requireAuth(s.handleDeleteNote))
+
 	// System Backup & Portability
 	mux.HandleFunc("GET /api/system/export", s.requireAuth(s.handleExportBackup))
 	mux.HandleFunc("POST /api/system/import", s.requireAuth(s.handleImportBackup))

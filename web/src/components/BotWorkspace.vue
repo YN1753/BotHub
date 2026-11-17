@@ -141,7 +141,7 @@ interface SlashCmdItem {
   title: string
   desc: string
   prompt?: string
-  action?: 'open_drawer' | 'clear_timeline' | 'new_thread' | 'summarize_thread' | 'open_skills'
+  action?: 'open_drawer' | 'clear_timeline' | 'new_thread' | 'summarize_thread' | 'open_skills' | 'open_workhub'
 }
 
 const slashCommands = computed<SlashCmdItem[]>(() => {
@@ -204,6 +204,36 @@ const slashCommands = computed<SlashCmdItem[]>(() => {
       desc: '检查各自动化例程状态与下次触发时间',
       prompt: '请核查当前所有自动化调度任务的运行状态与上次执行摘要。',
     })
+    items.push({
+      cmd: '/remind',
+      title: '创建定时/单次提醒',
+      desc: '设定一次性定时提醒或周期性自动汇报任务',
+      prompt: '请帮我设定一个定时提醒：',
+    })
+  }
+  if (allowedTools.includes('manage_todos')) {
+    items.push({
+      cmd: '/todo',
+      title: '记录或核查个人待办',
+      desc: '添加行动项、查看未完成或勾选完结事项',
+      prompt: '请帮我整理或记录以下待办事项：',
+    })
+  }
+  if (allowedTools.includes('manage_notes')) {
+    items.push({
+      cmd: '/note',
+      title: '整理产出工作文档',
+      desc: '将方案、总结或草稿沉淀到工作文档交付区',
+      prompt: '请将以下内容整理为结构化 Markdown 工作文档并保存：',
+    })
+  }
+  if (allowedTools.includes('consult_bot')) {
+    items.push({
+      cmd: '/consult',
+      title: '协调团队成员协办',
+      desc: '调用其他专精 Bot 协助完成子任务并汇总',
+      prompt: '请协调工作区里最合适的专业成员共同处理：',
+    })
   }
   if (allowedTools.includes('manage_memory') || allowedTools.includes('recall_memory')) {
     items.push({
@@ -215,6 +245,7 @@ const slashCommands = computed<SlashCmdItem[]>(() => {
   }
 
   items.push(
+    { cmd: '/workhub', title: '打开个人行动台', desc: '管理待办清单与 Bot 产出的 Markdown 文档', action: 'open_workhub' },
     { cmd: '/thread', title: '新建独立话题', desc: '在当前会话内开启一条干净的新话题线', action: 'new_thread' },
     { cmd: '/summarize', title: '总结话题并存记忆', desc: '提炼当前话题核心结论并沉淀到专属记忆库', action: 'summarize_thread' },
     { cmd: '/skills', title: '打开自定义技能工坊', desc: '管理 Playbook 与 Webhook 外部技能工具', action: 'open_skills' },
@@ -409,12 +440,34 @@ function formatToolLabel(name: string): string {
     web_search: '联网检索 (web_search)',
     query_nezha_nodes: '哪吒探针巡检 (query_nezha_nodes)',
     manage_assets: '数字资产台账 (manage_assets)',
-    manage_tasks: '调度任务管理 (manage_tasks)',
+    manage_tasks: '定时与单次提醒 (manage_tasks)',
     remember_fact: '写入长期记忆 (remember_fact)',
     recall_memory: '检索长期记忆 (recall_memory)',
     manage_memory: '整理与遗忘记忆 (manage_memory)',
+    manage_todos: '个人待办清单 (manage_todos)',
+    manage_notes: '工作文档交付 (manage_notes)',
+    send_notification: '主动推送卡片 (send_notification)',
+    consult_bot: '团队协同委派 (consult_bot)',
+    datetime_calc: '时间日历推算 (datetime_calc)',
   }
   return builtinNames[name] || name
+}
+
+function parseConsultSummary(raw?: string): { botName: string; roleTitle: string; tools: string[] } | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && parsed.ok && parsed.bot_name) {
+      return {
+        botName: String(parsed.bot_name),
+        roleTitle: String(parsed.role_title || ''),
+        tools: Array.isArray(parsed.tools_used) ? parsed.tools_used.map(String) : [],
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null
 }
 
 function formatToolPayload(raw?: string): string {
@@ -477,6 +530,45 @@ async function saveMessageAsMemory(msg: ChatMessageUI) {
     await store.loadDashboard(false)
   } catch (err: any) {
     store.notify(err.message || '保存记忆失败')
+  }
+}
+
+async function convertMessageToTodo(msg: ChatMessageUI) {
+  const raw = msg.content.replace(/\s+/g, ' ').trim()
+  if (!raw || !bot.value) return
+  const title = raw.length > 60 ? `${raw.slice(0, 60)}...` : raw
+  try {
+    await BotHubApi.createTodo({
+      bot_id: bot.value.id,
+      thread_id: store.state.activeThreadId || '',
+      title,
+      notes: raw.length > 60 ? raw : '',
+      priority: 'normal',
+      status: 'pending',
+    })
+    await store.loadDashboard(false)
+    store.notify('已转入个人待办清单')
+  } catch (err: any) {
+    store.notify(err.message || '转存待办失败')
+  }
+}
+
+async function saveMessageAsNote(msg: ChatMessageUI) {
+  const raw = msg.content.trim()
+  if (!raw || !bot.value) return
+  const firstLine = raw.split('\n')[0].replace(/^#+\s*/, '').trim()
+  const title = firstLine.length > 40 ? `${firstLine.slice(0, 40)}...` : firstLine || `${bot.value.name} 对话成果`
+  try {
+    await BotHubApi.createNote({
+      bot_id: bot.value.id,
+      title,
+      category: 'deliverable',
+      content: raw,
+    })
+    await store.loadDashboard(false)
+    store.notify(`已保存至工作文档《${title}》`)
+  } catch (err: any) {
+    store.notify(err.message || '保存文档失败')
   }
 }
 
@@ -581,6 +673,8 @@ const activityEntries = computed(() => {
         ? `技能调用 · ${ex.name}`
         : ex.exec_type === 'routine'
         ? '例程任务'
+        : ex.exec_type === 'delegate'
+        ? `团队协办 · ${ex.name}`
         : `对话响应 · ${ex.name}`
     items.push({
       title: kindLabel,
@@ -756,6 +850,11 @@ function pickSlashCommand(item: SlashCmdItem) {
   if (item.action === 'open_skills') {
     inputPrompt.value = ''
     store.state.showSkillsModal = true
+    return
+  }
+  if (item.action === 'open_workhub') {
+    inputPrompt.value = ''
+    store.state.showWorkhubModal = true
     return
   }
   if (item.prompt) {
@@ -1425,6 +1524,22 @@ function stateBadgeClass(state?: string): string {
         <!-- Gliding Physics Segmented Control -->
         <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="Bot 子视图" />
 
+        <!-- Quick Personal Assistant Workhub Pill -->
+        <button
+          type="button"
+          @click="store.state.showWorkhubModal = true"
+          title="打开个人行动台（待办与工作文档）"
+          class="hidden md:inline-flex min-h-[36px] items-center gap-1.5 px-2.5 rounded-full border border-[#fff8ee]/12 bg-[#060913]/85 hover:border-cyan-400/45 hover:text-cyan-200 text-xs text-slate-300 cursor-pointer shrink-0"
+        >
+          <span>行动台</span>
+          <span
+            v-if="store.pendingTodoCount.value > 0"
+            class="px-1.5 py-0.5 rounded-full bg-cyan-400/20 text-cyan-200 font-mono text-[10px] leading-none"
+          >
+            {{ store.pendingTodoCount.value }}
+          </span>
+        </button>
+
         <!-- QQ/WeChat Member / Invite Pill -->
         <button
           type="button"
@@ -2016,6 +2131,14 @@ function stateBadgeClass(state?: string): string {
                           </div>
                         </div>
                         <div v-if="tc.arguments && tc.arguments !== '{}'" class="mt-1 text-slate-400 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">入参: {{ formatToolPayload(tc.arguments) }}</div>
+                        <div
+                          v-if="tc.name === 'consult_bot' && parseConsultSummary(tc.result)"
+                          class="mt-1.5 px-2 py-1 rounded border border-cyan-400/25 bg-cyan-500/8 text-[10.5px] text-cyan-200"
+                        >
+                          委派协办成员: {{ parseConsultSummary(tc.result)?.botName }}
+                          <template v-if="parseConsultSummary(tc.result)?.roleTitle"> ({{ parseConsultSummary(tc.result)?.roleTitle }})</template>
+                          <template v-if="parseConsultSummary(tc.result)?.tools.length"> · 使用工具: {{ parseConsultSummary(tc.result)?.tools.join(', ') }}</template>
+                        </div>
                         <div v-if="tc.result" class="mt-1 text-slate-300 whitespace-pre-wrap break-all max-h-48 overflow-y-auto border-t border-[#fff8ee]/6 pt-1">出参: {{ formatToolPayload(tc.result) }}</div>
                       </div>
                     </div>
@@ -2040,6 +2163,20 @@ function stateBadgeClass(state?: string): string {
                       class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-emerald-300 hover:border-emerald-400/40 cursor-pointer"
                     >
                       存为记忆
+                    </button>
+                    <button
+                      type="button"
+                      @click="convertMessageToTodo(m)"
+                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-cyan-300 hover:border-cyan-400/40 cursor-pointer"
+                    >
+                      转待办
+                    </button>
+                    <button
+                      type="button"
+                      @click="saveMessageAsNote(m)"
+                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                    >
+                      存文档
                     </button>
                     <button
                       type="button"
@@ -2400,7 +2537,9 @@ function stateBadgeClass(state?: string): string {
                   </span>
                   <div class="min-w-0">
                     <h3 class="font-semibold text-sm text-white truncate">{{ t.name }}</h3>
-                    <div class="font-mono text-[11px] text-slate-400 mt-0.5 truncate">{{ describeCron(t.cron_expr) }}</div>
+                    <div class="font-mono text-[11px] text-slate-400 mt-0.5 truncate">
+                      {{ t.run_at ? `单次提醒 ${t.run_at}` : describeCron(t.cron_expr) }}
+                    </div>
                   </div>
                 </div>
                 <span

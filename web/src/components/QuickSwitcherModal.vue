@@ -35,7 +35,7 @@ function resolveGroupMembers(b: Bot): Bot[] {
 
 interface SearchEntry {
   key: string
-  category: '会话' | '话题' | '技能' | '快捷操作' | '资产' | '例程' | '记忆'
+  category: '会话' | '话题' | '技能' | '待办' | '文档' | '快捷操作' | '资产' | '例程' | '记忆'
   title: string
   subtitle: string
   bot?: Bot
@@ -107,6 +107,16 @@ const entries = computed<SearchEntry[]>(() => {
       },
     },
     {
+      key: 'act_workhub',
+      category: '快捷操作',
+      title: '打开个人行动台 (待办 / 文档)',
+      subtitle: `待办 ${store.pendingTodoCount.value} 项 · 文档 ${store.state.notes.length} 份`,
+      run: () => {
+        store.state.workhubTab = 'todos'
+        store.state.showWorkhubModal = true
+      },
+    },
+    {
       key: 'act_inbox',
       category: '快捷操作',
       title: '打开原生情报收件箱',
@@ -145,6 +155,35 @@ const entries = computed<SearchEntry[]>(() => {
       subtitle: `${sk.kind === 'webhook' ? `API tool: skill_${sk.slug}` : 'Playbook 行为规范'} · ${sk.description || '点击管理'}`,
       run: () => {
         store.state.showSkillsModal = true
+      },
+    })
+  })
+
+  ;(store.state.todos || [])
+    .filter((t) => t.status !== 'done')
+    .slice(0, 15)
+    .forEach((td) => {
+      list.push({
+        key: `td_${td.id}`,
+        category: '待办',
+        title: td.title,
+        subtitle: `${td.priority === 'high' ? '高优先' : '待办'}${td.due_at ? ' · 截止 ' + td.due_at : ''}`,
+        run: () => {
+          store.state.workhubTab = 'todos'
+          store.state.showWorkhubModal = true
+        },
+      })
+    })
+
+  ;(store.state.notes || []).slice(0, 15).forEach((nt) => {
+    list.push({
+      key: `nt_${nt.id}`,
+      category: '文档',
+      title: nt.title,
+      subtitle: `${nt.category || 'deliverable'} · 点击在个人行动台查看`,
+      run: () => {
+        store.state.workhubTab = 'notes'
+        store.state.showWorkhubModal = true
       },
     })
   })
