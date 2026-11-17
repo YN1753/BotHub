@@ -22,7 +22,7 @@ import (
 
 // Injected during build via -ldflags
 var (
-	Version   = "v2.22.0"
+	Version   = "v2.23.0"
 	Commit    = "dev"
 	BuildTime = "local"
 )
@@ -70,7 +70,7 @@ func main() {
 		Addr:              *addr,
 		Handler:           srvHandler.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      0, // Disabled at server level to support long-lived SSE streams (/api/v2/events, /api/agent/chat)
+		WriteTimeout:      60 * time.Second, // SSE handlers lift deadline via ResponseController
 		IdleTimeout:       120 * time.Second,
 	}
 

@@ -1,31 +1,66 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, watch, defineAsyncComponent, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from './stores/useAppStore'
 import StarfieldBg from './components/StarfieldBg.vue'
 import LoginGate from './components/LoginGate.vue'
 import Sidebar from './components/Sidebar.vue'
 import BotWorkspace from './components/BotWorkspace.vue'
-import OpsWorkspace from './components/OpsWorkspace.vue'
-import CreateBotModal from './components/CreateBotModal.vue'
-import InboxModal from './components/InboxModal.vue'
-import WorkhubModal from './components/WorkhubModal.vue'
-import MemoriesModal from './components/MemoriesModal.vue'
-import SkillsModal from './components/SkillsModal.vue'
-import LogsModal from './components/LogsModal.vue'
-import SettingsModal from './components/SettingsModal.vue'
-import AssetModal from './components/AssetModal.vue'
-import TaskModal from './components/TaskModal.vue'
-import QuickSwitcherModal from './components/QuickSwitcherModal.vue'
-import ForwardModal from './components/ForwardModal.vue'
+
+// On-demand route/modal code-splitting to shrink cold-boot bundle substantially
+const OpsWorkspace = defineAsyncComponent(() => import('./components/OpsWorkspace.vue'))
+const CreateBotModal = defineAsyncComponent(() => import('./components/CreateBotModal.vue'))
+const InboxModal = defineAsyncComponent(() => import('./components/InboxModal.vue'))
+const WorkhubModal = defineAsyncComponent(() => import('./components/WorkhubModal.vue'))
+const MemoriesModal = defineAsyncComponent(() => import('./components/MemoriesModal.vue'))
+const SkillsModal = defineAsyncComponent(() => import('./components/SkillsModal.vue'))
+const LogsModal = defineAsyncComponent(() => import('./components/LogsModal.vue'))
+const SettingsModal = defineAsyncComponent(() => import('./components/SettingsModal.vue'))
+const AssetModal = defineAsyncComponent(() => import('./components/AssetModal.vue'))
+const TaskModal = defineAsyncComponent(() => import('./components/TaskModal.vue'))
+const QuickSwitcherModal = defineAsyncComponent(() => import('./components/QuickSwitcherModal.vue'))
+const ForwardModal = defineAsyncComponent(() => import('./components/ForwardModal.vue'))
 
 const store = useAppStore()
 const mobileSidebarOpen = ref(false)
 const desktopCollapsed = ref(localStorage.getItem('bothub_sidebar_collapsed') === '1')
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 
+// Once opened, keep modal components mounted so closing <dialog> transitions stay smooth
+const mountedFlags = reactive({
+  ops: false,
+  createBot: false,
+  inbox: false,
+  workhub: false,
+  memories: false,
+  skills: false,
+  logs: false,
+  settings: false,
+  asset: false,
+  task: false,
+  quickSwitcher: false,
+  forward: false,
+})
+
+watch(() => store.state.workspace, (v) => { if (v === 'ops') mountedFlags.ops = true })
+watch(() => store.state.showCreateBotModal, (v) => { if (v) mountedFlags.createBot = true })
+watch(() => store.state.showInboxModal, (v) => { if (v) mountedFlags.inbox = true })
+watch(() => store.state.showWorkhubModal, (v) => { if (v) mountedFlags.workhub = true })
+watch(() => store.state.showMemoriesModal, (v) => { if (v) mountedFlags.memories = true })
+watch(() => store.state.showSkillsModal, (v) => { if (v) mountedFlags.skills = true })
+watch(() => store.state.showLogsModal, (v) => { if (v) mountedFlags.logs = true })
+watch(() => store.state.showSettingsModal, (v) => { if (v) mountedFlags.settings = true })
+watch(() => store.state.editingAsset, (v) => { if (v !== undefined) mountedFlags.asset = true })
+watch(() => store.state.editingTask, (v) => { if (v !== undefined) mountedFlags.task = true })
+watch(() => store.state.showQuickSwitcher, (v) => { if (v) mountedFlags.quickSwitcher = true })
+watch(() => store.state.forwardingMessage, (v) => { if (v) mountedFlags.forward = true })
+
 function handleOnlineStatus() {
   isOnline.value = typeof navigator !== 'undefined' ? navigator.onLine : true
-  if (isOnline.value && store.state.authenticated) {
+  if (!isOnline.value) {
+    store.stopSSE()
+    return
+  }
+  if (store.state.authenticated) {
     store.startSSE()
     void store.loadDashboard(false)
   }
@@ -144,7 +179,7 @@ onBeforeUnmount(() => {
             @toggle-desktop-sidebar="toggleDesktopSidebar"
           />
           <OpsWorkspace
-            v-else
+            v-else-if="mountedFlags.ops || store.state.workspace === 'ops'"
             :desktop-collapsed="desktopCollapsed"
             @open-mobile-menu="mobileSidebarOpen = true"
             @toggle-desktop-sidebar="toggleDesktopSidebar"
@@ -153,18 +188,18 @@ onBeforeUnmount(() => {
       </main>
     </div>
 
-    <!-- Native <dialog> Modals -->
-    <CreateBotModal />
-    <InboxModal />
-    <WorkhubModal />
-    <MemoriesModal />
-    <SkillsModal />
-    <LogsModal />
-    <SettingsModal />
-    <AssetModal />
-    <TaskModal />
-    <QuickSwitcherModal />
-    <ForwardModal />
+    <!-- Lazy-Loaded Native <dialog> Modals -->
+    <CreateBotModal v-if="mountedFlags.createBot || store.state.showCreateBotModal" />
+    <InboxModal v-if="mountedFlags.inbox || store.state.showInboxModal" />
+    <WorkhubModal v-if="mountedFlags.workhub || store.state.showWorkhubModal" />
+    <MemoriesModal v-if="mountedFlags.memories || store.state.showMemoriesModal" />
+    <SkillsModal v-if="mountedFlags.skills || store.state.showSkillsModal" />
+    <LogsModal v-if="mountedFlags.logs || store.state.showLogsModal" />
+    <SettingsModal v-if="mountedFlags.settings || store.state.showSettingsModal" />
+    <AssetModal v-if="mountedFlags.asset || store.state.editingAsset !== undefined" />
+    <TaskModal v-if="mountedFlags.task || store.state.editingTask !== undefined" />
+    <QuickSwitcherModal v-if="mountedFlags.quickSwitcher || store.state.showQuickSwitcher" />
+    <ForwardModal v-if="mountedFlags.forward || Boolean(store.state.forwardingMessage)" />
 
     <!-- Offline Banner -->
     <div

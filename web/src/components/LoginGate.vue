@@ -9,6 +9,7 @@ const passwordId = useId()
 const hostLabel = typeof window !== 'undefined' && window.location.host ? window.location.host : 'Vesper BotHub'
 const password = ref('')
 const showPassword = ref(false)
+const rememberDevice = ref(true)
 const capsLockOn = ref(false)
 const loading = ref(false)
 const errorMsg = ref('')
@@ -27,7 +28,7 @@ async function handleSubmit() {
   loading.value = true
   errorMsg.value = ''
   try {
-    await store.login(password.value)
+    await store.login(password.value, rememberDevice.value)
     password.value = ''
   } catch (err: any) {
     errorMsg.value = err.message || '密钥验证失败'
@@ -53,7 +54,7 @@ async function handleSubmit() {
         <BotAvatar avatar-style="butler:gold" :state="loading ? 'working' : password ? 'thinking' : 'idle'" size="lg" />
       </div>
       <h1 class="text-2xl font-semibold text-white mb-1 tracking-tight">星穹 GrokBot 中枢</h1>
-      <p class="font-mono text-xs text-slate-400 mb-6">{{ hostLabel }} · 请输入管理密钥</p>
+      <p class="font-mono text-xs text-slate-300 mb-6">{{ hostLabel }} · 请输入管理密钥</p>
 
       <form class="flex flex-col gap-3" @submit.prevent="handleSubmit">
         <label :for="passwordId" class="sr-only">访问密钥</label>
@@ -83,6 +84,10 @@ async function handleSubmit() {
         <p v-if="capsLockOn" class="text-[11px] font-mono text-amber-300/90">
           大写锁定 (Caps Lock) 已开启
         </p>
+        <label class="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+          <input v-model="rememberDevice" type="checkbox" class="accent-[#f2b880] rounded" />
+          <span>记住此设备（30 天内免重输密钥）</span>
+        </label>
         <button
           type="submit"
           :disabled="loading"

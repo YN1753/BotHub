@@ -14,10 +14,10 @@ import type {
   WorkspaceBriefing,
 } from '../types/bothub'
 
-export async function apiRequest<T = any>(
+async function executeRequest<T = any>(
   path: string,
   options: RequestInit & { timeoutMs?: number } = {}
-): Promise<T> {
+): Promise<{ status: number; data: T }> {
   const { timeoutMs = 45_000, ...fetchOpts } = options
   const ctrl = new AbortController()
   const timer =
@@ -27,24 +27,42 @@ export async function apiRequest<T = any>(
   if (fetchOpts.signal) {
     fetchOpts.signal.addEventListener('abort', () => ctrl.abort(), { once: true })
   }
+  const hasBody = fetchOpts.body !== undefined && fetchOpts.body !== null
+  const headers: Record<string, string> = {
+    ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+    ...((fetchOpts.headers as Record<string, string> | undefined) || {}),
+  }
   try {
     const res = await fetch(path, {
       credentials: 'same-origin',
       ...fetchOpts,
       signal: ctrl.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(fetchOpts.headers || {}),
-      },
+      headers,
     })
-    const data = await res.json().catch(() => ({}))
+    const rawText = await res.text().catch(() => '')
+    let data: any = {}
+    if (rawText) {
+      try {
+        data = JSON.parse(rawText)
+      } catch {
+        // Not JSON (e.g. reverse proxy 502/504 HTML error page)
+      }
+    }
     if (res.status === 401 && !path.startsWith('/api/auth/') && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('bothub:unauthorized'))
     }
     if (!res.ok) {
-      throw new Error(data.error || `请求失败 (${res.status})`)
+      let msg = data?.error
+      if (!msg && rawText) {
+        const titleMatch = rawText.match(/<title[^>]*>([^<]+)<\/title>/i)
+        const snippet = titleMatch ? titleMatch[1].trim() : rawText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)
+        if (snippet) msg = `${res.status} ${snippet}`
+      }
+      const err: any = new Error(msg || `请求失败 (${res.status})`)
+      err.status = res.status
+      throw err
     }
-    return data as T
+    return { status: res.status, data: data as T }
   } catch (err: any) {
     if (err?.name === 'AbortError') {
       throw new Error('请求超时，请检查网络连接或服务端响应状态')
@@ -55,10 +73,31 @@ export async function apiRequest<T = any>(
   }
 }
 
+export async function apiRequest<T = any>(
+  path: string,
+  options: RequestInit & { timeoutMs?: number } = {}
+): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase()
+  const isIdempotentGet = method === 'GET' || method === 'HEAD'
+  try {
+    const res = await executeRequest<T>(path, options)
+    return res.data
+  } catch (err: any) {
+    const status = Number(err?.status || 0)
+    const transient = !status || status === 502 || status === 503 || status === 504
+    if (isIdempotentGet && transient && !options.signal?.aborted) {
+      await new Promise((r) => setTimeout(r, 350))
+      const retry = await executeRequest<T>(path, options)
+      return retry.data
+    }
+    throw err
+  }
+}
+
 export const BotHubApi = {
   authStatus: () => apiRequest<{ authenticated: boolean }>('/api/auth/status'),
-  login: (password: string) =>
-    apiRequest('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
+  login: (password: string, remember_device = false) =>
+    apiRequest('/api/auth/login', { method: 'POST', body: JSON.stringify({ password, remember_device }) }),
   logout: () => apiRequest('/api/auth/logout', { method: 'POST' }),
   updatePassword: (new_password: string) =>
     apiRequest('/api/auth/password', { method: 'POST', body: JSON.stringify({ new_password }) }),

@@ -58,7 +58,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.22.0',
+  version: 'v2.23.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -320,8 +320,8 @@ export function useAppStore() {
     }
   }
 
-  async function login(password: string) {
-    await BotHubApi.login(password)
+  async function login(password: string, rememberDevice = false) {
+    await BotHubApi.login(password, rememberDevice)
     state.authenticated = true
     await loadDashboard(true)
     startSSE()
@@ -333,47 +333,69 @@ export function useAppStore() {
     state.authenticated = false
   }
 
-  async function loadDashboard(loadInitialBot = false) {
-    try {
-      const data = await BotHubApi.dashboard()
-      state.version = data.version || state.version
-      state.commit = data.commit || state.commit
-      state.buildTime = data.build_time || state.buildTime
-      state.uptimeSec = Number(data.uptime_sec) || 0
-      state.serverNow = data.server_now || '--'
-      state.stats = data.stats || state.stats
-      state.bots = data.bots || []
-      state.skills = data.skills || []
-      state.todos = data.todos || []
-      state.notes = data.notes || []
-      state.modelPool = data.model_pool || []
-      state.availableTools = data.available_tools || []
-      state.personas = data.personas || []
-      state.modelHealth = data.model_health || {}
-      state.assets = data.assets || []
-      state.tasks = data.tasks || []
-      state.templates = data.templates || []
-      state.memories = data.agent_memories || []
-      state.notifications = data.notifications || []
-      state.pushLogs = data.push_logs || []
-      state.configs = data.configs || {}
+  let inflightDashboard: Promise<void> | null = null
+  let dashboardRefreshTimer: number | null = null
 
-      if (state.bots.length === 0) {
-        state.activeBotId = ''
-        state.activeThreadId = ''
-        state.botThreads = []
-        state.botMemories = []
-        state.botExecutions = []
-        state.timeline = []
-        localStorage.removeItem('bothub_active_bot')
-      } else if (loadInitialBot || !state.bots.some((b) => b.id === state.activeBotId)) {
-        const exists = state.bots.some((b) => b.id === state.activeBotId)
-        const targetId = exists ? state.activeBotId : state.bots[0].id
-        await selectBot(targetId)
-      }
-    } catch (err: any) {
-      notify(err.message || '加载中枢数据失败')
+  async function loadDashboard(loadInitialBot = false) {
+    if (inflightDashboard && !loadInitialBot) {
+      return inflightDashboard
     }
+    const run = (async () => {
+      try {
+        const data = await BotHubApi.dashboard()
+        state.version = data.version || state.version
+        state.commit = data.commit || state.commit
+        state.buildTime = data.build_time || state.buildTime
+        state.uptimeSec = Number(data.uptime_sec) || 0
+        state.serverNow = data.server_now || '--'
+        state.stats = data.stats || state.stats
+        state.bots = data.bots || []
+        state.skills = data.skills || []
+        state.todos = data.todos || []
+        state.notes = data.notes || []
+        state.modelPool = data.model_pool || []
+        state.availableTools = data.available_tools || []
+        state.personas = data.personas || []
+        state.modelHealth = data.model_health || {}
+        state.assets = data.assets || []
+        state.tasks = data.tasks || []
+        state.templates = data.templates || []
+        state.memories = data.agent_memories || []
+        state.notifications = data.notifications || []
+        state.pushLogs = data.push_logs || []
+        state.configs = data.configs || {}
+
+        if (state.bots.length === 0) {
+          state.activeBotId = ''
+          state.activeThreadId = ''
+          state.botThreads = []
+          state.botMemories = []
+          state.botExecutions = []
+          state.timeline = []
+          localStorage.removeItem('bothub_active_bot')
+        } else if (loadInitialBot || !state.bots.some((b) => b.id === state.activeBotId)) {
+          const exists = state.bots.some((b) => b.id === state.activeBotId)
+          const targetId = exists ? state.activeBotId : state.bots[0].id
+          await selectBot(targetId)
+        }
+      } catch (err: any) {
+        notify(err.message || '加载中枢数据失败')
+      } finally {
+        inflightDashboard = null
+      }
+    })()
+    inflightDashboard = run
+    return run
+  }
+
+  function scheduleDashboardRefresh(delayMs = 450) {
+    if (dashboardRefreshTimer !== null) {
+      window.clearTimeout(dashboardRefreshTimer)
+    }
+    dashboardRefreshTimer = window.setTimeout(() => {
+      dashboardRefreshTimer = null
+      void loadDashboard(false)
+    }, delayMs)
   }
 
   let latestSelectSeq = 0
@@ -679,7 +701,7 @@ export function useAppStore() {
     })
 
     es.addEventListener('assistant_update', () => {
-      loadDashboard(false)
+      scheduleDashboardRefresh(450)
     })
 
     es.onerror = () => {
@@ -690,6 +712,10 @@ export function useAppStore() {
   }
 
   function stopSSE() {
+    if (dashboardRefreshTimer !== null) {
+      window.clearTimeout(dashboardRefreshTimer)
+      dashboardRefreshTimer = null
+    }
     state.sseConnected = false
     if (sseSource) {
       sseSource.close()

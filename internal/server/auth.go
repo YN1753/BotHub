@@ -73,7 +73,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Password string `json:"password"`
+		Password       string `json:"password"`
+		RememberDevice bool   `json:"remember_device"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil || !s.verifyPassword(body.Password) {
 		s.limiter.recordFail(ip)
@@ -82,7 +83,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	s.limiter.recordSuccess(ip)
 
-	token, err := s.issueSessionCookie()
+	ttl := 7 * 24 * time.Hour
+	cookieMaxAge := 7 * 24 * 3600
+	if body.RememberDevice {
+		ttl = 30 * 24 * time.Hour
+		cookieMaxAge = 30 * 24 * 3600
+	}
+	token, err := s.issueSessionCookieWithTTL(ttl)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "会话签发失败")
 		return
@@ -95,7 +102,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   7 * 24 * 3600,
+		MaxAge:   cookieMaxAge,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"authenticated": true})
 }
@@ -173,11 +180,18 @@ func (s *Server) verifyPassword(raw string) bool {
 }
 
 func (s *Server) issueSessionCookie() (string, error) {
+	return s.issueSessionCookieWithTTL(7 * 24 * time.Hour)
+}
+
+func (s *Server) issueSessionCookieWithTTL(ttl time.Duration) (string, error) {
 	secret, err := s.store.GetConfig(store.KeySessionSecret)
 	if err != nil || secret == "" {
 		return "", fmt.Errorf("missing session secret")
 	}
-	exp := strconv.FormatInt(time.Now().Add(7*24*time.Hour).Unix(), 10)
+	if ttl <= 0 {
+		ttl = 7 * 24 * time.Hour
+	}
+	exp := strconv.FormatInt(time.Now().Add(ttl).Unix(), 10)
 	return exp + "." + signHMAC(secret, exp), nil
 }
 
