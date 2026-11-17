@@ -391,7 +391,13 @@ async function handleImportBackup(e: Event) {
     if (!parsed || (!parsed.assets && !parsed.tasks && !parsed.configs)) {
       throw new Error('备份文件格式不合法')
     }
-    if (!window.confirm('确定导入备份并恢复覆盖当前资产、任务与配置吗？')) return
+    const summaryParts = [
+      `${Array.isArray(parsed.assets) ? parsed.assets.length : 0} 项资产`,
+      `${Array.isArray(parsed.tasks) ? parsed.tasks.length : 0} 条任务`,
+      `${Array.isArray(parsed.agent_memories) ? parsed.agent_memories.length : 0} 条记忆`,
+      `${parsed.configs && typeof parsed.configs === 'object' ? Object.keys(parsed.configs).length : 0} 项配置`,
+    ].join(' · ')
+    if (!window.confirm(`确定导入备份并覆盖恢复当前工作台数据吗？\n\n备份内容：${summaryParts}`)) return
     await BotHubApi.importBackup(parsed)
     store.notify('备份导入恢复成功')
     await store.loadDashboard(false)
@@ -479,7 +485,17 @@ async function handleImportBackup(e: Event) {
             </label>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>API 地址 (OpenAI 兼容 Base URL)</span>
+                <div class="flex items-center justify-between gap-2">
+                  <span>API 地址 (OpenAI 兼容 Base URL)</span>
+                  <button
+                    v-if="/\/chat\/completions\/?$/i.test(deepseekBaseUrl.trim())"
+                    type="button"
+                    @click="deepseekBaseUrl = deepseekBaseUrl.trim().replace(/\/chat\/completions\/?$/i, '')"
+                    class="text-[10.5px] text-amber-300 hover:underline cursor-pointer"
+                  >
+                    去掉多余 /chat/completions
+                  </button>
+                </div>
                 <input v-model="deepseekBaseUrl" type="text" placeholder="填写 Base URL，如 https://.../v1" class="min-h-[42px] sm:min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60" />
               </label>
               <div class="flex flex-col gap-1 text-xs text-slate-300">
@@ -547,8 +563,13 @@ async function handleImportBackup(e: Event) {
               </div>
             </div>
             <div class="pt-3 border-t border-[#fff8ee]/8 flex flex-col gap-2.5">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-[11px] font-medium text-slate-300">后台记忆提炼与轻量任务模型 (可选独立覆盖，留空自动复用免费池或主力)</span>
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-medium text-slate-300">后台记忆提炼与轻量任务模型</span>
+                  <span class="font-mono text-[9.5px] px-1.5 py-0.5 rounded border border-[#fff8ee]/12 text-slate-400">
+                    {{ lightModel.trim() || lightBaseUrl.trim() ? '独立节点覆盖' : '自动复用免费池/主力' }}
+                  </span>
+                </div>
                 <button
                   type="button"
                   :disabled="fetchingModelsId === 'light'"

@@ -390,6 +390,18 @@ watch(
                 required
                 class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
               />
+              <div v-if="paramRows.some((p) => p.key.trim())" class="flex items-center gap-1 flex-wrap text-[10.5px]">
+                <span class="text-slate-500">插入变量:</span>
+                <button
+                  v-for="pk in paramRows.map((p) => p.key.trim()).filter(Boolean)"
+                  :key="pk"
+                  type="button"
+                  @click="httpUrl = `${httpUrl}{{${pk}}}`"
+                  class="px-1.5 py-0.5 rounded border border-[#fff8ee]/12 bg-[#050811] font-mono text-[#f2b880] hover:border-[#f2b880]/45 cursor-pointer"
+                >
+                  &#123;&#123;{{ pk }}&#125;&#125;
+                </button>
+              </div>
             </label>
           </div>
 

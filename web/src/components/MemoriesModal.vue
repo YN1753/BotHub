@@ -515,8 +515,16 @@ watch(
     </div>
 
     <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
-      <div v-if="filteredMemories.length === 0" class="py-10 text-center text-sm text-slate-500">
-        {{ store.state.memories.length ? '当前筛选下无记忆条目' : '尚未写入长期记忆条目' }}
+      <div v-if="filteredMemories.length === 0" class="py-10 text-center flex flex-col items-center gap-2 text-sm text-slate-500">
+        <span>{{ store.state.memories.length ? '当前筛选下无记忆条目' : '尚未写入长期记忆条目' }}</span>
+        <button
+          v-if="searchQuery || filterCat !== 'all' || filterScope !== 'all' || pinnedOnly || coreOnly"
+          type="button"
+          @click="searchQuery = ''; filterCat = 'all'; filterScope = 'all'; pinnedOnly = false; coreOnly = false"
+          class="px-3 py-1 rounded-full border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] cursor-pointer"
+        >
+          重置记忆筛选
+        </button>
       </div>
       <article
         v-for="m in filteredMemories"

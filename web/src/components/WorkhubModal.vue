@@ -41,6 +41,7 @@ const todoFilter = ref<'open' | 'all' | 'done'>('open')
 const filterTodoBotId = ref('')
 const todoSearch = ref('')
 const urgentOnly = ref(false)
+const dueTodayOnly = ref(false)
 const newTodoTitle = ref('')
 const newTodoPriority = ref<'high' | 'normal' | 'low'>('normal')
 const newTodoDueAt = ref('')
@@ -99,6 +100,7 @@ const filteredTodos = computed(() =>
     if (todoFilter.value === 'open' && t.status === 'done') return false
     if (todoFilter.value === 'done' && t.status !== 'done') return false
     if (urgentOnly.value && t.priority !== 'high' && !isOverdue(t)) return false
+    if (dueTodayOnly.value && (!t.due_at || t.due_at.slice(0, 10) !== todayPrefix.value)) return false
     const q = todoSearch.value.trim().toLowerCase()
     if (!q) return true
     return `${t.title} ${t.notes || ''} ${t.due_at || ''}`.toLowerCase().includes(q)
@@ -158,6 +160,21 @@ function botNameById(botId?: string): string {
 
 function isOverdue(t: TodoItem): boolean {
   return Boolean(t.status !== 'done' && t.due_at && t.due_at.slice(0, 10) < todayPrefix.value)
+}
+
+function formatTodoDueLabel(t: TodoItem): string {
+  if (!t.due_at) return ''
+  const due = t.due_at.slice(0, 10)
+  const diffDays = Math.round(
+    (new Date(`${due}T00:00:00`).getTime() - new Date(`${todayPrefix.value}T00:00:00`).getTime()) / 86400000
+  )
+  if (Number.isNaN(diffDays)) return due
+  if (t.status !== 'done') {
+    if (diffDays < 0) return `已逾期 ${Math.abs(diffDays)} 天 (${due})`
+    if (diffDays === 0) return `今天截止 (${due})`
+    if (diffDays === 1) return `明天截止 (${due})`
+  }
+  return `截止 ${due}`
 }
 
 function closeModal() {
@@ -502,6 +519,19 @@ async function refineNoteWithBot(n: WorkNote) {
           >
             仅高优/逾期
           </button>
+          <button
+            type="button"
+            :aria-pressed="dueTodayOnly"
+            @click="dueTodayOnly = !dueTodayOnly"
+            :class="[
+              'min-h-[32px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+              dueTodayOnly
+                ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
+                : 'border-[#fff8ee]/10 text-slate-400 hover:text-white'
+            ]"
+          >
+            今日截止
+          </button>
           <input
             v-model="todoSearch"
             type="search"
@@ -524,9 +554,9 @@ async function refineNoteWithBot(n: WorkNote) {
         <div v-if="filteredTodos.length === 0" class="py-12 text-center flex flex-col items-center gap-2 text-xs text-slate-500">
           <span>{{ store.state.todos.length ? '当前筛选条件无匹配待办' : '当前暂无待办；在任意支持工具的助手对话里说「帮我记一下待办」，也会自动出现在这里。' }}</span>
           <button
-            v-if="todoSearch || urgentOnly || filterTodoBotId"
+            v-if="todoSearch || urgentOnly || dueTodayOnly || filterTodoBotId"
             type="button"
-            @click="todoSearch = ''; urgentOnly = false; filterTodoBotId = ''"
+            @click="todoSearch = ''; urgentOnly = false; dueTodayOnly = false; filterTodoBotId = ''"
             class="px-3 py-1 rounded-full border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] cursor-pointer"
           >
             重置待办筛选
@@ -577,7 +607,7 @@ async function refineNoteWithBot(n: WorkNote) {
                         : 'border-[#fff8ee]/12 text-slate-400',
                     ]"
                   >
-                    {{ isOverdue(t) ? '已逾期 ' : '截止 ' }}{{ t.due_at }}
+                    {{ formatTodoDueLabel(t) }}
                   </span>
                   <span
                     v-if="t.bot_id"

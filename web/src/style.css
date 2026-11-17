@@ -818,6 +818,18 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
   94% { transform: translateX(-1px); }
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .vesper-shake {
+    animation: vesperShake 320ms var(--ease-snappy);
+  }
+}
+@keyframes vesperShake {
+  0%, 100% { transform: translateX(0); }
+  22% { transform: translateX(-6px); }
+  45% { transform: translateX(5px); }
+  70% { transform: translateX(-3px); }
+}
+
 @keyframes botSpin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

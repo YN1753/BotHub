@@ -58,7 +58,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.20.0',
+  version: 'v2.21.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -376,7 +376,10 @@ export function useAppStore() {
     }
   }
 
+  let latestSelectSeq = 0
+
   async function selectBot(botId: string, threadId?: string) {
+    const seq = ++latestSelectSeq
     state.activeBotId = botId
     state.workspace = 'bots'
     localStorage.setItem('bothub_active_bot', botId)
@@ -388,6 +391,7 @@ export function useAppStore() {
     try {
       const targetThread = threadId !== undefined ? threadId : (bot?.active_thread_id || '')
       const res = await BotHubApi.getBotMessages(botId, targetThread)
+      if (seq !== latestSelectSeq) return
       state.activeThreadId = res.thread_id || ''
       state.botThreads = res.threads || []
       state.botMemories = res.memories || []
@@ -398,6 +402,7 @@ export function useAppStore() {
       }
       state.timeline = mapServerMessages(res.messages || [], res.bot || bot)
     } catch (err: any) {
+      if (seq !== latestSelectSeq) return
       notify(err.message || '加载 Bot 对话流失败')
     }
   }
@@ -518,20 +523,28 @@ export function useAppStore() {
   }
 
   async function deleteSingleMessage(msg: ChatMessageUI) {
-    if (msg.serverId && activeBot.value) {
-      await BotHubApi.deleteBotMessage(activeBot.value.id, msg.serverId)
+    try {
+      if (msg.serverId && activeBot.value) {
+        await BotHubApi.deleteBotMessage(activeBot.value.id, msg.serverId)
+      }
+      state.timeline = state.timeline.filter((x) => x.localId !== msg.localId)
+      notify('已删除该条消息')
+    } catch (err: any) {
+      notify(err.message || '删除消息失败')
     }
-    state.timeline = state.timeline.filter((x) => x.localId !== msg.localId)
-    notify('已删除该条消息')
   }
 
   async function clearActiveBotTimeline() {
     const bot = activeBot.value
     if (!bot) return
-    await BotHubApi.clearBotMessages(bot.id, state.activeThreadId)
-    state.timeline = []
-    await refreshActiveBot()
-    notify(state.activeThreadId ? `[${bot.name}] 当前话题记录已清空` : `[${bot.name}] 主对话时间线已清空`)
+    try {
+      await BotHubApi.clearBotMessages(bot.id, state.activeThreadId)
+      state.timeline = []
+      await refreshActiveBot()
+      notify(state.activeThreadId ? `[${bot.name}] 当前话题记录已清空` : `[${bot.name}] 主对话时间线已清空`)
+    } catch (err: any) {
+      notify(err.message || '清空对话记录失败')
+    }
   }
 
   function draftStorageKey(botId: string, threadId = ''): string {

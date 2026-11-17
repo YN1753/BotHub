@@ -159,6 +159,7 @@ async function handleSubmit() {
   if (mode.value === 'group') {
     if (!groupName.value.trim()) {
       store.notify('请输入群聊名称')
+      groupNameInputRef.value?.focus()
       return
     }
     if (groupMembers.value.length === 0) {
@@ -227,7 +228,11 @@ async function handleSubmit() {
     return
   }
 
-  if (!name.value.trim()) return
+  if (!name.value.trim()) {
+    store.notify('请输入 Bot 名称')
+    botNameInputRef.value?.focus()
+    return
+  }
   saving.value = true
   try {
     const res = await BotHubApi.createBot({

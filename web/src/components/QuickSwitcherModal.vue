@@ -288,6 +288,13 @@ async function executeEntry(entry?: SearchEntry) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && query.value.trim()) {
+    e.preventDefault()
+    e.stopPropagation()
+    query.value = ''
+    highlighted.value = 0
+    return
+  }
   const len = entries.value.length
   if (!len) return
   if (e.key === 'ArrowDown') {

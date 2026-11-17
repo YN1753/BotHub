@@ -7,6 +7,13 @@ export default defineConfig({
   build: {
     outDir: '../static',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vue-vendor': ['vue'],
+        },
+      },
+    },
   },
   server: {
     proxy: {

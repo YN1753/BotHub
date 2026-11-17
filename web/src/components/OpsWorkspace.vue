@@ -74,6 +74,34 @@ const filteredAssets = computed(() =>
   })
 )
 
+const activeCostSummary = computed(() => {
+  const totals = new Map<string, number>()
+  for (const a of filteredAssets.value) {
+    if (a.status === '已停用') continue
+    const raw = String(a.price || '').trim()
+    if (!raw || raw.includes('免费')) continue
+    const m = raw.match(/(\d+(?:\.\d+)?)/)
+    if (!m) continue
+    const num = Number(m[1])
+    if (!Number.isFinite(num) || num <= 0) continue
+    const upper = raw.toUpperCase()
+    const sym = upper.includes('HK$') || upper.includes('HKD')
+      ? 'HK$'
+      : upper.includes('$') || upper.includes('USD')
+        ? '$'
+        : upper.includes('€') || upper.includes('EUR')
+          ? '€'
+          : upper.includes('£') || upper.includes('GBP')
+            ? '£'
+            : '¥'
+    totals.set(sym, (totals.get(sym) || 0) + num)
+  }
+  if (totals.size === 0) return ''
+  return Array.from(totals.entries())
+    .map(([sym, val]) => `${sym}${val.toFixed(2).replace(/\.00$/, '')}`)
+    .join(' + ')
+})
+
 function resetAssetFilters() {
   searchQuery.value = ''
   activeCat.value = 'all'
@@ -219,9 +247,14 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
           type="button"
           aria-label="展开侧边栏"
           title="展开侧边栏"
-          class="hidden md:inline-flex items-center justify-center w-9 h-9 rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+          class="relative hidden md:inline-flex items-center justify-center w-9 h-9 rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
           @click="emit('toggleDesktopSidebar')"
         >
+          <span
+            v-if="store.unreadInboxCount.value > 0 || store.pendingTodoCount.value > 0"
+            class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#f2b880] shadow-[0_0_6px_#f2b880]"
+            aria-hidden="true"
+          />
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" />
             <line x1="9" y1="3" x2="9" y2="21" />
@@ -320,7 +353,16 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
         <!-- Asset Watcher Section -->
         <div class="flex flex-col gap-3.5">
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="text-base font-semibold text-white">数字资产与会员守望</h2>
+            <div class="flex items-center gap-2.5 flex-wrap">
+              <h2 class="text-base font-semibold text-white">数字资产与会员守望</h2>
+              <span
+                v-if="activeCostSummary"
+                class="font-mono text-[11px] px-2.5 py-0.5 rounded-full border border-[#f2b880]/25 bg-[#f2b880]/10 text-[#f7cba0]"
+                title="按当前筛选视图非停用资产账面金额累加统计"
+              >
+                账面合计: {{ activeCostSummary }}
+              </span>
+            </div>
             <div class="flex items-center gap-2 flex-wrap">
               <button
                 type="button"

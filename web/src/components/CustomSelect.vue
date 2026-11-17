@@ -8,11 +8,13 @@ const props = withDefaults(
     options: SelectOption[]
     placeholder?: string
     compact?: boolean
+    disabled?: boolean
     ariaLabel?: string
   }>(),
   {
     placeholder: '请选择...',
     compact: false,
+    disabled: false,
   }
 )
 
@@ -55,6 +57,7 @@ function measureDirection() {
 }
 
 async function toggleOpen() {
+  if (props.disabled) return
   if (open.value) {
     open.value = false
     return
@@ -72,6 +75,7 @@ function selectOption(val: string) {
 }
 
 function handleTriggerKeydown(e: KeyboardEvent) {
+  if (props.disabled) return
   if (e.key === 'Escape' && open.value) {
     e.preventDefault()
     e.stopPropagation()
@@ -153,6 +157,7 @@ onBeforeUnmount(() => {
       ref="triggerEl"
       type="button"
       role="combobox"
+      :disabled="disabled"
       :aria-expanded="open"
       :aria-controls="listboxId"
       aria-haspopup="listbox"
@@ -160,7 +165,7 @@ onBeforeUnmount(() => {
       @click="toggleOpen"
       @keydown="handleTriggerKeydown"
       :class="[
-        'w-full flex items-center justify-between gap-2 rounded-xl border transition-colors text-left cursor-pointer',
+        'w-full flex items-center justify-between gap-2 rounded-xl border transition-colors text-left cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed',
         'bg-[#080c19]/85 border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-slate-100',
         compact ? 'px-3 py-1.5 text-xs min-h-[44px] sm:min-h-[34px]' : 'px-3.5 py-2 text-sm min-h-[44px]'
       ]"

@@ -1503,8 +1503,12 @@ async function sendPrompt(overrideText?: string) {
       if (synced?.memories) store.state.botMemories = synced.memories
       if (synced?.executions) store.state.botExecutions = synced.executions
       if (synced?.messages && !store.state.isStreaming) {
+        const finalTurnStatus = activeTurn.statusText
         const mappedSynced = mapServerMessages(synced.messages, curBot)
         if (mappedSynced.length >= store.state.timeline.length) {
+          if (finalTurnStatus && mappedSynced.length > 0 && mappedSynced[mappedSynced.length - 1].role === 'assistant') {
+            mappedSynced[mappedSynced.length - 1].statusText = finalTurnStatus
+          }
           store.state.timeline = mappedSynced
         }
       }
@@ -1583,6 +1587,20 @@ async function runRoutine(taskId: string) {
   } catch (err: any) {
     store.notify(err.message)
   }
+}
+
+async function toggleRoutineEnabled(taskId: string, enabled: boolean) {
+  try {
+    await BotHubApi.updateTask(taskId, { enabled: !enabled })
+    store.notify(!enabled ? '例程已启用' : '例程已暂停')
+    await store.loadDashboard(false)
+  } catch (err: any) {
+    store.notify(err.message)
+  }
+}
+
+function sumToolDurationMs(tools: Array<{ durationMs?: number }>): number {
+  return tools.reduce((acc, tc) => acc + (tc.durationMs || 0), 0)
 }
 
 async function saveBotProfile() {
@@ -1676,9 +1694,14 @@ function stateBadgeClass(state?: string): string {
           type="button"
           aria-label="展开侧边栏"
           title="展开侧边栏"
-          class="hidden md:inline-flex items-center justify-center w-9 h-9 rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+          class="relative hidden md:inline-flex items-center justify-center w-9 h-9 rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
           @click="emit('toggleDesktopSidebar')"
         >
+          <span
+            v-if="store.unreadInboxCount.value > 0 || store.pendingTodoCount.value > 0"
+            class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#f2b880] shadow-[0_0_6px_#f2b880]"
+            aria-hidden="true"
+          />
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" />
             <line x1="9" y1="3" x2="9" y2="21" />
@@ -1951,7 +1974,7 @@ function stateBadgeClass(state?: string): string {
             >
               <button
                 type="button"
-                title="点击切换话题 · 双击重命名"
+                :title="th.summary ? `${th.summary}（双击重命名）` : '点击切换话题 · 双击重命名'"
                 @click="store.switchThread(th.id)"
                 @dblclick="startRenameThread(th.id, th.title)"
                 class="px-2.5 py-1 text-[11px] whitespace-nowrap cursor-pointer font-medium"
@@ -2351,6 +2374,7 @@ function stateBadgeClass(state?: string): string {
                         <polyline points="9 18 15 12 9 6" />
                       </svg>
                       <span>深度思考过程</span>
+                      <span class="text-[10px] text-amber-300/60">({{ m.reasoning.length }} 字)</span>
                     </summary>
                     <div class="mt-2 font-mono whitespace-pre-wrap leading-relaxed text-slate-300/90">
                       {{ m.reasoning }}
@@ -2367,7 +2391,9 @@ function stateBadgeClass(state?: string): string {
                         <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron text-slate-400 shrink-0">
                           <polyline points="9 18 15 12 9 6" />
                         </svg>
-                        <span class="truncate">工具执行轨迹 · 共 {{ m.tools.length }} 步</span>
+                        <span class="truncate">
+                          工具执行轨迹 · 共 {{ m.tools.length }} 步<template v-if="sumToolDurationMs(m.tools) > 0"> · {{ formatDurationMs(sumToolDurationMs(m.tools)) }}</template>
+                        </span>
                       </span>
                       <span :class="m.tools.some((t) => !t.done) ? 'text-[#f2b880] shrink-0' : 'text-emerald-400 shrink-0'">
                         {{ m.tools.some((t) => !t.done) ? '执行中' : '全部完成' }}
@@ -2856,15 +2882,18 @@ function stateBadgeClass(state?: string): string {
                     </div>
                   </div>
                 </div>
-                <span
+                <button
+                  type="button"
+                  @click="toggleRoutineEnabled(t.id, t.enabled)"
+                  :title="t.enabled ? '点击暂停此例程' : '点击启用此例程'"
                   :class="[
-                    'inline-flex items-center gap-1.5 font-mono text-[11px] shrink-0 px-2 py-0.5 rounded-full border',
-                    t.enabled ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' : 'border-[#fff8ee]/10 text-slate-500'
+                    'inline-flex items-center gap-1.5 font-mono text-[11px] shrink-0 px-2.5 py-0.5 rounded-full border cursor-pointer transition-colors',
+                    t.enabled ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/18' : 'border-[#fff8ee]/10 text-slate-500 hover:text-slate-200'
                   ]"
                 >
                   <span :class="['w-1.5 h-1.5 rounded-full', t.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600']" aria-hidden="true" />
                   {{ t.enabled ? '运行中' : '已暂停' }}
-                </span>
+                </button>
               </div>
               <p class="text-xs text-slate-300/90 leading-relaxed">{{ t.description }}</p>
               <div class="font-mono text-[11px] text-slate-400 truncate rounded-lg bg-[#050811]/60 border border-[#fff8ee]/6 px-2.5 py-1.5">

@@ -73,6 +73,17 @@ function isGroup(b: Bot): boolean {
   return Boolean(b.is_group)
 }
 
+function botDraftPreview(b: Bot): string {
+  const activeKey = b.active_thread_id ? `${b.id}::${b.active_thread_id}` : b.id
+  if (store.state.draftsByBot[activeKey]) return store.state.draftsByBot[activeKey]
+  if (store.state.draftsByBot[b.id]) return store.state.draftsByBot[b.id]
+  const prefix = `${b.id}::`
+  for (const [k, v] of Object.entries(store.state.draftsByBot)) {
+    if (k.startsWith(prefix) && v) return v
+  }
+  return ''
+}
+
 function stateDotClass(state: string): string {
   if (state === 'thinking') return 'bg-amber-400 animate-pulse'
   if (state === 'working') return 'bg-[#f2b880] animate-pulse'
@@ -433,7 +444,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
                 </div>
               </div>
               <div class="text-[11px] text-slate-400/90 truncate mt-0.5">
-                <span v-if="store.state.draftsByBot[b.id] && store.state.activeBotId !== b.id" class="text-rose-400 font-medium">[草稿] {{ store.state.draftsByBot[b.id] }}</span>
+                <span v-if="botDraftPreview(b) && store.state.activeBotId !== b.id" class="text-rose-400 font-medium">[草稿] {{ botDraftPreview(b) }}</span>
                 <template v-else>
                   <span v-if="b.state === 'thinking' || b.state === 'working'" class="text-[#f2b880]">正在输入: </span>
                   <span>{{ b.last_summary || b.role_title }}</span>

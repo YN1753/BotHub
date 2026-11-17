@@ -43,7 +43,7 @@ async function handleSubmit() {
   <main class="relative z-10 min-h-dvh flex items-center justify-center p-4">
     <section
       @pointermove="trackSpotlight"
-      class="luxury-card w-full max-w-md rounded-2xl p-7 shadow-2xl"
+      :class="['luxury-card w-full max-w-md rounded-2xl p-7 shadow-2xl', errorMsg ? 'vesper-shake border-rose-400/35' : '']"
     >
       <div class="flex items-center justify-between gap-3 mb-4">
         <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880] font-mono text-[11px] tracking-wider">
