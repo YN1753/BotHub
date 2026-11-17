@@ -25,7 +25,7 @@ export interface Bot {
   is_builtin: boolean
   is_group?: boolean
   member_ids?: string
-  group_mode?: 'smart' | 'sequential' | 'mention_only' | string
+  group_mode?: 'smart' | 'sequential' | 'parallel' | 'mention_only' | string
   announcement?: string
   sort_order: number
   last_summary: string
@@ -212,6 +212,7 @@ export interface WorkspaceBriefing {
   unread_alerts: NotificationItem[]
   unread_count: number
   recent_notes: WorkNote[]
+  focus_hints?: string[]
 }
 
 export interface TaskTemplateField {

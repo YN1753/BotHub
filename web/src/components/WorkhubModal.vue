@@ -133,6 +133,25 @@ const selectedNote = computed<WorkNote | null>(() => {
   return list.find((n) => n.id === selectedNoteId.value) || list[0]
 })
 
+const briefingPriorityTodos = computed(() => {
+  if (!briefing.value) return []
+  const seen = new Set<string>()
+  const merged = [
+    ...briefing.value.overdue_todos,
+    ...briefing.value.due_today_todos,
+    ...briefing.value.high_priority_todos,
+  ]
+  const out: TodoItem[] = []
+  for (const td of merged) {
+    if (!seen.has(td.id)) {
+      seen.add(td.id)
+      out.push(td)
+      if (out.length >= 6) break
+    }
+  }
+  return out
+})
+
 async function loadBriefing() {
   if (loadingBriefing.value) return
   loadingBriefing.value = true
@@ -951,14 +970,21 @@ async function refineNoteWithBot(n: WorkNote) {
         </button>
       </div>
 
+      <div v-if="briefing?.focus_hints?.length" class="rounded-xl border border-[#f2b880]/30 bg-[#f2b880]/[0.07] px-3.5 py-2.5 flex flex-col gap-1 shrink-0">
+        <div class="text-[11px] font-mono text-[#f2b880]">今日建议聚焦</div>
+        <ul class="text-xs text-slate-200 flex flex-col gap-0.5 list-disc list-inside">
+          <li v-for="(hint, hi) in briefing.focus_hints" :key="hi">{{ hint }}</li>
+        </ul>
+      </div>
+
       <div v-if="briefing" class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div class="vesper-card rounded-xl p-3.5 flex flex-col gap-2">
           <div class="text-xs font-semibold text-[#f2b880]">今日优先关注待办</div>
-          <div v-if="!briefing.overdue_todos.length && !briefing.due_today_todos.length && !briefing.high_priority_todos.length" class="text-xs text-slate-500">
+          <div v-if="!briefingPriorityTodos.length" class="text-xs text-slate-500">
             当前无逾期或紧急待办
           </div>
           <div
-            v-for="td in [...briefing.overdue_todos, ...briefing.due_today_todos, ...briefing.high_priority_todos].slice(0, 6)"
+            v-for="td in briefingPriorityTodos"
             :key="td.id"
             class="flex items-center justify-between gap-2 text-xs py-1 border-b border-[#fff8ee]/6 last:border-0"
           >

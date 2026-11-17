@@ -22,7 +22,7 @@ import (
 
 // Injected during build via -ldflags
 var (
-	Version   = "v2.24.0"
+	Version   = "v2.25.0"
 	Commit    = "dev"
 	BuildTime = "local"
 )
@@ -70,7 +70,8 @@ func main() {
 		Addr:              *addr,
 		Handler:           srvHandler.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      60 * time.Second, // SSE handlers lift deadline via ResponseController
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second, // SSE handlers lift deadlines via ResponseController
 		IdleTimeout:       120 * time.Second,
 	}
 

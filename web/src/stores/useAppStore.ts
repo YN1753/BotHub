@@ -58,7 +58,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.24.0',
+  version: 'v2.25.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -337,6 +337,84 @@ export function useAppStore() {
   let pendingDashboard = false
   let pendingLoadInitial = false
   let dashboardRefreshTimer: number | null = null
+  const pendingSliceKinds = new Set<string>()
+  let sliceRefreshTimer: number | null = null
+
+  async function refreshWorkspaceSlices(kinds: string[]) {
+    const jobs: Promise<void>[] = []
+    for (const kind of kinds) {
+      switch (kind) {
+        case 'todos':
+          jobs.push(
+            BotHubApi.listTodos('all', '').then((res) => {
+              state.todos = res.todos || []
+            })
+          )
+          break
+        case 'notes':
+          jobs.push(
+            BotHubApi.listNotes('', '').then((res) => {
+              state.notes = res.notes || []
+            })
+          )
+          break
+        case 'tasks':
+          jobs.push(
+            BotHubApi.listTasks().then((res) => {
+              state.tasks = res.tasks || []
+            })
+          )
+          break
+        case 'assets':
+          jobs.push(
+            BotHubApi.listAssets().then((res) => {
+              state.assets = res.assets || []
+            })
+          )
+          break
+        case 'memories':
+          jobs.push(
+            BotHubApi.listMemories().then((res) => {
+              state.memories = res.memories || []
+            })
+          )
+          if (state.activeBotId) {
+            const memScope =
+              activeBot.value?.memory_policy === 'isolated'
+                ? `bot:${state.activeBotId}`
+                : `bot:${state.activeBotId},global`
+            jobs.push(
+              BotHubApi.listMemories(memScope).then((res) => {
+                state.botMemories = res.memories || []
+              })
+            )
+          }
+          break
+        default:
+          jobs.push(loadDashboard(false))
+          break
+      }
+    }
+    await Promise.allSettled(jobs)
+  }
+
+  function scheduleSliceRefresh(kind?: string, delayMs = 300) {
+    const normalized = (kind || '').trim().toLowerCase()
+    if (!normalized) {
+      scheduleDashboardRefresh(delayMs)
+      return
+    }
+    pendingSliceKinds.add(normalized)
+    if (sliceRefreshTimer !== null) {
+      window.clearTimeout(sliceRefreshTimer)
+    }
+    sliceRefreshTimer = window.setTimeout(() => {
+      sliceRefreshTimer = null
+      const batch = Array.from(pendingSliceKinds)
+      pendingSliceKinds.clear()
+      void refreshWorkspaceSlices(batch)
+    }, delayMs)
+  }
 
   async function loadDashboard(loadInitialBot = false): Promise<void> {
     if (inflightDashboard) {
@@ -710,8 +788,27 @@ export function useAppStore() {
       }
     })
 
-    es.addEventListener('assistant_update', () => {
-      scheduleDashboardRefresh(450)
+    es.addEventListener('assistant_update', (ev: MessageEvent) => {
+      try {
+        const payload = JSON.parse(ev.data || '{}') as { kind?: string }
+        scheduleSliceRefresh(payload.kind, 300)
+      } catch {
+        scheduleDashboardRefresh(450)
+      }
+    })
+
+    es.addEventListener('thread_updated', (ev: MessageEvent) => {
+      try {
+        const payload = JSON.parse(ev.data || '{}') as { bot_id?: string; thread_id?: string; summary?: string }
+        if (payload.bot_id === state.activeBotId && payload.thread_id) {
+          const target = state.botThreads.find((t) => t.id === payload.thread_id)
+          if (target && payload.summary !== undefined) {
+            target.summary = payload.summary
+          }
+        }
+      } catch {
+        // ignore
+      }
     })
 
     es.onerror = () => {
@@ -726,6 +823,11 @@ export function useAppStore() {
       window.clearTimeout(dashboardRefreshTimer)
       dashboardRefreshTimer = null
     }
+    if (sliceRefreshTimer !== null) {
+      window.clearTimeout(sliceRefreshTimer)
+      sliceRefreshTimer = null
+    }
+    pendingSliceKinds.clear()
     state.sseConnected = false
     if (sseSource) {
       sseSource.close()

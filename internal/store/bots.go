@@ -41,7 +41,7 @@ type Bot struct {
 	IsBuiltin      bool   `json:"is_builtin"`
 	IsGroup        bool   `json:"is_group"`
 	MemberIDs      string `json:"member_ids"`   // JSON string array of Bot IDs when IsGroup=true
-	GroupMode      string `json:"group_mode"`   // smart | sequential | mention_only
+	GroupMode      string `json:"group_mode"`   // smart | sequential | parallel | mention_only
 	Announcement   string `json:"announcement"` // Pinned group notice banner
 	ActiveThreadID string `json:"active_thread_id"`
 	SortOrder      int    `json:"sort_order"`

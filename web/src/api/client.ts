@@ -152,6 +152,7 @@ export const BotHubApi = {
     apiRequest('/api/system/import', { method: 'POST', body: JSON.stringify(payload) }),
 
   // Assets
+  listAssets: () => apiRequest<{ assets: Asset[] }>('/api/assets'),
   createAsset: (payload: Partial<Asset>) =>
     apiRequest('/api/assets', { method: 'POST', body: JSON.stringify(payload) }),
   updateAsset: (id: string, payload: Partial<Asset>) =>
@@ -162,6 +163,7 @@ export const BotHubApi = {
     apiRequest<{ summary: string }>('/api/modules/asset_watcher/run', { method: 'POST' }),
 
   // Tasks / Routines
+  listTasks: () => apiRequest<{ tasks: Task[] }>('/api/tasks'),
   createTask: (payload: Partial<Task>) =>
     apiRequest('/api/tasks', { method: 'POST', body: JSON.stringify(payload) }),
   updateTask: (id: string, payload: Partial<Task>) =>
@@ -285,6 +287,11 @@ export const BotHubApi = {
     apiRequest<{ ok: boolean; scope: string; removed: number }>('/api/agent/memories/prune', {
       method: 'POST',
       body: JSON.stringify({ scope, max_keep: maxKeep }),
+    }),
+  consolidateMemories: (scope = 'all') =>
+    apiRequest<{ ok: boolean; scope: string; merged: number }>('/api/agent/memories/consolidate', {
+      method: 'POST',
+      body: JSON.stringify({ scope }),
     }),
 
   // Custom Skills

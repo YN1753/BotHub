@@ -55,7 +55,82 @@ func filterToolsForBot(bot *store.Bot, attachedSkills []store.Skill) []ToolDefin
 	return filtered
 }
 
+func (e *Engine) buildWorkingContextBlock(bot *store.Bot, tools []ToolDefinition) string {
+	if e == nil || e.store == nil || bot == nil || store.NormalizeBotMode(bot.BotMode) == store.BotModeCompanion {
+		return ""
+	}
+	hasTodos, hasTasks := false, false
+	for _, td := range tools {
+		switch td.Function.Name {
+		case "manage_todos":
+			hasTodos = true
+		case "manage_tasks":
+			hasTasks = true
+		}
+	}
+	if !hasTodos && !hasTasks {
+		return ""
+	}
+	var sb strings.Builder
+	today := time.Now().In(store.ShanghaiLocation()).Format("2006-01-02")
+	if hasTodos {
+		todos, _ := e.store.ListTodos("open", "", 8)
+		if len(todos) > 0 {
+			sb.WriteString("[当前未完成待办焦点 (Live Snapshot)]\n")
+			for i, td := range todos {
+				if i >= 6 {
+					sb.WriteString(fmt.Sprintf("- ... 另有 %d 项待办可通过 manage_todos(list) 查看\n", len(todos)-6))
+					break
+				}
+				dueTag := ""
+				if strings.TrimSpace(td.DueAt) != "" {
+					day := td.DueAt
+					if len(day) >= 10 {
+						day = day[:10]
+					}
+					if day < today {
+						dueTag = " [已逾期:" + td.DueAt + "]"
+					} else if day == today {
+						dueTag = " [今日到期:" + td.DueAt + "]"
+					} else {
+						dueTag = " [截止:" + td.DueAt + "]"
+					}
+				}
+				sb.WriteString(fmt.Sprintf("- [%s|%s] %s (id=%s)%s\n", td.Priority, td.Status, truncateTitle(td.Title), td.ID, dueTag))
+			}
+		}
+	}
+	if hasTasks {
+		tasks, _ := e.store.ListTasks()
+		var enabled []store.Task
+		for _, t := range tasks {
+			if t.Enabled {
+				enabled = append(enabled, t)
+			}
+		}
+		if len(enabled) > 0 {
+			sb.WriteString("[活跃定时/一次性提醒焦点]\n")
+			for i, t := range enabled {
+				if i >= 4 {
+					sb.WriteString(fmt.Sprintf("- ... 另有 %d 项启用任务\n", len(enabled)-4))
+					break
+				}
+				sched := t.CronExpr
+				if t.RunAt != "" {
+					sched = "一次性@" + t.RunAt
+				}
+				sb.WriteString(fmt.Sprintf("- %s (id=%s, %s)\n", truncateTitle(t.Name), t.ID, sched))
+			}
+		}
+	}
+	return strings.TrimSpace(sb.String())
+}
+
 func buildBotSystemPrompt(bot *store.Bot, attachedSkills []store.Skill, memories []store.AgentMemory, peerBots []store.Bot, threadTitle string, inGroup bool) string {
+	return buildBotSystemPromptWithContext(bot, attachedSkills, memories, peerBots, threadTitle, inGroup, "")
+}
+
+func buildBotSystemPromptWithContext(bot *store.Bot, attachedSkills []store.Skill, memories []store.AgentMemory, peerBots []store.Bot, threadTitle string, inGroup bool, workingContext string) string {
 	var sb strings.Builder
 	if prompt := strings.TrimSpace(bot.SystemPrompt); prompt != "" {
 		sb.WriteString(prompt)
@@ -113,6 +188,12 @@ func buildBotSystemPrompt(bot *store.Bot, attachedSkills []store.Skill, memories
 		for _, sk := range promptSkills {
 			sb.WriteString(fmt.Sprintf("- 技能「%s」: %s\n", sk.Name, strings.TrimSpace(sk.Instruction)))
 		}
+	}
+
+	if workingContext != "" {
+		sb.WriteString("\n")
+		sb.WriteString(workingContext)
+		sb.WriteString("\n")
 	}
 
 	if len(memories) > 0 {
@@ -225,17 +306,37 @@ func selectRelevantMemories(memories []store.AgentMemory, query string, maxItems
 				pts += 6
 			case ageHours <= 24*30:
 				pts += 2
+			case !m.Pinned && ageHours > 24*90:
+				pts -= 10
+			case !m.Pinned && ageHours > 24*60:
+				pts -= 6
 			}
 		}
 		if len(queryTokens) > 0 {
-			haystack := strings.ToLower(m.FactKey + " " + m.Category + " " + m.Content)
+			keyLower := strings.ToLower(m.FactKey)
+			catLower := strings.ToLower(m.Category)
+			contentLower := strings.ToLower(m.Content)
 			hits := 0
 			for _, tok := range queryTokens {
-				if strings.Contains(haystack, tok) {
+				matched := false
+				if strings.Contains(keyLower, tok) {
+					pts += 16
+					matched = true
+				}
+				if strings.Contains(contentLower, tok) {
+					pts += 8
+					matched = true
+				} else if strings.Contains(catLower, tok) {
+					pts += 6
+					matched = true
+				}
+				if matched {
 					hits++
 				}
 			}
-			pts += hits * 10
+			if hits > 0 {
+				pts += (hits * 20) / len(queryTokens)
+			}
 		}
 		ranked = append(ranked, scoredMem{mem: m, score: pts, idx: i})
 	}
@@ -527,6 +628,9 @@ func (e *Engine) chatStreamForBot(
 
 		// Group @全体成员 / @所有人 triggers all group members cleanly like QQ/WeChat
 		if (strings.Contains(userMsg, "@全体成员") || strings.Contains(userMsg, "@所有人")) && len(members) > 0 {
+			if strings.TrimSpace(bot.GroupMode) == "parallel" && len(members) > 1 {
+				return e.runTeamRoomParallel(ctx, req, bot, members, memberSet, history, promptMsg, baseURL, apiKey, emit)
+			}
 			return e.runTeamRoomHandoff(ctx, req, bot, members, memberSet, history, promptMsg, baseURL, apiKey, emit)
 		}
 
@@ -554,6 +658,9 @@ func (e *Engine) chatStreamForBot(
 					}
 				}
 			}
+			if strings.TrimSpace(bot.GroupMode) == "parallel" && len(mentioned) > 1 {
+				return e.runTeamRoomParallel(ctx, req, bot, mentioned, memberSet, history, promptMsg, baseURL, apiKey, emit)
+			}
 			return e.runTeamRoomHandoff(ctx, req, bot, mentioned, memberSet, history, promptMsg, baseURL, apiKey, emit)
 		}
 
@@ -566,6 +673,11 @@ func (e *Engine) chatStreamForBot(
 		var targets []store.Bot
 		allowAutoRelay := false
 		switch strings.TrimSpace(bot.GroupMode) {
+		case "parallel":
+			if len(members) > 1 {
+				return e.runTeamRoomParallel(ctx, req, bot, members, memberSet, history, promptMsg, baseURL, apiKey, emit)
+			}
+			targets = members
 		case "sequential":
 			targets = members
 		case "mention_only":
@@ -743,6 +855,162 @@ func (e *Engine) runTeamRoomHandoffWithRelay(
 	return finalResp, nil
 }
 
+// runTeamRoomParallel executes multiple specialists simultaneously in parallel goroutines,
+// streaming the lead specialist live while buffering peers and flushing them in deterministic order.
+func (e *Engine) runTeamRoomParallel(
+	ctx context.Context,
+	req ChatRequest,
+	roomBot *store.Bot,
+	specialists []store.Bot,
+	memberSet map[string]bool,
+	roomHistory []store.AgentMessage,
+	userMsg, baseURL, apiKey string,
+	emit func(event string, data any),
+) (*ChatResponse, error) {
+	if len(specialists) <= 1 {
+		return e.runTeamRoomHandoff(ctx, req, roomBot, specialists, memberSet, roomHistory, userMsg, baseURL, apiKey, emit)
+	}
+	e.emitBotState(roomBot.ID, store.BotStateWorking, fmt.Sprintf("并发协同 %d 位成员并行作答...", len(specialists)))
+
+	type sseFrame struct {
+		event string
+		data  any
+	}
+	type workerResult struct {
+		sp     store.Bot
+		resp   *ChatResponse
+		err    error
+		frames []sseFrame
+	}
+
+	results := make([]workerResult, len(specialists))
+	var emitMu sync.Mutex
+	safeEmit := func(event string, data any) {
+		if emit == nil {
+			return
+		}
+		emitMu.Lock()
+		defer emitMu.Unlock()
+		emit(event, data)
+	}
+
+	// Emit step 1 turn header before concurrent start so UI binds live deltas to specialist[0]
+	first := specialists[0]
+	safeEmit("bot_turn", map[string]any{
+		"bot_id":        roomBot.ID,
+		"sender_bot_id": first.ID,
+		"sender_name":   first.Name,
+		"role_title":    first.RoleTitle,
+		"avatar_style":  first.AvatarStyle,
+		"is_temp_guest": memberSet != nil && !memberSet[first.ID],
+		"step":          1,
+		"total_steps":   len(specialists),
+	})
+
+	var wg sync.WaitGroup
+	for idx, sp := range specialists {
+		wg.Add(1)
+		go func(i int, member store.Bot) {
+			defer wg.Done()
+			spCopy := member
+			var localFrames []sseFrame
+			workerEmit := safeEmit
+			if i > 0 {
+				workerEmit = func(ev string, d any) {
+					localFrames = append(localFrames, sseFrame{event: ev, data: d})
+				}
+			}
+			parallelPrompt := fmt.Sprintf("用户指令：%s\n\n（当前为多成员并行作答模式：请直接聚焦你的专业领域或视角给出清晰、独立、不冗长的结论或行动结果。）", userMsg)
+			if store.NormalizeBotMode(member.BotMode) == store.BotModeCompanion {
+				parallelPrompt = fmt.Sprintf("用户说：%s\n\n（大家正在群里同时聊天，请按你自己的性格自然回一句。）", userMsg)
+			}
+			resp, err := e.runSingleBotTurn(ctx, req, &spCopy, roomBot.ID, roomHistory, parallelPrompt, baseURL, apiKey, workerEmit)
+			results[i] = workerResult{
+				sp:     member,
+				resp:   resp,
+				err:    err,
+				frames: localFrames,
+			}
+		}(idx, sp)
+	}
+	wg.Wait()
+
+	var combinedContent strings.Builder
+	var combinedReasoning strings.Builder
+	var allTraces []ToolTrace
+	var totalUsage TokenUsage
+	hasUsage := false
+	var lastSuccessResponder *store.Bot
+
+	for i, r := range results {
+		if i > 0 {
+			safeEmit("bot_turn", map[string]any{
+				"bot_id":        roomBot.ID,
+				"sender_bot_id": r.sp.ID,
+				"sender_name":   r.sp.Name,
+				"role_title":    r.sp.RoleTitle,
+				"avatar_style":  r.sp.AvatarStyle,
+				"is_temp_guest": memberSet != nil && !memberSet[r.sp.ID],
+				"step":          i + 1,
+				"total_steps":   len(results),
+			})
+			for _, f := range r.frames {
+				safeEmit(f.event, f.data)
+			}
+		}
+		if r.err != nil {
+			if combinedContent.Len() > 0 {
+				combinedContent.WriteString("\n\n---\n\n")
+			}
+			combinedContent.WriteString(fmt.Sprintf("**[%s]**\n[暂未响应: %s]", r.sp.Name, r.err.Error()))
+			continue
+		}
+		spRef := r.sp
+		lastSuccessResponder = &spRef
+		if combinedContent.Len() > 0 {
+			combinedContent.WriteString("\n\n---\n\n")
+		}
+		combinedContent.WriteString(fmt.Sprintf("**[%s]**\n%s", r.sp.Name, r.resp.Content))
+		if r.resp.ReasoningContent != "" {
+			combinedReasoning.WriteString(r.resp.ReasoningContent + "\n")
+		}
+		allTraces = append(allTraces, r.resp.ToolTraces...)
+		if r.resp.Usage != nil {
+			hasUsage = true
+			totalUsage.PromptTokens += r.resp.Usage.PromptTokens
+			totalUsage.CompletionTokens += r.resp.Usage.CompletionTokens
+			totalUsage.TotalTokens += r.resp.Usage.TotalTokens
+		}
+	}
+
+	if lastSuccessResponder == nil {
+		firstErr := results[0].err
+		if firstErr == nil {
+			firstErr = fmt.Errorf("所有群聊成员均未能返回结果")
+		}
+		e.emitBotState(roomBot.ID, store.BotStateBlocked, firstErr.Error())
+		return nil, firstErr
+	}
+
+	e.emitBotState(roomBot.ID, store.BotStateIdle, truncateTitle(combinedContent.String()))
+
+	finalResp := &ChatResponse{
+		BotID:            roomBot.ID,
+		ThreadID:         strings.TrimSpace(req.ThreadID),
+		SenderBotID:      lastSuccessResponder.ID,
+		SessionID:        "bot:" + roomBot.ID,
+		Model:            lastSuccessResponder.Model,
+		ReasoningContent: combinedReasoning.String(),
+		Content:          combinedContent.String(),
+		ToolTraces:       allTraces,
+	}
+	if hasUsage {
+		finalResp.Usage = &totalUsage
+	}
+	safeEmit("done", finalResp)
+	return finalResp, nil
+}
+
 func (e *Engine) runSingleBotTurn(
 	ctx context.Context,
 	req ChatRequest,
@@ -826,7 +1094,8 @@ func (e *Engine) runSingleBotTurn(
 	if hasConsultTool {
 		peerBots = allBots
 	}
-	sysPrompt := buildBotSystemPrompt(actingBot, attachedSkills, memories, peerBots, threadTitle, timelineBotID != actingBot.ID)
+	workingCtx := e.buildWorkingContextBlock(actingBot, tools)
+	sysPrompt := buildBotSystemPromptWithContext(actingBot, attachedSkills, memories, peerBots, threadTitle, timelineBotID != actingBot.ID, workingCtx)
 
 	var botNameMap map[string]string
 	if timelineBotID != actingBot.ID && len(allBots) > 0 {
@@ -908,6 +1177,9 @@ func (e *Engine) runSingleBotTurn(
 
 	const maxRounds = 8
 	endedWithTools := false
+	var turnCacheMu sync.Mutex
+	turnReadCache := make(map[string]string)
+
 	for round := 0; round < maxRounds; round++ {
 		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(ctx, targets, messages, tools, thinkFlag, emit, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
@@ -1002,17 +1274,42 @@ func (e *Engine) runSingleBotTurn(
 		batchResults := make([]batchExecResult, len(toolCalls))
 
 		runOne := func(idx int, tc apiToolCall) {
+			isRO := e.isReadOnlyTool(tc.Function.Name)
+			cacheKey := tc.Function.Name + "\x00" + normalizeToolArgsJSON(tc.Function.Arguments)
+			if isRO {
+				turnCacheMu.Lock()
+				cachedOut, ok := turnReadCache[cacheKey]
+				turnCacheMu.Unlock()
+				if ok {
+					batchResults[idx] = batchExecResult{
+						output:     cachedOut,
+						status:     "ok",
+						durationMs: 0,
+					}
+					return
+				}
+			} else {
+				turnCacheMu.Lock()
+				clear(turnReadCache)
+				turnCacheMu.Unlock()
+			}
+
 			toolStart := time.Now()
 			toolOutput, toolErr := e.ExecuteTool(toolCtx, tc.Function.Name, tc.Function.Arguments)
 			toolDurationMs := time.Since(toolStart).Milliseconds()
 			execStatus := "ok"
 			if toolErr != nil {
 				execStatus = "error"
-				errPayload, _ := json.Marshal(map[string]any{"ok": false, "error": toolErr.Error()})
-				toolOutput = string(errPayload)
+				toolOutput = toolErrorPayload(tc.Function.Name, toolErr)
+			}
+			cleanOut := notifier.StripEmoji(toolOutput)
+			if isRO && toolErr == nil {
+				turnCacheMu.Lock()
+				turnReadCache[cacheKey] = cleanOut
+				turnCacheMu.Unlock()
 			}
 			batchResults[idx] = batchExecResult{
-				output:     notifier.StripEmoji(toolOutput),
+				output:     cleanOut,
 				status:     execStatus,
 				durationMs: toolDurationMs,
 			}

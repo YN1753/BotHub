@@ -41,6 +41,13 @@ func (e *Engine) toolManageTodos(ctx context.Context, argsJSON string) (string, 
 		DueAt    string `json:"due_at"`
 		Tags     string `json:"tags"`
 		Filter   string `json:"filter"`
+		Items    []struct {
+			Title    string `json:"title"`
+			Notes    string `json:"notes"`
+			Priority string `json:"priority"`
+			DueAt    string `json:"due_at"`
+			Tags     string `json:"tags"`
+		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 manage_todos 参数失败: %w", err)
@@ -103,6 +110,56 @@ func (e *Engine) toolManageTodos(ctx context.Context, argsJSON string) (string, 
 		}
 		e.publishAssistantUpdate("todos")
 		out, _ := json.Marshal(map[string]any{"ok": true, "todo": saved})
+		return string(out), nil
+
+	case "batch_add":
+		if len(args.Items) == 0 {
+			return "", fmt.Errorf("batch_add 时 items 不能为空")
+		}
+		if len(args.Items) > 20 {
+			args.Items = args.Items[:20]
+		}
+		created := make([]store.TodoItem, 0, len(args.Items))
+		for _, item := range args.Items {
+			t := notifier.StripEmoji(strings.TrimSpace(item.Title))
+			if t == "" {
+				continue
+			}
+			prio := strings.TrimSpace(item.Priority)
+			if prio == "" {
+				prio = args.Priority
+			}
+			due := strings.TrimSpace(item.DueAt)
+			if due == "" {
+				due = strings.TrimSpace(args.DueAt)
+			}
+			tags := notifier.StripEmoji(strings.TrimSpace(item.Tags))
+			if tags == "" {
+				tags = notifier.StripEmoji(strings.TrimSpace(args.Tags))
+			}
+			saved, err := e.store.SaveTodo(store.TodoItem{
+				BotID:    ownerBot,
+				ThreadID: strings.TrimSpace(sc.ThreadID),
+				Title:    t,
+				Notes:    notifier.StripEmoji(strings.TrimSpace(item.Notes)),
+				Priority: prio,
+				DueAt:    due,
+				Tags:     tags,
+			})
+			if err != nil {
+				return "", err
+			}
+			created = append(created, saved)
+		}
+		if len(created) == 0 {
+			return "", fmt.Errorf("batch_add 未包含有效标题的待办项")
+		}
+		e.publishAssistantUpdate("todos")
+		out, _ := json.Marshal(map[string]any{
+			"ok":    true,
+			"count": len(created),
+			"todos": created,
+		})
 		return string(out), nil
 
 	case "update", "complete":
@@ -262,13 +319,30 @@ func (e *Engine) toolManageNotes(ctx context.Context, argsJSON string) (string, 
 		out, _ := json.Marshal(map[string]any{"ok": true, "note": note})
 		return string(out), nil
 
-	case "upsert":
+	case "upsert", "append":
 		var note store.WorkNote
+		foundExisting := false
 		if id := strings.TrimSpace(args.ID); id != "" {
 			if existing, _ := e.store.GetNote(id); existing != nil {
 				note = *existing
+				foundExisting = true
 			} else {
 				note.ID = id
+				note.BotID = ownerBot
+			}
+		} else if t := notifier.StripEmoji(strings.TrimSpace(args.Title)); t != "" {
+			// Locate existing note with matching title cleanly when ID is omitted in append mode
+			if action == "append" {
+				candidates, _ := e.store.ListNotes(t, "", 10)
+				for _, cand := range candidates {
+					if strings.EqualFold(strings.TrimSpace(cand.Title), t) {
+						note = cand
+						foundExisting = true
+						break
+					}
+				}
+			}
+			if !foundExisting {
 				note.BotID = ownerBot
 			}
 		} else {
@@ -278,10 +352,16 @@ func (e *Engine) toolManageNotes(ctx context.Context, argsJSON string) (string, 
 			note.Title = t
 		}
 		if note.Title == "" {
-			return "", fmt.Errorf("upsert 工作文档时 title 不能为空")
+			return "", fmt.Errorf("%s 工作文档时 title 不能为空", action)
 		}
-		if c := notifier.StripEmoji(strings.TrimSpace(args.Content)); c != "" {
-			note.Content = c
+		newChunk := notifier.StripEmoji(strings.TrimSpace(args.Content))
+		if action == "append" && foundExisting && strings.TrimSpace(note.Content) != "" {
+			if newChunk == "" {
+				return "", fmt.Errorf("append 工作文档时 content 不能为空")
+			}
+			note.Content = strings.TrimRight(note.Content, "\n") + "\n\n---\n\n" + newChunk
+		} else if newChunk != "" {
+			note.Content = newChunk
 		}
 		if cat := notifier.StripEmoji(strings.TrimSpace(args.Category)); cat != "" {
 			note.Category = cat
@@ -300,7 +380,7 @@ func (e *Engine) toolManageNotes(ctx context.Context, argsJSON string) (string, 
 			return "", err
 		}
 		e.publishAssistantUpdate("notes")
-		out, _ := json.Marshal(map[string]any{"ok": true, "note": saved})
+		out, _ := json.Marshal(map[string]any{"ok": true, "appended": action == "append" && foundExisting, "note": saved})
 		return string(out), nil
 
 	case "delete":
@@ -366,16 +446,17 @@ func (e *Engine) toolSendNotification(ctx context.Context, argsJSON string) (str
 }
 
 type consultTargetArg struct {
-	BotID       string `json:"bot_id"`
-	BotName     string `json:"bot_name"`
-	Instruction string `json:"instruction"`
+	BotID          string `json:"bot_id"`
+	BotName        string `json:"bot_name"`
+	Instruction    string `json:"instruction"`
+	ContextSnippet string `json:"context_snippet"`
 }
 
 func (e *Engine) consultSingleBot(
 	ctx context.Context,
 	sc ToolScope,
 	allBots []store.Bot,
-	wantID, wantName, instruction string,
+	wantID, wantName, instruction, contextSnippet string,
 ) (map[string]any, error) {
 	instruction = notifier.StripEmoji(strings.TrimSpace(instruction))
 	if instruction == "" {
@@ -435,7 +516,28 @@ func (e *Engine) consultSingleBot(
 		VisitedBots:   nextVisited,
 	})
 
-	delegationPrompt := fmt.Sprintf("[内部协同委派，来自「%s」]\n%s\n\n请紧扣你的专业角色与可用工具直接完成并返回结果。", sc.BotID, instruction)
+	callerLabel := sc.BotID
+	for _, b := range allBots {
+		if b.ID == sc.BotID && strings.TrimSpace(b.Name) != "" {
+			callerLabel = b.Name
+			break
+		}
+	}
+	if callerLabel == "" {
+		callerLabel = "主工作区"
+	}
+
+	var promptBuilder strings.Builder
+	promptBuilder.WriteString(fmt.Sprintf("[内部协同委派，来自「%s」]\n", callerLabel))
+	if snip := notifier.StripEmoji(strings.TrimSpace(contextSnippet)); snip != "" {
+		promptBuilder.WriteString("[前置参考上下文]\n")
+		promptBuilder.WriteString(snip)
+		promptBuilder.WriteString("\n\n")
+	}
+	promptBuilder.WriteString(instruction)
+	promptBuilder.WriteString("\n\n请紧扣你的专业角色与可用工具直接完成并返回结果。")
+	delegationPrompt := promptBuilder.String()
+
 	subReq := ChatRequest{
 		BotID:   target.ID,
 		MsgKind: "delegate",
@@ -443,6 +545,7 @@ func (e *Engine) consultSingleBot(
 		Model:   target.Model,
 	}
 
+	e.emitBotState(target.ID, store.BotStateWorking, fmt.Sprintf("响应「%s」协办委派...", callerLabel))
 	start := time.Now()
 	resp, err := e.runSingleBotTurn(subCtx, subReq, target, target.ID, nil, delegationPrompt, "", "", nil)
 	durationMs := time.Since(start).Milliseconds()
@@ -498,10 +601,11 @@ func (e *Engine) consultSingleBot(
 
 func (e *Engine) toolConsultBot(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		BotID       string             `json:"bot_id"`
-		BotName     string             `json:"bot_name"`
-		Instruction string             `json:"instruction"`
-		Targets     []consultTargetArg `json:"targets"`
+		BotID          string             `json:"bot_id"`
+		BotName        string             `json:"bot_name"`
+		Instruction    string             `json:"instruction"`
+		ContextSnippet string             `json:"context_snippet"`
+		Targets        []consultTargetArg `json:"targets"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 consult_bot 参数失败: %w", err)
@@ -528,7 +632,11 @@ func (e *Engine) toolConsultBot(ctx context.Context, argsJSON string) (string, e
 			wg.Add(1)
 			go func(idx int, t consultTargetArg) {
 				defer wg.Done()
-				res, cErr := e.consultSingleBot(ctx, sc, allBots, t.BotID, t.BotName, t.Instruction)
+				snip := t.ContextSnippet
+				if snip == "" {
+					snip = args.ContextSnippet
+				}
+				res, cErr := e.consultSingleBot(ctx, sc, allBots, t.BotID, t.BotName, t.Instruction, snip)
 				if cErr != nil {
 					results[idx] = map[string]any{
 						"ok":       false,
@@ -542,15 +650,22 @@ func (e *Engine) toolConsultBot(ctx context.Context, argsJSON string) (string, e
 			}(i, args.Targets[i])
 		}
 		wg.Wait()
+		failedCount := 0
+		for _, r := range results {
+			if ok, _ := r["ok"].(bool); !ok {
+				failedCount++
+			}
+		}
 		out, _ := json.Marshal(map[string]any{
-			"ok":             true,
+			"ok":             failedCount < limit,
 			"parallel_count": limit,
+			"failed_count":   failedCount,
 			"results":        results,
 		})
 		return string(out), nil
 	}
 
-	res, err := e.consultSingleBot(ctx, sc, allBots, args.BotID, args.BotName, args.Instruction)
+	res, err := e.consultSingleBot(ctx, sc, allBots, args.BotID, args.BotName, args.Instruction, args.ContextSnippet)
 	if err != nil {
 		return "", err
 	}

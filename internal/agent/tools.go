@@ -300,13 +300,25 @@ func BuiltinTools() []ToolDefinition {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "recall_memory",
-				Description: "检索当前 Bot 或群聊专属作用域内的长期记忆（自动隔离其他 Bot 隐私记忆）。",
+				Description: "检索当前 Bot 或群聊专属作用域内的长期记忆（自动隔离其他 Bot 隐私记忆），支持关键词、分类和仅置顶过滤，并按相关性与权重排序。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"query": map[string]any{
 							"type":        "string",
-							"description": "可选：检索关键词（留空则返回当前作用域核心记忆）",
+							"description": "可选：检索关键词（支持空格分隔多关键词；留空则返回当前作用域核心记忆）",
+						},
+						"category": map[string]any{
+							"type":        "string",
+							"description": "可选：按记忆分类过滤，如 preference / infra / schedule / insight / relation / emotion / general",
+						},
+						"pinned_only": map[string]any{
+							"type":        "boolean",
+							"description": "可选：设为 true 时仅返回置顶的高优先记忆",
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "可选：返回最大条数（默认 20，最大 40）",
 						},
 					},
 				},
@@ -316,14 +328,14 @@ func BuiltinTools() []ToolDefinition {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "manage_memory",
-				Description: "对当前 Bot 或群聊作用域内的长期记忆进行整理：更正旧事实(upsert)、置顶或取消置顶(pin)、遗忘过时或错误条目(forget)、或列出现有记忆键(list)。",
+				Description: "对当前 Bot 或群聊作用域内的长期记忆进行整理：更正旧事实(upsert)、置顶或取消置顶(pin)、遗忘过时或错误条目(forget)、合并去重相似记忆(consolidate)、或列出现有记忆键(list)。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"action": map[string]any{
 							"type":        "string",
-							"enum":        []string{"list", "upsert", "pin", "forget"},
-							"description": "操作类型：list | upsert | pin | forget",
+							"enum":        []string{"list", "upsert", "pin", "forget", "consolidate"},
+							"description": "操作类型：list | upsert | pin | forget | consolidate",
 						},
 						"fact_key": map[string]any{
 							"type":        "string",
@@ -354,14 +366,29 @@ func BuiltinTools() []ToolDefinition {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "manage_todos",
-				Description: "管理用户的个人待办与行动清单（Muse 个人助手核心能力）。支持 list（查看待办）、add（新增待办或拆解行动项）、update（修改优先级/截止时间/状态）、complete（勾选完成，可传 id 或标题关键词）、delete（删除）、clear_done（清理已完成）。",
+				Description: "管理用户的个人待办与行动清单（Muse 个人助手核心能力）。支持 list（查看待办）、add（新增单条待办）、batch_add（一次批量拆解多条子任务）、update（修改优先级/截止时间/状态）、complete（勾选完成，可传 id 或标题关键词）、delete（删除）、clear_done（清理已完成）。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"action": map[string]any{
 							"type":        "string",
-							"enum":        []string{"list", "add", "update", "complete", "delete", "clear_done"},
-							"description": "操作类型：list | add | update | complete | delete | clear_done",
+							"enum":        []string{"list", "add", "batch_add", "update", "complete", "delete", "clear_done"},
+							"description": "操作类型：list | add | batch_add | update | complete | delete | clear_done",
+						},
+						"items": map[string]any{
+							"type":        "array",
+							"description": "当 action=batch_add 时传入批量待办数组（最多 20 条），每项含 title 及可选 priority/due_at/notes/tags",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"title":    map[string]any{"type": "string"},
+									"priority": map[string]any{"type": "string", "enum": []string{"high", "normal", "low"}},
+									"due_at":   map[string]any{"type": "string"},
+									"notes":    map[string]any{"type": "string"},
+									"tags":     map[string]any{"type": "string"},
+								},
+								"required": []string{"title"},
+							},
 						},
 						"id": map[string]any{
 							"type":        "string",
@@ -406,14 +433,14 @@ func BuiltinTools() []ToolDefinition {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "manage_notes",
-				Description: "读写个人工作文档与成果交付区（报告、周报、邮件草稿、行程单、脚本模板等长文成品）。支持 list、search、get、upsert、delete，适合把整理好的 Markdown 成果持久化沉淀而非埋在聊天记录中。",
+				Description: "读写个人工作文档与成果交付区（报告、周报、邮件草稿、行程单、脚本模板等长文成品）。支持 list、search、get、upsert（覆写或新建）、append（向已有文档末尾安全追加新章节或日志，不会覆盖原文）、delete。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"action": map[string]any{
 							"type":        "string",
-							"enum":        []string{"list", "search", "get", "upsert", "delete"},
-							"description": "操作类型：list | search | get | upsert | delete",
+							"enum":        []string{"list", "search", "get", "upsert", "append", "delete"},
+							"description": "操作类型：list | search | get | upsert | append | delete",
 						},
 						"id": map[string]any{
 							"type":        "string",
@@ -490,15 +517,20 @@ func BuiltinTools() []ToolDefinition {
 							"type":        "string",
 							"description": "单人委派时：清晰的执行指令与上下文",
 						},
+						"context_snippet": map[string]any{
+							"type":        "string",
+							"description": "可选：附带给协办成员的关键前置上下文片段，减少重复检索",
+						},
 						"targets": map[string]any{
 							"type":        "array",
 							"description": "可选：并发委派多位成员同步协办",
 							"items": map[string]any{
 								"type": "object",
 								"properties": map[string]any{
-									"bot_id":      map[string]any{"type": "string"},
-									"bot_name":    map[string]any{"type": "string"},
-									"instruction": map[string]any{"type": "string"},
+									"bot_id":          map[string]any{"type": "string"},
+									"bot_name":        map[string]any{"type": "string"},
+									"instruction":     map[string]any{"type": "string"},
+									"context_snippet": map[string]any{"type": "string"},
 								},
 								"required": []string{"instruction"},
 							},
@@ -598,18 +630,24 @@ func normalizeToolArgsJSON(raw string) string {
 const maxToolOutputRunes = 12000
 
 // ExecuteTool dispatches built-in tools and user-defined custom webhook skills.
-func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) (string, error) {
-	timeout := 28 * time.Second
-	if name == "consult_bot" {
-		timeout = 55 * time.Second
+func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) (out string, err error) {
+	timeout := 12 * time.Second
+	switch {
+	case name == "consult_bot":
+		timeout = 60 * time.Second
+	case name == "read_url" || name == "web_search" || name == "query_nezha_nodes" || strings.HasPrefix(name, "skill_"):
+		timeout = 25 * time.Second
 	}
 	toolCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	defer func() {
+		if r := recover(); r != nil {
+			out = ""
+			err = fmt.Errorf("工具 %s 执行异常中断: %v", name, r)
+		}
+	}()
 
 	cleanArgs := normalizeToolArgsJSON(argsJSON)
-
-	var out string
-	var err error
 	if strings.HasPrefix(name, "skill_") {
 		slug := strings.TrimPrefix(name, "skill_")
 		sk, gErr := e.store.GetSkillBySlug(slug)
@@ -679,6 +717,39 @@ func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) 
 	return out, nil
 }
 
+func toolErrorPayload(name string, err error) string {
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+	retryable := strings.Contains(lower, "timeout") || strings.Contains(lower, "超时") ||
+		strings.Contains(lower, "connection") || strings.Contains(lower, "eof") || strings.Contains(lower, "temporary")
+	var hint string
+	switch {
+	case strings.Contains(lower, "json") || strings.Contains(msg, "参数") || strings.Contains(msg, "必填"):
+		hint = "请检查并修正工具参数 JSON 字段后重试"
+	case strings.Contains(msg, "未找到") || strings.Contains(msg, "不存在"):
+		hint = "建议先调用 list/search 动作核对准确 id 或 fact_key"
+	case name == "read_url" || name == "web_search":
+		if retryable {
+			hint = "目标站点访问超时，可更换关键词或改用另一参考源"
+		} else {
+			hint = "该目标地址不可访问或受策略拦截，请勿编造正文，如实向用户说明或更换公开来源"
+		}
+	case retryable:
+		hint = "遇到瞬时连接或超时问题，可重试一次或降级为精简查询"
+	}
+	payload := map[string]any{
+		"ok":        false,
+		"tool":      name,
+		"error":     msg,
+		"retryable": retryable,
+	}
+	if hint != "" {
+		payload["hint"] = hint
+	}
+	b, _ := json.Marshal(payload)
+	return string(b)
+}
+
 const MaxReadURLChars = 10000
 
 var (
@@ -687,7 +758,21 @@ var (
 	reHTMLTags     = regexp.MustCompile(`(?s)<[^>]+>`)
 	reMultiSpace   = regexp.MustCompile(`[ \t\r\f]+`)
 	reMultiNewline = regexp.MustCompile(`\n{3,}`)
+	reMetaDesc1    = regexp.MustCompile(`(?is)<meta[^>]+name=["'](?:description|og:description)["'][^>]+content=["']([^"']{1,400})["']`)
+	reMetaDesc2    = regexp.MustCompile(`(?is)<meta[^>]+content=["']([^"']{1,400})["'][^>]+name=["'](?:description|og:description)["']`)
 )
+
+func extractHTMLMetaDesc(rawHTML string) string {
+	for _, rx := range []*regexp.Regexp{reMetaDesc1, reMetaDesc2} {
+		if m := rx.FindStringSubmatch(rawHTML); len(m) > 1 {
+			clean := strings.TrimSpace(html.UnescapeString(m[1]))
+			if clean != "" {
+				return notifier.StripEmoji(clean)
+			}
+		}
+	}
+	return ""
+}
 
 func stripHTMLToText(rawHTML string) string {
 	cleaned := reHTMLComment.ReplaceAllString(rawHTML, " ")
@@ -825,6 +910,7 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 	var statusCode int
 	var text string
 	var pageTitle string
+	var pageDesc string
 	sourceMode := "direct"
 
 	// Fast-path: GitHub repository root URL -> fetch raw README.md directly
@@ -848,6 +934,7 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 			text = notifier.StripEmoji(strings.TrimSpace(rawBody))
 		} else {
 			pageTitle = extractHTMLTitle(rawBody)
+			pageDesc = extractHTMLMetaDesc(rawBody)
 			text = stripHTMLToText(rawBody)
 		}
 
@@ -882,6 +969,9 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 	}
 	if pageTitle != "" {
 		resultMap["title"] = pageTitle
+	}
+	if pageDesc != "" {
+		resultMap["description"] = pageDesc
 	}
 
 	// If any lightweight/fallback model is available and the article is long (> 3000 chars),
@@ -1288,6 +1378,7 @@ func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string,
 		if err := e.store.SaveAsset(asset); err != nil {
 			return "", err
 		}
+		e.publishAssistantUpdate("assets")
 		out, _ := json.Marshal(map[string]any{
 			"ok":    true,
 			"asset": asset,
@@ -1302,6 +1393,7 @@ func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string,
 		if err := e.store.DeleteAsset(id); err != nil {
 			return "", err
 		}
+		e.publishAssistantUpdate("assets")
 		out, _ := json.Marshal(map[string]any{"ok": true, "deleted_id": id})
 		return string(out), nil
 
@@ -1319,6 +1411,7 @@ func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string,
 			if err != nil {
 				return "", err
 			}
+			e.publishAssistantUpdate("assets")
 			out, _ := json.Marshal(map[string]any{
 				"ok":      true,
 				"task_id": watcherTaskID,
@@ -1330,6 +1423,7 @@ func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string,
 		if err != nil {
 			return "", err
 		}
+		e.publishAssistantUpdate("assets")
 		out, _ := json.Marshal(map[string]any{
 			"ok":      true,
 			"summary": res.Summary,
@@ -1358,6 +1452,33 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 manage_tasks 参数失败: %w", err)
+	}
+
+	findTaskByIDOrName := func(wantID, wantName string) (*store.Task, error) {
+		if wantID != "" {
+			t, err := e.store.GetTask(wantID)
+			if err != nil {
+				return nil, err
+			}
+			if t != nil {
+				return t, nil
+			}
+		}
+		if wantName != "" {
+			all, _ := e.store.ListTasks()
+			needle := strings.ToLower(strings.TrimSpace(wantName))
+			for i := range all {
+				if strings.EqualFold(strings.TrimSpace(all[i].Name), wantName) {
+					return &all[i], nil
+				}
+			}
+			for i := range all {
+				if strings.Contains(strings.ToLower(all[i].Name), needle) {
+					return &all[i], nil
+				}
+			}
+		}
+		return nil, nil
 	}
 
 	action := strings.ToLower(strings.TrimSpace(args.Action))
@@ -1407,10 +1528,13 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 	case "upsert":
 		sc := toolScopeFromContext(ctx)
 		id := strings.TrimSpace(args.ID)
-		if id == "" {
+		nameArg := notifier.StripEmoji(strings.TrimSpace(args.Name))
+		existing, _ := findTaskByIDOrName(id, nameArg)
+		if existing != nil {
+			id = existing.ID
+		} else if id == "" {
 			id = fmt.Sprintf("task_%d", time.Now().UnixNano()%100000000)
 		}
-		existing, _ := e.store.GetTask(id)
 		var task store.Task
 		if existing != nil {
 			task = *existing
@@ -1434,8 +1558,8 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		if strings.TrimSpace(args.BotID) != "" {
 			task.BotID = strings.TrimSpace(args.BotID)
 		}
-		if strings.TrimSpace(args.Name) != "" {
-			task.Name = notifier.StripEmoji(strings.TrimSpace(args.Name))
+		if nameArg != "" {
+			task.Name = nameArg
 		}
 		if task.Name == "" {
 			task.Name = id
@@ -1496,20 +1620,33 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 			_ = e.scheduler.Reload()
 		}
 		e.publishAssistantUpdate("tasks")
+		var nextRuns []string
+		if task.RunAt != "" {
+			nextRuns = []string{task.RunAt}
+		} else if sched, pErr := cron.ParseStandard(task.CronExpr); pErr == nil {
+			cur := time.Now().In(store.ShanghaiLocation())
+			for i := 0; i < 3; i++ {
+				cur = sched.Next(cur)
+				nextRuns = append(nextRuns, cur.Format("2006-01-02 15:04"))
+			}
+		}
 		out, _ := json.Marshal(map[string]any{
-			"ok":   true,
-			"task": task,
+			"ok":        true,
+			"updated":   existing != nil,
+			"task":      task,
+			"next_runs": nextRuns,
 		})
 		return string(out), nil
 
 	case "toggle":
 		id := strings.TrimSpace(args.ID)
-		if id == "" {
-			return "", fmt.Errorf("toggle 任务时 id 必填")
+		nameArg := strings.TrimSpace(args.Name)
+		if id == "" && nameArg == "" {
+			return "", fmt.Errorf("toggle 任务时 id 或 name 必填")
 		}
-		existing, err := e.store.GetTask(id)
+		existing, err := findTaskByIDOrName(id, nameArg)
 		if err != nil || existing == nil {
-			return "", fmt.Errorf("未找到任务: %s", id)
+			return "", fmt.Errorf("未找到任务: %s", id+nameArg)
 		}
 		if args.Enabled != nil {
 			existing.Enabled = *args.Enabled
@@ -1525,15 +1662,25 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		e.publishAssistantUpdate("tasks")
 		out, _ := json.Marshal(map[string]any{
 			"ok":      true,
-			"id":      id,
+			"id":      existing.ID,
+			"name":    existing.Name,
 			"enabled": existing.Enabled,
 		})
 		return string(out), nil
 
 	case "delete":
 		id := strings.TrimSpace(args.ID)
+		nameArg := strings.TrimSpace(args.Name)
+		if id == "" && nameArg == "" {
+			return "", fmt.Errorf("delete 任务时 id 或 name 必填")
+		}
 		if id == "" {
-			return "", fmt.Errorf("delete 任务时 id 必填")
+			if existing, _ := findTaskByIDOrName("", nameArg); existing != nil {
+				id = existing.ID
+			}
+		}
+		if id == "" {
+			return "", fmt.Errorf("未找到待删除任务: %s", nameArg)
 		}
 		if err := e.store.DeleteTask(id); err != nil {
 			return "", err
@@ -1587,6 +1734,7 @@ func (e *Engine) toolRememberFact(ctx context.Context, argsJSON string) (string,
 	if err := e.store.SaveAgentMemoryDetailed(targetScope, cat, key, content, imp, args.Pinned); err != nil {
 		return "", err
 	}
+	e.publishAssistantUpdate("memories")
 	out, _ := json.Marshal(map[string]any{
 		"ok":         true,
 		"scope":      targetScope,
@@ -1601,9 +1749,17 @@ func (e *Engine) toolRememberFact(ctx context.Context, argsJSON string) (string,
 
 func (e *Engine) toolRecallMemory(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Query string `json:"query"`
+		Query      string `json:"query"`
+		Category   string `json:"category"`
+		PinnedOnly bool   `json:"pinned_only"`
+		Limit      int    `json:"limit"`
 	}
 	_ = json.Unmarshal([]byte(argsJSON), &args)
+
+	limit := args.Limit
+	if limit <= 0 || limit > 40 {
+		limit = 20
+	}
 
 	sc := toolScopeFromContext(ctx)
 	var scopes []string
@@ -1626,20 +1782,33 @@ func (e *Engine) toolRecallMemory(ctx context.Context, argsJSON string) (string,
 		}
 	}
 
-	memories, err := e.store.ListScopedMemories(scopes, strings.TrimSpace(args.Query), 25)
+	memories, err := e.store.ListScopedMemories(scopes, strings.TrimSpace(args.Query), 80)
 	if err != nil {
 		return "", err
 	}
-	ids := make([]int64, 0, len(memories))
+	catFilter := strings.ToLower(strings.TrimSpace(args.Category))
+	filtered := make([]store.AgentMemory, 0, len(memories))
 	for _, m := range memories {
+		if args.PinnedOnly && !m.Pinned {
+			continue
+		}
+		if catFilter != "" && strings.ToLower(strings.TrimSpace(m.Category)) != catFilter {
+			continue
+		}
+		filtered = append(filtered, m)
+	}
+	ranked := selectRelevantMemories(filtered, args.Query, limit)
+
+	ids := make([]int64, 0, len(ranked))
+	for _, m := range ranked {
 		ids = append(ids, m.ID)
 	}
 	e.store.TouchRecalledMemories(ids)
 
 	out, _ := json.Marshal(map[string]any{
-		"count":    len(memories),
+		"count":    len(ranked),
 		"scopes":   scopes,
-		"memories": memories,
+		"memories": ranked,
 	})
 	return string(out), nil
 }
@@ -1697,6 +1866,7 @@ func (e *Engine) toolManageMemory(ctx context.Context, argsJSON string) (string,
 		if err := e.store.SaveAgentMemoryDetailed(targetScope, cat, key, content, imp, pin); err != nil {
 			return "", err
 		}
+		e.publishAssistantUpdate("memories")
 		out, _ := json.Marshal(map[string]any{
 			"ok":       true,
 			"scope":    targetScope,
@@ -1727,6 +1897,7 @@ func (e *Engine) toolManageMemory(ctx context.Context, argsJSON string) (string,
 				if err := e.store.UpdateAgentMemory(m.ID, m.Scope, m.Category, m.FactKey, m.Content, nextImp, nextPin); err != nil {
 					return "", err
 				}
+				e.publishAssistantUpdate("memories")
 				out, _ := json.Marshal(map[string]any{"ok": true, "fact_key": key, "pinned": nextPin})
 				return string(out), nil
 			}
@@ -1742,11 +1913,29 @@ func (e *Engine) toolManageMemory(ctx context.Context, argsJSON string) (string,
 		if err != nil {
 			return "", err
 		}
+		if deleted {
+			e.publishAssistantUpdate("memories")
+		}
 		out, _ := json.Marshal(map[string]any{
 			"ok":       deleted,
 			"scope":    targetScope,
 			"fact_key": key,
 			"forgotten": deleted,
+		})
+		return string(out), nil
+
+	case "consolidate":
+		merged, err := e.store.MergeDuplicateMemories(targetScope)
+		if err != nil {
+			return "", err
+		}
+		if merged > 0 {
+			e.publishAssistantUpdate("memories")
+		}
+		out, _ := json.Marshal(map[string]any{
+			"ok":     true,
+			"scope":  targetScope,
+			"merged": merged,
 		})
 		return string(out), nil
 

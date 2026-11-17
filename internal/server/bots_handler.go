@@ -26,7 +26,7 @@ func newBotID(isGroup bool) string {
 
 func normalizeGroupMode(v string) string {
 	switch strings.TrimSpace(v) {
-	case "sequential", "mention_only":
+	case "sequential", "parallel", "mention_only":
 		return strings.TrimSpace(v)
 	default:
 		return "smart"

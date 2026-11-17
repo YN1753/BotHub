@@ -311,6 +311,23 @@ func TestV2SkillsThreadsScopedMemoriesAndBackup(t *testing.T) {
 		t.Fatalf("expected briefing payload, got (%d): %s", recBrief.Code, recBrief.Body.String())
 	}
 
+	// 9b. Memory consolidation endpoint + parallel group_mode persistence
+	_ = s.store.SaveAgentMemoryDetailed("global", "infra", "dup_k1", "主力网关运行在香港节点 BGP 线路", 3, false)
+	_ = s.store.SaveAgentMemoryDetailed("global", "infra", "dup_k2", "主力网关运行在香港节点 BGP 线路上", 5, true)
+	reqCon := httptest.NewRequest(http.MethodPost, "/api/agent/memories/consolidate", strings.NewReader(`{"scope":"global"}`))
+	recCon := httptest.NewRecorder()
+	s.handleConsolidateAgentMemories(recCon, reqCon)
+	if recCon.Code != http.StatusOK || !strings.Contains(recCon.Body.String(), `"merged":1`) {
+		t.Fatalf("memory consolidate endpoint failed: %d %s", recCon.Code, recCon.Body.String())
+	}
+
+	reqParGrp := httptest.NewRequest(http.MethodPost, "/api/v2/bots", strings.NewReader(`{"name":"并行参谋群","role_title":"并发协同","is_group":true,"group_mode":"parallel","member_ids":"[\"`+botID+`\"]"}`))
+	recParGrp := httptest.NewRecorder()
+	s.handleCreateBot(recParGrp, reqParGrp)
+	if recParGrp.Code != http.StatusOK || !strings.Contains(recParGrp.Body.String(), `"group_mode":"parallel"`) {
+		t.Fatalf("create parallel group failed: %d %s", recParGrp.Code, recParGrp.Body.String())
+	}
+
 	// 10. Delete thread removes thread & its messages
 	reqDelTh := httptest.NewRequest(http.MethodDelete, "/api/v2/bots/"+botID+"/threads/"+th1ID, nil)
 	reqDelTh.SetPathValue("id", botID)

@@ -24,6 +24,7 @@ const pinnedOnly = ref(false)
 const coreOnly = ref(false)
 const sortBy = ref<'weight' | 'recent' | 'recalled'>('weight')
 const pruning = ref(false)
+const consolidating = ref(false)
 const saving = ref(false)
 
 // Inline edit state
@@ -321,6 +322,23 @@ async function handlePruneScope() {
   }
 }
 
+async function handleConsolidateScope() {
+  if (consolidating.value) return
+  consolidating.value = true
+  try {
+    const scopeTarget = filterScope.value === 'all' ? 'all' : filterScope.value
+    const res = await BotHubApi.consolidateMemories(scopeTarget)
+    store.notify(res.merged > 0 ? `已智能合并 ${res.merged} 条冗余/重复记忆` : '当前记忆库无重复冗余条目')
+    if (res.merged > 0) {
+      await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
+    }
+  } catch (err: any) {
+    store.notify(err.message || '合并记忆失败')
+  } finally {
+    consolidating.value = false
+  }
+}
+
 watch(
   () => store.state.showMemoriesModal,
   (open) => {
@@ -458,6 +476,14 @@ watch(
           ]"
         >
           核心 W4+
+        </button>
+        <button
+          type="button"
+          :disabled="consolidating"
+          @click="handleConsolidateScope"
+          class="min-h-[34px] px-3 rounded-xl border border-cyan-400/35 text-[11px] text-cyan-200 hover:bg-cyan-400/15 cursor-pointer disabled:opacity-50"
+        >
+          {{ consolidating ? '合并中...' : '合并冗余' }}
         </button>
         <button
           v-if="filterScope !== 'all' && filteredMemories.length > 25"

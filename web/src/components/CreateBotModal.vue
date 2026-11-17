@@ -54,7 +54,7 @@ const groupName = ref('')
 const groupDesc = ref('')
 const groupAvatar = ref('swarm:indigo')
 const groupMembers = ref<string[]>([])
-const groupMode = ref<'smart' | 'sequential' | 'mention_only'>('smart')
+const groupMode = ref<'smart' | 'sequential' | 'parallel' | 'mention_only'>('smart')
 const groupModel = ref('')
 const groupAnnouncement = ref('')
 const toolSearch = ref('')
@@ -495,6 +495,7 @@ async function handleSubmit() {
                 :items="[
                   { id: 'smart', label: '智能编排' },
                   { id: 'sequential', label: '轮流发言' },
+                  { id: 'parallel', label: '并发思考' },
                   { id: 'mention_only', label: '仅 @点名' },
                 ]"
                 variant="subtle"

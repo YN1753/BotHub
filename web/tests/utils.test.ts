@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { formatDurationMs, describeCron, generateSlug, shortVersion, escapeHtml } from '../src/utils/format.ts'
+import { formatDurationMs, describeCron, generateSlug, shortVersion, escapeHtml, groupModeLabel } from '../src/utils/format.ts'
 import { formatToolDisplayName, groupAvailableTools } from '../src/utils/toolMeta.ts'
 import { parseAvatarStyle, composeAvatarStyle, resolveGroupMemberBots } from '../src/utils/botLook.ts'
 
@@ -10,6 +10,8 @@ test('format utilities produce expected strings', () => {
   assert.equal(formatDurationMs(125000), '2m5s')
   assert.equal(describeCron('0 8 * * *'), '每天 早间 08:00 执行')
   assert.equal(describeCron('*/15 * * * *'), '每隔 15 分钟轮询一次')
+  assert.equal(groupModeLabel('parallel'), '全员并发')
+  assert.equal(groupModeLabel('smart'), '智能协同')
   assert.equal(generateSlug('My Check_Skill!'), 'my_check_skill')
   assert.equal(shortVersion('v2.22.0-abcdef12345678'), 'v2.22.0')
   assert.equal(escapeHtml('<script>"a&b"'), '&lt;script&gt;&quot;a&amp;b&quot;')

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"unicode"
 )
 
 type AgentSession struct {
@@ -350,6 +351,158 @@ func (s *Store) PruneColdMemories(scope string, maxKeep int) (int64, error) {
 	return res.RowsAffected()
 }
 
+func normalizeMemorySignature(raw string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(raw)) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.Is(unicode.Han, r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func memoryContentBigramSet(sig string) map[string]bool {
+	runes := []rune(sig)
+	out := make(map[string]bool, len(runes))
+	if len(runes) < 2 {
+		if sig != "" {
+			out[sig] = true
+		}
+		return out
+	}
+	for i := 0; i < len(runes)-1; i++ {
+		out[string(runes[i:i+2])] = true
+	}
+	return out
+}
+
+func memoriesAreDuplicate(sigA, sigB string) bool {
+	if sigA == "" || sigB == "" {
+		return false
+	}
+	if sigA == sigB {
+		return true
+	}
+	short, long := sigA, sigB
+	if len([]rune(short)) > len([]rune(long)) {
+		short, long = long, short
+	}
+	if len([]rune(short)) >= 12 && strings.Contains(long, short) {
+		return true
+	}
+	setA := memoryContentBigramSet(sigA)
+	setB := memoryContentBigramSet(sigB)
+	if len(setA) == 0 || len(setB) == 0 {
+		return false
+	}
+	inter := 0
+	for k := range setA {
+		if setB[k] {
+			inter++
+		}
+	}
+	union := len(setA) + len(setB) - inter
+	return union > 0 && float64(inter)/float64(union) >= 0.72
+}
+
+// MergeDuplicateMemories consolidates exact/near-duplicate memories within each scope,
+// preserving pinned flags, highest importance, richest content, and cumulative recall counts.
+func (s *Store) MergeDuplicateMemories(scope string) (int64, error) {
+	sc := strings.TrimSpace(scope)
+	var scopes []string
+	if sc != "" && sc != "all" {
+		scopes = []string{sc}
+	}
+	all, err := s.ListScopedMemories(scopes, "", 200)
+	if err != nil {
+		return 0, err
+	}
+	if len(all) < 2 {
+		return 0, nil
+	}
+
+	byScope := make(map[string][]AgentMemory)
+	for _, m := range all {
+		keyScope := strings.TrimSpace(m.Scope)
+		if keyScope == "" {
+			keyScope = "global"
+		}
+		byScope[keyScope] = append(byScope[keyScope], m)
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var removed int64
+	now := NowShanghai()
+	for _, items := range byScope {
+		type cluster struct {
+			canonical AgentMemory
+			sig       string
+			dirty     bool
+		}
+		clusters := make([]*cluster, 0, len(items))
+		for _, m := range items {
+			sig := normalizeMemorySignature(m.Content)
+			var matched *cluster
+			for _, c := range clusters {
+				if memoriesAreDuplicate(c.sig, sig) {
+					matched = c
+					break
+				}
+			}
+			if matched == nil {
+				clusters = append(clusters, &cluster{canonical: m, sig: sig})
+				continue
+			}
+			if m.Pinned && !matched.canonical.Pinned {
+				matched.canonical.Pinned = true
+				matched.dirty = true
+			}
+			if m.Importance > matched.canonical.Importance {
+				matched.canonical.Importance = m.Importance
+				matched.dirty = true
+			}
+			if len([]rune(m.Content)) > len([]rune(matched.canonical.Content)) {
+				matched.canonical.Content = m.Content
+				matched.sig = sig
+				matched.dirty = true
+			}
+			if m.RecallCount > 0 {
+				matched.canonical.RecallCount += m.RecallCount
+				matched.dirty = true
+			}
+			if _, err := tx.Exec(`DELETE FROM agent_memories WHERE id = ?`, m.ID); err != nil {
+				return 0, err
+			}
+			removed++
+		}
+		for _, c := range clusters {
+			if !c.dirty {
+				continue
+			}
+			pinInt := 0
+			if c.canonical.Pinned {
+				pinInt = 1
+			}
+			if _, err := tx.Exec(
+				`UPDATE agent_memories SET content = ?, importance = ?, pinned = ?, recall_count = ?, updated_at = ? WHERE id = ?`,
+				c.canonical.Content, c.canonical.Importance, pinInt, c.canonical.RecallCount, now, c.canonical.ID,
+			); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return removed, nil
+}
+
 // Scoped Memory CRUD
 
 func (s *Store) SaveAgentMemory(category, factKey, content string) error {
@@ -482,9 +635,16 @@ func (s *Store) ListScopedMemories(scopes []string, query string, limit int) ([]
 
 	q := strings.TrimSpace(query)
 	if q != "" {
-		like := "%" + q + "%"
-		conds = append(conds, "(fact_key LIKE ? OR content LIKE ? OR category LIKE ?)")
-		args = append(args, like, like, like)
+		escaper := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+		terms := strings.Fields(q)
+		if len(terms) > 6 {
+			terms = terms[:6]
+		}
+		for _, term := range terms {
+			like := "%" + escaper.Replace(term) + "%"
+			conds = append(conds, `(fact_key LIKE ? ESCAPE '\' OR content LIKE ? ESCAPE '\' OR category LIKE ? ESCAPE '\')`)
+			args = append(args, like, like, like)
+		}
 	}
 
 	whereClause := ""
@@ -520,12 +680,24 @@ func (s *Store) TouchRecalledMemories(ids []int64) {
 	if len(ids) == 0 {
 		return
 	}
-	now := NowShanghai()
+	seen := make(map[int64]bool, len(ids))
+	phs := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, NowShanghai())
 	for _, id := range ids {
-		if id > 0 {
-			_, _ = s.db.Exec(`UPDATE agent_memories SET recall_count = recall_count + 1, last_recalled_at = ? WHERE id = ?`, now, id)
+		if id > 0 && !seen[id] {
+			seen[id] = true
+			phs = append(phs, "?")
+			args = append(args, id)
 		}
 	}
+	if len(phs) == 0 {
+		return
+	}
+	_, _ = s.db.Exec(
+		`UPDATE agent_memories SET recall_count = recall_count + 1, last_recalled_at = ? WHERE id IN (`+strings.Join(phs, ",")+`)`,
+		args...,
+	)
 }
 
 func (s *Store) DeleteAgentMemory(id int64) error {

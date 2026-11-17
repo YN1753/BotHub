@@ -527,4 +527,43 @@ func TestAssistantToolsTodosNotesNotificationConsultAndDatetime(t *testing.T) {
 	if pErr != nil || !strings.Contains(parOut, `"parallel_count":2`) {
 		t.Fatalf("parallel consult_bot failed: err=%v out=%s", pErr, parOut)
 	}
+
+	// 11. batch_add todos + append notes + working context snapshot
+	batchTodoOut, btErr := eng.ExecuteTool(ctx, "manage_todos", `{"action":"batch_add","items":[{"title":"准备周五上线评审","priority":"high","due_at":"2026-11-20"},{"title":"同步资产续费清单","priority":"normal"}]}`)
+	if btErr != nil || !strings.Contains(batchTodoOut, `"count":2`) {
+		t.Fatalf("batch_add todos failed: err=%v out=%s", btErr, batchTodoOut)
+	}
+	museBot := store.Bot{ID: "bot_muse", Name: "Muse", RoleTitle: "个人助手", BotMode: store.BotModeHybrid}
+	workCtx := eng.buildWorkingContextBlock(&museBot, BuiltinTools())
+	if !strings.Contains(workCtx, "准备周五上线评审") {
+		t.Fatalf("expected live working context snapshot to include open todo, got:\n%s", workCtx)
+	}
+
+	appNoteOut, anErr := eng.ExecuteTool(ctx, "manage_notes", `{"action":"append","title":"杭州周末行程","content":"## 补充雨天备选\n- 参观浙江省博物馆"}`)
+	if anErr != nil || !strings.Contains(appNoteOut, `"appended":true`) || !strings.Contains(appNoteOut, "龙井品茶") || !strings.Contains(appNoteOut, "博物馆") {
+		t.Fatalf("manage_notes append failed: err=%v out=%s", anErr, appNoteOut)
+	}
+
+	// 12. recall_memory category/pinned filtering + manage_memory consolidate deduplication
+	_ = st.SaveAgentMemoryDetailed("bot:bot_muse", "preference", "drink_copy_a", "每天早晨习惯喝一杯冰美式不加糖", 4, false)
+	_ = st.SaveAgentMemoryDetailed("bot:bot_muse", "preference", "drink_copy_b", "每天早晨习惯喝一杯冰美式不加糖。", 5, true)
+	conOut, cmErr := eng.ExecuteTool(ctx, "manage_memory", `{"action":"consolidate"}`)
+	if cmErr != nil || !strings.Contains(conOut, `"merged":1`) {
+		t.Fatalf("manage_memory consolidate failed: err=%v out=%s", cmErr, conOut)
+	}
+	pinRecallOut, prErr := eng.ExecuteTool(ctx, "recall_memory", `{"category":"preference","pinned_only":true,"query":"冰美式"}`)
+	if prErr != nil || !strings.Contains(pinRecallOut, `"count":1`) || !strings.Contains(pinRecallOut, "冰美式") {
+		t.Fatalf("recall_memory category/pinned filter failed: err=%v out=%s", prErr, pinRecallOut)
+	}
+
+	// 13. manage_tasks name lookup + next_runs preview + structured error hint
+	_ = st.SaveTask(store.Task{ID: "t_daily_report", Name: "每日工作晚报", Type: "bot_prompt", BotID: "bot_muse", CronExpr: "0 21 * * *", Enabled: true, Params: "{}"})
+	upTaskOut, utErr := eng.ExecuteTool(ctx, "manage_tasks", `{"action":"upsert","name":"每日工作晚报","cron_expr":"30 20 * * *"}`)
+	if utErr != nil || !strings.Contains(upTaskOut, `"updated":true`) || !strings.Contains(upTaskOut, `"next_runs"`) {
+		t.Fatalf("manage_tasks name upsert + next_runs failed: err=%v out=%s", utErr, upTaskOut)
+	}
+	errPayload := toolErrorPayload("manage_todos", fmt.Errorf("未找到目标待办条目"))
+	if !strings.Contains(errPayload, `"hint"`) || !strings.Contains(errPayload, `"retryable":false`) {
+		t.Fatalf("unexpected toolErrorPayload output: %s", errPayload)
+	}
 }

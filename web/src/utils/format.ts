@@ -127,6 +127,7 @@ export function botStateLabel(state?: string): string {
 
 export function groupModeLabel(mode?: string): string {
   if (mode === 'sequential') return '全员接力'
+  if (mode === 'parallel') return '全员并发'
   if (mode === 'mention_only') return '仅 @点名'
   return '智能协同'
 }

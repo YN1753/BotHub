@@ -35,12 +35,19 @@ func CompileSkillTool(sk store.Skill) ToolDefinition {
 			continue
 		}
 		ftype := strings.TrimSpace(f.Type)
-		if ftype != "integer" && ftype != "boolean" {
+		if ftype != "integer" && ftype != "number" && ftype != "boolean" {
 			ftype = "string"
+		}
+		pDesc := strings.TrimSpace(f.Description)
+		if def := strings.TrimSpace(f.Default); def != "" {
+			if pDesc != "" {
+				pDesc += " "
+			}
+			pDesc += fmt.Sprintf("(默认值: %s)", def)
 		}
 		props[key] = map[string]any{
 			"type":        ftype,
-			"description": strings.TrimSpace(f.Description),
+			"description": pDesc,
 		}
 		if f.Required {
 			required = append(required, key)
@@ -169,7 +176,9 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 		if k == "" {
 			continue
 		}
-		req.Header.Set(k, interpolateSkillTemplate(hv, workingArgs, false, false))
+		headerVal := interpolateSkillTemplate(hv, workingArgs, false, false)
+		headerVal = strings.NewReplacer("\r", "", "\n", "").Replace(headerVal)
+		req.Header.Set(k, headerVal)
 	}
 
 	client := e.safeFetchClient()
@@ -195,7 +204,11 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 		text = string(runes[:6000]) + "\n...[已截断过长响应]"
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return resp.StatusCode, text, fmt.Errorf("技能接口返回 HTTP %d: %s", resp.StatusCode, text)
+		errPreview := text
+		if r := []rune(errPreview); len(r) > 320 {
+			errPreview = string(r[:320]) + "..."
+		}
+		return resp.StatusCode, text, fmt.Errorf("技能接口返回 HTTP %d: %s", resp.StatusCode, errPreview)
 	}
 	return resp.StatusCode, text, nil
 }

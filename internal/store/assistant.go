@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -337,6 +338,7 @@ type WorkspaceBriefing struct {
 	UnreadAlerts      []Notification `json:"unread_alerts"`
 	UnreadCount       int            `json:"unread_count"`
 	RecentNotes       []WorkNote     `json:"recent_notes"`
+	FocusHints        []string       `json:"focus_hints,omitempty"`
 }
 
 // BuildWorkspaceBriefing aggregates live personal todos, expiring assets, active schedules,
@@ -394,6 +396,27 @@ func (s *Store) BuildWorkspaceBriefing() (*WorkspaceBriefing, error) {
 
 	unreadAlerts, _ := s.ListNotifications(0, 12, true)
 	recentNotes, _ := s.ListNotes("", "", 6)
+	unreadCount := s.CountUnreadNotifications()
+
+	var hints []string
+	if len(overdue) > 0 {
+		hints = append(hints, fmt.Sprintf("存在 %d 项已逾期待办，建议最优先处理或重排截止日期", len(overdue)))
+	}
+	if len(dueToday) > 0 {
+		hints = append(hints, fmt.Sprintf("今日有 %d 项待办到期", len(dueToday)))
+	}
+	urgentAssets := 0
+	for _, a := range expiring {
+		if a.DaysLeft <= 3 {
+			urgentAssets++
+		}
+	}
+	if urgentAssets > 0 {
+		hints = append(hints, fmt.Sprintf("有 %d 项资产将在 3 天内到期，需核实是否续费", urgentAssets))
+	}
+	if unreadCount > 0 {
+		hints = append(hints, fmt.Sprintf("收件箱尚有 %d 条未读通知待查看", unreadCount))
+	}
 
 	return &WorkspaceBriefing{
 		GeneratedAt:       now.Format("2006-01-02 15:04:05"),
@@ -406,7 +429,8 @@ func (s *Store) BuildWorkspaceBriefing() (*WorkspaceBriefing, error) {
 		ExpiringAssets:    expiring,
 		EnabledTasks:      enabledTasks,
 		UnreadAlerts:      unreadAlerts,
-		UnreadCount:       s.CountUnreadNotifications(),
+		UnreadCount:       unreadCount,
 		RecentNotes:       recentNotes,
+		FocusHints:        hints,
 	}, nil
 }

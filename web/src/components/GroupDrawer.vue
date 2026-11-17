@@ -73,11 +73,13 @@ const creatingAdhoc = ref(false)
 const MODE_TABS = [
   { id: 'smart', label: '智能协同' },
   { id: 'sequential', label: '全员接力' },
+  { id: 'parallel', label: '全员并发' },
   { id: 'mention_only', label: '仅 @点名' },
 ]
 
 const modeHint = computed(() => {
   if (editMode.value === 'sequential') return '未 @点名时，群内全部成员按序接力发言并补充结论'
+  if (editMode.value === 'parallel') return '全部成员或多名 @对象同时并发思考输出，大幅降低多视角问答总耗时'
   if (editMode.value === 'mention_only') return '仅响应被 @点名 的成员；未指定 @ 时由首位协调官简答'
   return '根据提问关键词智能匹配 1~2 位最对口专家协同作答，高效零刷屏'
 })

@@ -476,11 +476,7 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 
 			toolOutput, toolErr := e.ExecuteTool(ctx, tc.Function.Name, tc.Function.Arguments)
 			if toolErr != nil {
-				errPayload, _ := json.Marshal(map[string]any{
-					"ok":    false,
-					"error": toolErr.Error(),
-				})
-				toolOutput = string(errPayload)
+				toolOutput = toolErrorPayload(tc.Function.Name, toolErr)
 			}
 			toolOutput = notifier.StripEmoji(toolOutput)
 
@@ -613,14 +609,18 @@ func (e *Engine) distillMemoryWithScope(scope, botMode, userMsg, assistantReply 
 	}
 	if json.Unmarshal([]byte(clean), &parsed) == nil && parsed.Save && strings.TrimSpace(parsed.FactKey) != "" {
 		if strings.EqualFold(strings.TrimSpace(parsed.Action), "forget") {
-			_, _ = e.store.DeleteAgentMemoryByScopeKey(scope, strings.TrimSpace(parsed.FactKey))
+			if deleted, _ := e.store.DeleteAgentMemoryByScopeKey(scope, strings.TrimSpace(parsed.FactKey)); deleted {
+				e.publishAssistantUpdate("memories")
+			}
 			return
 		}
 		if strings.TrimSpace(parsed.Content) != "" {
 			if parsed.Importance <= 0 {
 				parsed.Importance = 3
 			}
-			_ = e.store.SaveAgentMemoryDetailed(scope, parsed.Category, parsed.FactKey, notifier.StripEmoji(parsed.Content), parsed.Importance, parsed.Pinned)
+			if err := e.store.SaveAgentMemoryDetailed(scope, parsed.Category, parsed.FactKey, notifier.StripEmoji(parsed.Content), parsed.Importance, parsed.Pinned); err == nil {
+				e.publishAssistantUpdate("memories")
+			}
 		}
 	}
 }
@@ -714,6 +714,16 @@ func (e *Engine) SummarizeThreadToMemory(ctx context.Context, bot *store.Bot, th
 	if thread != nil && thread.ID != "" {
 		thread.Summary = summary
 		_ = e.store.SaveBotThread(*thread)
+		if e.hub != nil {
+			e.hub.PublishEvent("thread_updated", map[string]any{
+				"bot_id":    bot.ID,
+				"thread_id": thread.ID,
+				"summary":   summary,
+			})
+		}
+	}
+	if savedFactKey != "" {
+		e.publishAssistantUpdate("memories")
 	}
 	return summary, savedFactKey, nil
 }

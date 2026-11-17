@@ -115,6 +115,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agent/memories", s.requireAuth(s.handleListAgentMemories))
 	mux.HandleFunc("POST /api/agent/memories", s.requireAuth(s.handleSaveAgentMemory))
 	mux.HandleFunc("POST /api/agent/memories/prune", s.requireAuth(s.handlePruneAgentMemories))
+	mux.HandleFunc("POST /api/agent/memories/consolidate", s.requireAuth(s.handleConsolidateAgentMemories))
 	mux.HandleFunc("POST /api/agent/memories/{id}", s.requireAuth(s.handleUpdateAgentMemory))
 	mux.HandleFunc("DELETE /api/agent/memories/{id}", s.requireAuth(s.handleDeleteAgentMemory))
 

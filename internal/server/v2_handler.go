@@ -108,7 +108,9 @@ func (s *Server) handleV2Events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Time{})
+	_ = rc.SetWriteDeadline(time.Time{})
 	w.WriteHeader(http.StatusOK)
 
 	latestID := s.store.LatestNotificationID()

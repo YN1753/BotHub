@@ -36,7 +36,9 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Time{})
+	_ = rc.SetWriteDeadline(time.Time{})
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
@@ -298,5 +300,29 @@ func (s *Server) handlePruneAgentMemories(w http.ResponseWriter, r *http.Request
 		"ok":      true,
 		"scope":   scope,
 		"removed": removed,
+	})
+}
+
+func (s *Server) handleConsolidateAgentMemories(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Scope string `json:"scope"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效请求体")
+		return
+	}
+	scope := strings.TrimSpace(req.Scope)
+	if scope == "" {
+		scope = "all"
+	}
+	merged, err := s.store.MergeDuplicateMemories(scope)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "合并重复记忆失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"scope":  scope,
+		"merged": merged,
 	})
 }

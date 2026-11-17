@@ -19,6 +19,7 @@ export function renderSafeMarkdown(raw: string): string {
     let out = escapeHtml(text)
     out = out.replace(/`([^`\n]+)`/g, '<code class="md-inline-code">$1</code>')
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    out = out.replace(/==([^=\n]+)==/g, '<mark class="px-1 rounded bg-[#f2b880]/20 text-[#f7cba0]">$1</mark>')
     out = out.replace(/~~([^~\n]+)~~/g, '<del class="md-del">$1</del>')
     out = out.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
     out = out.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">[图片: $1]</a>')
@@ -101,7 +102,7 @@ export function renderSafeMarkdown(raw: string): string {
       )
       continue
     }
-    const ulMatch = trimmed.match(/^[-*]\s+(.+)$/)
+    const ulMatch = trimmed.match(/^[-*+]\s+(.+)$/)
     if (ulMatch) {
       if (!inList || listType !== 'ul') {
         closeList()
@@ -143,5 +144,5 @@ export function handleMarkdownCodeCopy(e: MouseEvent, onCopied?: () => void): vo
       btn.textContent = '复制代码'
       btn.classList.remove('text-emerald-300', 'border-emerald-400/45')
     }, 1500)
-  })
+  }).catch(() => {})
 }
