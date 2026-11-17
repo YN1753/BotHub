@@ -559,6 +559,34 @@ func (e *Engine) distillMemoryAsync(userMsg, assistantReply string) {
 	e.distillMemoryWithScope("global", store.BotModeHybrid, userMsg, assistantReply)
 }
 
+func normalizeDistilledFactKey(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	var b strings.Builder
+	prevUnderscore := false
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			prevUnderscore = false
+		} else if !prevUnderscore && b.Len() > 0 {
+			b.WriteByte('_')
+			prevUnderscore = true
+		}
+		if b.Len() >= 64 {
+			break
+		}
+	}
+	return strings.Trim(b.String(), "_")
+}
+
+func normalizeDistilledCategory(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "preference", "relation", "emotion", "insight", "infra", "schedule", "general":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return "general"
+	}
+}
+
 func (e *Engine) distillMemoryWithScope(scope, botMode, userMsg, assistantReply string) {
 	if len([]rune(strings.TrimSpace(userMsg))) < 6 || !e.hasLightTarget() {
 		return
@@ -608,8 +636,12 @@ func (e *Engine) distillMemoryWithScope(scope, botMode, userMsg, assistantReply 
 		Pinned     bool   `json:"pinned"`
 	}
 	if json.Unmarshal([]byte(clean), &parsed) == nil && parsed.Save && strings.TrimSpace(parsed.FactKey) != "" {
+		cleanKey := normalizeDistilledFactKey(parsed.FactKey)
+		if cleanKey == "" {
+			cleanKey = strings.TrimSpace(parsed.FactKey)
+		}
 		if strings.EqualFold(strings.TrimSpace(parsed.Action), "forget") {
-			if deleted, _ := e.store.DeleteAgentMemoryByScopeKey(scope, strings.TrimSpace(parsed.FactKey)); deleted {
+			if deleted, _ := e.store.DeleteAgentMemoryByScopeKey(scope, cleanKey); deleted {
 				e.publishAssistantUpdate("memories")
 			}
 			return
@@ -617,8 +649,10 @@ func (e *Engine) distillMemoryWithScope(scope, botMode, userMsg, assistantReply 
 		if strings.TrimSpace(parsed.Content) != "" {
 			if parsed.Importance <= 0 {
 				parsed.Importance = 3
+			} else if parsed.Importance > 5 {
+				parsed.Importance = 5
 			}
-			if err := e.store.SaveAgentMemoryDetailed(scope, parsed.Category, parsed.FactKey, notifier.StripEmoji(parsed.Content), parsed.Importance, parsed.Pinned); err == nil {
+			if err := e.store.SaveAgentMemoryDetailed(scope, normalizeDistilledCategory(parsed.Category), cleanKey, notifier.StripEmoji(parsed.Content), parsed.Importance, parsed.Pinned); err == nil {
 				e.publishAssistantUpdate("memories")
 			}
 		}

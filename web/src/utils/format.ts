@@ -45,6 +45,23 @@ export function formatDurationMs(ms?: number): string {
   return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`
 }
 
+export function formatUptime(sec?: number): string {
+  const s = Math.max(0, Math.floor(sec || 0))
+  if (s < 60) return `${s}s`
+  const days = Math.floor(s / 86400)
+  const hours = Math.floor((s % 86400) / 3600)
+  const mins = Math.floor((s % 3600) / 60)
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${mins}m`
+  return `${mins}m`
+}
+
+export function truncateText(raw?: string, maxLen = 60): string {
+  const clean = String(raw || '').trim()
+  if (!clean || maxLen <= 0 || clean.length <= maxLen) return clean
+  return `${clean.slice(0, maxLen)}...`
+}
+
 export function formatDateOnly(str?: string): string {
   if (!str || str.startsWith('2099')) return '长期有效'
   const s = str.trim()

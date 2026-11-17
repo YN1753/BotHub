@@ -14,6 +14,7 @@ import GroupDrawer from './GroupDrawer.vue'
 import BotThreadBar from './workspace/BotThreadBar.vue'
 import BotToolTrail from './workspace/BotToolTrail.vue'
 import BotComposerDropdown from './workspace/BotComposerDropdown.vue'
+import BotChatSearchBar from './workspace/BotChatSearchBar.vue'
 
 const BotRoutinesTab = defineAsyncComponent(() => import('./workspace/BotRoutinesTab.vue'))
 const BotConfigTab = defineAsyncComponent(() => import('./workspace/BotConfigTab.vue'))
@@ -1560,60 +1561,14 @@ function stateBadgeClass(state?: string): string {
         <BotThreadBar v-if="bot" :bot="bot" @carry-summary="onCarryThreadSummary" />
 
         <!-- Slide-Down In-Chat Search Bar (Cmd/Ctrl + F) -->
-        <Transition
-          enter-active-class="transition duration-160 ease-out"
-          enter-from-class="opacity-0 -translate-y-2"
-          enter-to-class="opacity-100 translate-y-0"
-        >
-          <div
-            v-if="chatSearchOpen"
-            class="px-4 md:px-6 py-2 border-b border-[#fff8ee]/10 bg-[#070b17]/95 backdrop-blur-lg flex items-center gap-2 shrink-0"
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="text-[#f2b880] shrink-0">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              ref="chatSearchInputRef"
-              v-model="chatSearchQuery"
-              type="search"
-              placeholder="在当前会话中搜索聊天记录..."
-              @keydown.enter.exact.prevent="jumpSearchMatch(1)"
-              @keydown.shift.enter.prevent="jumpSearchMatch(-1)"
-              @keydown.escape="closeChatSearch"
-              class="flex-1 min-w-0 bg-transparent text-xs text-white placeholder-slate-500 py-1"
-            />
-            <span v-if="chatSearchQuery.trim()" class="font-mono text-[11px] text-slate-400 shrink-0">
-              {{ chatSearchMatches.length ? `${chatSearchCursor + 1}/${chatSearchMatches.length}` : '0/0' }}
-            </span>
-            <button
-              type="button"
-              :disabled="!chatSearchMatches.length"
-              @click="jumpSearchMatch(-1)"
-              aria-label="上一条匹配"
-              class="w-7 h-7 rounded-lg border border-[#fff8ee]/10 text-slate-300 hover:text-[#f2b880] disabled:opacity-30 inline-flex items-center justify-center cursor-pointer"
-            >
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="18 15 12 9 6 15" /></svg>
-            </button>
-            <button
-              type="button"
-              :disabled="!chatSearchMatches.length"
-              @click="jumpSearchMatch(1)"
-              aria-label="下一条匹配"
-              class="w-7 h-7 rounded-lg border border-[#fff8ee]/10 text-slate-300 hover:text-[#f2b880] disabled:opacity-30 inline-flex items-center justify-center cursor-pointer"
-            >
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 12 15 18 9" /></svg>
-            </button>
-            <button
-              type="button"
-              @click="closeChatSearch"
-              aria-label="关闭查找"
-              class="w-7 h-7 rounded-lg text-slate-400 hover:text-white inline-flex items-center justify-center cursor-pointer"
-            >
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-            </button>
-          </div>
-        </Transition>
+        <BotChatSearchBar
+          :open="chatSearchOpen"
+          v-model:query="chatSearchQuery"
+          :match-count="chatSearchMatches.length"
+          :cursor="chatSearchCursor"
+          @jump="jumpSearchMatch"
+          @close="closeChatSearch"
+        />
 
         <!-- Pinned Group Announcement Banner (QQ/WeChat style) -->
         <div

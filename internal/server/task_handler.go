@@ -170,7 +170,12 @@ func (s *Server) handleRunTask(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	id := strings.TrimSpace(r.PathValue("id"))
+	if existing, _ := s.store.GetTask(id); existing == nil {
+		writeError(w, http.StatusNotFound, "任务不存在")
+		return
+	}
 	res, err := s.scheduler.RunNow(ctx, id)
+	s.publishAssistantEvent("tasks")
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "summary": res.Summary, "error": err.Error()})
 		return

@@ -124,6 +124,15 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func validateHTTPURL(raw string) bool {
+	val := strings.TrimSpace(raw)
+	if val == "" {
+		return true
+	}
+	parsed, err := url.Parse(val)
+	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != ""
+}
+
 func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	var updates map[string]string
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&updates); err != nil {
@@ -160,12 +169,9 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		val := strings.TrimSpace(v)
-		if urlConfigKeys[k] && val != "" {
-			parsed, err := url.Parse(val)
-			if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-				writeError(w, http.StatusBadRequest, fmt.Sprintf("配置项 %s 必须为有效的 http/https URL", k))
-				return
-			}
+		if urlConfigKeys[k] && !validateHTTPURL(val) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("配置项 %s 必须为有效的 http/https URL", k))
+			return
 		}
 		if sensitiveConfigKeys[k] && strings.Contains(val, "****") {
 			continue
@@ -230,6 +236,31 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 	delete(cfgs, store.KeyAdminPassHash)
 	delete(cfgs, store.KeySessionSecret)
 
+	if assets == nil {
+		assets = []store.Asset{}
+	}
+	if tasks == nil {
+		tasks = []store.Task{}
+	}
+	if bots == nil {
+		bots = []store.Bot{}
+	}
+	if skills == nil {
+		skills = []store.Skill{}
+	}
+	if todos == nil {
+		todos = []store.TodoItem{}
+	}
+	if notes == nil {
+		notes = []store.WorkNote{}
+	}
+	if memories == nil {
+		memories = []store.AgentMemory{}
+	}
+	if cfgs == nil {
+		cfgs = map[string]string{}
+	}
+
 	backup := BackupData{
 		Version:       s.version,
 		ExportedAt:    store.NowShanghai(),
@@ -276,10 +307,20 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		"app_bearer_token":    true,
 	}
 	_ = s.store.SetConfig(store.KeyPushChannel, "native")
+	urlConfigKeys := map[string]bool{
+		"deepseek_base_url": true,
+		"light_base_url":    true,
+		"nezha_url":         true,
+	}
 	for k, v := range backup.Configs {
-		if allowedKeys[k] {
-			_ = s.store.SetConfig(k, strings.TrimSpace(v))
+		if !allowedKeys[k] {
+			continue
 		}
+		val := strings.TrimSpace(v)
+		if urlConfigKeys[k] && !validateHTTPURL(val) {
+			continue
+		}
+		_ = s.store.SetConfig(k, val)
 	}
 
 	// 2. Restore Assets
@@ -335,31 +376,42 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 7. Restore Todos & Notes
+	todosCount := 0
 	for _, td := range backup.Todos {
 		if strings.TrimSpace(td.Title) == "" {
 			continue
 		}
-		_, _ = s.store.SaveTodo(td)
+		if _, err := s.store.SaveTodo(td); err == nil {
+			todosCount++
+		}
 	}
+	notesCount := 0
 	for _, nt := range backup.Notes {
 		if strings.TrimSpace(nt.Title) == "" {
 			continue
 		}
-		_, _ = s.store.SaveNote(nt)
+		if _, err := s.store.SaveNote(nt); err == nil {
+			notesCount++
+		}
 	}
 
-	// 8. Reload scheduler
+	// 8. Reload scheduler and notify connected clients
 	if s.scheduler != nil {
 		_ = s.scheduler.Reload()
+	}
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("assistant_update", map[string]any{"kind": "backup_restored"})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":              true,
-		"message":         fmt.Sprintf("备份恢复成功：已恢复 %d 个资产，%d 个任务，%d 个技能，%d 个 Bot 与全局配置", assetsCount, tasksCount, skillsCount, botsCount),
+		"message":         fmt.Sprintf("备份恢复成功：已恢复 %d 个资产，%d 个任务，%d 个技能，%d 个 Bot，%d 条待办与 %d 篇文档", assetsCount, tasksCount, skillsCount, botsCount, todosCount, notesCount),
 		"assets_restored": assetsCount,
 		"tasks_restored":  tasksCount,
 		"skills_restored": skillsCount,
 		"bots_restored":   botsCount,
+		"todos_restored":  todosCount,
+		"notes_restored":  notesCount,
 	})
 }
 

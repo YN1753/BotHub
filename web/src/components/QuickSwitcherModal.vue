@@ -351,13 +351,22 @@ function handleKeydown(e: KeyboardEvent) {
       </div>
 
       <div ref="listContainerRef" class="flex-1 min-h-0 max-h-[50dvh] overflow-y-auto flex flex-col gap-1 pr-0.5">
-        <div v-if="entries.length === 0" class="py-8 text-center text-xs text-slate-500">
-          未找到匹配结果
+        <div v-if="entries.length === 0" class="py-8 text-center flex flex-col items-center gap-2 text-xs text-slate-500">
+          <span>未找到匹配结果</span>
+          <button
+            v-if="query.trim() || scopeFilter !== '全部'"
+            type="button"
+            @click="query = ''; scopeFilter = '全部'; highlighted = 0"
+            class="px-3 py-1 rounded-full border border-[#fff8ee]/12 text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          >
+            清空搜索与分类筛选
+          </button>
         </div>
         <button
           v-for="(item, idx) in entries"
           :key="item.key"
           :data-entry-idx="idx"
+          :aria-selected="idx === highlighted"
           type="button"
           @mouseenter="highlighted = idx"
           @click="executeEntry(item)"

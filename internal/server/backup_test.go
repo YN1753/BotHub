@@ -138,8 +138,8 @@ func TestAgentMemoryAndSessionHandlers(t *testing.T) {
 	reqList := httptest.NewRequest(http.MethodGet, "/api/agent/memories?q=Cloudflare", nil)
 	recList := httptest.NewRecorder()
 	s.handleListAgentMemories(recList, reqList)
-	if recList.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK listing memories, got %d", recList.Code)
+	if recList.Code != http.StatusOK || recList.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("expected 200 OK and Cache-Control no-store listing memories, got %d (%q)", recList.Code, recList.Header().Get("Cache-Control"))
 	}
 
 	reqSess := httptest.NewRequest(http.MethodGet, "/api/agent/sessions", nil)
@@ -147,5 +147,28 @@ func TestAgentMemoryAndSessionHandlers(t *testing.T) {
 	s.handleListAgentSessions(recSess, reqSess)
 	if recSess.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK listing sessions, got %d", recSess.Code)
+	}
+
+	// Verify backup import skips non-http(s) URL configs cleanly
+	prevURL, _ := s.store.GetConfig(store.KeyDeepSeekBaseURL)
+	maliciousImport := []byte(`{"configs":{"deepseek_base_url":"file:///etc/passwd"}}`)
+	reqMal := httptest.NewRequest(http.MethodPost, "/api/system/import", bytes.NewReader(maliciousImport))
+	recMal := httptest.NewRecorder()
+	s.handleImportBackup(recMal, reqMal)
+	if recMal.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on sanitized import, got %d", recMal.Code)
+	}
+	afterURL, _ := s.store.GetConfig(store.KeyDeepSeekBaseURL)
+	if afterURL != prevURL {
+		t.Fatalf("expected malicious URL to be ignored, got %q", afterURL)
+	}
+
+	// Verify RunTask returns 404 on unknown task ID
+	reqMissingTask := httptest.NewRequest(http.MethodPost, "/api/modules/missing_id/run", nil)
+	reqMissingTask.SetPathValue("id", "missing_id")
+	recMissingTask := httptest.NewRecorder()
+	s.handleRunTask(recMissingTask, reqMissingTask)
+	if recMissingTask.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found for missing task, got %d", recMissingTask.Code)
 	}
 }

@@ -8,6 +8,7 @@ import { applySiblingStaggerFallback, trackSpotlight } from '../../utils/topLaye
 const store = useAppStore()
 const bot = store.activeBot
 const routinesGridRef = ref<HTMLElement | null>(null)
+const runningTaskId = ref('')
 
 const botRoutines = computed(() => {
   const bid = bot.value?.id
@@ -16,6 +17,8 @@ const botRoutines = computed(() => {
 })
 
 async function runRoutine(taskId: string) {
+  if (runningTaskId.value) return
+  runningTaskId.value = taskId
   try {
     const res = await BotHubApi.runTask(taskId)
     store.notify(res.summary || '执行完成')
@@ -23,6 +26,8 @@ async function runRoutine(taskId: string) {
     await store.selectBot(store.state.activeBotId)
   } catch (err: any) {
     store.notify(err.message)
+  } finally {
+    runningTaskId.value = ''
   }
 }
 
@@ -107,16 +112,23 @@ onMounted(() => {
             </button>
           </div>
           <p class="text-xs text-slate-300/90 leading-relaxed">{{ t.description }}</p>
-          <div class="font-mono text-[11px] text-slate-400 truncate rounded-lg bg-[#050811]/60 border border-[#fff8ee]/6 px-2.5 py-1.5">
-            最近结果: {{ t.last_run?.summary || '等待首次执行' }}
+          <div class="font-mono text-[11px] text-slate-400 truncate rounded-lg bg-[#050811]/60 border border-[#fff8ee]/6 px-2.5 py-1.5 flex items-center justify-between gap-2">
+            <span class="truncate">最近结果: {{ t.last_run?.summary || '等待首次执行' }}</span>
+            <span
+              v-if="t.last_run"
+              :class="['shrink-0 text-[10px] px-1.5 py-0.5 rounded', t.last_run.status === 'error' ? 'bg-rose-500/15 text-rose-300' : 'bg-emerald-500/12 text-emerald-300']"
+            >
+              {{ t.last_run.status === 'error' ? '异常' : `${t.last_run.duration_ms}ms` }}
+            </span>
           </div>
           <div class="flex items-center gap-2 pt-1">
             <button
               type="button"
+              :disabled="runningTaskId === t.id"
               @click="runRoutine(t.id)"
-              class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg bg-[#f2b880]/15 border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/25 text-xs cursor-pointer"
+              class="min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-lg bg-[#f2b880]/15 border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/25 text-xs cursor-pointer disabled:opacity-50"
             >
-              立即执行
+              {{ runningTaskId === t.id ? '执行中...' : '立即执行' }}
             </button>
             <button
               type="button"

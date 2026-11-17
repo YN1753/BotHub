@@ -398,7 +398,13 @@ func (s *Store) BuildWorkspaceBriefing() (*WorkspaceBriefing, error) {
 	recentNotes, _ := s.ListNotes("", "", 6)
 	unreadCount := s.CountUnreadNotifications()
 
-	var hints []string
+	if unreadAlerts == nil {
+		unreadAlerts = []Notification{}
+	}
+	if recentNotes == nil {
+		recentNotes = []WorkNote{}
+	}
+	hints := make([]string, 0, 4)
 	if len(overdue) > 0 {
 		hints = append(hints, fmt.Sprintf("存在 %d 项已逾期待办，建议最优先处理或重排截止日期", len(overdue)))
 	}

@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
+import { formatUptime } from '../../utils/format'
 
 const emit = defineEmits<{
   close: []
@@ -42,6 +43,16 @@ function handleExportBackup() {
   window.open('/api/system/export', '_blank')
 }
 
+async function copyBuildDiagnostic() {
+  const info = `${store.state.version} (${store.state.commit}) · uptime ${formatUptime(store.state.uptimeSec)}`
+  try {
+    await navigator.clipboard.writeText(info)
+    store.notify('已复制版本诊断信息')
+  } catch {
+    store.notify('复制失败')
+  }
+}
+
 async function handleLogout() {
   if (!window.confirm('确定退出当前 Vesper BotHub 控制台会话吗？')) return
   emit('close')
@@ -61,12 +72,16 @@ async function handleImportBackup(e: Event) {
     const summaryParts = [
       `${Array.isArray(parsed.assets) ? parsed.assets.length : 0} 项资产`,
       `${Array.isArray(parsed.tasks) ? parsed.tasks.length : 0} 条任务`,
+      `${Array.isArray(parsed.bots) ? parsed.bots.length : 0} 个 Bot`,
+      `${Array.isArray(parsed.skills) ? parsed.skills.length : 0} 项技能`,
+      `${Array.isArray(parsed.todos) ? parsed.todos.length : 0} 条待办`,
+      `${Array.isArray(parsed.notes) ? parsed.notes.length : 0} 篇文档`,
       `${Array.isArray(parsed.agent_memories) ? parsed.agent_memories.length : 0} 条记忆`,
       `${parsed.configs && typeof parsed.configs === 'object' ? Object.keys(parsed.configs).length : 0} 项配置`,
     ].join(' · ')
     if (!window.confirm(`确定导入备份并覆盖恢复当前工作台数据吗？\n\n备份内容：${summaryParts}`)) return
-    await BotHubApi.importBackup(parsed)
-    store.notify('备份导入恢复成功')
+    const res = await BotHubApi.importBackup(parsed)
+    store.notify(res.message || '备份导入恢复成功')
     await store.loadDashboard(false)
   } catch (err: any) {
     store.notify('导入失败: ' + err.message)
@@ -104,16 +119,26 @@ async function handleImportBackup(e: Event) {
       </div>
     </div>
 
-    <div class="modal-section flex items-center justify-between gap-3">
+    <div class="modal-section flex items-center justify-between gap-3 flex-wrap">
       <div>
         <h4 class="text-xs font-semibold text-white">运行版本与构建信息</h4>
         <p class="font-mono text-[11px] text-slate-400 mt-0.5">
           {{ store.state.version }}
           <template v-if="store.state.commit"> · {{ store.state.commit }}</template>
           <template v-if="store.state.buildTime"> · {{ store.state.buildTime }}</template>
+          <template v-if="store.state.uptimeSec > 0"> · 已运行 {{ formatUptime(store.state.uptimeSec) }}</template>
         </p>
       </div>
-      <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-full border border-[#fff8ee]/12 text-slate-400">运行中</span>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          @click="copyBuildDiagnostic"
+          class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+        >
+          复制诊断
+        </button>
+        <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-full border border-[#fff8ee]/12 text-slate-400">运行中</span>
+      </div>
     </div>
 
     <div class="modal-section flex items-center justify-between gap-3">

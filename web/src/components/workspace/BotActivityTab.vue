@@ -7,7 +7,7 @@ import { applySiblingStaggerFallback } from '../../utils/topLayer'
 const store = useAppStore()
 const bot = store.activeBot
 const activityListRef = ref<HTMLElement | null>(null)
-const activityFilter = ref<'all' | 'tool' | 'error'>('all')
+const activityFilter = ref<'all' | 'tool' | 'routine' | 'error'>('all')
 const activityQuery = ref('')
 
 const botRoutines = computed(() => {
@@ -19,7 +19,7 @@ const botRoutines = computed(() => {
 const activityEntries = computed(() => {
   const cur = bot.value
   if (!cur) return []
-  const items: Array<{ title: string; time: string; detail: string; status?: string }> = []
+  const items: Array<{ title: string; time: string; detail: string; status?: string; durationMs?: number }> = []
 
   ;(store.state.botExecutions || []).forEach((ex) => {
     const kindLabel =
@@ -37,6 +37,7 @@ const activityEntries = computed(() => {
       time: `${formatTime(ex.created_at)} · ${ex.duration_ms}ms`,
       detail: ex.output_summary || ex.input_summary || ex.name,
       status: ex.status,
+      durationMs: ex.duration_ms,
     })
   })
 
@@ -71,6 +72,7 @@ const filteredActivityEntries = computed(() => {
   return activityEntries.value.filter((act) => {
     if (activityFilter.value === 'error' && act.status !== 'error') return false
     if (activityFilter.value === 'tool' && !act.title.includes('工具') && !act.title.includes('技能')) return false
+    if (activityFilter.value === 'routine' && !act.title.includes('例程')) return false
     if (!q) return true
     return `${act.title} ${act.detail}`.toLowerCase().includes(q)
   })
@@ -120,6 +122,13 @@ onMounted(() => {
             </button>
             <button
               type="button"
+              @click="activityFilter = 'routine'"
+              :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'routine' ? 'bg-cyan-500/20 text-cyan-200' : 'text-slate-400 hover:text-white']"
+            >
+              例程
+            </button>
+            <button
+              type="button"
               @click="activityFilter = 'error'"
               :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'error' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400 hover:text-white']"
             >
@@ -137,8 +146,16 @@ onMounted(() => {
           />
         </div>
       </div>
-      <div v-if="filteredActivityEntries.length === 0" class="vesper-card rounded-2xl p-8 text-center text-sm text-slate-400">
-        {{ activityEntries.length ? '当前筛选条件下无匹配运行记录' : '暂无该 Bot 的专属运行记录' }}
+      <div v-if="filteredActivityEntries.length === 0" class="vesper-card rounded-2xl p-8 text-center flex flex-col items-center gap-2 text-sm text-slate-400">
+        <span>{{ activityEntries.length ? '当前筛选条件下无匹配运行记录' : '暂无该 Bot 的专属运行记录' }}</span>
+        <button
+          v-if="activityFilter !== 'all' || activityQuery.trim()"
+          type="button"
+          @click="activityFilter = 'all'; activityQuery = ''"
+          class="px-3 py-1 rounded-lg border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] cursor-pointer"
+        >
+          重置筛选条件
+        </button>
       </div>
       <div ref="activityListRef" class="stagger-list flex flex-col gap-2.5">
         <article
@@ -161,7 +178,7 @@ onMounted(() => {
               </span>
               <strong class="text-sm text-white truncate">{{ act.title }}</strong>
             </div>
-            <span class="font-mono text-[11px] text-slate-400 shrink-0">{{ act.time }}</span>
+            <span :class="['font-mono text-[11px] shrink-0', (act.durationMs || 0) >= 3000 ? 'text-amber-300' : 'text-slate-400']">{{ act.time }}</span>
           </div>
           <p class="text-xs text-slate-300 mt-1">{{ act.detail }}</p>
         </article>

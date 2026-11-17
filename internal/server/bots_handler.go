@@ -833,10 +833,6 @@ func (s *Server) handleDeleteBotThread(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	bot, _ := s.store.GetBot(botID)
-	if bot != nil && bot.ActiveThreadID == threadID {
-		_ = s.store.SetBotActiveThread(botID, "")
-	}
 	threads, _ := s.store.ListBotThreads(botID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "threads": threads})
 }

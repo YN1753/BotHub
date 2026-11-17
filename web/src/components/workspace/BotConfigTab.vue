@@ -359,7 +359,10 @@ function openScopedMemoriesManager() {
           </div>
 
           <label class="md:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
-            <span>专属人设与行为约束 (System Prompt)</span>
+            <div class="flex items-center justify-between gap-2">
+              <span>专属人设与行为约束 (System Prompt)</span>
+              <span class="font-mono text-[10.5px] text-slate-500">{{ cfgPrompt.length }} 字符</span>
+            </div>
             <textarea v-model="cfgPrompt" rows="4" class="auto-size-textarea rounded-xl border border-[#fff8ee]/14 bg-[#070a16] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 resize-y" />
           </label>
 
@@ -381,6 +384,13 @@ function openScopedMemoriesManager() {
                   class="text-[#f2b880] hover:underline cursor-pointer"
                 >
                   全选
+                </button>
+                <button
+                  type="button"
+                  @click="cfgTools = availableTools.filter((t) => ['manage_todos','manage_notes','manage_tasks','workspace_briefing','send_notification','web_search','read_url','calculate_eval','datetime_calc','remember_fact','recall_memory','manage_memory','consult_bot'].includes(t.id)).map((t) => t.id)"
+                  class="text-cyan-300 hover:underline cursor-pointer"
+                >
+                  总助推荐
                 </button>
                 <button
                   type="button"

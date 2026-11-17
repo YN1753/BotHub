@@ -285,4 +285,12 @@ func TestBuiltinToolsExecution(t *testing.T) {
 	if len(budgeted) >= len(msgs) || budgeted[0].Role != "system" || budgeted[len(budgeted)-1].Content != "latest question" {
 		t.Fatalf("unexpected budgeted history: %+v", budgeted)
 	}
+
+	// 7. Verify distilled memory key/category sanitization
+	if k := normalizeDistilledFactKey("User-Preferred Theme!!"); k != "user_preferred_theme" {
+		t.Fatalf("unexpected normalized fact key: %q", k)
+	}
+	if cat := normalizeDistilledCategory("unknown_bucket"); cat != "general" {
+		t.Fatalf("unexpected fallback category: %q", cat)
+	}
 }

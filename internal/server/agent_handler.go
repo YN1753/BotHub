@@ -180,15 +180,29 @@ func (s *Server) handleSaveAgentMemory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "记忆键名与内容不能为空")
 		return
 	}
-	imp := req.Importance
-	if imp <= 0 {
-		imp = 3
+	imp := clampMemoryImportance(req.Importance)
+	if cat == "" {
+		cat = "general"
+	}
+	if scope == "" {
+		scope = "global"
 	}
 	if err := s.store.SaveAgentMemoryDetailed(scope, cat, key, content, imp, req.Pinned); err != nil {
 		writeError(w, http.StatusInternalServerError, "保存记忆失败: "+err.Error())
 		return
 	}
+	s.publishAssistantEvent("memories")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func clampMemoryImportance(v int) int {
+	if v <= 0 {
+		return 3
+	}
+	if v > 5 {
+		return 5
+	}
+	return v
 }
 
 func (s *Server) handleUpdateAgentMemory(w http.ResponseWriter, r *http.Request) {
@@ -245,8 +259,8 @@ func (s *Server) handleUpdateAgentMemory(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	imp := existing.Importance
-	if req.Importance != nil && *req.Importance > 0 {
-		imp = *req.Importance
+	if req.Importance != nil {
+		imp = clampMemoryImportance(*req.Importance)
 	}
 	pinned := existing.Pinned
 	if req.Pinned != nil {
@@ -256,6 +270,7 @@ func (s *Server) handleUpdateAgentMemory(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "更新记忆失败: "+err.Error())
 		return
 	}
+	s.publishAssistantEvent("memories")
 	updated, _ := s.store.GetAgentMemory(id)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "memory": updated})
 }
@@ -271,6 +286,7 @@ func (s *Server) handleDeleteAgentMemory(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "删除记忆失败: "+err.Error())
 		return
 	}
+	s.publishAssistantEvent("memories")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -296,6 +312,9 @@ func (s *Server) handlePruneAgentMemories(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "整理冷门记忆失败: "+err.Error())
 		return
 	}
+	if removed > 0 {
+		s.publishAssistantEvent("memories")
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
 		"scope":   scope,
@@ -319,6 +338,9 @@ func (s *Server) handleConsolidateAgentMemories(w http.ResponseWriter, r *http.R
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "合并重复记忆失败: "+err.Error())
 		return
+	}
+	if merged > 0 {
+		s.publishAssistantEvent("memories")
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":     true,

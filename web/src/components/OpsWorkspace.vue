@@ -565,8 +565,16 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
             class="w-full sm:w-72 min-h-[44px] sm:min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#070a16]/85 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
           />
 
-          <div v-if="filteredTasks.length === 0" class="vesper-card rounded-2xl p-6 text-center text-xs text-slate-400">
-            {{ store.state.tasks.length ? '当前筛选条件下无匹配调度任务' : '暂无自动化调度任务' }}
+          <div v-if="filteredTasks.length === 0" class="vesper-card rounded-2xl p-6 text-center flex flex-col items-center gap-2 text-xs text-slate-400">
+            <span>{{ store.state.tasks.length ? '当前筛选条件下无匹配调度任务' : '暂无自动化调度任务' }}</span>
+            <button
+              v-if="taskSearch.trim() || taskStatusFilter !== 'all'"
+              type="button"
+              @click="taskSearch = ''; taskStatusFilter = 'all'"
+              class="px-3 py-1 rounded-full border border-[#fff8ee]/14 text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+            >
+              重置任务筛选
+            </button>
           </div>
 
           <div ref="taskGridRef" class="ops-task-grid stagger-list">

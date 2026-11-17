@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
@@ -49,7 +50,13 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.ID = strings.TrimSpace(req.ID)
-	req.Name = strings.TrimSpace(req.Name)
+	req.Name = notifier.StripEmoji(strings.TrimSpace(req.Name))
+	req.Spec = notifier.StripEmoji(strings.TrimSpace(req.Spec))
+	req.Price = notifier.StripEmoji(strings.TrimSpace(req.Price))
+	req.Category = notifier.StripEmoji(strings.TrimSpace(req.Category))
+	if req.Status != "" {
+		req.Status = store.NormalizeAssetStatus(req.Status)
+	}
 	if req.ID == "" || req.Name == "" {
 		writeError(w, http.StatusBadRequest, "资产 ID 与名称为必填项")
 		return
@@ -62,8 +69,14 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 	if req.Category == "" {
 		req.Category = "compute"
 	}
-	if req.WarnDays == "" {
+	if strings.TrimSpace(req.WarnDays) == "" {
 		req.WarnDays = "[7, 3, 1]"
+	} else {
+		var wd []int
+		if json.Unmarshal([]byte(req.WarnDays), &wd) != nil {
+			writeError(w, http.StatusBadRequest, "warn_days 需为合法 JSON 整数数组")
+			return
+		}
 	}
 	if req.ExtraConfig == "" {
 		req.ExtraConfig = "{}"
@@ -79,6 +92,7 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "创建资产失败: "+err.Error())
 		return
 	}
+	s.publishAssistantEvent("assets")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": req.ID})
 }
 
@@ -96,14 +110,33 @@ func (s *Server) handleUpdateAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name != "" { existing.Name = req.Name }
-	if req.Category != "" { existing.Category = req.Category }
-	if req.Spec != "" { existing.Spec = req.Spec }
-	if req.Price != "" { existing.Price = req.Price }
-	if req.Status != "" { existing.Status = req.Status }
-	if req.DueDate != "" { existing.DueDate = req.DueDate }
+	if v := notifier.StripEmoji(strings.TrimSpace(req.Name)); v != "" {
+		existing.Name = v
+	}
+	if v := notifier.StripEmoji(strings.TrimSpace(req.Category)); v != "" {
+		existing.Category = v
+	}
+	if req.Spec != "" {
+		existing.Spec = notifier.StripEmoji(strings.TrimSpace(req.Spec))
+	}
+	if req.Price != "" {
+		existing.Price = notifier.StripEmoji(strings.TrimSpace(req.Price))
+	}
+	if req.Status != "" {
+		existing.Status = store.NormalizeAssetStatus(req.Status)
+	}
+	if req.DueDate != "" {
+		existing.DueDate = strings.TrimSpace(req.DueDate)
+	}
 	existing.AutoRenew = req.AutoRenew
-	if req.WarnDays != "" { existing.WarnDays = req.WarnDays }
+	if strings.TrimSpace(req.WarnDays) != "" {
+		var wd []int
+		if json.Unmarshal([]byte(req.WarnDays), &wd) != nil {
+			writeError(w, http.StatusBadRequest, "warn_days 需为合法 JSON 整数数组")
+			return
+		}
+		existing.WarnDays = req.WarnDays
+	}
 	if req.ExtraConfig != "" {
 		var js map[string]any
 		if json.Unmarshal([]byte(req.ExtraConfig), &js) != nil {
@@ -118,6 +151,7 @@ func (s *Server) handleUpdateAsset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "保存资产失败: "+err.Error())
 		return
 	}
+	s.publishAssistantEvent("assets")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -131,5 +165,6 @@ func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "删除资产失败: "+err.Error())
 		return
 	}
+	s.publishAssistantEvent("assets")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

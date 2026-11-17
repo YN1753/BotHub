@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   formatDurationMs,
+  formatUptime,
+  truncateText,
   describeCron,
   generateSlug,
   shortVersion,
@@ -17,6 +19,10 @@ test('format utilities produce expected strings', () => {
   assert.equal(formatDurationMs(420), '420ms')
   assert.equal(formatDurationMs(2450), '2.5s')
   assert.equal(formatDurationMs(125000), '2m5s')
+  assert.equal(formatUptime(45), '45s')
+  assert.equal(formatUptime(3720), '1h 2m')
+  assert.equal(formatUptime(90000), '1d 1h')
+  assert.equal(truncateText('abcdefg', 4), 'abcd...')
   assert.equal(describeCron('0 8 * * *'), '每天 早间 08:00 执行')
   assert.equal(describeCron('*/15 * * * *'), '每隔 15 分钟轮询一次')
   assert.equal(groupModeLabel('parallel'), '全员并发')

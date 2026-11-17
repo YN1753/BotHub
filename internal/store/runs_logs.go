@@ -152,14 +152,18 @@ func (s *Store) PruneOldRecords() error {
 }
 
 func (s *Store) CountStats() (map[string]int, error) {
-	var totalPushes, sentPushes, seenItems, totalAssets, totalMemories, totalNotifications, unreadNotifications int
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM push_logs`).Scan(&totalPushes)
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM push_logs WHERE status = 'sent'`).Scan(&sentPushes)
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM seen_items`).Scan(&seenItems)
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM assets`).Scan(&totalAssets)
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM agent_memories`).Scan(&totalMemories)
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM notifications`).Scan(&totalNotifications)
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM notifications WHERE read_at = ''`).Scan(&unreadNotifications)
+	var totalPushes, sentPushes, seenItems, totalAssets, totalMemories, totalNotifications, unreadNotifications, openTodos, totalBots int
+	_ = s.db.QueryRow(`SELECT
+		(SELECT COUNT(*) FROM push_logs),
+		(SELECT COUNT(*) FROM push_logs WHERE status = 'sent'),
+		(SELECT COUNT(*) FROM seen_items),
+		(SELECT COUNT(*) FROM assets),
+		(SELECT COUNT(*) FROM agent_memories),
+		(SELECT COUNT(*) FROM notifications),
+		(SELECT COUNT(*) FROM notifications WHERE read_at = ''),
+		(SELECT COUNT(*) FROM todos WHERE status != 'done'),
+		(SELECT COUNT(*) FROM bots)`).
+		Scan(&totalPushes, &sentPushes, &seenItems, &totalAssets, &totalMemories, &totalNotifications, &unreadNotifications, &openTodos, &totalBots)
 	return map[string]int{
 		"total_pushes":         totalPushes,
 		"sent_pushes":          sentPushes,
@@ -168,5 +172,7 @@ func (s *Store) CountStats() (map[string]int, error) {
 		"total_memories":       totalMemories,
 		"total_notifications":  totalNotifications,
 		"unread_notifications": unreadNotifications,
+		"open_todos":           openTodos,
+		"total_bots":           totalBots,
 	}, nil
 }

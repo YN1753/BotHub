@@ -58,7 +58,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.28.0',
+  version: 'v2.29.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -393,6 +393,8 @@ export function useAppStore() {
         case 'notifications_cleared':
           state.notifications = state.notifications.filter((n) => !n.read_at)
           break
+        case 'backup_restored':
+        case 'dashboard':
         default:
           jobs.push(loadDashboard(false))
           break
