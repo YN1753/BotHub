@@ -20,6 +20,8 @@ const pinned = ref(false)
 const searchQuery = ref('')
 const filterCat = ref('all')
 const filterScope = ref('all')
+const sortBy = ref<'weight' | 'recent' | 'recalled'>('weight')
+const pruning = ref(false)
 const saving = ref(false)
 
 // Inline edit state
@@ -66,14 +68,35 @@ const FILTER_TABS = [
   { id: 'general', label: 'general' },
 ]
 
+const SORT_OPTIONS = [
+  { value: 'weight', label: '按权重置顶优先' },
+  { value: 'recalled', label: '按高频召回次数' },
+  { value: 'recent', label: '按最近更新时间' },
+]
+
 const filteredMemories = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  return store.state.memories.filter((m) => {
+  const list = store.state.memories.filter((m) => {
     const mScope = m.scope || 'global'
     if (filterScope.value !== 'all' && mScope !== filterScope.value) return false
     if (filterCat.value !== 'all' && m.category !== filterCat.value) return false
     if (!q) return true
     return `${m.fact_key} ${m.content} ${m.category} ${mScope}`.toLowerCase().includes(q)
+  })
+  return [...list].sort((a, b) => {
+    if (sortBy.value === 'recent') {
+      return (b.updated_at || '').localeCompare(a.updated_at || '')
+    }
+    if (sortBy.value === 'recalled') {
+      const diff = (b.recall_count || 0) - (a.recall_count || 0)
+      if (diff !== 0) return diff
+      return (b.importance || 3) - (a.importance || 3)
+    }
+    const pinDiff = (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)
+    if (pinDiff !== 0) return pinDiff
+    const impDiff = (b.importance || 3) - (a.importance || 3)
+    if (impDiff !== 0) return impDiff
+    return (b.updated_at || '').localeCompare(a.updated_at || '')
   })
 })
 
@@ -159,6 +182,21 @@ async function handleDelete(id: number) {
     await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
   } catch (err: any) {
     store.notify(err.message || '删除记忆失败')
+  }
+}
+
+async function handlePruneScope() {
+  if (filterScope.value === 'all' || pruning.value) return
+  if (!window.confirm(`确定整理「${scopeLabel(filterScope.value)}」作用域记忆，仅保留全部置顶记忆与综合权重最高的 25 条吗？`)) return
+  pruning.value = true
+  try {
+    const res = await BotHubApi.pruneMemories(filterScope.value, 25)
+    store.notify(res.removed > 0 ? `已归档清理 ${res.removed} 条冷门记忆` : '当前作用域记忆紧凑健康，无需清理')
+    await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
+  } catch (err: any) {
+    store.notify(err.message || '整理记忆失败')
+  } finally {
+    pruning.value = false
   }
 }
 
@@ -250,9 +288,21 @@ watch(
           aria-label="搜索长期记忆"
           class="w-full sm:w-52 min-h-[34px] rounded-xl border border-[#fff8ee]/12 bg-[#060914] px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60"
         />
-        <div class="w-48">
+        <div class="w-44">
           <CustomSelect v-model="filterScope" :options="filterScopeOptions" aria-label="按作用域筛选" />
         </div>
+        <div class="w-36">
+          <CustomSelect v-model="sortBy" :options="SORT_OPTIONS" aria-label="排序方式" />
+        </div>
+        <button
+          v-if="filterScope !== 'all' && filteredMemories.length > 25"
+          type="button"
+          :disabled="pruning"
+          @click="handlePruneScope"
+          class="min-h-[34px] px-3 rounded-xl border border-[#f2b880]/35 text-[11px] text-[#f2b880] hover:bg-[#f2b880]/15 cursor-pointer disabled:opacity-50"
+        >
+          {{ pruning ? '整理中...' : '清理冷门记忆' }}
+        </button>
       </div>
       <SegmentedTabs v-model="filterCat" :items="FILTER_TABS" variant="subtle" aria-label="记忆分类筛选" />
     </div>

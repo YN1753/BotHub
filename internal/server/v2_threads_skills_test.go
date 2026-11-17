@@ -187,7 +187,39 @@ func TestV2SkillsThreadsScopedMemoriesAndBackup(t *testing.T) {
 		t.Fatalf("import backup failed (%d): %s", recImp.Code, recImp.Body.String())
 	}
 
-	// 6. Delete thread removes thread & its messages
+	// 6. Summarize thread (deterministic fallback when no LLM configured) & prune cold memories
+	_, _ = s.store.AppendAgentMessage(store.AgentMessage{
+		SessionID: "bot:" + botID,
+		BotID:     botID,
+		ThreadID:  th1ID,
+		Role:      "assistant",
+		Content:   "记得早点休息，明天还要开早会。",
+	})
+	reqSum := httptest.NewRequest(http.MethodPost, "/api/v2/bots/"+botID+"/threads/"+th1ID+"/summarize", strings.NewReader(`{"save_to_memory":true}`))
+	reqSum.SetPathValue("id", botID)
+	reqSum.SetPathValue("threadId", th1ID)
+	recSum := httptest.NewRecorder()
+	s.handleSummarizeBotThread(recSum, reqSum)
+	if recSum.Code != http.StatusOK || !strings.Contains(recSum.Body.String(), `"summary"`) {
+		t.Fatalf("summarize thread failed: %d %s", recSum.Code, recSum.Body.String())
+	}
+
+	// Add cold memories + prune keeping top 2
+	for i := 1; i <= 4; i++ {
+		_ = s.store.SaveAgentMemoryDetailed("bot:"+botID, "general", fmt.Sprintf("cold_%d", i), fmt.Sprintf("琐碎记录 %d", i), 1, false)
+	}
+	reqPrune := httptest.NewRequest(http.MethodPost, "/api/agent/memories/prune", strings.NewReader(fmt.Sprintf(`{"scope":"bot:%s","max_keep":2}`, botID)))
+	recPrune := httptest.NewRecorder()
+	s.handlePruneAgentMemories(recPrune, reqPrune)
+	if recPrune.Code != http.StatusOK || !strings.Contains(recPrune.Body.String(), `"removed"`) {
+		t.Fatalf("prune memories failed: %d %s", recPrune.Code, recPrune.Body.String())
+	}
+	remaining, _ := s.store.ListScopedMemories([]string{"bot:" + botID}, "", 20)
+	if len(remaining) > 2 {
+		t.Fatalf("expected <=2 memories after prune (keeping pinned + top weighted), got %d", len(remaining))
+	}
+
+	// 7. Delete thread removes thread & its messages
 	reqDelTh := httptest.NewRequest(http.MethodDelete, "/api/v2/bots/"+botID+"/threads/"+th1ID, nil)
 	reqDelTh.SetPathValue("id", botID)
 	reqDelTh.SetPathValue("threadId", th1ID)

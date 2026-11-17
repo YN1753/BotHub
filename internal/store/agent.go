@@ -313,6 +313,43 @@ func (s *Store) SetBotActiveThread(botID, threadID string) error {
 	return err
 }
 
+func (s *Store) DeleteAgentMemoryByScopeKey(scope, factKey string) (bool, error) {
+	sc := strings.TrimSpace(scope)
+	if sc == "" {
+		sc = "global"
+	}
+	res, err := s.db.Exec(`DELETE FROM agent_memories WHERE COALESCE(NULLIF(TRIM(scope),''),'global') = ? AND fact_key = ?`,
+		sc, strings.TrimSpace(factKey))
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+func (s *Store) PruneColdMemories(scope string, maxKeep int) (int64, error) {
+	if maxKeep <= 0 {
+		maxKeep = 30
+	}
+	sc := strings.TrimSpace(scope)
+	if sc == "" {
+		return 0, errors.New("scope is required")
+	}
+	res, err := s.db.Exec(`DELETE FROM agent_memories
+		WHERE COALESCE(NULLIF(TRIM(scope),''),'global') = ?
+		AND COALESCE(pinned, 0) = 0
+		AND id NOT IN (
+			SELECT id FROM agent_memories
+			WHERE COALESCE(NULLIF(TRIM(scope),''),'global') = ?
+			ORDER BY COALESCE(pinned,0) DESC, COALESCE(importance,3) DESC, COALESCE(recall_count,0) DESC, updated_at DESC
+			LIMIT ?
+		)`, sc, sc, maxKeep)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // Scoped Memory CRUD
 
 func (s *Store) SaveAgentMemory(category, factKey, content string) error {

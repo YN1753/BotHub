@@ -35,7 +35,15 @@ export interface ChatMessageUI {
   createdAt: string
   content: string
   reasoning: string
-  tools: Array<{ id: string; name: string; arguments: string; result?: string; done: boolean }>
+  tools: Array<{
+    id: string
+    name: string
+    arguments: string
+    result?: string
+    durationMs?: number
+    status?: string
+    done: boolean
+  }>
   replyToId?: number
   replyPreview?: string
   isTempGuest?: boolean
@@ -48,7 +56,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.13.1',
+  version: 'v2.14.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -168,6 +176,61 @@ function mapServerMessage(m: AgentMessage, fallbackBot?: Bot): ChatMessageUI {
     replyPreview: m.reply_preview || undefined,
     statusText: kind === 'routine' ? '例程主动汇报' : '已完成',
   }
+}
+
+// Reconstructs full assistant turn by joining tool_calls with their corresponding role="tool" outputs
+// and merging multi-round tool turns from the same sender into a single clean timeline bubble.
+export function mapServerMessages(msgs: AgentMessage[], fallbackBot?: Bot): ChatMessageUI[] {
+  const toolResultByCallID = new Map<string, string>()
+  for (const m of msgs) {
+    if (m.role === 'tool' && m.tool_call_id) {
+      toolResultByCallID.set(m.tool_call_id, m.content || '')
+    }
+  }
+
+  const out: ChatMessageUI[] = []
+  for (const m of msgs) {
+    if (m.role !== 'user' && m.role !== 'assistant' && m.role !== 'system') {
+      continue
+    }
+    const mapped = mapServerMessage(m, fallbackBot)
+    if (mapped.tools.length > 0) {
+      for (const tc of mapped.tools) {
+        if (toolResultByCallID.has(tc.id)) {
+          tc.result = toolResultByCallID.get(tc.id)
+        }
+      }
+    }
+
+    const prev = out.length > 0 ? out[out.length - 1] : null
+    if (
+      prev &&
+      prev.role === 'assistant' &&
+      mapped.role === 'assistant' &&
+      prev.senderBotId === mapped.senderBotId &&
+      prev.tools.length > 0
+    ) {
+      // Merge subsequent round (tool trace / final answer) into the ongoing assistant turn
+      prev.serverId = mapped.serverId
+      prev.localId = mapped.localId
+      if (mapped.reasoning && !prev.reasoning.includes(mapped.reasoning)) {
+        prev.reasoning = prev.reasoning ? `${prev.reasoning}\n${mapped.reasoning}` : mapped.reasoning
+      }
+      if (mapped.tools.length > 0) {
+        prev.tools.push(...mapped.tools)
+      }
+      if (mapped.content) {
+        prev.content = mapped.content
+      }
+      if (mapped.model) {
+        prev.model = mapped.model
+      }
+      prev.createdAt = mapped.createdAt
+      continue
+    }
+    out.push(mapped)
+  }
+  return out
 }
 
 export function useAppStore() {
@@ -321,9 +384,7 @@ export function useAppStore() {
         const idx = state.bots.findIndex((b) => b.id === botId)
         if (idx >= 0) state.bots[idx] = { ...state.bots[idx], ...res.bot }
       }
-      state.timeline = (res.messages || [])
-        .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'system')
-        .map((m) => mapServerMessage(m, res.bot || bot))
+      state.timeline = mapServerMessages(res.messages || [], res.bot || bot)
     } catch (err: any) {
       notify(err.message || '加载 Bot 对话流失败')
     }
@@ -380,6 +441,26 @@ export function useAppStore() {
     }
   }
 
+  async function summarizeThread(threadId?: string, saveToMemory = true) {
+    if (!state.activeBotId) return null
+    const tid = threadId !== undefined ? threadId : (state.activeThreadId || 'main')
+    try {
+      const res = await BotHubApi.summarizeBotThread(state.activeBotId, tid || 'main', saveToMemory)
+      if (res.threads) state.botThreads = res.threads
+      if (res.memories) state.botMemories = res.memories
+      await loadDashboard(false)
+      notify(
+        res.saved_fact_key
+          ? `已生成话题摘要并沉淀为记忆「${res.saved_fact_key}」`
+          : '已生成话题摘要'
+      )
+      return res
+    } catch (err: any) {
+      notify(err.message || '提炼话题摘要失败')
+      return null
+    }
+  }
+
   async function jumpToBot(botId: string, draftPrompt?: string) {
     state.botView = 'stream'
     state.showInboxModal = false
@@ -420,10 +501,15 @@ export function useAppStore() {
     notify(state.activeThreadId ? `[${bot.name}] 当前话题记录已清空` : `[${bot.name}] 主对话时间线已清空`)
   }
 
-  function setBotDraft(botId: string, text: string) {
+  function draftStorageKey(botId: string, threadId = ''): string {
+    return threadId ? `${botId}::${threadId}` : botId
+  }
+
+  function setBotDraft(botId: string, text: string, threadId = '') {
     if (!botId) return
-    if (text) state.draftsByBot[botId] = text
-    else delete state.draftsByBot[botId]
+    const key = draftStorageKey(botId, threadId)
+    if (text) state.draftsByBot[key] = text
+    else delete state.draftsByBot[key]
     try {
       sessionStorage.setItem('bothub_drafts', JSON.stringify(state.draftsByBot))
     } catch {
@@ -431,8 +517,9 @@ export function useAppStore() {
     }
   }
 
-  function getBotDraft(botId: string): string {
-    return state.draftsByBot[botId] || ''
+  function getBotDraft(botId: string, threadId = ''): string {
+    if (!botId) return ''
+    return state.draftsByBot[draftStorageKey(botId, threadId)] || ''
   }
 
   function toggleSound() {
@@ -570,6 +657,7 @@ export function useAppStore() {
     createThread,
     renameThread,
     deleteThread,
+    summarizeThread,
     jumpToBot,
     togglePinBot,
     deleteSingleMessage,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, useId, onMounted, onBeforeUnmount } from 'vue'
-import { useAppStore, type ChatMessageUI } from '../stores/useAppStore'
+import { useAppStore, mapServerMessages, type ChatMessageUI } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { botStateLabel, describeCron, formatTime, formatTimelineDivider, groupModeLabel } from '../utils/format'
 import { renderSafeMarkdown } from '../utils/markdown'
@@ -136,14 +136,93 @@ function openForwardForMessage(msg: ChatMessageUI) {
   }
 }
 
-const SLASH_COMMANDS = [
-  { cmd: '/assets', title: '资产全面审计', desc: '盘点 VPS、域名与订阅到期风险', prompt: '请调用工具盘点当前全部数字资产与临期风险并给出续费建议。' },
-  { cmd: '/nezha', title: '探针节点巡检', desc: '查看哪吒节点在线率与负载情况', prompt: '请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线与健康状态。' },
-  { cmd: '/radar', title: '前沿开源雷达', desc: '汇总近期高价值技术趋势', prompt: '请检索并梳理今天最值得关注的 GitHub 与 Hacker News 开源技术动态。' },
-  { cmd: '/tasks', title: '调度队列核查', desc: '检查各自动化例程状态与下次触发时间', prompt: '请核查当前所有自动化调度任务的运行状态与上次执行摘要。' },
-  { cmd: '/invite', title: '拉人进群 / 群设置', desc: '打开右侧群成员与协同策略抽屉', action: 'open_drawer' },
-  { cmd: '/clear', title: '清空当前对话', desc: '清空当前频道聊天时间线', action: 'clear_timeline' },
-]
+interface SlashCmdItem {
+  cmd: string
+  title: string
+  desc: string
+  prompt?: string
+  action?: 'open_drawer' | 'clear_timeline' | 'new_thread' | 'summarize_thread' | 'open_skills'
+}
+
+const slashCommands = computed<SlashCmdItem[]>(() => {
+  const b = bot.value
+  const items: SlashCmdItem[] = []
+  let allowedTools: string[] = []
+  let boundSkills: string[] = []
+  try {
+    const parsed = JSON.parse(b?.allowed_tools || '[]')
+    if (Array.isArray(parsed)) allowedTools = parsed
+  } catch {
+    allowedTools = []
+  }
+  try {
+    const parsed = JSON.parse(b?.skill_ids || '[]')
+    if (Array.isArray(parsed)) boundSkills = parsed
+  } catch {
+    boundSkills = []
+  }
+
+  // Dynamic bound custom skills first
+  for (const sk of store.state.skills || []) {
+    if (!sk.enabled || !boundSkills.includes(sk.id)) continue
+    items.push({
+      cmd: `/${sk.slug}`,
+      title: `技能 · ${sk.name}`,
+      desc: sk.description || (sk.kind === 'webhook' ? `调用外部技能 skill_${sk.slug}` : '按专属技能规范响应'),
+      prompt: sk.kind === 'webhook' ? `请使用 skill_${sk.slug} 工具协助处理当前问题：` : `请遵循「${sk.name}」技能规范回答：`,
+    })
+  }
+
+  if (allowedTools.includes('manage_assets')) {
+    items.push({
+      cmd: '/assets',
+      title: '资产全面审计',
+      desc: '盘点 VPS、域名与订阅到期风险',
+      prompt: '请调用工具盘点当前全部数字资产与临期风险并给出续费建议。',
+    })
+  }
+  if (allowedTools.includes('query_nezha_nodes')) {
+    items.push({
+      cmd: '/nezha',
+      title: '探针节点巡检',
+      desc: '查看哪吒节点在线率与负载情况',
+      prompt: '请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线与健康状态。',
+    })
+  }
+  if (allowedTools.includes('web_search')) {
+    items.push({
+      cmd: '/search',
+      title: '全网检索',
+      desc: '联网搜索最新资讯与公开资料',
+      prompt: '请帮我联网搜索：',
+    })
+  }
+  if (allowedTools.includes('manage_tasks')) {
+    items.push({
+      cmd: '/tasks',
+      title: '调度队列核查',
+      desc: '检查各自动化例程状态与下次触发时间',
+      prompt: '请核查当前所有自动化调度任务的运行状态与上次执行摘要。',
+    })
+  }
+  if (allowedTools.includes('manage_memory') || allowedTools.includes('recall_memory')) {
+    items.push({
+      cmd: '/memories',
+      title: '回忆关键信息',
+      desc: '检索与当前会话相关的历史重要记忆',
+      prompt: '请先检索我们的历史记忆，梳理目前你记住的关键事实与约定。',
+    })
+  }
+
+  items.push(
+    { cmd: '/thread', title: '新建独立话题', desc: '在当前会话内开启一条干净的新话题线', action: 'new_thread' },
+    { cmd: '/summarize', title: '总结话题并存记忆', desc: '提炼当前话题核心结论并沉淀到专属记忆库', action: 'summarize_thread' },
+    { cmd: '/skills', title: '打开自定义技能工坊', desc: '管理 Playbook 与 Webhook 外部技能工具', action: 'open_skills' },
+    { cmd: '/invite', title: '拉人进群 / 群设置', desc: '打开右侧群成员与协同策略抽屉', action: 'open_drawer' },
+    { cmd: '/clear', title: '清空当前对话', desc: '清空当前话题聊天时间线', action: 'clear_timeline' }
+  )
+  return items
+})
 
 // Config Editor local state
 const cfgName = ref('')
@@ -307,10 +386,56 @@ const mentionCandidates = computed(() => {
     }))
 })
 
+const summarizingThread = ref(false)
+
+async function handleSummarizeThread() {
+  if (summarizingThread.value || !bot.value) return
+  summarizingThread.value = true
+  try {
+    await store.summarizeThread(store.state.activeThreadId || 'main', true)
+  } finally {
+    summarizingThread.value = false
+  }
+}
+
+function formatToolLabel(name: string): string {
+  if (name.startsWith('skill_')) {
+    const slug = name.slice(6)
+    const found = (store.state.skills || []).find((s) => s.slug === slug)
+    return found ? `${found.name} (${name})` : name
+  }
+  const builtinNames: Record<string, string> = {
+    read_url: '网页正文抓取 (read_url)',
+    web_search: '联网检索 (web_search)',
+    query_nezha_nodes: '哪吒探针巡检 (query_nezha_nodes)',
+    manage_assets: '数字资产台账 (manage_assets)',
+    manage_tasks: '调度任务管理 (manage_tasks)',
+    remember_fact: '写入长期记忆 (remember_fact)',
+    recall_memory: '检索长期记忆 (recall_memory)',
+    manage_memory: '整理与遗忘记忆 (manage_memory)',
+  }
+  return builtinNames[name] || name
+}
+
+function formatToolPayload(raw?: string): string {
+  if (!raw) return ''
+  const trimmed = raw.trim()
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      return JSON.stringify(JSON.parse(trimmed), null, 2)
+    } catch {
+      return trimmed
+    }
+  }
+  return trimmed
+}
+
 const filteredSlashCommands = computed(() => {
   const val = inputPrompt.value.trim().toLowerCase()
   if (!val.startsWith('/')) return []
-  return SLASH_COMMANDS.filter((c) => c.cmd.includes(val) || c.title.toLowerCase().includes(val.slice(1)))
+  return slashCommands.value.filter(
+    (c) => c.cmd.toLowerCase().includes(val) || c.title.toLowerCase().includes(val.slice(1))
+  )
 })
 
 function shouldShowTimestamp(idx: number): boolean {
@@ -585,19 +710,44 @@ async function inviteFromMentionAndPick(sp: Bot) {
   pickMentionCandidate(sp)
 }
 
-function pickSlashCommand(item: (typeof SLASH_COMMANDS)[number]) {
+function pickSlashCommand(item: SlashCmdItem) {
   slashOpen.value = false
-  inputPrompt.value = ''
   if (item.action === 'open_drawer') {
+    inputPrompt.value = ''
     store.state.showGroupDrawer = true
     return
   }
   if (item.action === 'clear_timeline') {
+    inputPrompt.value = ''
     clearTimeline()
     return
   }
+  if (item.action === 'new_thread') {
+    inputPrompt.value = ''
+    store.createThread('')
+    return
+  }
+  if (item.action === 'summarize_thread') {
+    inputPrompt.value = ''
+    handleSummarizeThread()
+    return
+  }
+  if (item.action === 'open_skills') {
+    inputPrompt.value = ''
+    store.state.showSkillsModal = true
+    return
+  }
   if (item.prompt) {
-    sendPrompt(item.prompt)
+    if (item.prompt.endsWith('：')) {
+      inputPrompt.value = item.prompt
+      nextTick(() => {
+        autoResizeTextarea()
+        textareaRef.value?.focus()
+      })
+    } else {
+      inputPrompt.value = ''
+      sendPrompt(item.prompt)
+    }
   }
 }
 
@@ -659,7 +809,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
 
 watch(inputPrompt, (val) => {
   if (store.state.activeBotId) {
-    store.setBotDraft(store.state.activeBotId, val)
+    store.setBotDraft(store.state.activeBotId, val, store.state.activeThreadId)
   }
   if (!val) {
     mentionOpen.value = false
@@ -673,12 +823,12 @@ watch(inputPrompt, (val) => {
 })
 
 watch(
-  () => store.state.activeBotId,
-  (newId, oldId) => {
-    if (oldId && oldId !== newId) {
-      store.setBotDraft(oldId, inputPrompt.value)
+  () => [store.state.activeBotId, store.state.activeThreadId] as const,
+  ([newId, newThread], [oldId, oldThread]) => {
+    if (oldId && (oldId !== newId || oldThread !== newThread)) {
+      store.setBotDraft(oldId, inputPrompt.value, oldThread || '')
     }
-    const draft = store.state.pendingDraftPrompt ? '' : store.getBotDraft(newId)
+    const draft = store.state.pendingDraftPrompt ? '' : store.getBotDraft(newId, newThread || '')
     if (!store.state.pendingDraftPrompt) {
       inputPrompt.value = draft
     }
@@ -990,6 +1140,8 @@ async function sendPrompt(overrideText?: string) {
             if (found) {
               found.done = true
               found.result = payload.result
+              if (payload.duration_ms !== undefined) found.durationMs = Number(payload.duration_ms)
+              if (payload.status) found.status = String(payload.status)
             }
           } else if (currentEvent === 'content') {
             streamStatus.value = '正在生成回复...'
@@ -1031,44 +1183,9 @@ async function sendPrompt(overrideText?: string) {
       if (synced?.memories) store.state.botMemories = synced.memories
       if (synced?.executions) store.state.botExecutions = synced.executions
       if (synced?.messages && !store.state.isStreaming) {
-        const srvMsgs = synced.messages.filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'system')
-        if (srvMsgs.length >= store.state.timeline.length) {
-          store.state.timeline = srvMsgs.map((m) => {
-            const sender = store.state.bots.find((b) => b.id === (m.sender_bot_id || m.bot_id)) || curBot
-            let parsedTools: ChatMessageUI['tools'] = []
-            try {
-              const raw = JSON.parse(m.tool_calls || '[]')
-              if (Array.isArray(raw)) {
-                parsedTools = raw.map((tc: any, idx: number) => ({
-                  id: tc.id || `tool_${idx}`,
-                  name: tc.function?.name || 'tool',
-                  arguments: tc.function?.arguments || '{}',
-                  done: true,
-                }))
-              }
-            } catch {
-              parsedTools = []
-            }
-            const kind = m.msg_kind === 'system' || m.role === 'system' ? 'system' : m.msg_kind === 'routine' ? 'routine' : 'chat'
-            return {
-              localId: `srv_${m.id}`,
-              serverId: m.id,
-              role: kind === 'system' ? 'system' : m.role === 'user' ? 'user' : 'assistant',
-              senderBotId: m.sender_bot_id || m.bot_id || sender?.id || '',
-              senderName: sender?.name || 'BotHub',
-              roleTitle: sender?.role_title || '',
-              avatarStyle: sender?.avatar_style || 'cyan',
-              model: m.model_used || sender?.model || store.state.configs.ai_model || '',
-              msgKind: kind,
-              createdAt: m.created_at,
-              content: m.content || '',
-              reasoning: m.reasoning_content || '',
-              tools: parsedTools,
-              replyToId: m.reply_to_id || undefined,
-              replyPreview: m.reply_preview || undefined,
-              statusText: kind === 'routine' ? '例程主动汇报' : '已完成',
-            }
-          })
+        const mappedSynced = mapServerMessages(synced.messages, curBot)
+        if (mappedSynced.length >= store.state.timeline.length) {
+          store.state.timeline = mappedSynced
         }
       }
     }
@@ -1478,13 +1595,25 @@ function stateBadgeClass(state?: string): string {
             </div>
           </div>
 
-          <button
-            type="button"
-            @click="store.createThread('')"
-            class="ml-auto shrink-0 px-2.5 py-1 rounded-lg border border-dashed border-[#fff8ee]/16 text-[11px] text-slate-300 hover:border-[#f2b880]/50 hover:text-[#f2b880] cursor-pointer whitespace-nowrap"
-          >
-            + 新话题
-          </button>
+          <div class="ml-auto flex items-center gap-1.5 shrink-0">
+            <button
+              v-if="store.state.timeline.length >= 2"
+              type="button"
+              :disabled="summarizingThread"
+              @click="handleSummarizeThread"
+              title="提炼当前话题核心结论并存为专属记忆"
+              class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:border-emerald-400/45 hover:text-emerald-300 cursor-pointer whitespace-nowrap disabled:opacity-50"
+            >
+              {{ summarizingThread ? '提炼中...' : '总结存记忆' }}
+            </button>
+            <button
+              type="button"
+              @click="store.createThread('')"
+              class="px-2.5 py-1 rounded-lg border border-dashed border-[#fff8ee]/16 text-[11px] text-slate-300 hover:border-[#f2b880]/50 hover:text-[#f2b880] cursor-pointer whitespace-nowrap"
+            >
+              + 新话题
+            </button>
+          </div>
         </div>
 
         <!-- Slide-Down In-Chat Search Bar (Cmd/Ctrl + F) -->
@@ -1809,11 +1938,32 @@ function stateBadgeClass(state?: string): string {
                         class="rounded-lg border border-[#fff8ee]/8 bg-[#050811]/75 px-2.5 py-2"
                       >
                         <div class="flex items-center justify-between gap-2 text-[11px]">
-                          <span class="text-[#f2b880] font-semibold">#{{ idx + 1 }} {{ tc.name }}</span>
-                          <span :class="tc.done ? 'text-emerald-400' : 'text-amber-300'">{{ tc.done ? '已完成' : '执行中' }}</span>
+                          <span class="text-[#f2b880] font-semibold truncate">#{{ idx + 1 }} {{ formatToolLabel(tc.name) }}</span>
+                          <div class="flex items-center gap-2 shrink-0">
+                            <span v-if="tc.durationMs !== undefined" class="text-[10px] text-slate-400">{{ tc.durationMs }}ms</span>
+                            <button
+                              v-if="tc.result || tc.arguments"
+                              type="button"
+                              @click="copyMessageContent(tc.result || tc.arguments)"
+                              class="text-[10px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
+                            >
+                              复制
+                            </button>
+                            <span
+                              :class="
+                                !tc.done
+                                  ? 'text-amber-300'
+                                  : tc.status === 'error'
+                                  ? 'text-rose-400'
+                                  : 'text-emerald-400'
+                              "
+                            >
+                              {{ !tc.done ? '执行中' : tc.status === 'error' ? '异常' : '已完成' }}
+                            </span>
+                          </div>
                         </div>
-                        <div v-if="tc.arguments" class="mt-1 text-slate-400 whitespace-pre-wrap break-all">入参: {{ tc.arguments }}</div>
-                        <div v-if="tc.result" class="mt-1 text-slate-300 whitespace-pre-wrap break-all">出参: {{ tc.result }}</div>
+                        <div v-if="tc.arguments && tc.arguments !== '{}'" class="mt-1 text-slate-400 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">入参: {{ formatToolPayload(tc.arguments) }}</div>
+                        <div v-if="tc.result" class="mt-1 text-slate-300 whitespace-pre-wrap break-all max-h-48 overflow-y-auto border-t border-[#fff8ee]/6 pt-1">出参: {{ formatToolPayload(tc.result) }}</div>
                       </div>
                     </div>
                   </details>

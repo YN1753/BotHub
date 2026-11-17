@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -702,6 +704,66 @@ func (s *Server) handleDeleteBotThread(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "threads": threads})
 }
 
+func (s *Server) handleSummarizeBotThread(w http.ResponseWriter, r *http.Request) {
+	botID := strings.TrimSpace(r.PathValue("id"))
+	threadID := strings.TrimSpace(r.PathValue("threadId"))
+	if threadID == "main" {
+		threadID = ""
+	}
+	bot, err := s.store.GetBot(botID)
+	if err != nil || bot == nil {
+		writeError(w, http.StatusNotFound, "Bot 不存在")
+		return
+	}
+
+	var req struct {
+		SaveToMemory *bool `json:"save_to_memory"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req)
+	saveMem := true
+	if req.SaveToMemory != nil {
+		saveMem = *req.SaveToMemory
+	}
+
+	var th *store.BotThread
+	if threadID != "" {
+		th, err = s.store.GetBotThread(botID, threadID)
+		if err != nil || th == nil {
+			writeError(w, http.StatusNotFound, "话题不存在")
+			return
+		}
+	}
+
+	msgs, err := s.store.ListBotMessagesByThread(botID, threadID, 80)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "读取话题记录失败: "+err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+
+	summary, savedFactKey, err := s.agent.SummarizeThreadToMemory(ctx, bot, th, msgs, saveMem)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	threads, _ := s.store.ListBotThreads(botID)
+	memScopes := []string{"bot:" + botID}
+	if bot.MemoryPolicy != store.MemoryPolicyIsolated {
+		memScopes = append(memScopes, "global")
+	}
+	memories, _ := s.store.ListScopedMemories(memScopes, "", 60)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":             true,
+		"summary":        summary,
+		"saved_fact_key": savedFactKey,
+		"threads":        threads,
+		"memories":       memories,
+	})
+}
+
 func (s *Server) handleDeleteBotMessage(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
 	msgID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("msgId")), 10, 64)
@@ -728,6 +790,7 @@ func (s *Server) handleForwardBotMessage(w http.ResponseWriter, r *http.Request)
 		FromName string `json:"from_name"`
 		Content  string `json:"content"`
 		Note     string `json:"note"`
+		ThreadID string `json:"thread_id"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32*1024)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "无效转发请求体")
@@ -744,6 +807,10 @@ func (s *Server) handleForwardBotMessage(w http.ResponseWriter, r *http.Request)
 		fromName = "其他会话"
 	}
 	note := notifier.StripEmoji(strings.TrimSpace(req.Note))
+	targetThreadID := strings.TrimSpace(req.ThreadID)
+	if targetThreadID == "" {
+		targetThreadID = strings.TrimSpace(targetBot.ActiveThreadID)
+	}
 
 	var body strings.Builder
 	body.WriteString(fmt.Sprintf("[来自「%s」的转发记录]\n", fromName))
@@ -752,11 +819,26 @@ func (s *Server) handleForwardBotMessage(w http.ResponseWriter, r *http.Request)
 		body.WriteString("\n\n附言：" + note)
 	}
 
-	sysNotice := s.appendGroupSystemNotice(targetBot.ID, fmt.Sprintf("已从「%s」转发一条消息", fromName))
+	sysMsg := store.AgentMessage{
+		SessionID: "bot:" + targetBot.ID,
+		BotID:     targetBot.ID,
+		ThreadID:  targetThreadID,
+		MsgKind:   "system",
+		Role:      "system",
+		Content:   fmt.Sprintf("已从「%s」转发一条消息", fromName),
+	}
+	if sid, sErr := s.store.AppendAgentMessage(sysMsg); sErr == nil {
+		sysMsg.ID = sid
+		if s.push != nil && s.push.Hub() != nil {
+			s.push.Hub().PublishEvent("bot_message", sysMsg)
+		}
+	}
+	sysNotice := &sysMsg
 
 	fwdMsg := store.AgentMessage{
 		SessionID: "bot:" + targetBot.ID,
 		BotID:     targetBot.ID,
+		ThreadID:  targetThreadID,
 		MsgKind:   "chat",
 		Role:      "user",
 		Content:   body.String(),

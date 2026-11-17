@@ -35,7 +35,7 @@ function resolveGroupMembers(b: Bot): Bot[] {
 
 interface SearchEntry {
   key: string
-  category: '会话' | '快捷操作' | '资产' | '例程' | '记忆'
+  category: '会话' | '话题' | '技能' | '快捷操作' | '资产' | '例程' | '记忆'
   title: string
   subtitle: string
   bot?: Bot
@@ -81,11 +81,20 @@ const entries = computed<SearchEntry[]>(() => {
     {
       key: 'act_new_bot',
       category: '快捷操作',
-      title: '招募全新专属 Bot',
-      subtitle: '从模板快速定制新 Bot 形象与工具白名单',
+      title: '创造全新专属 Bot 伙伴',
+      subtitle: '自由配置独立性格、记忆域、自定义技能与工具集',
       run: () => {
         store.state.createModalMode = 'bot'
         store.state.showCreateBotModal = true
+      },
+    },
+    {
+      key: 'act_skills',
+      category: '快捷操作',
+      title: '打开自定义技能工坊',
+      subtitle: '创建行为规范 Playbook 或测试 Webhook API 技能工具',
+      run: () => {
+        store.state.showSkillsModal = true
       },
     },
     {
@@ -117,6 +126,28 @@ const entries = computed<SearchEntry[]>(() => {
     },
   ]
   list.push(...quickActions)
+
+  store.state.botThreads.forEach((th) => {
+    list.push({
+      key: `th_${th.id}`,
+      category: '话题',
+      title: th.title,
+      subtitle: `当前会话话题 · ${th.msg_count || 0} 条消息${th.summary ? ' · ' + th.summary : ''}`,
+      run: () => store.switchThread(th.id),
+    })
+  })
+
+  ;(store.state.skills || []).forEach((sk) => {
+    list.push({
+      key: `sk_${sk.id}`,
+      category: '技能',
+      title: sk.name,
+      subtitle: `${sk.kind === 'webhook' ? `API tool: skill_${sk.slug}` : 'Playbook 行为规范'} · ${sk.description || '点击管理'}`,
+      run: () => {
+        store.state.showSkillsModal = true
+      },
+    })
+  })
 
   store.state.assets.forEach((a) => {
     list.push({

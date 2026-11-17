@@ -145,6 +145,17 @@ export const BotHubApi = {
       `/api/v2/bots/${encodeURIComponent(botId)}/threads/${encodeURIComponent(threadId)}`,
       { method: 'DELETE' }
     ),
+  summarizeBotThread: (botId: string, threadId: string, saveToMemory = true) =>
+    apiRequest<{
+      ok: boolean
+      summary: string
+      saved_fact_key?: string
+      threads: BotThread[]
+      memories: AgentMemory[]
+    }>(
+      `/api/v2/bots/${encodeURIComponent(botId)}/threads/${encodeURIComponent(threadId || 'main')}/summarize`,
+      { method: 'POST', body: JSON.stringify({ save_to_memory: saveToMemory }) }
+    ),
   deleteBotMessage: (botId: string, msgId: number) =>
     apiRequest(`/api/v2/bots/${encodeURIComponent(botId)}/messages/${encodeURIComponent(String(msgId))}`, {
       method: 'DELETE',
@@ -195,6 +206,11 @@ export const BotHubApi = {
     ),
   deleteMemory: (id: number) =>
     apiRequest(`/api/agent/memories/${encodeURIComponent(String(id))}`, { method: 'DELETE' }),
+  pruneMemories: (scope: string, maxKeep = 25) =>
+    apiRequest<{ ok: boolean; scope: string; removed: number }>('/api/agent/memories/prune', {
+      method: 'POST',
+      body: JSON.stringify({ scope, max_keep: maxKeep }),
+    }),
 
   // Custom Skills
   listSkills: () => apiRequest<{ ok: boolean; skills: Skill[] }>('/api/v2/skills'),

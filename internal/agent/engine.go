@@ -538,13 +538,24 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 			break
 		}
 	}
-	if !rememberedInTurn && strings.TrimSpace(finalContent.String()) != "" {
-		if lightKey, _ := e.store.GetConfig(store.KeyLightAPIKey); strings.TrimSpace(lightKey) != "" {
-			go e.distillMemoryAsync(userMsg, finalContent.String())
-		}
+	if !rememberedInTurn && strings.TrimSpace(finalContent.String()) != "" && e.hasLightTarget() {
+		go e.distillMemoryAsync(userMsg, finalContent.String())
 	}
 
 	return resp, nil
+}
+
+func (e *Engine) hasLightTarget() bool {
+	if e == nil || e.store == nil {
+		return false
+	}
+	if lightKey, _ := e.store.GetConfig(store.KeyLightAPIKey); strings.TrimSpace(lightKey) != "" {
+		return true
+	}
+	if isConfigTrue(e.store, store.KeyPoolForLight, true) && len(activeFreePoolTargets(e.store)) > 0 {
+		return true
+	}
+	return primaryDeepSeekTarget(e.store).APIKey != ""
 }
 
 func (e *Engine) distillMemoryAsync(userMsg, assistantReply string) {
@@ -552,21 +563,31 @@ func (e *Engine) distillMemoryAsync(userMsg, assistantReply string) {
 }
 
 func (e *Engine) distillMemoryWithScope(scope, botMode, userMsg, assistantReply string) {
-	if len([]rune(strings.TrimSpace(userMsg))) < 6 {
+	if len([]rune(strings.TrimSpace(userMsg))) < 6 || !e.hasLightTarget() {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
+	existingMems, _ := e.store.ListScopedMemories([]string{scope}, "", 25)
+	var existingKeysHint string
+	if len(existingMems) > 0 {
+		pairs := make([]string, 0, len(existingMems))
+		for _, m := range existingMems {
+			pairs = append(pairs, fmt.Sprintf("%s=%s", m.FactKey, truncateTitle(m.Content)))
+		}
+		existingKeysHint = "\n当前作用域已有记忆键（若讨论同一主题请沿用对应 fact_key 更新，不要重复造同义新键）：\n- " + strings.Join(pairs, "\n- ")
+	}
+
 	var sys string
 	if botMode == store.BotModeCompanion {
-		sys = `你是专属陪伴助手的情境记忆提炼器。从这一轮自然对话中，判断是否包含值得长期记住的个人点滴（用户最近的心情、喜好禁忌、重要事件、人际关系、聊天约定或生活习惯）。
-如果有，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"category":"preference|relation|emotion|general","fact_key":"简短英文蛇形键名","content":"自然具体的中文记忆描述","importance":4,"pinned":false}。importance 为 1-5，非常重要的人生节点或核心喜好 pinned 设 true。
-如果只是毫无保留价值的日常寒暄（如“在吗”“你好”），输出：{"save":false}。严禁包含任何 Emoji。`
+		sys = `你是专属陪伴助手的情境记忆提炼器。从这一轮自然对话中，判断是否包含值得长期记住的个人点滴（用户最近的心情、喜好禁忌、重要事件、人际关系、聊天约定或生活习惯）或明确否定了旧习惯。
+如果有且值得写入或更新，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"action":"upsert","category":"preference|relation|emotion|general","fact_key":"简短英文蛇形键名","content":"自然具体的中文记忆描述","importance":4,"pinned":false}。若用户明确推翻/要求忘掉已有记忆，设置 "action":"forget" 并填对应 fact_key。importance 为 1-5，非常重要的人生节点或核心喜好 pinned 设 true。
+如果只是毫无保留价值的日常寒暄（如“在吗”“你好”），输出：{"save":false}。严禁包含任何 Emoji。` + existingKeysHint
 	} else {
-		sys = `你是长期记忆提炼器。从用户和助手的最新一轮对话中判断是否包含值得长期跨会话记住的稳定事实（如架构约定、偏好风格、重要项目背景、常用主机的非敏感约束）。
-如果有，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"category":"infra|preference|schedule|insight|general","fact_key":"英文蛇形键名","content":"简洁中文事实","importance":3,"pinned":false}。importance 为 1-5。
-如果只是一次性闲聊或常规流水查询，输出：{"save":false}。严禁包含任何 Emoji。`
+		sys = `你是长期记忆提炼器。从用户和助手的最新一轮对话中判断是否包含值得长期跨会话记住的稳定事实（如架构约定、偏好风格、重要项目背景、常用主机的非敏感约束）或明确废止了旧约定。
+如果有，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"action":"upsert","category":"infra|preference|schedule|insight|general","fact_key":"英文蛇形键名","content":"简洁中文事实","importance":3,"pinned":false}。若用户明确表示废止/取消某条已有记忆，可设 "action":"forget" 并填对应 fact_key。importance 为 1-5。
+如果只是一次性闲聊或常规流水查询，输出：{"save":false}。严禁包含任何 Emoji。` + existingKeysHint
 	}
 
 	prompt := fmt.Sprintf("用户：%s\n回应：%s", userMsg, assistantReply)
@@ -582,18 +603,118 @@ func (e *Engine) distillMemoryWithScope(scope, botMode, userMsg, assistantReply 
 
 	var parsed struct {
 		Save       bool   `json:"save"`
+		Action     string `json:"action"`
 		Category   string `json:"category"`
 		FactKey    string `json:"fact_key"`
 		Content    string `json:"content"`
 		Importance int    `json:"importance"`
 		Pinned     bool   `json:"pinned"`
 	}
-	if json.Unmarshal([]byte(clean), &parsed) == nil && parsed.Save && strings.TrimSpace(parsed.FactKey) != "" && strings.TrimSpace(parsed.Content) != "" {
-		if parsed.Importance <= 0 {
-			parsed.Importance = 3
+	if json.Unmarshal([]byte(clean), &parsed) == nil && parsed.Save && strings.TrimSpace(parsed.FactKey) != "" {
+		if strings.EqualFold(strings.TrimSpace(parsed.Action), "forget") {
+			_, _ = e.store.DeleteAgentMemoryByScopeKey(scope, strings.TrimSpace(parsed.FactKey))
+			return
 		}
-		_ = e.store.SaveAgentMemoryDetailed(scope, parsed.Category, parsed.FactKey, notifier.StripEmoji(parsed.Content), parsed.Importance, parsed.Pinned)
+		if strings.TrimSpace(parsed.Content) != "" {
+			if parsed.Importance <= 0 {
+				parsed.Importance = 3
+			}
+			_ = e.store.SaveAgentMemoryDetailed(scope, parsed.Category, parsed.FactKey, notifier.StripEmoji(parsed.Content), parsed.Importance, parsed.Pinned)
+		}
 	}
+}
+
+// SummarizeThreadToMemory distills a multi-turn conversation thread into a concise summary and optional persistent fact.
+func (e *Engine) SummarizeThreadToMemory(ctx context.Context, bot *store.Bot, thread *store.BotThread, msgs []store.AgentMessage, saveToMemory bool) (summary string, savedFactKey string, err error) {
+	if bot == nil || len(msgs) == 0 {
+		return "", "", fmt.Errorf("当前话题暂无可提炼的对话内容")
+	}
+	var transcript strings.Builder
+	for _, m := range msgs {
+		if m.Role != "user" && m.Role != "assistant" {
+			continue
+		}
+		who := "用户"
+		if m.Role == "assistant" {
+			who = bot.Name
+		}
+		line := strings.TrimSpace(notifier.StripEmoji(m.Content))
+		if line == "" {
+			continue
+		}
+		runes := []rune(line)
+		if len(runes) > 320 {
+			line = string(runes[:320]) + "..."
+		}
+		transcript.WriteString(fmt.Sprintf("%s: %s\n", who, line))
+	}
+	if transcript.Len() == 0 {
+		return "", "", fmt.Errorf("话题内暂无有效对话文本")
+	}
+
+	threadTitle := "主时间线"
+	threadKey := "main"
+	if thread != nil {
+		if strings.TrimSpace(thread.Title) != "" {
+			threadTitle = thread.Title
+		}
+		if strings.TrimSpace(thread.ID) != "" {
+			threadKey = thread.ID
+		}
+	}
+
+	// Deterministic fallback summary if no LLM key is configured
+	if !e.hasLightTarget() {
+		rawLines := strings.Split(strings.TrimSpace(transcript.String()), "\n")
+		if len(rawLines) > 3 {
+			rawLines = rawLines[len(rawLines)-3:]
+		}
+		summary = truncateTitle(strings.Join(rawLines, " | "))
+	} else {
+		sys := `请对以下话题对话提炼结构化复盘，输出纯 JSON（不要 Markdown 代码块）：
+{"summary":"不超过80字的话题核心结论摘要","fact_key":"英文蛇形记忆键名","memory_content":"值得长期记住的关键结论或约定（不超过120字）","importance":4}。严禁包含 Emoji。`
+		userText := fmt.Sprintf("话题：%s\n对话：\n%s", threadTitle, transcript.String())
+		raw, lErr := e.CallLightModel(ctx, sys, userText)
+		if lErr == nil {
+			clean := strings.TrimSpace(raw)
+			clean = strings.TrimPrefix(clean, "```json")
+			clean = strings.TrimPrefix(clean, "```")
+			clean = strings.TrimSuffix(clean, "```")
+			clean = strings.TrimSpace(clean)
+			var parsed struct {
+				Summary       string `json:"summary"`
+				FactKey       string `json:"fact_key"`
+				MemoryContent string `json:"memory_content"`
+				Importance    int    `json:"importance"`
+			}
+			if json.Unmarshal([]byte(clean), &parsed) == nil && strings.TrimSpace(parsed.Summary) != "" {
+				summary = notifier.StripEmoji(strings.TrimSpace(parsed.Summary))
+				if saveToMemory && strings.TrimSpace(parsed.MemoryContent) != "" {
+					fk := strings.TrimSpace(parsed.FactKey)
+					if fk == "" {
+						fk = "thread_" + threadKey
+					}
+					imp := parsed.Importance
+					if imp <= 0 {
+						imp = 4
+					}
+					scope := "bot:" + bot.ID
+					if e.store.SaveAgentMemoryDetailed(scope, "insight", fk, notifier.StripEmoji(parsed.MemoryContent), imp, false) == nil {
+						savedFactKey = fk
+					}
+				}
+			}
+		}
+		if summary == "" {
+			summary = truncateTitle(transcript.String())
+		}
+	}
+
+	if thread != nil && thread.ID != "" {
+		thread.Summary = summary
+		_ = e.store.SaveBotThread(*thread)
+	}
+	return summary, savedFactKey, nil
 }
 
 func (e *Engine) streamRoundWithFailover(

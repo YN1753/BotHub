@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -107,18 +109,147 @@ func buildBotSystemPrompt(bot *store.Bot, attachedSkills []store.Skill, memories
 	return sb.String()
 }
 
+func isCJKRune(r rune) bool {
+	return unicode.Is(unicode.Han, r) || (r >= 0x3040 && r <= 0x30ff) || (r >= 0xac00 && r <= 0xd7af)
+}
+
+// extractMatchTokens extracts both ASCII/alphanumeric words (>=2 chars) and CJK unigrams/bigrams
+// so Chinese sentences without spaces match member names, traits, roles, skills, and memories accurately.
+func extractMatchTokens(text string) []string {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return nil
+	}
+	seen := make(map[string]bool)
+	tokens := make([]string, 0, 24)
+	addTok := func(t string) {
+		if t == "" || seen[t] {
+			return
+		}
+		seen[t] = true
+		tokens = append(tokens, t)
+	}
+
+	var asciiBuf strings.Builder
+	var cjkRun []rune
+	flushASCII := func() {
+		if asciiBuf.Len() >= 2 {
+			addTok(asciiBuf.String())
+		}
+		asciiBuf.Reset()
+	}
+	flushCJK := func() {
+		if len(cjkRun) == 1 {
+			addTok(string(cjkRun[0]))
+		} else if len(cjkRun) >= 2 {
+			for i := 0; i < len(cjkRun)-1; i++ {
+				addTok(string(cjkRun[i : i+2]))
+			}
+		}
+		cjkRun = cjkRun[:0]
+	}
+
+	for _, r := range lower {
+		switch {
+		case isCJKRune(r):
+			flushASCII()
+			cjkRun = append(cjkRun, r)
+		case unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-':
+			flushCJK()
+			asciiBuf.WriteRune(r)
+		default:
+			flushASCII()
+			flushCJK()
+		}
+	}
+	flushASCII()
+	flushCJK()
+	return tokens
+}
+
+// selectRelevantMemories scores memories by pin status, importance, query token overlap, and recall affinity.
+func selectRelevantMemories(memories []store.AgentMemory, query string, maxItems int) []store.AgentMemory {
+	if len(memories) <= maxItems || maxItems <= 0 {
+		return memories
+	}
+	queryTokens := extractMatchTokens(query)
+	type scoredMem struct {
+		mem   store.AgentMemory
+		score int
+		idx   int
+	}
+	ranked := make([]scoredMem, 0, len(memories))
+	for i, m := range memories {
+		pts := m.Importance * 12
+		if m.Pinned {
+			pts += 1000
+		}
+		if m.RecallCount > 0 {
+			bonus := m.RecallCount * 2
+			if bonus > 16 {
+				bonus = 16
+			}
+			pts += bonus
+		}
+		if len(queryTokens) > 0 {
+			haystack := strings.ToLower(m.FactKey + " " + m.Category + " " + m.Content)
+			hits := 0
+			for _, tok := range queryTokens {
+				if strings.Contains(haystack, tok) {
+					hits++
+				}
+			}
+			pts += hits * 10
+		}
+		ranked = append(ranked, scoredMem{mem: m, score: pts, idx: i})
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].score != ranked[j].score {
+			return ranked[i].score > ranked[j].score
+		}
+		return ranked[i].idx < ranked[j].idx
+	})
+	out := make([]store.AgentMemory, 0, maxItems)
+	for i := 0; i < maxItems && i < len(ranked); i++ {
+		out = append(out, ranked[i].mem)
+	}
+	return out
+}
+
 func (e *Engine) resolveMentionedBots(userMsg string, allBots []store.Bot) []store.Bot {
 	lower := strings.ToLower(userMsg)
-	matched := make([]store.Bot, 0)
+	type hit struct {
+		bot store.Bot
+		pos int
+	}
+	var hits []hit
 	seen := make(map[string]bool)
 	for _, b := range allBots {
 		if b.IsGroup || seen[b.ID] {
 			continue
 		}
-		if strings.Contains(userMsg, "@"+b.Name) || strings.Contains(lower, "@"+strings.ToLower(b.ID)) {
-			seen[b.ID] = true
-			matched = append(matched, b)
+		pos := -1
+		if b.Name != "" {
+			if idx := strings.Index(userMsg, "@"+b.Name); idx >= 0 {
+				pos = idx
+			}
 		}
+		if pos < 0 {
+			if idx := strings.Index(lower, "@"+strings.ToLower(b.ID)); idx >= 0 {
+				pos = idx
+			}
+		}
+		if pos >= 0 {
+			seen[b.ID] = true
+			hits = append(hits, hit{bot: b, pos: pos})
+		}
+	}
+	sort.Slice(hits, func(i, j int) bool {
+		return hits[i].pos < hits[j].pos
+	})
+	matched := make([]store.Bot, 0, len(hits))
+	for _, h := range hits {
+		matched = append(matched, h.bot)
 	}
 	return matched
 }
@@ -154,12 +285,14 @@ func selectSmartGroupMembersWithSkills(members []store.Bot, skillMap map[string]
 		}
 	}
 
+	userTokens := extractMatchTokens(userMsg)
 	toolDomainKeywords := map[string][]string{
 		"query_nezha_nodes": {"探针", "哪吒", "vps", "节点", "服务器", "cpu", "内存", "负载", "掉线", "宕机", "告警", "延迟", "ssh", "nezha"},
 		"manage_assets":     {"资产", "域名", "到期", "续费", "账单", "会员", "cloudflare"},
 		"manage_tasks":      {"定时", "例程", "cron", "日程", "晨报", "调度"},
-		"web_search":        {"github", "开源", "趋势", "雷达", "新闻", "前沿", "hn", "hacker", "搜索", "推荐"},
+		"web_search":        {"github", "开源", "趋势", "雷达", "新闻", "前沿", "hn", "hacker", "搜索", "推荐", "查一下"},
 		"read_url":          {"网页", "url", "链接", "http", "文章"},
+		"manage_memory":     {"记忆", "记住", "忘掉", "修改记忆", "置顶"},
 	}
 
 	type scored struct {
@@ -173,7 +306,7 @@ func selectSmartGroupMembersWithSkills(members []store.Bot, skillMap map[string]
 		for _, toolName := range tools {
 			for _, kw := range toolDomainKeywords[toolName] {
 				if strings.Contains(lower, kw) {
-					pts += 3
+					pts += 4
 					break
 				}
 			}
@@ -182,28 +315,26 @@ func selectSmartGroupMembersWithSkills(members []store.Bot, skillMap map[string]
 			for _, sid := range m.SkillIDList() {
 				if sk, ok := skillMap[sid]; ok && sk.Enabled {
 					skText := strings.ToLower(sk.Name + " " + sk.Description + " " + sk.Slug)
-					for _, kw := range strings.Fields(lower) {
-						if len([]rune(kw)) >= 2 && strings.Contains(skText, kw) {
-							pts += 3
+					for _, tok := range userTokens {
+						if strings.Contains(skText, tok) {
+							pts += 4
 						}
 					}
 				}
 			}
 		}
 		metaText := strings.ToLower(m.Name + " " + m.RoleTitle + " " + m.SystemPrompt + " " + m.Traits)
-		for _, token := range strings.Fields(lower) {
-			if len([]rune(token)) >= 2 && strings.Contains(metaText, token) {
+		for _, token := range userTokens {
+			if strings.Contains(metaText, token) {
 				pts += 2
 			}
 		}
-		for _, word := range strings.Fields(strings.ToLower(m.RoleTitle + " " + m.Name)) {
-			if len([]rune(word)) >= 2 && strings.Contains(lower, word) {
-				pts += 2
-			}
+		if strings.Contains(lower, strings.ToLower(m.Name)) {
+			pts += 6
 		}
-		// Companion bots get a mild conversational affinity boost on short/casual messages
+		// Companion bots get a natural conversational affinity boost on short/casual messages
 		if pts == 0 && len([]rune(strings.TrimSpace(userMsg))) <= 24 && store.NormalizeBotMode(m.BotMode) == store.BotModeCompanion {
-			pts += 1
+			pts += 2
 		}
 		if pts > 0 {
 			ranked = append(ranked, scored{bot: m, score: pts})
@@ -211,13 +342,9 @@ func selectSmartGroupMembersWithSkills(members []store.Bot, skillMap map[string]
 	}
 
 	if len(ranked) > 0 {
-		for i := 0; i < len(ranked); i++ {
-			for j := i + 1; j < len(ranked); j++ {
-				if ranked[j].score > ranked[i].score {
-					ranked[i], ranked[j] = ranked[j], ranked[i]
-				}
-			}
-		}
+		sort.SliceStable(ranked, func(i, j int) bool {
+			return ranked[i].score > ranked[j].score
+		})
 		limit := 2
 		if len(ranked) < limit {
 			limit = len(ranked)
@@ -230,6 +357,74 @@ func selectSmartGroupMembersWithSkills(members []store.Bot, skillMap map[string]
 	}
 
 	return members[:1]
+}
+
+// selectGroupSpeakersWithLLM optionally consults the lightweight model to pick 1-2 ideal group speakers
+// when deterministic keyword scoring is ambiguous across >=3 group members.
+func (e *Engine) selectGroupSpeakersWithLLM(ctx context.Context, members []store.Bot, skillMap map[string]store.Skill, userMsg string) []store.Bot {
+	heuristic := selectSmartGroupMembersWithSkills(members, skillMap, userMsg)
+	if len(members) < 3 || !e.hasLightTarget() {
+		return heuristic
+	}
+
+	type memberSummary struct {
+		ID        string   `json:"id"`
+		Name      string   `json:"name"`
+		Mode      string   `json:"mode"`
+		RoleTitle string   `json:"role"`
+		Traits    string   `json:"traits,omitempty"`
+		Tools     []string `json:"tools,omitempty"`
+	}
+	roster := make([]memberSummary, 0, len(members))
+	memberMap := make(map[string]store.Bot, len(members))
+	for _, m := range members {
+		memberMap[m.ID] = m
+		roster = append(roster, memberSummary{
+			ID:        m.ID,
+			Name:      m.Name,
+			Mode:      store.NormalizeBotMode(m.BotMode),
+			RoleTitle: m.RoleTitle,
+			Traits:    m.Traits,
+			Tools:     m.AllowedToolList(),
+		})
+	}
+	rosterBytes, _ := json.Marshal(roster)
+	routeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	sys := `你是群聊智能主持人。根据群成员定位与用户发言，挑出最适合回答或接话的 1~2 位成员 ID。
+只输出纯 JSON（不要代码块）：{"member_ids":["bot_1"]}`
+	raw, err := e.CallLightModel(routeCtx, sys, fmt.Sprintf("群成员：%s\n用户消息：%s", string(rosterBytes), userMsg))
+	if err != nil {
+		return heuristic
+	}
+	clean := strings.TrimSpace(raw)
+	clean = strings.TrimPrefix(clean, "```json")
+	clean = strings.TrimPrefix(clean, "```")
+	clean = strings.TrimSuffix(clean, "```")
+	clean = strings.TrimSpace(clean)
+
+	var parsed struct {
+		MemberIDs []string `json:"member_ids"`
+	}
+	if json.Unmarshal([]byte(clean), &parsed) != nil || len(parsed.MemberIDs) == 0 {
+		return heuristic
+	}
+	picked := make([]store.Bot, 0, 2)
+	seen := make(map[string]bool)
+	for _, id := range parsed.MemberIDs {
+		if b, ok := memberMap[strings.TrimSpace(id)]; ok && !seen[b.ID] {
+			seen[b.ID] = true
+			picked = append(picked, b)
+			if len(picked) >= 2 {
+				break
+			}
+		}
+	}
+	if len(picked) == 0 {
+		return heuristic
+	}
+	return picked
 }
 
 func (e *Engine) chatStreamForBot(
@@ -337,7 +532,7 @@ func (e *Engine) chatStreamForBot(
 				targets = members[:1]
 			}
 		default: // "smart"
-			targets = selectSmartGroupMembersWithSkills(members, skillMap, userMsg)
+			targets = e.selectGroupSpeakersWithLLM(ctx, members, skillMap, userMsg)
 			allowAutoRelay = len(targets) == 1 && len(members) > 1
 		}
 		if len(targets) > 0 {
@@ -439,7 +634,11 @@ func (e *Engine) runTeamRoomHandoffWithRelay(
 
 		turnPrompt := userMsg
 		if combinedContent.Len() > 0 {
-			turnPrompt = fmt.Sprintf("用户指令：%s\n\n[前置协同 Bot 结论参考]\n%s\n\n请基于你的专属职责继续补充分析。", userMsg, combinedContent.String())
+			if store.NormalizeBotMode(sp.BotMode) == store.BotModeCompanion {
+				turnPrompt = fmt.Sprintf("用户说：%s\n\n[同群伙伴刚接了这几句话]\n%s\n\n请你以自己的性格自然接话、吐槽或回应，不要重复对方已经说过的话。", userMsg, combinedContent.String())
+			} else {
+				turnPrompt = fmt.Sprintf("用户指令：%s\n\n[前置协同成员输出参考]\n%s\n\n请紧扣你的专业定位补充差异化结论或执行结果，避免重复前文。", userMsg, combinedContent.String())
+			}
 		}
 		spCopy := sp
 		resp, err := e.runSingleBotTurn(ctx, req, &spCopy, roomBot.ID, roomHistory, turnPrompt, baseURL, apiKey, emit)
@@ -536,7 +735,7 @@ func (e *Engine) runSingleBotTurn(
 		_ = e.store.ClearBotUnread(timelineBotID)
 	}()
 
-	// Load strictly scoped memories (never leaking unrelated Bot private memories)
+	// Load strictly scoped memories ranked by pin + importance + query relevance, and record recall stats
 	memScopes := []string{"bot:" + timelineBotID}
 	if actingBot.ID != "" && actingBot.ID != timelineBotID {
 		memScopes = append(memScopes, "bot:"+actingBot.ID)
@@ -544,10 +743,28 @@ func (e *Engine) runSingleBotTurn(
 	if actingBot.MemoryPolicy != store.MemoryPolicyIsolated {
 		memScopes = append(memScopes, "global")
 	}
-	memories, _ := e.store.ListScopedMemories(memScopes, "", 40)
+	rawMemories, _ := e.store.ListScopedMemories(memScopes, "", 80)
+	memories := selectRelevantMemories(rawMemories, userMsg, 24)
+	if len(memories) > 0 {
+		recalledIDs := make([]int64, 0, len(memories))
+		for _, m := range memories {
+			recalledIDs = append(recalledIDs, m.ID)
+		}
+		e.store.TouchRecalledMemories(recalledIDs)
+	}
 
 	attachedSkills, _ := e.store.GetSkillsByIDs(actingBot.SkillIDList())
 	sysPrompt := buildBotSystemPrompt(actingBot, attachedSkills, memories, timelineBotID != actingBot.ID)
+
+	var botNameMap map[string]string
+	if timelineBotID != actingBot.ID {
+		if allBots, bErr := e.store.ListBots(); bErr == nil {
+			botNameMap = make(map[string]string, len(allBots))
+			for _, ab := range allBots {
+				botNameMap[ab.ID] = ab.Name
+			}
+		}
+	}
 
 	messages := make([]apiMessage, 0, len(history)+8)
 	messages = append(messages, apiMessage{
@@ -567,7 +784,15 @@ func (e *Engine) runSingleBotTurn(
 			}
 			messages = append(messages, apiMessage{Role: "user", Content: content})
 		case "assistant":
-			msg := apiMessage{Role: "assistant", Content: m.Content}
+			content := m.Content
+			if botNameMap != nil && m.SenderBotID != "" && m.SenderBotID != actingBot.ID {
+				speaker := botNameMap[m.SenderBotID]
+				if speaker == "" {
+					speaker = m.SenderBotID
+				}
+				content = fmt.Sprintf("[同群队友 %s 此前说]: %s", speaker, content)
+			}
+			msg := apiMessage{Role: "assistant", Content: content}
 			if m.ToolCalls != "" && m.ToolCalls != "[]" {
 				var tcs []apiToolCall
 				if json.Unmarshal([]byte(m.ToolCalls), &tcs) == nil && len(tcs) > 0 {
@@ -727,6 +952,8 @@ func (e *Engine) runSingleBotTurn(
 					"id":            tc.ID,
 					"name":          tc.Function.Name,
 					"result":        toolOutput,
+					"status":        execStatus,
+					"duration_ms":   toolDurationMs,
 					"sender_bot_id": actingBot.ID,
 				})
 			}

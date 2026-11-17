@@ -243,3 +243,32 @@ func (s *Server) handleDeleteAgentMemory(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
+
+func (s *Server) handlePruneAgentMemories(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Scope   string `json:"scope"`
+		MaxKeep int    `json:"max_keep"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效请求体")
+		return
+	}
+	scope := strings.TrimSpace(req.Scope)
+	if scope == "" {
+		writeError(w, http.StatusBadRequest, "必须指定清理的作用域 scope")
+		return
+	}
+	if req.MaxKeep <= 0 {
+		req.MaxKeep = 25
+	}
+	removed, err := s.store.PruneColdMemories(scope, req.MaxKeep)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "整理冷门记忆失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"scope":   scope,
+		"removed": removed,
+	})
+}

@@ -294,52 +294,128 @@ func BuiltinTools() []ToolDefinition {
 				},
 			},
 		},
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "manage_memory",
+				Description: "对当前 Bot 或群聊作用域内的长期记忆进行整理：更正旧事实(upsert)、置顶或取消置顶(pin)、遗忘过时或错误条目(forget)、或列出现有记忆键(list)。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"action": map[string]any{
+							"type":        "string",
+							"enum":        []string{"list", "upsert", "pin", "forget"},
+							"description": "操作类型：list | upsert | pin | forget",
+						},
+						"fact_key": map[string]any{
+							"type":        "string",
+							"description": "目标记忆事实键名（upsert/pin/forget 时必填）",
+						},
+						"content": map[string]any{
+							"type":        "string",
+							"description": "更新后的记忆内容（upsert 时必填）",
+						},
+						"category": map[string]any{
+							"type":        "string",
+							"description": "记忆分类（preference/relation/emotion/infra/schedule/insight/general）",
+						},
+						"importance": map[string]any{
+							"type":        "integer",
+							"description": "重要度权重 1~5",
+						},
+						"pinned": map[string]any{
+							"type":        "boolean",
+							"description": "是否置顶",
+						},
+					},
+					"required": []string{"action"},
+				},
+			},
+		},
 	}
 }
 
+func normalizeToolArgsJSON(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "{}"
+	}
+	if strings.HasPrefix(s, "```") {
+		s = strings.TrimPrefix(s, "```json")
+		s = strings.TrimPrefix(s, "```")
+		s = strings.TrimSuffix(s, "```")
+		s = strings.TrimSpace(s)
+	}
+	if s == "" {
+		return "{}"
+	}
+	return s
+}
+
+const maxToolOutputRunes = 12000
+
 // ExecuteTool dispatches built-in tools and user-defined custom webhook skills.
 func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) (string, error) {
+	toolCtx, cancel := context.WithTimeout(ctx, 28*time.Second)
+	defer cancel()
+
+	cleanArgs := normalizeToolArgsJSON(argsJSON)
+
+	var out string
+	var err error
 	if strings.HasPrefix(name, "skill_") {
 		slug := strings.TrimPrefix(name, "skill_")
-		sk, err := e.store.GetSkillBySlug(slug)
-		if err != nil || sk == nil || !sk.Enabled || sk.Kind != "webhook" {
+		sk, gErr := e.store.GetSkillBySlug(slug)
+		if gErr != nil || sk == nil || !sk.Enabled || sk.Kind != "webhook" {
 			return "", fmt.Errorf("未找到或未启用自定义技能: %s", name)
 		}
 		var args map[string]any
-		if strings.TrimSpace(argsJSON) != "" {
-			_ = json.Unmarshal([]byte(argsJSON), &args)
+		if cleanArgs != "{}" {
+			if uErr := json.Unmarshal([]byte(cleanArgs), &args); uErr != nil {
+				return "", fmt.Errorf("解析技能参数 JSON 失败: %w", uErr)
+			}
 		}
-		statusCode, bodyText, execErr := e.ExecuteWebhookSkill(ctx, *sk, args)
+		statusCode, bodyText, execErr := e.ExecuteWebhookSkill(toolCtx, *sk, args)
 		if execErr != nil {
 			return "", execErr
 		}
-		out, _ := json.Marshal(map[string]any{
+		b, _ := json.Marshal(map[string]any{
 			"ok":          true,
 			"skill":       sk.Name,
 			"status_code": statusCode,
 			"result":      bodyText,
 		})
-		return string(out), nil
+		out = string(b)
+	} else {
+		switch name {
+		case "read_url":
+			out, err = e.toolReadURL(toolCtx, cleanArgs)
+		case "web_search":
+			out, err = e.toolWebSearch(toolCtx, cleanArgs)
+		case "query_nezha_nodes":
+			out, err = e.toolQueryNezhaNodes(toolCtx, cleanArgs)
+		case "manage_assets":
+			out, err = e.toolManageAssets(toolCtx, cleanArgs)
+		case "manage_tasks":
+			out, err = e.toolManageTasks(toolCtx, cleanArgs)
+		case "remember_fact":
+			out, err = e.toolRememberFact(toolCtx, cleanArgs)
+		case "recall_memory":
+			out, err = e.toolRecallMemory(toolCtx, cleanArgs)
+		case "manage_memory":
+			out, err = e.toolManageMemory(toolCtx, cleanArgs)
+		default:
+			return "", fmt.Errorf("未知工具: %s", name)
+		}
 	}
-
-	switch name {
-	case "read_url":
-		return e.toolReadURL(ctx, argsJSON)
-	case "web_search":
-		return e.toolWebSearch(ctx, argsJSON)
-	case "query_nezha_nodes":
-		return e.toolQueryNezhaNodes(ctx, argsJSON)
-	case "manage_assets":
-		return e.toolManageAssets(ctx, argsJSON)
-	case "manage_tasks":
-		return e.toolManageTasks(ctx, argsJSON)
-	case "remember_fact":
-		return e.toolRememberFact(ctx, argsJSON)
-	case "recall_memory":
-		return e.toolRecallMemory(ctx, argsJSON)
-	default:
-		return "", fmt.Errorf("未知工具: %s", name)
+	if err != nil {
+		return "", err
 	}
+	runes := []rune(out)
+	if len(runes) > maxToolOutputRunes {
+		out = string(runes[:maxToolOutputRunes]) + "\n...[工具输出过长已自动裁剪]"
+	}
+	return out, nil
 }
 
 const MaxReadURLChars = 10000
@@ -541,9 +617,9 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 		"content":     text,
 	}
 
-	// If a dedicated lightweight model is configured and the article is long (> 3000 chars),
-	// pre-distill a summary via the lightweight model to save tokens on the primary reasoning model.
-	if lightKey, _ := e.store.GetConfig(store.KeyLightAPIKey); strings.TrimSpace(lightKey) != "" && len([]rune(text)) > 3000 {
+	// If any lightweight/fallback model is available and the article is long (> 3000 chars),
+	// pre-distill a summary via CallLightModel to save tokens on the primary reasoning model.
+	if e.hasLightTarget() && len([]rune(text)) > 3000 {
 		if lightSum, lErr := e.CallLightModel(ctx, "你是正文提炼助手。请将网页正文提炼为高信息密度的核心要点摘要，严禁使用 Emoji。", text); lErr == nil && lightSum != "" {
 			resultMap["light_summary"] = lightSum
 		}
@@ -580,55 +656,132 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 		Source  string `json:"source"`
 	}
 	results := make([]searchItem, 0, limit)
+	seenURLs := make(map[string]bool)
+	appendUnique := func(item searchItem) bool {
+		u := strings.TrimSpace(item.URL)
+		if u == "" || seenURLs[u] || strings.TrimSpace(item.Title) == "" {
+			return false
+		}
+		seenURLs[u] = true
+		results = append(results, item)
+		return len(results) >= limit
+	}
 
-	// 1. DuckDuckGo Instant Answer / RelatedTopics API + Hacker News Algolia Search
-	hnURL := fmt.Sprintf("https://hn.algolia.com/api/v1/search?query=%s&hitsPerPage=%d", url.QueryEscape(query), limit)
-	if req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, hnURL, nil); err == nil {
-		req.Header.Set("User-Agent", "VesperBotHub/2.0")
+	// 1. DuckDuckGo Instant Answer JSON API (covers general topics, daily queries, docs & entities)
+	ddgAPI := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", url.QueryEscape(query))
+	if req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, ddgAPI, nil); err == nil {
+		req.Header.Set("User-Agent", "VesperBotHub/2.14")
 		if resp, err := e.httpClient.Do(req); err == nil {
 			defer resp.Body.Close()
-			var hnResp struct {
-				Hits []struct {
-					Title       string `json:"title"`
-					URL         string `json:"url"`
-					StoryText   string `json:"story_text"`
-					ObjectID    string `json:"objectID"`
-					Points      int    `json:"points"`
-					CreatedAt   string `json:"created_at"`
-				} `json:"hits"`
+			var ddg struct {
+				Heading       string `json:"Heading"`
+				AbstractText  string `json:"AbstractText"`
+				AbstractURL   string `json:"AbstractURL"`
+				RelatedTopics []struct {
+					Text     string `json:"Text"`
+					FirstURL string `json:"FirstURL"`
+					Topics   []struct {
+						Text     string `json:"Text"`
+						FirstURL string `json:"FirstURL"`
+					} `json:"Topics"`
+				} `json:"RelatedTopics"`
 			}
-			if json.NewDecoder(resp.Body).Decode(&hnResp) == nil {
-				for _, h := range hnResp.Hits {
-					if h.Title == "" {
-						continue
-					}
-					itemURL := h.URL
-					if itemURL == "" {
-						itemURL = "https://news.ycombinator.com/item?id=" + h.ObjectID
-					}
-					snippet := stripHTMLToText(h.StoryText)
-					if len([]rune(snippet)) > 200 {
-						snippet = string([]rune(snippet)[:200]) + "..."
-					}
-					results = append(results, searchItem{
-						Title:   notifier.StripEmoji(h.Title),
-						URL:     itemURL,
-						Snippet: snippet,
-						Source:  "HackerNews",
+			if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&ddg) == nil {
+				if ddg.AbstractText != "" && ddg.AbstractURL != "" {
+					appendUnique(searchItem{
+						Title:   notifier.StripEmoji(ddg.Heading),
+						URL:     ddg.AbstractURL,
+						Snippet: notifier.StripEmoji(ddg.AbstractText),
+						Source:  "DuckDuckGo",
 					})
+				}
+				for _, rt := range ddg.RelatedTopics {
 					if len(results) >= limit {
 						break
+					}
+					if rt.Text != "" && rt.FirstURL != "" {
+						title := rt.Text
+						if idx := strings.Index(title, " - "); idx > 0 {
+							title = title[:idx]
+						}
+						if appendUnique(searchItem{
+							Title:   notifier.StripEmoji(truncateTitle(title)),
+							URL:     rt.FirstURL,
+							Snippet: notifier.StripEmoji(rt.Text),
+							Source:  "DuckDuckGo",
+						}) {
+							break
+						}
+					}
+					for _, sub := range rt.Topics {
+						if len(results) >= limit {
+							break
+						}
+						if sub.Text != "" && sub.FirstURL != "" {
+							if appendUnique(searchItem{
+								Title:   notifier.StripEmoji(truncateTitle(sub.Text)),
+								URL:     sub.FirstURL,
+								Snippet: notifier.StripEmoji(sub.Text),
+								Source:  "DuckDuckGo",
+							}) {
+								break
+							}
+						}
 					}
 				}
 			}
 		}
 	}
 
-	// 2. Wikipedia OpenSearch fallback/supplement for general knowledge
+	// 2. Hacker News Algolia Search (engineering, open-source, security, startups)
+	if len(results) < limit {
+		hnURL := fmt.Sprintf("https://hn.algolia.com/api/v1/search?query=%s&hitsPerPage=%d", url.QueryEscape(query), limit)
+		if req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, hnURL, nil); err == nil {
+			req.Header.Set("User-Agent", "VesperBotHub/2.14")
+			if resp, err := e.httpClient.Do(req); err == nil {
+				defer resp.Body.Close()
+				var hnResp struct {
+					Hits []struct {
+						Title     string `json:"title"`
+						URL       string `json:"url"`
+						StoryText string `json:"story_text"`
+						ObjectID  string `json:"objectID"`
+						Points    int    `json:"points"`
+						CreatedAt string `json:"created_at"`
+					} `json:"hits"`
+				}
+				if json.NewDecoder(resp.Body).Decode(&hnResp) == nil {
+					for _, h := range hnResp.Hits {
+						if h.Title == "" {
+							continue
+						}
+						itemURL := h.URL
+						if itemURL == "" {
+							itemURL = "https://news.ycombinator.com/item?id=" + h.ObjectID
+						}
+						snippet := stripHTMLToText(h.StoryText)
+						if len([]rune(snippet)) > 200 {
+							snippet = string([]rune(snippet)[:200]) + "..."
+						}
+						if appendUnique(searchItem{
+							Title:   notifier.StripEmoji(h.Title),
+							URL:     itemURL,
+							Snippet: snippet,
+							Source:  "HackerNews",
+						}) {
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Wikipedia OpenSearch fallback/supplement for general Chinese & encyclopedic knowledge
 	if len(results) < limit {
 		wikiURL := fmt.Sprintf("https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=%s&utf8=1&format=json&srlimit=%d", url.QueryEscape(query), limit-len(results))
 		if req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, wikiURL, nil); err == nil {
-			req.Header.Set("User-Agent", "VesperBotHub/2.0")
+			req.Header.Set("User-Agent", "VesperBotHub/2.14")
 			if resp, err := e.httpClient.Do(req); err == nil {
 				defer resp.Body.Close()
 				var wikiResp struct {
@@ -641,12 +794,14 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 				}
 				if json.NewDecoder(resp.Body).Decode(&wikiResp) == nil {
 					for _, s := range wikiResp.Query.Search {
-						results = append(results, searchItem{
+						if appendUnique(searchItem{
 							Title:   notifier.StripEmoji(s.Title),
 							URL:     "https://zh.wikipedia.org/wiki/" + url.PathEscape(s.Title),
 							Snippet: stripHTMLToText(s.Snippet),
 							Source:  "Wikipedia",
-						})
+						}) {
+							break
+						}
 					}
 				}
 			}
@@ -1158,4 +1313,115 @@ func (e *Engine) toolRecallMemory(ctx context.Context, argsJSON string) (string,
 		"memories": memories,
 	})
 	return string(out), nil
+}
+
+func (e *Engine) toolManageMemory(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		Action     string `json:"action"`
+		FactKey    string `json:"fact_key"`
+		Content    string `json:"content"`
+		Category   string `json:"category"`
+		Importance int    `json:"importance"`
+		Pinned     *bool  `json:"pinned"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("解析 manage_memory 参数失败: %w", err)
+	}
+
+	sc := toolScopeFromContext(ctx)
+	targetScope := "global"
+	if strings.TrimSpace(sc.TimelineBotID) != "" {
+		targetScope = "bot:" + strings.TrimSpace(sc.TimelineBotID)
+	} else if strings.TrimSpace(sc.BotID) != "" {
+		targetScope = "bot:" + strings.TrimSpace(sc.BotID)
+	}
+
+	action := strings.ToLower(strings.TrimSpace(args.Action))
+	switch action {
+	case "list":
+		mems, err := e.store.ListScopedMemories([]string{targetScope}, "", 40)
+		if err != nil {
+			return "", err
+		}
+		out, _ := json.Marshal(map[string]any{
+			"scope":    targetScope,
+			"count":    len(mems),
+			"memories": mems,
+		})
+		return string(out), nil
+
+	case "upsert":
+		key := notifier.StripEmoji(strings.TrimSpace(args.FactKey))
+		content := notifier.StripEmoji(strings.TrimSpace(args.Content))
+		if key == "" || content == "" {
+			return "", fmt.Errorf("upsert 记忆时 fact_key 与 content 不能为空")
+		}
+		cat := notifier.StripEmoji(strings.TrimSpace(args.Category))
+		if cat == "" {
+			cat = "general"
+		}
+		imp := args.Importance
+		if imp <= 0 {
+			imp = 3
+		}
+		pin := args.Pinned != nil && *args.Pinned
+		if err := e.store.SaveAgentMemoryDetailed(targetScope, cat, key, content, imp, pin); err != nil {
+			return "", err
+		}
+		out, _ := json.Marshal(map[string]any{
+			"ok":       true,
+			"scope":    targetScope,
+			"fact_key": key,
+			"content":  content,
+		})
+		return string(out), nil
+
+	case "pin":
+		key := notifier.StripEmoji(strings.TrimSpace(args.FactKey))
+		if key == "" {
+			return "", fmt.Errorf("pin 记忆时 fact_key 不能为空")
+		}
+		mems, err := e.store.ListScopedMemories([]string{targetScope}, "", 100)
+		if err != nil {
+			return "", err
+		}
+		for _, m := range mems {
+			if m.FactKey == key {
+				nextPin := !m.Pinned
+				if args.Pinned != nil {
+					nextPin = *args.Pinned
+				}
+				nextImp := m.Importance
+				if args.Importance > 0 {
+					nextImp = args.Importance
+				}
+				if err := e.store.UpdateAgentMemory(m.ID, m.Scope, m.Category, m.FactKey, m.Content, nextImp, nextPin); err != nil {
+					return "", err
+				}
+				out, _ := json.Marshal(map[string]any{"ok": true, "fact_key": key, "pinned": nextPin})
+				return string(out), nil
+			}
+		}
+		return "", fmt.Errorf("未在当前作用域找到记忆键: %s", key)
+
+	case "forget":
+		key := notifier.StripEmoji(strings.TrimSpace(args.FactKey))
+		if key == "" {
+			return "", fmt.Errorf("forget 记忆时 fact_key 不能为空")
+		}
+		deleted, err := e.store.DeleteAgentMemoryByScopeKey(targetScope, key)
+		if err != nil {
+			return "", err
+		}
+		out, _ := json.Marshal(map[string]any{
+			"ok":       deleted,
+			"scope":    targetScope,
+			"fact_key": key,
+			"forgotten": deleted,
+		})
+		return string(out), nil
+
+	default:
+		return "", fmt.Errorf("不支持的 manage_memory action: %s", action)
+	}
 }

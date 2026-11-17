@@ -205,3 +205,106 @@ func TestCompanionVsWorkerPromptAndSkills(t *testing.T) {
 		t.Fatalf("expected 1 worker tool query_nezha_nodes, got %+v", workerTools)
 	}
 }
+
+func TestSearchTokenizationGroupRoutingAndManageMemoryTool(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "route_mem.db"))
+	if err != nil {
+		t.Fatalf("open store failed: %v", err)
+	}
+	defer st.Close()
+
+	// 1. CJK bigram tokenizer handles space-free Chinese queries accurately
+	tokens := extractMatchTokens("帮我用食谱技能查查今晚吃什么")
+	if len(tokens) == 0 {
+		t.Fatalf("expected non-empty CJK tokens")
+	}
+
+	chefSkill := store.Skill{
+		ID:          "sk_recipe",
+		Name:        "每日食谱管家",
+		Slug:        "daily_recipe",
+		Kind:        "prompt",
+		Description: "统筹晚餐食谱和营养搭配",
+		Enabled:     true,
+	}
+	botA := store.Bot{
+		ID:        "bot_ops_2",
+		Name:      "运维官",
+		RoleTitle: "监控与资产巡检",
+		BotMode:   store.BotModeWorker,
+	}
+	botB := store.Bot{
+		ID:        "bot_life",
+		Name:      "阿暖",
+		RoleTitle: "生活陪伴朋友",
+		Traits:    "热爱美食烹饪与下厨",
+		BotMode:   store.BotModeCompanion,
+		SkillIDs:  `["sk_recipe"]`,
+	}
+	chosen := selectSmartGroupMembersWithSkills(
+		[]store.Bot{botA, botB},
+		map[string]store.Skill{"sk_recipe": chefSkill},
+		"帮我用食谱查查今晚吃什么",
+	)
+	if len(chosen) == 0 || chosen[0].ID != "bot_life" {
+		t.Fatalf("expected bot_life ranked first for CJK cooking/skill query, got %+v", chosen)
+	}
+
+	// 2. @Mention order preservation
+	eng := NewEngine(st, nil)
+	mentioned := eng.resolveMentionedBots("先让 @阿暖 说一句，再请 @运维官 补充", []store.Bot{botA, botB})
+	if len(mentioned) != 2 || mentioned[0].ID != "bot_life" || mentioned[1].ID != "bot_ops_2" {
+		t.Fatalf("expected mention order [bot_life, bot_ops_2], got %+v", mentioned)
+	}
+
+	// 3. Ranked memory selection puts query-relevant and pinned memories on top
+	mems := []store.AgentMemory{
+		{ID: 1, FactKey: "dns_provider", Category: "infra", Content: "使用 Cloudflare 解析域名", Importance: 3},
+		{ID: 2, FactKey: "diet_rule", Category: "preference", Content: "晚上不吃香菜也不喝冰奶茶", Importance: 4},
+		{ID: 3, FactKey: "core_alias", Category: "general", Content: "叫我阿星即可", Importance: 2, Pinned: true},
+	}
+	picked := selectRelevantMemories(mems, "今晚奶茶喝什么", 2)
+	if len(picked) != 2 || picked[0].FactKey != "core_alias" || picked[1].FactKey != "diet_rule" {
+		t.Fatalf("expected [core_alias (pinned), diet_rule (matched)], got %+v", picked)
+	}
+
+	// 4. manage_memory tool + fenced JSON args normalization
+	ctxLife := WithToolScope(context.Background(), ToolScope{
+		BotID:         "bot_life",
+		TimelineBotID: "bot_life",
+		MemoryPolicy:  store.MemoryPolicyIsolated,
+	})
+	upRes, err := eng.ExecuteTool(ctxLife, "manage_memory", "```json\n{\"action\":\"upsert\",\"fact_key\":\"tea_pref\",\"content\":\"喜欢热乌龙茶\",\"category\":\"preference\",\"importance\":5}\n```")
+	if err != nil || !strings.Contains(upRes, `"ok":true`) {
+		t.Fatalf("manage_memory upsert failed: err=%v res=%s", err, upRes)
+	}
+	pinRes, err := eng.ExecuteTool(ctxLife, "manage_memory", `{"action":"pin","fact_key":"tea_pref","pinned":true}`)
+	if err != nil || !strings.Contains(pinRes, `"pinned":true`) {
+		t.Fatalf("manage_memory pin failed: err=%v res=%s", err, pinRes)
+	}
+	forgetRes, err := eng.ExecuteTool(ctxLife, "manage_memory", `{"action":"forget","fact_key":"tea_pref"}`)
+	if err != nil || !strings.Contains(forgetRes, `"forgotten":true`) {
+		t.Fatalf("manage_memory forget failed: err=%v res=%s", err, forgetRes)
+	}
+	listAfter, _ := st.ListScopedMemories([]string{"bot:bot_life"}, "", 10)
+	if len(listAfter) != 0 {
+		t.Fatalf("expected forgotten memory removed from bot:bot_life scope, got %+v", listAfter)
+	}
+
+	// 5. hasLightTarget works with Free Model Pool when pool_for_light=true without light_api_key
+	if err := st.SaveModelPool([]store.ModelPoolEntry{{
+		ID:       "pool1",
+		Name:     "Free Pool Node",
+		Provider: "openai",
+		BaseURL:  "https://example.invalid/v1",
+		APIKey:   "sk-pool-test",
+		Model:    "gpt-test-mini",
+		Enabled:  true,
+		Priority: 10,
+	}}); err != nil {
+		t.Fatalf("save pool failed: %v", err)
+	}
+	if !eng.hasLightTarget() {
+		t.Fatalf("expected hasLightTarget()=true when active free pool node exists and pool_for_light defaults true")
+	}
+}
