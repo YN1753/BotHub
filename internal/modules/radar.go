@@ -139,10 +139,15 @@ func (r *RadarModule) RunWithTask(ctx context.Context, task store.Task) (RunResu
 	if len(freshGH) > 0 {
 		sb.WriteString("#### 1. GitHub Trending 每日热门\n")
 		for i, repo := range freshGH {
-			lang := repo.Language
-			if lang == "" { lang = "Multi" }
-			if repo.StarsToday != "" { lang += " · " + repo.StarsToday }
-			sb.WriteString(fmt.Sprintf("%d. **[%s](%s)**（%s）\n   %s\n", i+1, repo.Name, repo.URL, lang, repo.Desc))
+			lang := notifier.StripEmoji(strings.TrimSpace(repo.Language))
+			if lang == "" {
+				lang = "Multi"
+			}
+			if repo.StarsToday != "" {
+				lang += " · " + notifier.StripEmoji(strings.TrimSpace(repo.StarsToday))
+			}
+			cleanDesc := notifier.StripEmoji(strings.TrimSpace(repo.Desc))
+			sb.WriteString(fmt.Sprintf("%d. **[%s](%s)**（%s）\n   %s\n", i+1, notifier.StripEmoji(repo.Name), repo.URL, lang, cleanDesc))
 		}
 		sb.WriteString("\n")
 	}
@@ -154,7 +159,7 @@ func (r *RadarModule) RunWithTask(ctx context.Context, task store.Task) (RunResu
 			if target == "" {
 				target = fmt.Sprintf("https://news.ycombinator.com/item?id=%d", st.ID)
 			}
-			sb.WriteString(fmt.Sprintf("%d. **[%s](%s)**（%d pts · [讨论](https://news.ycombinator.com/item?id=%d)）\n", i+1, st.Title, target, st.Score, st.ID))
+			sb.WriteString(fmt.Sprintf("%d. **[%s](%s)**（%d pts · [讨论](https://news.ycombinator.com/item?id=%d)）\n", i+1, notifier.StripEmoji(strings.TrimSpace(st.Title)), target, st.Score, st.ID))
 		}
 		sb.WriteString("\n")
 	}
@@ -170,8 +175,10 @@ func (r *RadarModule) RunWithTask(ctx context.Context, task store.Task) (RunResu
 	sb.WriteString("---\n*来自 Vesper BotHub 自动化汇报*")
 	title := fmt.Sprintf("%s · 新增 %d 条精选（GH %d / HN %d）", taskName, totalNew, len(freshGH), len(freshHN))
 
-	if err := r.push.SendMarkdown(ctx, task.ID, title, sb.String()); err != nil {
-		return RunResult{Summary: "推送失败: " + err.Error()}, err
+	if r.push != nil {
+		if err := r.push.SendMarkdown(ctx, task.ID, title, sb.String()); err != nil {
+			return RunResult{Summary: "推送失败: " + err.Error()}, err
+		}
 	}
 
 	toMark := make([]store.SeenItem, 0, len(freshGH)+len(freshHN))

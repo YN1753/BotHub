@@ -66,6 +66,12 @@ func TestSchedulerPanicRecovery(t *testing.T) {
 	if runErr2 == nil {
 		t.Fatalf("expected error returned on second recovered run, not lock deadlock")
 	}
+
+	// Verify panic recovery finalized module_runs status as "error" (never dangling "running")
+	runs, err := st.LatestModuleRuns()
+	if err != nil || runs["panic_task"].Status != "error" {
+		t.Fatalf("expected LatestModuleRuns[panic_task] finalized as error, got %+v (%v)", runs["panic_task"], err)
+	}
 }
 
 func TestSchedulerOneShotRunAtAutoDisables(t *testing.T) {

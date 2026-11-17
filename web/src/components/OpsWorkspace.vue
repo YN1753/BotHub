@@ -74,7 +74,7 @@ const filteredAssets = computed(() => {
     return `${a.name} ${a.spec} ${a.status} ${a.extra_config}`.toLowerCase().includes(q)
   })
   if (!sortByUrgency.value) return list
-  return [...list].sort((a, b) => {
+  return list.toSorted((a, b) => {
     const aPerm = a.status === '长期有效' || String(a.due_date || '').startsWith('2099')
     const bPerm = b.status === '长期有效' || String(b.due_date || '').startsWith('2099')
     if (aPerm !== bPerm) return aPerm ? 1 : -1

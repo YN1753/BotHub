@@ -23,12 +23,14 @@ const sessionCookieName = "bothub_session"
 type rateLimiter struct {
 	mu       sync.Mutex
 	failures map[string]int
+	lastFail map[string]time.Time
 	lockedAt map[string]time.Time
 }
 
 func newRateLimiter() *rateLimiter {
 	return &rateLimiter{
 		failures: make(map[string]int),
+		lastFail: make(map[string]time.Time),
 		lockedAt: make(map[string]time.Time),
 	}
 }
@@ -42,6 +44,7 @@ func (rl *rateLimiter) isLocked(ip string) bool {
 		}
 		delete(rl.lockedAt, ip)
 		delete(rl.failures, ip)
+		delete(rl.lastFail, ip)
 	}
 	return false
 }
@@ -50,14 +53,16 @@ func (rl *rateLimiter) recordFail(ip string) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	now := time.Now()
-	if len(rl.lockedAt) > 128 {
-		for k, ts := range rl.lockedAt {
-			if now.Sub(ts) >= 3*time.Minute {
-				delete(rl.lockedAt, k)
+	if len(rl.failures) > 128 {
+		for k, ts := range rl.lastFail {
+			if now.Sub(ts) >= 15*time.Minute {
+				delete(rl.lastFail, k)
 				delete(rl.failures, k)
+				delete(rl.lockedAt, k)
 			}
 		}
 	}
+	rl.lastFail[ip] = now
 	rl.failures[ip]++
 	if rl.failures[ip] >= 5 {
 		rl.lockedAt[ip] = now
@@ -68,6 +73,7 @@ func (rl *rateLimiter) recordSuccess(ip string) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	delete(rl.failures, ip)
+	delete(rl.lastFail, ip)
 	delete(rl.lockedAt, ip)
 }
 
@@ -129,6 +135,64 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
 }
 
+func (s *Server) rotateSessionSecretAndReissue(w http.ResponseWriter, r *http.Request, keepCurrent bool) error {
+	secretBytes := make([]byte, 32)
+	if _, err := rand.Read(secretBytes); err != nil {
+		return err
+	}
+	if err := s.store.SetConfig(store.KeySessionSecret, hex.EncodeToString(secretBytes)); err != nil {
+		return err
+	}
+	s.KickPushSubscribers()
+
+	isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	if !keepCurrent {
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionCookieName,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   isSecure,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   -1,
+		})
+		return nil
+	}
+	token, err := s.issueSessionCookie()
+	if err != nil {
+		return err
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   7 * 24 * 3600,
+	})
+	return nil
+}
+
+func (s *Server) handleLogoutAllDevices(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		KeepCurrent *bool `json:"keep_current"`
+	}
+	_ = decodeOptionalJSON(w, r, 4096, &body)
+	keepCurrent := true
+	if body.KeepCurrent != nil {
+		keepCurrent = *body.KeepCurrent
+	}
+	if err := s.rotateSessionSecretAndReissue(w, r, keepCurrent); err != nil {
+		writeError(w, http.StatusInternalServerError, "吊销全部设备会话失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"authenticated": keepCurrent,
+	})
+}
+
 func (s *Server) handleUpdatePassword(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		NewPassword string `json:"new_password"`
@@ -138,25 +202,7 @@ func (s *Server) handleUpdatePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.store.SetConfig(store.KeyAdminPassHash, store.HashPassword(strings.TrimSpace(body.NewPassword)))
-
-	// Rotate session signing secret so existing cookies elsewhere are invalidated immediately,
-	// while issuing a fresh valid session cookie for the caller's current browser session.
-	secretBytes := make([]byte, 32)
-	if _, err := rand.Read(secretBytes); err == nil {
-		_ = s.store.SetConfig(store.KeySessionSecret, hex.EncodeToString(secretBytes))
-		if token, tErr := s.issueSessionCookie(); tErr == nil {
-			isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
-			http.SetCookie(w, &http.Cookie{
-				Name:     sessionCookieName,
-				Value:    token,
-				Path:     "/",
-				HttpOnly: true,
-				Secure:   isSecure,
-				SameSite: http.SameSiteLaxMode,
-				MaxAge:   7 * 24 * 3600,
-			})
-		}
-	}
+	_ = s.rotateSessionSecretAndReissue(w, r, true)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

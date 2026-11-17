@@ -125,9 +125,5 @@ func NewHTTPClient(timeout time.Duration) *http.Client {
 }
 
 func ShanghaiLocation() *time.Location {
-	loc, err := time.LoadLocation("Asia/Shanghai")
-	if err != nil {
-		return time.FixedZone("CST", 8*3600)
-	}
-	return loc
+	return store.ShanghaiLocation()
 }

@@ -1,0 +1,544 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"html"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/YN1753/vesper/bothub/internal/notifier"
+)
+
+const MaxReadURLChars = 10000
+
+var (
+	reHTMLComment  = regexp.MustCompile(`(?s)<!--.*?-->`)
+	reNoiseBlocks  = regexp.MustCompile(`(?is)<(script|style|noscript|svg|iframe|nav|header|footer|aside|form|button)[^>]*>.*?</(script|style|noscript|svg|iframe|nav|header|footer|aside|form|button)>`)
+	reHTMLTags     = regexp.MustCompile(`(?s)<[^>]+>`)
+	reMultiSpace   = regexp.MustCompile(`[ \t\r\f]+`)
+	reMultiNewline = regexp.MustCompile(`\n{3,}`)
+	reMetaDesc1    = regexp.MustCompile(`(?is)<meta[^>]+name=["'](?:description|og:description)["'][^>]+content=["']([^"']{1,400})["']`)
+	reMetaDesc2    = regexp.MustCompile(`(?is)<meta[^>]+content=["']([^"']{1,400})["'][^>]+name=["'](?:description|og:description)["']`)
+
+	htmlBlockBreakReplacer = strings.NewReplacer(
+		"</p>", "\n",
+		"</div>", "\n",
+		"</li>", "\n",
+		"</h1>", "\n",
+		"</h2>", "\n",
+		"</h3>", "\n",
+		"<br>", "\n",
+		"<br/>", "\n",
+		"<br />", "\n",
+	)
+
+	sharedSafeHTTPClient = newSafeHTTPClient()
+)
+
+func extractHTMLMetaDesc(rawHTML string) string {
+	for _, rx := range []*regexp.Regexp{reMetaDesc1, reMetaDesc2} {
+		if m := rx.FindStringSubmatch(rawHTML); len(m) > 1 {
+			clean := strings.TrimSpace(html.UnescapeString(m[1]))
+			if clean != "" {
+				return notifier.StripEmoji(clean)
+			}
+		}
+	}
+	return ""
+}
+
+func stripHTMLToText(rawHTML string) string {
+	cleaned := reHTMLComment.ReplaceAllString(rawHTML, " ")
+	cleaned = reNoiseBlocks.ReplaceAllString(cleaned, " ")
+	cleaned = htmlBlockBreakReplacer.Replace(cleaned)
+	cleaned = reHTMLTags.ReplaceAllString(cleaned, " ")
+	cleaned = html.UnescapeString(cleaned)
+	cleaned = reMultiSpace.ReplaceAllString(cleaned, " ")
+	lines := strings.Split(cleaned, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	res := strings.Join(out, "\n")
+	res = reMultiNewline.ReplaceAllString(res, "\n\n")
+	return notifier.StripEmoji(strings.TrimSpace(res))
+}
+
+func isPrivateOrLoopbackIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		// Block RFC 6598 Carrier-Grade NAT / Tailscale mesh (100.64.0.0/10)
+		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
+			return true
+		}
+		// Block RFC 2544 benchmark testing range (198.18.0.0/15)
+		if ip4[0] == 198 && (ip4[1] == 18 || ip4[1] == 19) {
+			return true
+		}
+		// Block "this network" 0.0.0.0/8
+		if ip4[0] == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func newSafeHTTPClient() *http.Client {
+	dialer := &net.Dialer{
+		Timeout:   8 * time.Second,
+		KeepAlive: 15 * time.Second,
+		Control: func(network, address string, c syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return fmt.Errorf("无效目标地址: %w", err)
+			}
+			ip := net.ParseIP(host)
+			if isPrivateOrLoopbackIP(ip) {
+				return fmt.Errorf("安全拦截：禁止访问内网或本机回环地址 (%s)", host)
+			}
+			return nil
+		},
+	}
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			DialContext:           dialer.DialContext,
+			MaxIdleConns:          32,
+			MaxIdleConnsPerHost:   6,
+			IdleConnTimeout:       45 * time.Second,
+			TLSHandshakeTimeout:   8 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("重定向次数过多")
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("安全拦截：不支持的重定向协议 %s", req.URL.Scheme)
+			}
+			host := strings.ToLower(req.URL.Hostname())
+			if host == "localhost" || strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") || strings.HasSuffix(host, ".ts.net") {
+				return fmt.Errorf("安全拦截：禁止重定向到内网主机 %s", host)
+			}
+			if len(via) > 0 && !strings.EqualFold(via[len(via)-1].URL.Host, req.URL.Host) {
+				req.Header.Del("Authorization")
+				req.Header.Del("Cookie")
+			}
+			return nil
+		},
+	}
+}
+
+func (e *Engine) safeFetchClient() *http.Client {
+	if e.allowLocalhostForTest {
+		return e.httpClient
+	}
+	return sharedSafeHTTPClient
+}
+
+func (e *Engine) fetchTextWithClient(ctx context.Context, client *http.Client, targetURL, accept string) (int, string, string, error) {
+	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return 0, "", "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; VesperBotHub/2.0)")
+	if accept == "" {
+		accept = "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8"
+	}
+	req.Header.Set("Accept", accept)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, "", "", err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	if err != nil {
+		return resp.StatusCode, "", "", err
+	}
+	return resp.StatusCode, strings.ToLower(resp.Header.Get("Content-Type")), string(bodyBytes), nil
+}
+
+func parseGitHubRepo(parsed *url.URL) (owner, repo string, ok bool) {
+	if !strings.EqualFold(parsed.Hostname(), "github.com") {
+		return "", "", false
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], strings.TrimSuffix(parts[1], ".git"), true
+}
+
+func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		URL      string `json:"url"`
+		MaxChars int    `json:"max_chars"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("解析 read_url 参数失败: %w", err)
+	}
+	target := strings.TrimSpace(args.URL)
+	if target == "" {
+		return "", fmt.Errorf("url 不能为空")
+	}
+	parsed, err := url.Parse(target)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", fmt.Errorf("仅支持 http 或 https 协议的 URL")
+	}
+
+	maxChars := args.MaxChars
+	if maxChars <= 0 || maxChars > MaxReadURLChars {
+		maxChars = MaxReadURLChars
+	}
+
+	client := e.safeFetchClient()
+	var statusCode int
+	var text string
+	var pageTitle string
+	var pageDesc string
+	sourceMode := "direct"
+
+	// Fast-path: GitHub repository root URL -> fetch raw README.md directly
+	if owner, repo, ok := parseGitHubRepo(parsed); ok && !e.allowLocalhostForTest {
+		rawURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/HEAD/README.md", owner, repo)
+		if sc, _, body, gErr := e.fetchTextWithClient(ctx, client, rawURL, "text/plain"); gErr == nil && sc >= 200 && sc < 300 && strings.TrimSpace(body) != "" {
+			statusCode = sc
+			pageTitle = fmt.Sprintf("%s/%s", owner, repo)
+			text = notifier.StripEmoji(strings.TrimSpace(body))
+			sourceMode = "github_raw_readme"
+		}
+	}
+
+	if text == "" {
+		sc, contentType, rawBody, fErr := e.fetchTextWithClient(ctx, client, target, "")
+		if fErr != nil {
+			return "", fmt.Errorf("请求网页失败: %w", fErr)
+		}
+		statusCode = sc
+		if strings.Contains(contentType, "json") || strings.Contains(contentType, "plain") {
+			text = notifier.StripEmoji(strings.TrimSpace(rawBody))
+		} else {
+			pageTitle = extractHTMLTitle(rawBody)
+			pageDesc = extractHTMLMetaDesc(rawBody)
+			text = stripHTMLToText(rawBody)
+		}
+
+		// Fallback: if CSR/SPA page yields very little text, try Jina Reader Markdown extraction
+		if len([]rune(text)) < 200 && !e.allowLocalhostForTest && !strings.Contains(strings.ToLower(parsed.Hostname()), "r.jina.ai") {
+			jinaURL := "https://r.jina.ai/" + target
+			if jsc, _, jBody, jErr := e.fetchTextWithClient(ctx, client, jinaURL, "text/plain"); jErr == nil && jsc >= 200 && jsc < 300 {
+				jClean := notifier.StripEmoji(strings.TrimSpace(jBody))
+				if len([]rune(jClean)) > len([]rune(text)) {
+					text = jClean
+					statusCode = jsc
+					sourceMode = "jina_reader"
+				}
+			}
+		}
+	}
+
+	runes := []rune(text)
+	truncated := false
+	if len(runes) > maxChars {
+		text = string(runes[:maxChars])
+		truncated = true
+	}
+
+	resultMap := map[string]any{
+		"url":         target,
+		"status_code": statusCode,
+		"source_mode": sourceMode,
+		"char_count":  len([]rune(text)),
+		"truncated":   truncated,
+		"content":     text,
+	}
+	if pageTitle != "" {
+		resultMap["title"] = pageTitle
+	}
+	if pageDesc != "" {
+		resultMap["description"] = pageDesc
+	}
+
+	// If any lightweight/fallback model is available and the article is long (> 3000 chars),
+	// pre-distill a summary via CallLightModel to save tokens on the primary reasoning model.
+	if e.hasLightTarget() && len([]rune(text)) > 3000 {
+		if lightSum, lErr := e.CallLightModel(ctx, "你是正文提炼助手。请将网页正文提炼为高信息密度的核心要点摘要，严禁使用 Emoji。", text); lErr == nil && lightSum != "" {
+			resultMap["light_summary"] = lightSum
+		}
+	}
+
+	payload, _ := json.Marshal(resultMap)
+	return string(payload), nil
+}
+
+func canonicalSearchURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return strings.TrimRight(strings.TrimSpace(raw), "/")
+	}
+	host := strings.ToLower(strings.TrimPrefix(u.Hostname(), "www."))
+	p := strings.TrimRight(u.Path, "/")
+	if u.RawQuery != "" {
+		return host + p + "?" + u.RawQuery
+	}
+	return host + p
+}
+
+func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		Query string `json:"query"`
+		Limit int    `json:"limit"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("解析 web_search 参数失败: %w", err)
+	}
+	query := strings.TrimSpace(args.Query)
+	if query == "" {
+		return "", fmt.Errorf("query 不能为空")
+	}
+	limit := args.Limit
+	if limit <= 0 || limit > 10 {
+		limit = 5
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	type searchItem struct {
+		Title   string `json:"title"`
+		URL     string `json:"url"`
+		Snippet string `json:"snippet,omitempty"`
+		Source  string `json:"source"`
+	}
+
+	// Fan out across 4 independent public search providers concurrently (slots preserve priority rank)
+	buckets := make([][]searchItem, 4)
+	var wg sync.WaitGroup
+
+	// Provider 0: DuckDuckGo Instant Answer JSON API
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
+		defer pCancel()
+		ddgAPI := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", url.QueryEscape(query))
+		req, err := http.NewRequestWithContext(pCtx, http.MethodGet, ddgAPI, nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("User-Agent", "VesperBotHub/2.26")
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		var ddg struct {
+			Heading       string `json:"Heading"`
+			AbstractText  string `json:"AbstractText"`
+			AbstractURL   string `json:"AbstractURL"`
+			RelatedTopics []struct {
+				Text     string `json:"Text"`
+				FirstURL string `json:"FirstURL"`
+				Topics   []struct {
+					Text     string `json:"Text"`
+					FirstURL string `json:"FirstURL"`
+				} `json:"Topics"`
+			} `json:"RelatedTopics"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&ddg) != nil {
+			return
+		}
+		if ddg.AbstractText != "" && ddg.AbstractURL != "" {
+			buckets[0] = append(buckets[0], searchItem{
+				Title:   notifier.StripEmoji(ddg.Heading),
+				URL:     ddg.AbstractURL,
+				Snippet: notifier.StripEmoji(ddg.AbstractText),
+				Source:  "DuckDuckGo",
+			})
+		}
+		for _, rt := range ddg.RelatedTopics {
+			if len(buckets[0]) >= limit {
+				break
+			}
+			if rt.Text != "" && rt.FirstURL != "" {
+				title := rt.Text
+				if idx := strings.Index(title, " - "); idx > 0 {
+					title = title[:idx]
+				}
+				buckets[0] = append(buckets[0], searchItem{
+					Title:   notifier.StripEmoji(truncateTitle(title)),
+					URL:     rt.FirstURL,
+					Snippet: notifier.StripEmoji(rt.Text),
+					Source:  "DuckDuckGo",
+				})
+			}
+			for _, sub := range rt.Topics {
+				if len(buckets[0]) >= limit {
+					break
+				}
+				if sub.Text != "" && sub.FirstURL != "" {
+					buckets[0] = append(buckets[0], searchItem{
+						Title:   notifier.StripEmoji(truncateTitle(sub.Text)),
+						URL:     sub.FirstURL,
+						Snippet: notifier.StripEmoji(sub.Text),
+						Source:  "DuckDuckGo",
+					})
+				}
+			}
+		}
+	}()
+
+	// Provider 1: DuckDuckGo Lite HTML (broad web results)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
+		defer pCancel()
+		for _, item := range e.searchDuckDuckGoHTML(pCtx, query, limit) {
+			buckets[1] = append(buckets[1], searchItem{
+				Title:   item.Title,
+				URL:     item.URL,
+				Snippet: item.Snippet,
+				Source:  "Web",
+			})
+		}
+	}()
+
+	// Provider 2: Hacker News Algolia Search
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
+		defer pCancel()
+		hnURL := fmt.Sprintf("https://hn.algolia.com/api/v1/search?query=%s&hitsPerPage=%d", url.QueryEscape(query), limit)
+		req, err := http.NewRequestWithContext(pCtx, http.MethodGet, hnURL, nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("User-Agent", "VesperBotHub/2.26")
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		var hnResp struct {
+			Hits []struct {
+				Title     string `json:"title"`
+				URL       string `json:"url"`
+				StoryText string `json:"story_text"`
+				ObjectID  string `json:"objectID"`
+			} `json:"hits"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&hnResp) != nil {
+			return
+		}
+		for _, h := range hnResp.Hits {
+			if h.Title == "" {
+				continue
+			}
+			itemURL := h.URL
+			if itemURL == "" {
+				itemURL = "https://news.ycombinator.com/item?id=" + h.ObjectID
+			}
+			snippet := stripHTMLToText(h.StoryText)
+			if len([]rune(snippet)) > 200 {
+				snippet = string([]rune(snippet)[:200]) + "..."
+			}
+			buckets[2] = append(buckets[2], searchItem{
+				Title:   notifier.StripEmoji(h.Title),
+				URL:     itemURL,
+				Snippet: snippet,
+				Source:  "HackerNews",
+			})
+		}
+	}()
+
+	// Provider 3: Chinese Wikipedia OpenSearch
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
+		defer pCancel()
+		wikiURL := fmt.Sprintf("https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=%s&utf8=1&format=json&srlimit=%d", url.QueryEscape(query), limit)
+		req, err := http.NewRequestWithContext(pCtx, http.MethodGet, wikiURL, nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("User-Agent", "VesperBotHub/2.26")
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		var wikiResp struct {
+			Query struct {
+				Search []struct {
+					Title   string `json:"title"`
+					Snippet string `json:"snippet"`
+				} `json:"search"`
+			} `json:"query"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&wikiResp) != nil {
+			return
+		}
+		for _, s := range wikiResp.Query.Search {
+			buckets[3] = append(buckets[3], searchItem{
+				Title:   notifier.StripEmoji(s.Title),
+				URL:     "https://zh.wikipedia.org/wiki/" + url.PathEscape(s.Title),
+				Snippet: stripHTMLToText(s.Snippet),
+				Source:  "Wikipedia",
+			})
+		}
+	}()
+
+	wg.Wait()
+
+	results := make([]searchItem, 0, limit)
+	seenCanonical := make(map[string]bool)
+	for _, bkt := range buckets {
+		for _, item := range bkt {
+			u := strings.TrimSpace(item.URL)
+			canon := canonicalSearchURL(u)
+			if u == "" || strings.TrimSpace(item.Title) == "" || seenCanonical[canon] {
+				continue
+			}
+			seenCanonical[canon] = true
+			results = append(results, item)
+			if len(results) >= limit {
+				break
+			}
+		}
+		if len(results) >= limit {
+			break
+		}
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"query":   query,
+		"count":   len(results),
+		"results": results,
+	})
+	return string(payload), nil
+}

@@ -15,8 +15,8 @@ type StreamEvent struct {
 // Hub manages active SSE subscribers and broadcasts newly created notifications and bot events in real time.
 type Hub struct {
 	mu            sync.RWMutex
-	clients       map[chan store.Notification]struct{}
-	eventClients  map[chan StreamEvent]struct{}
+	clients       map[chan store.Notification]func()
+	eventClients  map[chan StreamEvent]func()
 	done          chan struct{}
 	closed        bool
 	droppedEvents atomic.Uint64
@@ -29,8 +29,8 @@ func (h *Hub) DroppedCount() uint64 {
 
 func NewHub() *Hub {
 	return &Hub{
-		clients:      make(map[chan store.Notification]struct{}),
-		eventClients: make(map[chan StreamEvent]struct{}),
+		clients:      make(map[chan store.Notification]func()),
+		eventClients: make(map[chan StreamEvent]func()),
 		done:         make(chan struct{}),
 	}
 }
@@ -40,23 +40,38 @@ func (h *Hub) Done() <-chan struct{} {
 	return h.done
 }
 
+// KickSubscribers disconnects all currently active SSE subscribers (forcing re-authentication)
+// while keeping the Hub open for subsequent authenticated connections.
+func (h *Hub) KickSubscribers() {
+	h.mu.Lock()
+	cancels := make([]func(), 0, len(h.clients)+len(h.eventClients))
+	for _, cancel := range h.clients {
+		cancels = append(cancels, cancel)
+	}
+	for _, cancel := range h.eventClients {
+		cancels = append(cancels, cancel)
+	}
+	h.mu.Unlock()
+
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+
 // CloseAll signals all active SSE subscribers to terminate cleanly during server shutdown.
 func (h *Hub) CloseAll() {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if !h.closed {
 		h.closed = true
 		close(h.done)
 	}
+	h.mu.Unlock()
+	h.KickSubscribers()
 }
 
 // Subscribe registers a new notification subscriber channel and returns an unsubscribe closure.
 func (h *Hub) Subscribe() (<-chan store.Notification, func()) {
 	ch := make(chan store.Notification, 64)
-	h.mu.Lock()
-	h.clients[ch] = struct{}{}
-	h.mu.Unlock()
-
 	var once sync.Once
 	unsubscribe := func() {
 		once.Do(func() {
@@ -66,16 +81,21 @@ func (h *Hub) Subscribe() (<-chan store.Notification, func()) {
 			h.mu.Unlock()
 		})
 	}
+
+	h.mu.Lock()
+	if h.closed {
+		close(ch)
+		h.mu.Unlock()
+		return ch, func() {}
+	}
+	h.clients[ch] = unsubscribe
+	h.mu.Unlock()
 	return ch, unsubscribe
 }
 
 // SubscribeEvents registers a general typed SSE event subscriber (notifications, bot_state, bot_message).
 func (h *Hub) SubscribeEvents() (<-chan StreamEvent, func()) {
 	ch := make(chan StreamEvent, 64)
-	h.mu.Lock()
-	h.eventClients[ch] = struct{}{}
-	h.mu.Unlock()
-
 	var once sync.Once
 	unsubscribe := func() {
 		once.Do(func() {
@@ -85,10 +105,20 @@ func (h *Hub) SubscribeEvents() (<-chan StreamEvent, func()) {
 			h.mu.Unlock()
 		})
 	}
+
+	h.mu.Lock()
+	if h.closed {
+		close(ch)
+		h.mu.Unlock()
+		return ch, func() {}
+	}
+	h.eventClients[ch] = unsubscribe
+	h.mu.Unlock()
 	return ch, unsubscribe
 }
 
 // PublishEvent fans out any typed SSE event to all connected SubscribeEvents listeners.
+// When a slow subscriber's buffer is full, it evicts the oldest queued event so the latest state wins.
 func (h *Hub) PublishEvent(event string, data any) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -101,6 +131,14 @@ func (h *Hub) PublishEvent(event string, data any) {
 		case ch <- ev:
 		default:
 			h.droppedEvents.Add(1)
+			select {
+			case <-ch:
+			default:
+			}
+			select {
+			case ch <- ev:
+			default:
+			}
 		}
 	}
 }
@@ -108,10 +146,23 @@ func (h *Hub) PublishEvent(event string, data any) {
 // Publish fans out a notification to all connected subscribers without blocking.
 func (h *Hub) Publish(n store.Notification) {
 	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.closed {
+		return
+	}
 	for ch := range h.clients {
 		select {
 		case ch <- n:
 		default:
+			h.droppedEvents.Add(1)
+			select {
+			case <-ch:
+			default:
+			}
+			select {
+			case ch <- n:
+			default:
+			}
 		}
 	}
 	ev := StreamEvent{Event: "notification", Data: n}
@@ -119,9 +170,17 @@ func (h *Hub) Publish(n store.Notification) {
 		select {
 		case ch <- ev:
 		default:
+			h.droppedEvents.Add(1)
+			select {
+			case <-ch:
+			default:
+			}
+			select {
+			case ch <- ev:
+			default:
+			}
 		}
 	}
-	h.mu.RUnlock()
 }
 
 // SubscriberCount returns the number of currently connected SSE listeners.

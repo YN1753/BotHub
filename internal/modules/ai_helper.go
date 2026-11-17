@@ -14,6 +14,8 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
+var sharedAIHTTPClient = NewHTTPClient(40 * time.Second)
+
 // SummarizeWithDeepSeek invokes explicit lightweight model config, or enabled Free Model Pool entries
 // (when pool_for_light is active), or falls back to Primary DeepSeek Flash / Relay station.
 func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, userPrompt string) (string, error) {
@@ -110,10 +112,12 @@ func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, u
 		systemPrompt += memBuf.String()
 	}
 
-	client := NewHTTPClient(40 * time.Second)
 	var lastErr error
 
 	for _, c := range candidates {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		reqCtx, cancel := context.WithTimeout(ctx, 40*time.Second)
 
 		reqBody := map[string]any{
@@ -151,7 +155,7 @@ func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, u
 			req.Header.Set("X-Title", "Vesper BotHub")
 		}
 
-		resp, err := client.Do(req)
+		resp, err := sharedAIHTTPClient.Do(req)
 		if err != nil {
 			cancel()
 			lastErr = err

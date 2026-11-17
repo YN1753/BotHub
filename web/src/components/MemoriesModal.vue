@@ -112,7 +112,7 @@ const filteredMemories = computed(() => {
     if (!q) return true
     return `${m.fact_key} ${m.content} ${m.category} ${mScope}`.toLowerCase().includes(q)
   })
-  return [...list].sort((a, b) => {
+  return list.toSorted((a, b) => {
     if (sortBy.value === 'recent') {
       return (b.updated_at || '').localeCompare(a.updated_at || '')
     }
@@ -447,6 +447,7 @@ watch(
           type="search"
           placeholder="搜索键名、内容或 Bot 专属域..."
           aria-label="搜索长期记忆"
+          @keydown.escape="searchQuery.trim() ? ($event.preventDefault(), $event.stopPropagation(), searchQuery = '') : undefined"
           class="w-full sm:w-52 min-h-[34px] rounded-xl border border-[#fff8ee]/12 bg-[#060914] px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60"
         />
         <div class="w-44">

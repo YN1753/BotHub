@@ -79,4 +79,83 @@ func TestLoginRememberDeviceCookieTTL(t *testing.T) {
 	if !strings.Contains(setCookie, "Max-Age=2592000") {
 		t.Fatalf("expected 30-day Max-Age=2592000 in Set-Cookie, got %q", setCookie)
 	}
+
+	// Verify POST /api/auth/logout-all revokes existing 30-day device cookies while keeping current session valid
+	oldCookies := rec.Result().Cookies()
+	if len(oldCookies) == 0 {
+		t.Fatal("expected session cookie issued on login")
+	}
+	oldCheckReq := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	oldCheckReq.AddCookie(oldCookies[0])
+	if !s.isAuthenticated(oldCheckReq) {
+		t.Fatal("expected newly issued 30-day cookie to authenticate before revocation")
+	}
+
+	revRec := httptest.NewRecorder()
+	revReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout-all", bytes.NewBufferString(`{"keep_current":true}`))
+	revReq.AddCookie(oldCookies[0])
+	s.requireAuth(s.handleLogoutAllDevices)(revRec, revReq)
+	if revRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on logout-all, got %d: %s", revRec.Code, revRec.Body.String())
+	}
+	if s.isAuthenticated(oldCheckReq) {
+		t.Fatal("expected old 30-day cookie to be revoked immediately after logout-all")
+	}
+	newCookies := revRec.Result().Cookies()
+	if len(newCookies) == 0 {
+		t.Fatal("expected fresh session cookie reissued when keep_current=true")
+	}
+	newCheckReq := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	newCheckReq.AddCookie(newCookies[0])
+	if !s.isAuthenticated(newCheckReq) {
+		t.Fatal("expected reissued cookie to remain authenticated")
+	}
+
+	// Verify fine-grained dashboard slice endpoint returns only requested slices
+	_, _ = s.store.SaveTodo(store.TodoItem{Title: "检查证书续期", Priority: store.TodoPriorityHigh})
+	sliceRec := httptest.NewRecorder()
+	sliceReq := httptest.NewRequest(http.MethodGet, "/api/v2/dashboard/slice?kinds=todos,memories", nil)
+	sliceReq.AddCookie(newCookies[0])
+	s.Handler().ServeHTTP(sliceRec, sliceReq)
+	if sliceRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dashboard slice, got %d: %s", sliceRec.Code, sliceRec.Body.String())
+	}
+	bodyStr := sliceRec.Body.String()
+	if !strings.Contains(bodyStr, `"todos"`) || !strings.Contains(bodyStr, `"agent_memories"`) || strings.Contains(bodyStr, `"configs"`) {
+		t.Fatalf("expected only todos and agent_memories in slice payload, got %s", bodyStr)
+	}
+
+	// Verify redacted backup export (?mask_secrets=1) and masked-secret preservation on backup import
+	_ = s.store.SetConfig(store.KeyDeepSeekAPIKey, "sk-real-secret-key-9876")
+	_ = s.store.SaveModelPool([]store.ModelPoolEntry{
+		{ID: "pool_1", Name: "Gemini", Provider: "openai", BaseURL: "https://api.example.com/v1", APIKey: "sk-pool-real-1111", Model: "gemini-2.5-flash", Enabled: true},
+	})
+	expRec := httptest.NewRecorder()
+	expReq := httptest.NewRequest(http.MethodGet, "/api/system/export?mask_secrets=1", nil)
+	expReq.AddCookie(newCookies[0])
+	s.Handler().ServeHTTP(expRec, expReq)
+	if expRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for backup export, got %d", expRec.Code)
+	}
+	expBody := expRec.Body.String()
+	if strings.Contains(expBody, "sk-real-secret-key-9876") || strings.Contains(expBody, "sk-pool-real-1111") {
+		t.Fatalf("expected secrets masked when mask_secrets=1, got %s", expBody)
+	}
+
+	// Importing that redacted backup must preserve stored real keys instead of overwriting with "****"
+	impRec := httptest.NewRecorder()
+	impReq := httptest.NewRequest(http.MethodPost, "/api/system/import", bytes.NewBufferString(expBody))
+	impReq.AddCookie(newCookies[0])
+	s.Handler().ServeHTTP(impRec, impReq)
+	if impRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for backup import, got %d: %s", impRec.Code, impRec.Body.String())
+	}
+	storedKey, _ := s.store.GetConfig(store.KeyDeepSeekAPIKey)
+	if storedKey != "sk-real-secret-key-9876" {
+		t.Fatalf("expected stored deepseek_api_key preserved on masked import, got %q", storedKey)
+	}
+	poolAfter := s.store.GetModelPool()
+	if len(poolAfter) != 1 || poolAfter[0].APIKey != "sk-pool-real-1111" {
+		t.Fatalf("expected model pool API key preserved on masked import, got %+v", poolAfter)
+	}
 }

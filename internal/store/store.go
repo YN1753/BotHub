@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -59,7 +60,7 @@ func Open(dbPath string) (*Store, error) {
 			return nil, fmt.Errorf("create db dir: %w", err)
 		}
 	}
-	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbPath))
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
@@ -321,9 +322,14 @@ CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(pinned DESC, updated_at DE
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot_thread ON agent_messages(bot_id, thread_id, id ASC)`)
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_todos_status_due ON todos(status, due_at)`)
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_todos_bot ON todos(bot_id, updated_at DESC)`)
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_notes_bot ON notes(bot_id, updated_at DESC)`)
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_push_logs_status ON push_logs(status)`)
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_seen_items_first_seen ON seen_items(first_seen_at)`)
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_mod ON notifications(module_id, id DESC)`)
 	_, _ = s.db.Exec(`UPDATE bots SET is_builtin = 0 WHERE is_builtin = 1`)
 	_, _ = s.db.Exec(`UPDATE bots SET is_group = 1 WHERE id = 'team_room' AND is_group = 0`)
+	_, _ = s.db.Exec(`UPDATE bots SET state = 'idle' WHERE state = 'working'`)
+	_, _ = s.db.Exec(`UPDATE module_runs SET status = 'error', summary = '服务重启中断，已自动收敛状态', finished_at = ? WHERE status = 'running'`, NowShanghai())
 	_, _ = s.db.Exec(`DELETE FROM configs WHERE key IN ('wecom_corpid', 'wecom_agentid', 'wecom_secret', 'wecom_touser', 'pushplus_token')`)
 	_, _ = s.db.Exec(`UPDATE configs SET value = 'native' WHERE key = 'push_channel' AND value != 'native'`)
 	return nil
@@ -472,12 +478,16 @@ func (s *Store) seedDefaults() error {
 	return nil
 }
 
-func ShanghaiLocation() *time.Location {
+var shanghaiLocOnce = sync.OnceValue(func() *time.Location {
 	loc, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {
 		return time.FixedZone("CST", 8*3600)
 	}
 	return loc
+})
+
+func ShanghaiLocation() *time.Location {
+	return shanghaiLocOnce()
 }
 
 func NowShanghai() string {

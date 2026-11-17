@@ -79,6 +79,7 @@ func (s *Server) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	saved, _ := s.store.GetSkill(req.ID)
+	s.publishAssistantEvent("skills")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "skill": saved})
 }
 
@@ -152,6 +153,7 @@ func (s *Server) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated, _ := s.store.GetSkill(id)
+	s.publishAssistantEvent("skills")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "skill": updated})
 }
 
@@ -203,6 +205,7 @@ func (s *Server) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "删除技能失败: "+err.Error())
 		return
 	}
+	s.publishAssistantEvent("skills")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

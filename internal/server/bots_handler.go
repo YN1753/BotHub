@@ -151,6 +151,7 @@ func (s *Server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 		_ = s.appendGroupSystemNotice(req.ID, "多 Bot 协同群聊已创建，支持右侧一键拉人与 @点名协同")
 	}
 	created, _ := s.store.GetBot(req.ID)
+	s.publishAssistantEvent("bots")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":  true,
 		"bot": created,
@@ -269,6 +270,7 @@ func (s *Server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 		_ = s.appendGroupSystemNotice(existing.ID, "群公告已更新："+existing.Announcement)
 	}
 	updated, _ := s.store.GetBot(id)
+	s.publishAssistantEvent("bots")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":  true,
 		"bot": updated,
@@ -586,6 +588,7 @@ func (s *Server) handleCreateAdhocGroup(w http.ResponseWriter, r *http.Request) 
 	}
 
 	created, _ := s.store.GetBot(newGroup.ID)
+	s.publishAssistantEvent("bots")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":  true,
 		"bot": created,
@@ -603,6 +606,7 @@ func (s *Server) handleDeleteBot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "删除 Bot 失败: "+err.Error())
 		return
 	}
+	s.publishAssistantEvent("bots")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

@@ -22,7 +22,7 @@ import (
 
 // Injected during build via -ldflags
 var (
-	Version   = "v2.30.0"
+	Version   = "v2.31.0"
 	Commit    = "dev"
 	BuildTime = "local"
 )
@@ -50,6 +50,22 @@ func main() {
 		log.Fatalf("[bothub] failed to open sqlite store (%s): %v", *dbPath, err)
 	}
 	defer st.Close()
+	_ = st.PruneOldRecords()
+
+	maintCtx, stopMaint := context.WithCancel(context.Background())
+	defer stopMaint()
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-maintCtx.Done():
+				return
+			case <-ticker.C:
+				_ = st.PruneOldRecords()
+			}
+		}
+	}()
 
 	pushClient := notifier.NewClient(st)
 	registry := modules.NewDefaultRegistry(st, pushClient)

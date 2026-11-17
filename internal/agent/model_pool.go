@@ -16,13 +16,15 @@ import (
 )
 
 type ModelHealthStats struct {
-	TargetID      string `json:"target_id"`
-	SuccessCount  int64  `json:"success_count"`
-	FailCount     int64  `json:"fail_count"`
-	LastLatencyMs int64  `json:"last_latency_ms"`
-	LastError     string `json:"last_error,omitempty"`
-	CooldownSec   int64  `json:"cooldown_sec"`
-	cooldownUntil time.Time
+	TargetID         string `json:"target_id"`
+	Status           string `json:"status"` // healthy | cooling_down | degraded
+	SuccessCount     int64  `json:"success_count"`
+	FailCount        int64  `json:"fail_count"`
+	ConsecutiveFails int64  `json:"consecutive_fails"`
+	LastLatencyMs    int64  `json:"last_latency_ms"`
+	LastError        string `json:"last_error,omitempty"`
+	CooldownSec      int64  `json:"cooldown_sec"`
+	cooldownUntil    time.Time
 }
 
 type ModelHealthTracker struct {
@@ -48,8 +50,10 @@ func (t *ModelHealthTracker) recordSuccess(targetID string, latencyMs int64) {
 		t.stats[targetID] = s
 	}
 	s.SuccessCount++
+	s.ConsecutiveFails = 0
 	s.LastLatencyMs = latencyMs
 	s.LastError = ""
+	s.Status = "healthy"
 	s.cooldownUntil = time.Time{}
 	s.CooldownSec = 0
 }
@@ -66,11 +70,21 @@ func (t *ModelHealthTracker) recordFailure(targetID, errMsg string, isRateLimit 
 		t.stats[targetID] = s
 	}
 	s.FailCount++
+	s.ConsecutiveFails++
 	s.LastError = strings.TrimSpace(errMsg)
-	cool := 30 * time.Second
+	baseCool := 30 * time.Second
 	if isRateLimit {
-		cool = 60 * time.Second
+		baseCool = 60 * time.Second
 	}
+	shift := s.ConsecutiveFails - 1
+	if shift > 3 {
+		shift = 3
+	}
+	cool := baseCool * time.Duration(1<<shift)
+	if cool > 5*time.Minute {
+		cool = 5 * time.Minute
+	}
+	s.Status = "cooling_down"
 	s.cooldownUntil = time.Now().Add(cool)
 }
 
@@ -115,8 +129,14 @@ func (t *ModelHealthTracker) Snapshot() map[string]ModelHealthStats {
 		cp := *s
 		if now.Before(s.cooldownUntil) {
 			cp.CooldownSec = int64(time.Until(s.cooldownUntil).Seconds()) + 1
+			cp.Status = "cooling_down"
 		} else {
 			cp.CooldownSec = 0
+			if cp.ConsecutiveFails > 0 {
+				cp.Status = "degraded"
+			} else {
+				cp.Status = "healthy"
+			}
 		}
 		out[id] = cp
 	}
@@ -234,13 +254,13 @@ func (e *Engine) ResolveChatTargets(requestedModel string) ([]ModelTarget, error
 	primary := primaryDeepSeekTarget(e.store)
 	allowFallback := isConfigTrue(e.store, store.KeyPoolFallback, true)
 
-	if reqM == "free-pool" {
+		if reqM == "free-pool" {
 		if len(poolTargets) > 0 {
-			poolTargets = e.health.prioritizeHealthy(poolTargets)
+			out := append([]ModelTarget{}, poolTargets...)
 			if primary.APIKey != "" && allowFallback {
-				return append(poolTargets, primary), nil
+				out = append(out, primary)
 			}
-			return poolTargets, nil
+			return e.health.prioritizeHealthy(out), nil
 		}
 		if primary.APIKey != "" {
 			return []ModelTarget{primary}, nil
@@ -277,16 +297,15 @@ func (e *Engine) ResolveChatTargets(requestedModel string) ([]ModelTarget, error
 		}
 		out := []ModelTarget{pinned}
 		if allowFallback {
-			var backupPool []ModelTarget
 			for _, pt := range poolTargets {
 				if pt.ID != pinned.ID {
-					backupPool = append(backupPool, pt)
+					out = append(out, pt)
 				}
 			}
-			out = append(out, e.health.prioritizeHealthy(backupPool)...)
 			if primary.APIKey != "" {
 				out = append(out, primary)
 			}
+			out = e.health.prioritizeHealthy(out)
 		}
 		return out, nil
 	}
@@ -302,7 +321,8 @@ func (e *Engine) ResolveChatTargets(requestedModel string) ([]ModelTarget, error
 	if primary.APIKey != "" {
 		out := []ModelTarget{primary}
 		if allowFallback && len(poolTargets) > 0 {
-			out = append(out, e.health.prioritizeHealthy(poolTargets)...)
+			out = append(out, poolTargets...)
+			out = e.health.prioritizeHealthy(out)
 		}
 		return out, nil
 	}

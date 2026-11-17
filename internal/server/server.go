@@ -69,6 +69,12 @@ func (s *Server) ClosePushStream() {
 	}
 }
 
+func (s *Server) KickPushSubscribers() {
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().KickSubscribers()
+	}
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
@@ -77,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	mux.HandleFunc("POST /api/auth/logout-all", s.requireAuth(s.handleLogoutAllDevices))
 
 	// Public Sanitized Read-only Assets Overview (CORS for main dashboard)
 	mux.HandleFunc("OPTIONS /api/v1/assets/overview", s.handleCORSPreflight)
@@ -84,6 +91,8 @@ func (s *Server) Handler() http.Handler {
 
 	// Authenticated Management Endpoints
 	mux.HandleFunc("GET /api/dashboard", s.requireAuth(s.handleDashboard))
+	mux.HandleFunc("GET /api/v2/dashboard/slice", s.requireAuth(s.handleDashboardSlice))
+	mux.HandleFunc("GET /api/v2/dashboard/{slice}", s.requireAuth(s.handleDashboardSlice))
 	mux.HandleFunc("POST /api/config", s.requireAuth(s.handleUpdateConfig))
 	mux.HandleFunc("POST /api/v2/model-pool", s.requireAuth(s.handleSaveModelPool))
 	mux.HandleFunc("POST /api/v2/model-pool/test", s.requireAuth(s.handleTestModelTarget))

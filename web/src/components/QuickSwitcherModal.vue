@@ -3,14 +3,18 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { resolveGroupMemberBots } from '../utils/botLook'
+import { scoreOmnisearchMatch, truncateText } from '../utils/format'
 import BaseModal from './BaseModal.vue'
 import BotAvatar from './BotAvatar.vue'
 import BotGroupAvatar from './BotGroupAvatar.vue'
 import type { Bot } from '../types/bothub'
 
+const SCOPE_TABS = ['全部', '会话', '待办', '文档', '技能', '资产', '例程', '记忆', '快捷操作'] as const
+type ScopeTab = (typeof SCOPE_TABS)[number]
+
 const store = useAppStore()
 const query = ref('')
-const scopeFilter = ref<'全部' | '会话' | '待办' | '文档' | '记忆' | '快捷操作'>('全部')
+const scopeFilter = ref<ScopeTab>('全部')
 const highlighted = ref(0)
 const inputRef = ref<HTMLInputElement | null>(null)
 const listContainerRef = ref<HTMLElement | null>(null)
@@ -24,9 +28,9 @@ function scrollActiveEntryIntoView() {
 
 function categoryBadgeClass(cat: SearchEntry['category']): string {
   if (cat === '会话' || cat === '话题') return 'border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880]'
-  if (cat === '待办') return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
+  if (cat === '待办' || cat === '技能') return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
   if (cat === '文档' || cat === '记忆') return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
-  if (cat === '资产') return 'border-amber-400/30 bg-amber-500/10 text-amber-200'
+  if (cat === '资产' || cat === '例程') return 'border-amber-400/30 bg-amber-500/10 text-amber-200'
   return 'border-[#fff8ee]/10 bg-[#050811]/70 text-slate-400'
 }
 
@@ -39,6 +43,7 @@ interface SearchEntry {
   category: '会话' | '话题' | '技能' | '待办' | '文档' | '快捷操作' | '资产' | '例程' | '记忆'
   title: string
   subtitle: string
+  searchBody?: string
   bot?: Bot
   run: () => void | Promise<void>
 }
@@ -164,6 +169,7 @@ const entries = computed<SearchEntry[]>(() => {
       category: '技能',
       title: sk.name,
       subtitle: `${sk.kind === 'webhook' ? `API tool: skill_${sk.slug}` : 'Playbook 行为规范'} · ${sk.description || '点击管理'}`,
+      searchBody: `${sk.slug} ${sk.http_url || ''} ${sk.instruction || ''}`,
       run: () => {
         store.state.showSkillsModal = true
       },
@@ -172,13 +178,13 @@ const entries = computed<SearchEntry[]>(() => {
 
   ;(store.state.todos || [])
     .filter((t) => t.status !== 'done')
-    .slice(0, 15)
     .forEach((td) => {
       list.push({
         key: `td_${td.id}`,
         category: '待办',
         title: td.title,
-        subtitle: `${td.priority === 'high' ? '高优先' : '待办'}${td.due_at ? ' · 截止 ' + td.due_at : ''}`,
+        subtitle: `${td.priority === 'high' ? '高优先' : '待办'}${td.due_at ? ' · 截止 ' + td.due_at : ''}${td.notes ? ' · ' + truncateText(td.notes, 36) : ''}`,
+        searchBody: td.notes || '',
         run: () => {
           store.state.workhubTab = 'todos'
           store.state.showWorkhubModal = true
@@ -186,13 +192,15 @@ const entries = computed<SearchEntry[]>(() => {
       })
     })
 
-  ;(store.state.notes || []).slice(0, 15).forEach((nt) => {
+  ;(store.state.notes || []).forEach((nt) => {
     list.push({
       key: `nt_${nt.id}`,
       category: '文档',
       title: nt.title,
-      subtitle: `${nt.category || 'deliverable'} · 点击在个人行动台查看`,
+      subtitle: `${nt.category || 'deliverable'} · ${truncateText((nt.content || '').replace(/\s+/g, ' '), 44) || '点击在个人行动台查看'}`,
+      searchBody: nt.content || '',
       run: () => {
+        store.state.pendingNoteId = nt.id
         store.state.workhubTab = 'notes'
         store.state.showWorkhubModal = true
       },
@@ -205,6 +213,7 @@ const entries = computed<SearchEntry[]>(() => {
       category: '资产',
       title: a.name,
       subtitle: `${a.spec || a.category} · ${a.status}`,
+      searchBody: `${a.category || ''} ${a.price || ''} ${a.due_date || ''} ${a.extra_config || ''}`,
       run: () => {
         store.state.workspace = 'ops'
         store.state.editingAsset = a
@@ -218,10 +227,11 @@ const entries = computed<SearchEntry[]>(() => {
       category: '例程',
       title: t.name,
       subtitle: `${t.description} · 立即触发执行`,
+      searchBody: `${t.cron_expr || ''} ${t.type || ''} ${t.params || ''}`,
       run: async () => {
         const res = await BotHubApi.runTask(t.id)
         store.notify(res.summary || '任务执行完成')
-        await store.loadDashboard(false)
+        await store.refreshWorkspaceSlices(['tasks', 'stats'])
       },
     })
   })
@@ -232,6 +242,7 @@ const entries = computed<SearchEntry[]>(() => {
       category: '记忆',
       title: m.fact_key,
       subtitle: `${m.category} · ${m.content}`,
+      searchBody: m.scope || '',
       run: () => {
         store.state.showMemoriesModal = true
       },
@@ -240,10 +251,16 @@ const entries = computed<SearchEntry[]>(() => {
 
   const scoped =
     scopeFilter.value === '全部' ? list : list.filter((item) => item.category === scopeFilter.value)
-  if (!q) return scoped.slice(0, scopeFilter.value === '全部' ? 12 : 20)
+  if (!q) return scoped.slice(0, scopeFilter.value === '全部' ? 14 : 24)
   return scoped
-    .filter((item) => `${item.title} ${item.subtitle} ${item.category}`.toLowerCase().includes(q))
-    .slice(0, 18)
+    .map((item) => ({
+      item,
+      score: scoreOmnisearchMatch(item.title, item.subtitle, item.category, item.searchBody || '', q),
+    }))
+    .filter((entry) => entry.score > 0)
+    .toSorted((a, b) => b.score - a.score)
+    .slice(0, 20)
+    .map((entry) => entry.item)
 })
 
 watch(
@@ -335,7 +352,7 @@ function handleKeydown(e: KeyboardEvent) {
 
       <div class="flex items-center gap-1.5 flex-wrap">
         <button
-          v-for="tab in (['全部', '会话', '待办', '文档', '记忆', '快捷操作'] as const)"
+          v-for="tab in SCOPE_TABS"
           :key="tab"
           type="button"
           @click="scopeFilter = tab; highlighted = 0"

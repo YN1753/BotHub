@@ -57,15 +57,27 @@ async function handleSubmit() {
       <p class="font-mono text-xs text-slate-300 mb-6">{{ hostLabel }} · 请输入管理密钥</p>
 
       <form class="flex flex-col gap-3" @submit.prevent="handleSubmit">
+        <input
+          type="text"
+          name="username"
+          autocomplete="username"
+          :value="hostLabel"
+          readonly
+          tabindex="-1"
+          aria-hidden="true"
+          class="sr-only"
+        />
         <label :for="passwordId" class="sr-only">访问密钥</label>
         <div class="relative">
           <input
             ref="inputEl"
             :id="passwordId"
             v-model="password"
+            name="password"
             :type="showPassword ? 'text' : 'password'"
             placeholder="输入访问密钥..."
             autocomplete="current-password"
+            enterkeyhint="go"
             :aria-invalid="errorMsg ? 'true' : undefined"
             required
             @keydown="checkCapsLock"
@@ -85,9 +97,9 @@ async function handleSubmit() {
         <p v-if="capsLockOn" class="text-[11px] font-mono text-amber-300/90">
           大写锁定 (Caps Lock) 已开启
         </p>
-        <label class="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
-          <input v-model="rememberDevice" type="checkbox" class="accent-[#f2b880] rounded" />
-          <span>记住此设备（30 天内免重输密钥）</span>
+        <label class="inline-flex items-start gap-2 text-xs text-slate-300 cursor-pointer select-none">
+          <input v-model="rememberDevice" type="checkbox" class="accent-[#f2b880] rounded mt-0.5 shrink-0" />
+          <span>记住此设备（30 天免重输；未勾选为 7 天会话，公共设备请勿勾选）</span>
         </label>
         <button
           type="submit"

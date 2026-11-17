@@ -36,15 +36,17 @@ type ModuleStatus = TaskStatus
 // Scheduler coordinates cron jobs, one-shot reminders, and manual task triggers.
 // Loosely-coupled with execution logic via modules.Registry.
 type Scheduler struct {
-	store    *store.Store
-	registry *modules.Registry
-	hub      *pushstream.Hub
-	cron     *cron.Cron
-	entries  map[string]cron.EntryID
-	timers   map[string]*time.Timer
-	running  map[string]bool
-	mu       sync.Mutex
-	loc      *time.Location
+	store     *store.Store
+	registry  *modules.Registry
+	hub       *pushstream.Hub
+	cron      *cron.Cron
+	entries   map[string]cron.EntryID
+	timers    map[string]*time.Timer
+	running   map[string]bool
+	runCtx    context.Context
+	runCancel context.CancelFunc
+	mu        sync.Mutex
+	loc       *time.Location
 }
 
 func (s *Scheduler) SetHub(hub *pushstream.Hub) {
@@ -59,13 +61,16 @@ func (s *Scheduler) SetBotRoutineExecutor(exec modules.BotRoutineExecutor) {
 
 // NewWithRegistry creates a Scheduler backed by a dynamic module Registry.
 func NewWithRegistry(st *store.Store, reg *modules.Registry) *Scheduler {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Scheduler{
-		store:    st,
-		registry: reg,
-		entries:  make(map[string]cron.EntryID),
-		timers:   make(map[string]*time.Timer),
-		running:  make(map[string]bool),
-		loc:      modules.ShanghaiLocation(),
+		store:     st,
+		registry:  reg,
+		entries:   make(map[string]cron.EntryID),
+		timers:    make(map[string]*time.Timer),
+		running:   make(map[string]bool),
+		runCtx:    ctx,
+		runCancel: cancel,
+		loc:       modules.ShanghaiLocation(),
 	}
 }
 
@@ -111,11 +116,15 @@ func ParseRunAt(raw string, loc *time.Location) (time.Time, error) {
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
 	c := s.cron
+	cancel := s.runCancel
 	for id, tm := range s.timers {
 		tm.Stop()
 		delete(s.timers, id)
 	}
 	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	if c != nil {
 		ctx := c.Stop()
 		select {
@@ -170,8 +179,12 @@ func (s *Scheduler) Reload() error {
 			if delay < 50*time.Millisecond {
 				delay = 50 * time.Millisecond
 			}
+			baseCtx := s.runCtx
+			if baseCtx == nil {
+				baseCtx = context.Background()
+			}
 			s.timers[taskID] = time.AfterFunc(delay, func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+				ctx, cancel := context.WithTimeout(baseCtx, 90*time.Second)
 				defer cancel()
 				if _, err := s.execute(ctx, taskID, "once"); err != nil {
 					log.Printf("[scheduler] one-shot task %s error: %v", taskID, err)
@@ -192,8 +205,12 @@ func (s *Scheduler) Reload() error {
 		if t.CronExpr == "" {
 			continue
 		}
+		baseCtx := s.runCtx
+		if baseCtx == nil {
+			baseCtx = context.Background()
+		}
 		entryID, err := c.AddFunc(t.CronExpr, func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+			ctx, cancel := context.WithTimeout(baseCtx, 90*time.Second)
 			defer cancel()
 			if _, err := s.execute(ctx, taskID, "cron"); err != nil {
 				log.Printf("[scheduler] cron run task %s error: %v", taskID, err)
@@ -226,10 +243,6 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 	s.mu.Unlock()
 
 	defer func() {
-		if r := recover(); r != nil {
-			runErr = fmt.Errorf("task %s panic: %v", taskID, r)
-			log.Printf("[scheduler] %v", runErr)
-		}
 		s.mu.Lock()
 		delete(s.running, taskID)
 		s.mu.Unlock()
@@ -264,7 +277,15 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 	}
 
 	start := time.Now()
-	res, runErr = runner.RunWithTask(ctx, *task)
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				runErr = fmt.Errorf("task %s panic: %v", taskID, r)
+				log.Printf("[scheduler] %v", runErr)
+			}
+		}()
+		res, runErr = runner.RunWithTask(ctx, *task)
+	}()
 	durationMs := time.Since(start).Milliseconds()
 
 	status := "success"
@@ -279,6 +300,9 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 		if err := s.store.FinishModuleRun(runID, status, summary, res.ItemsPushed, durationMs); err != nil {
 			log.Printf("[scheduler] failed to record finish for %s: %v", taskID, err)
 		}
+	}
+	if s.hub != nil {
+		s.hub.PublishEvent("assistant_update", map[string]any{"kind": "tasks"})
 	}
 
 	if botID != "" {

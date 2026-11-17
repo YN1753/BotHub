@@ -237,3 +237,26 @@ export function formatTimelineDivider(str?: string): string {
   if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${hm}`
 }
+
+export function scoreOmnisearchMatch(
+  title: string,
+  subtitle: string,
+  category: string,
+  body: string,
+  rawQuery: string
+): number {
+  const q = rawQuery.trim().toLowerCase()
+  if (!q) return 1
+  const t = String(title || '').toLowerCase()
+  const sub = String(subtitle || '').toLowerCase()
+  const cat = String(category || '').toLowerCase()
+  const b = String(body || '').toLowerCase()
+
+  if (t === q) return 120
+  if (t.startsWith(q)) return 95
+  if (t.includes(q)) return 75
+  if (cat === q || cat.includes(q)) return 55
+  if (sub.includes(q)) return 40
+  if (b.includes(q)) return 25
+  return 0
+}

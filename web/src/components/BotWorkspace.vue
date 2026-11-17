@@ -1,25 +1,23 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, useId, onMounted, onBeforeUnmount, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore, mapServerMessages, type ChatMessageUI } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { botStateLabel, formatDurationMs, formatTime, formatTimelineDivider, groupModeLabel, triggerBlobDownload } from '../utils/format'
+import { formatTime, formatTimelineDivider, triggerBlobDownload } from '../utils/format'
+import { lazyPanelChunk } from '../utils/lazyComponent'
 import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
-import { isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
 import type { Bot } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
-import BotGroupAvatar from './BotGroupAvatar.vue'
-import CustomSelect from './CustomSelect.vue'
-import SegmentedTabs from './SegmentedTabs.vue'
 import GroupDrawer from './GroupDrawer.vue'
+import BotWorkspaceHeader from './workspace/BotWorkspaceHeader.vue'
 import BotThreadBar from './workspace/BotThreadBar.vue'
 import BotToolTrail from './workspace/BotToolTrail.vue'
-import BotComposerDropdown from './workspace/BotComposerDropdown.vue'
+import BotChatComposer, { type RelayStepItem, type ReplyQuoteTarget } from './workspace/BotChatComposer.vue'
 import BotChatSearchBar from './workspace/BotChatSearchBar.vue'
 
-const BotRoutinesTab = defineAsyncComponent(() => import('./workspace/BotRoutinesTab.vue'))
-const BotConfigTab = defineAsyncComponent(() => import('./workspace/BotConfigTab.vue'))
-const BotActivityTab = defineAsyncComponent(() => import('./workspace/BotActivityTab.vue'))
-const BotStarterPanel = defineAsyncComponent(() => import('./workspace/BotStarterPanel.vue'))
+const BotRoutinesTab = lazyPanelChunk(() => import('./workspace/BotRoutinesTab.vue'))
+const BotConfigTab = lazyPanelChunk(() => import('./workspace/BotConfigTab.vue'))
+const BotActivityTab = lazyPanelChunk(() => import('./workspace/BotActivityTab.vue'))
+const BotStarterPanel = lazyPanelChunk(() => import('./workspace/BotStarterPanel.vue'))
 
 defineProps<{
   desktopCollapsed?: boolean
@@ -33,84 +31,21 @@ const emit = defineEmits<{
 const store = useAppStore()
 const bot = store.activeBot
 
-const moreMenuId = useId()
-const composerId = useId()
-
 const inputPrompt = ref('')
 const selectedModel = ref('primary')
 const enableThinking = ref(true)
 const streamStatus = ref('就绪')
-const streamElapsedMs = ref(0)
-let streamTicker: number | null = null
-
-watch(
-  () => store.state.isStreaming,
-  (active) => {
-    if (streamTicker !== null) {
-      window.clearInterval(streamTicker)
-      streamTicker = null
-    }
-    if (active) {
-      const started = Date.now()
-      streamElapsedMs.value = 0
-      streamTicker = window.setInterval(() => {
-        streamElapsedMs.value = Date.now() - started
-      }, 200)
-    }
-  }
-)
-
-async function saveLongDraftAsNote() {
-  const text = inputPrompt.value.trim()
-  if (!text || !bot.value) return
-  try {
-    const firstLine = text.split('\n').find((l) => l.trim()) || '草稿资料'
-    const title = firstLine.replace(/^#+\s*/, '').slice(0, 32)
-    const res = await BotHubApi.createNote({
-      title: `参考资料: ${title}`,
-      category: 'draft',
-      bot_id: bot.value.id,
-      content: text,
-    })
-    const notesRes = await BotHubApi.listNotes('', '')
-    store.state.notes = notesRes.notes || []
-    inputPrompt.value = `请使用 manage_notes(action="get", id="${res.note.id}") 读取我刚存入工作文档《${res.note.title}》的完整正文，帮我提炼要点并处理：`
-    nextTick(() => {
-      autoResizeTextarea()
-      textareaRef.value?.focus()
-    })
-    store.notify(`已将 ${text.length} 字存入工作文档`)
-  } catch (err: any) {
-    store.notify(err.message || '保存文档失败')
-  }
-}
 const scrollContainerRef = ref<HTMLElement | null>(null)
-const textareaRef = ref<HTMLTextAreaElement | null>(null)
-const formRef = ref<HTMLFormElement | null>(null)
-const renameInputRef = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
+const composerRef = ref<InstanceType<typeof BotChatComposer> | null>(null)
 const userScrolledUp = ref(false)
+const unreadBelowCount = ref(0)
 
-const moreBtnRef = ref<HTMLButtonElement | null>(null)
-const morePopoverRef = ref<HTMLElement | null>(null)
-const moreFallbackOpen = ref(false)
-const hasNativePopover = typeof HTMLElement !== 'undefined' && Object.hasOwn(HTMLElement.prototype, 'popover')
-
-let lastCompositionEndAt: number | null = null
 let abortCtrl: AbortController | null = null
-let lastPrompt = ''
+const lastPrompt = ref('')
 
-// Quote-Reply, @mention & /slash command state
-const replyTarget = ref<{ serverId: number; senderName: string; preview: string } | null>(null)
-const mentionOpen = ref(false)
-const mentionQuery = ref('')
-const mentionAnchorIdx = ref(-1)
-const mentionHighlight = ref(0)
-
-const slashOpen = ref(false)
-const slashHighlight = ref(0)
-
+const replyTarget = ref<ReplyQuoteTarget | null>(null)
 const announcementDismissed = ref(false)
-const relaySteps = ref<Array<{ id: string; name: string; status: 'done' | 'active'; guest?: boolean }>>([])
+const relaySteps = ref<RelayStepItem[]>([])
 
 // In-Chat Message Search (QQ/WeChat Cmd+F)
 const chatSearchOpen = ref(false)
@@ -173,7 +108,7 @@ function findPrecedingUserPrompt(idx: number): string {
       return item.content.trim()
     }
   }
-  return lastPrompt
+  return lastPrompt.value
 }
 
 function openForwardForMessage(msg: ChatMessageUI) {
@@ -184,171 +119,6 @@ function openForwardForMessage(msg: ChatMessageUI) {
     content: msg.content,
   }
 }
-
-interface SlashCmdItem {
-  cmd: string
-  title: string
-  desc: string
-  prompt?: string
-  action?: 'open_drawer' | 'clear_timeline' | 'new_thread' | 'summarize_thread' | 'open_skills' | 'open_workhub'
-}
-
-const slashCommands = computed<SlashCmdItem[]>(() => {
-  const b = bot.value
-  const items: SlashCmdItem[] = []
-  let allowedTools: string[] = []
-  let boundSkills: string[] = []
-  try {
-    const parsed = JSON.parse(b?.allowed_tools || '[]')
-    if (Array.isArray(parsed)) allowedTools = parsed
-  } catch {
-    allowedTools = []
-  }
-  try {
-    const parsed = JSON.parse(b?.skill_ids || '[]')
-    if (Array.isArray(parsed)) boundSkills = parsed
-  } catch {
-    boundSkills = []
-  }
-
-  // Dynamic bound custom skills first
-  for (const sk of store.state.skills || []) {
-    if (!sk.enabled || !boundSkills.includes(sk.id)) continue
-    items.push({
-      cmd: `/${sk.slug}`,
-      title: `技能 · ${sk.name}`,
-      desc: sk.description || (sk.kind === 'webhook' ? `调用外部技能 skill_${sk.slug}` : '按专属技能规范响应'),
-      prompt: sk.kind === 'webhook' ? `请使用 skill_${sk.slug} 工具协助处理当前问题：` : `请遵循「${sk.name}」技能规范回答：`,
-    })
-  }
-
-  if (allowedTools.includes('manage_assets')) {
-    items.push({
-      cmd: '/assets',
-      title: '资产全面审计',
-      desc: '盘点 VPS、域名与订阅到期风险',
-      prompt: '请调用工具盘点当前全部数字资产与临期风险并给出续费建议。',
-    })
-  }
-  if (allowedTools.includes('query_nezha_nodes')) {
-    items.push({
-      cmd: '/nezha',
-      title: '探针节点巡检',
-      desc: '查看哪吒节点在线率与负载情况',
-      prompt: '请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线与健康状态。',
-    })
-  }
-  if (allowedTools.includes('web_search')) {
-    items.push({
-      cmd: '/search',
-      title: '全网检索',
-      desc: '联网搜索最新资讯与公开资料',
-      prompt: '请帮我联网搜索：',
-    })
-  }
-  if (allowedTools.includes('manage_tasks')) {
-    items.push({
-      cmd: '/tasks',
-      title: '调度队列核查',
-      desc: '检查各自动化例程状态与下次触发时间',
-      prompt: '请核查当前所有自动化调度任务的运行状态与上次执行摘要。',
-    })
-    items.push({
-      cmd: '/remind',
-      title: '创建定时/单次提醒',
-      desc: '设定一次性定时提醒或周期性自动汇报任务',
-      prompt: '请帮我设定一个定时提醒：',
-    })
-  }
-  if (allowedTools.includes('manage_todos')) {
-    items.push({
-      cmd: '/todo',
-      title: '记录或核查个人待办',
-      desc: '添加行动项、查看未完成或勾选完结事项',
-      prompt: '请帮我整理或记录以下待办事项：',
-    })
-    items.push({
-      cmd: '/plan',
-      title: '目标拆解与批量排期',
-      desc: '把复杂目标一键拆解成多条带截止日的待办子任务',
-      prompt: '请调用 manage_todos(action="batch_add") 将以下目标拆解为可执行的分步行动清单并设定优先级：',
-    })
-  }
-  if (allowedTools.includes('manage_notes')) {
-    items.push({
-      cmd: '/note',
-      title: '整理产出工作文档',
-      desc: '将方案、总结或草稿沉淀到工作文档交付区',
-      prompt: '请将以下内容整理为结构化 Markdown 工作文档并保存：',
-    })
-  }
-  if (allowedTools.includes('consult_bot')) {
-    items.push({
-      cmd: '/consult',
-      title: '协调团队成员协办',
-      desc: '调用其他专精 Bot 协助完成子任务并汇总',
-      prompt: '请协调工作区里最合适的专业成员共同处理：',
-    })
-  }
-  if (allowedTools.includes('workspace_briefing')) {
-    items.push({
-      cmd: '/briefing',
-      title: '今日行动全景简报',
-      desc: '汇总逾期/今日待办、临期资产与未读预警并排期',
-      prompt: '请调用 workspace_briefing 为我梳理今日重点待办、日程与风险，并给出行动建议。',
-    })
-  }
-  if (allowedTools.includes('calculate_eval')) {
-    items.push({
-      cmd: '/calc',
-      title: '精确表达式计算',
-      desc: '使用高精度计算引擎核算费用、比例或复利',
-      prompt: '请调用 calculate_eval 精确计算：',
-    })
-  }
-  if (allowedTools.includes('manage_memory') || allowedTools.includes('recall_memory')) {
-    items.push({
-      cmd: '/memories',
-      title: '回忆关键信息',
-      desc: '检索与当前会话相关的历史重要记忆',
-      prompt: '请先检索我们的历史记忆，梳理目前你记住的关键事实与约定。',
-    })
-  }
-  if (allowedTools.includes('manage_memory')) {
-    items.push({
-      cmd: '/consolidate',
-      title: '清理并合并重复记忆',
-      desc: '梳理当前作用域的冗余记忆条目并合并去重',
-      prompt: '请先调用 manage_memory(action="consolidate") 合并当前作用域内的重复冗余记忆，再简报整理结果。',
-    })
-  }
-
-  items.push(
-    { cmd: '/workhub', title: '打开个人行动台', desc: '管理待办清单与 Bot 产出的 Markdown 文档', action: 'open_workhub' },
-    { cmd: '/thread', title: '新建独立话题', desc: '在当前会话内开启一条干净的新话题线', action: 'new_thread' },
-    { cmd: '/summarize', title: '总结话题并存记忆', desc: '提炼当前话题核心结论并沉淀到专属记忆库', action: 'summarize_thread' },
-    { cmd: '/skills', title: '打开自定义技能工坊', desc: '管理 Playbook 与 Webhook 外部技能工具', action: 'open_skills' },
-    { cmd: '/invite', title: '拉人进群 / 群设置', desc: '打开右侧群成员与协同策略抽屉', action: 'open_drawer' },
-    { cmd: '/clear', title: '清空当前对话', desc: '清空当前话题聊天时间线', action: 'clear_timeline' }
-  )
-  return items
-})
-
-function botModeLabel(mode?: string): string {
-  if (mode === 'companion') return '陪伴'
-  if (mode === 'worker') return '执行'
-  return '全能'
-}
-
-const VIEW_TABS = [
-  { id: 'stream', label: '对话流' },
-  { id: 'routines', label: '例程' },
-  { id: 'config', label: '能力与记忆' },
-  { id: 'activity', label: '运行脉搏' },
-]
-
-const availableTools = computed(() => store.state.availableTools || [])
-const availableSkills = computed(() => (store.state.skills || []).filter((s) => s.enabled !== false))
 
 const expandedUserMsgs = ref<Record<string, boolean>>({})
 
@@ -389,24 +159,15 @@ function runQuickToolStarter(toolId: string) {
       break
     case 'web_search':
       inputPrompt.value = '请帮我联网检索：'
-      nextTick(() => {
-        autoResizeTextarea()
-        textareaRef.value?.focus()
-      })
+      nextTick(() => composerRef.value?.focus())
       break
     case 'consult_bot':
       inputPrompt.value = '请帮我协同其他专员一起完成：'
-      nextTick(() => {
-        autoResizeTextarea()
-        textareaRef.value?.focus()
-      })
+      nextTick(() => composerRef.value?.focus())
       break
     default:
       inputPrompt.value = `请使用 ${toolId} 帮我处理：`
-      nextTick(() => {
-        autoResizeTextarea()
-        textareaRef.value?.focus()
-      })
+      nextTick(() => composerRef.value?.focus())
   }
 }
 
@@ -433,10 +194,7 @@ watch(
     if (!draft) return
     inputPrompt.value = draft
     store.state.pendingDraftPrompt = ''
-    nextTick(() => {
-      autoResizeTextarea()
-      textareaRef.value?.focus()
-    })
+    nextTick(() => composerRef.value?.focus())
   },
   { immediate: true }
 )
@@ -461,44 +219,17 @@ const groupMembers = computed<Bot[]>(() => {
   return resolved.length > 0 ? resolved : availableSpecialistBots.value
 })
 
-const mentionCandidates = computed(() => {
-  const q = mentionQuery.value.toLowerCase()
-  const memberIds = new Set(groupMembers.value.map((m) => m.id))
-  const sorted = [...availableSpecialistBots.value].sort((a, b) => {
-    const aIn = isGroupBot.value ? (memberIds.has(a.id) ? 0 : 1) : a.id === bot.value?.id ? 0 : 1
-    const bIn = isGroupBot.value ? (memberIds.has(b.id) ? 0 : 1) : b.id === bot.value?.id ? 0 : 1
-    return aIn - bIn
-  })
-  return sorted
-    .filter((sp) => !q || `${sp.name} ${sp.id} ${sp.role_title}`.toLowerCase().includes(q))
-    .map((sp) => ({
-      bot: sp,
-      inRoom: isGroupBot.value ? memberIds.has(sp.id) : sp.id === bot.value?.id,
-    }))
-})
-
 async function onCarryThreadSummary(summary: string, title: string) {
   const nextTitle = `${title || '延续话题'} · 续`
   await store.createThread(nextTitle)
   inputPrompt.value = `接续上一段话题前情提要继续推进：\n> ${summary}\n\n接下来的重点：`
-  nextTick(() => {
-    autoResizeTextarea()
-    textareaRef.value?.focus()
-  })
+  nextTick(() => composerRef.value?.focus())
 }
 
 async function handleSummarizeThread() {
   if (!bot.value) return
   await store.summarizeThread(store.state.activeThreadId || 'main', true)
 }
-
-const filteredSlashCommands = computed(() => {
-  const val = inputPrompt.value.trim().toLowerCase()
-  if (!val.startsWith('/')) return []
-  return slashCommands.value.filter(
-    (c) => c.cmd.toLowerCase().includes(val) || c.title.toLowerCase().includes(val.slice(1))
-  )
-})
 
 function shouldShowTimestamp(idx: number): boolean {
   const list = store.state.timeline
@@ -521,7 +252,7 @@ function setReplyQuote(msg: ChatMessageUI) {
     senderName: msg.role === 'user' ? '管理员' : msg.senderName,
     preview: `${msg.role === 'user' ? '管理员' : msg.senderName}: ${snippet}`,
   }
-  nextTick(() => textareaRef.value?.focus())
+  nextTick(() => composerRef.value?.focus())
 }
 
 async function saveMessageAsMemory(msg: ChatMessageUI) {
@@ -536,7 +267,7 @@ async function saveMessageAsMemory(msg: ChatMessageUI) {
       content,
     })
     store.notify('已提炼并存入专属长期记忆库')
-    await store.loadDashboard(false)
+    await store.refreshWorkspaceSlices(['memories'])
   } catch (err: any) {
     store.notify(err.message || '保存记忆失败')
   }
@@ -555,7 +286,7 @@ async function convertMessageToTodo(msg: ChatMessageUI) {
       priority: 'normal',
       status: 'pending',
     })
-    await store.loadDashboard(false)
+    await store.refreshWorkspaceSlices(['todos'])
     store.notify('已转入个人待办清单')
   } catch (err: any) {
     store.notify(err.message || '转存待办失败')
@@ -574,7 +305,7 @@ async function saveMessageAsNote(msg: ChatMessageUI) {
       category: 'deliverable',
       content: raw,
     })
-    await store.loadDashboard(false)
+    await store.refreshWorkspaceSlices(['notes'])
     store.notify(`已保存至工作文档《${title}》`)
   } catch (err: any) {
     store.notify(err.message || '保存文档失败')
@@ -593,87 +324,33 @@ const scopedMemories = computed(() => {
   return store.state.memories.filter((m) => !m.scope || m.scope === 'global' || m.scope === bScope)
 })
 
+function shouldDeferMessageRender(idx: number): boolean {
+  if (chatSearchOpen.value) return false
+  return idx < store.state.timeline.length - 10
+}
+
 function onMessagesScroll() {
   const el = scrollContainerRef.value
   if (!el) return
   const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-  userScrolledUp.value = distanceFromBottom > 80
+  const scrolledUp = distanceFromBottom > 80
+  userScrolledUp.value = scrolledUp
+  if (!scrolledUp) {
+    unreadBelowCount.value = 0
+  }
 }
 
 function scrollToBottom(force = false) {
-  if (force) userScrolledUp.value = false
+  if (force) {
+    userScrolledUp.value = false
+    unreadBelowCount.value = 0
+  }
   if (!force && userScrolledUp.value) return
   nextTick(() => {
     if (scrollContainerRef.value) {
       scrollContainerRef.value.scrollTop = scrollContainerRef.value.scrollHeight
     }
   })
-}
-
-const supportsFieldSizing =
-  typeof window !== 'undefined' && Boolean(window.CSS?.supports?.('field-sizing', 'content'))
-
-function autoResizeTextarea() {
-  if (supportsFieldSizing) return
-  const el = textareaRef.value
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, 160)}px`
-}
-
-function handleCompositionEnd(e: CompositionEvent) {
-  lastCompositionEndAt = e.timeStamp
-}
-
-function syncMentionAndSlash() {
-  const el = textareaRef.value
-  const val = inputPrompt.value
-  const pos = el?.selectionStart ?? val.length
-
-  if (val.startsWith('/') && !val.includes('\n') && !val.includes(' ')) {
-    slashOpen.value = filteredSlashCommands.value.length > 0
-    slashHighlight.value = 0
-  } else {
-    slashOpen.value = false
-  }
-
-  const beforeCaret = val.slice(0, pos)
-  const match = beforeCaret.match(/(?:^|\s)@([^\s@]*)$/)
-  if (match) {
-    mentionQuery.value = match[1] || ''
-    mentionAnchorIdx.value = beforeCaret.lastIndexOf('@')
-    mentionHighlight.value = 0
-    mentionOpen.value = mentionCandidates.value.length > 0
-  } else {
-    mentionOpen.value = false
-  }
-}
-
-function handleComposerInput() {
-  autoResizeTextarea()
-  syncMentionAndSlash()
-}
-
-function pickMentionText(mentionName: string) {
-  const val = inputPrompt.value
-  const pos = textareaRef.value?.selectionStart ?? val.length
-  const anchor = mentionAnchorIdx.value >= 0 ? mentionAnchorIdx.value : val.lastIndexOf('@', pos)
-  if (anchor >= 0) {
-    const before = val.slice(0, anchor)
-    const after = val.slice(pos)
-    inputPrompt.value = `${before}@${mentionName} ${after}`
-  } else {
-    appendMention(`@${mentionName} `)
-  }
-  mentionOpen.value = false
-  nextTick(() => {
-    autoResizeTextarea()
-    textareaRef.value?.focus()
-  })
-}
-
-function pickMentionCandidate(sp: Bot) {
-  pickMentionText(sp.name)
 }
 
 function editResendUserMessage(msg: ChatMessageUI) {
@@ -686,160 +363,13 @@ function editResendUserMessage(msg: ChatMessageUI) {
       preview: msg.replyPreview,
     }
   }
-  nextTick(() => {
-    autoResizeTextarea()
-    textareaRef.value?.focus()
-  })
+  nextTick(() => composerRef.value?.focus())
   store.notify('已填入编辑框，修改后直接发送')
-}
-
-async function inviteFromMentionAndPick(sp: Bot) {
-  if (isGroupBot.value && bot.value) {
-    try {
-      await BotHubApi.updateGroupMembers(bot.value.id, 'add', [sp.id])
-      await store.loadDashboard(false)
-      store.notify(`已将「${sp.name}」正式拉入当前群聊`)
-    } catch {
-      // fallback to temp mention
-    }
-  }
-  pickMentionCandidate(sp)
-}
-
-function pickSlashCommand(item: SlashCmdItem) {
-  slashOpen.value = false
-  if (item.action === 'open_drawer') {
-    inputPrompt.value = ''
-    store.state.showGroupDrawer = true
-    return
-  }
-  if (item.action === 'clear_timeline') {
-    inputPrompt.value = ''
-    clearTimeline()
-    return
-  }
-  if (item.action === 'new_thread') {
-    inputPrompt.value = ''
-    store.createThread('')
-    return
-  }
-  if (item.action === 'summarize_thread') {
-    inputPrompt.value = ''
-    handleSummarizeThread()
-    return
-  }
-  if (item.action === 'open_skills') {
-    inputPrompt.value = ''
-    store.state.showSkillsModal = true
-    return
-  }
-  if (item.action === 'open_workhub') {
-    inputPrompt.value = ''
-    store.state.showWorkhubModal = true
-    return
-  }
-  if (item.prompt) {
-    if (item.prompt.endsWith('：')) {
-      inputPrompt.value = item.prompt
-      nextTick(() => {
-        autoResizeTextarea()
-        textareaRef.value?.focus()
-      })
-    } else {
-      inputPrompt.value = ''
-      sendPrompt(item.prompt)
-    }
-  }
-}
-
-function handleComposerKeydown(e: KeyboardEvent) {
-  if (mentionOpen.value && mentionCandidates.value.length > 0) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      mentionHighlight.value = (mentionHighlight.value + 1) % mentionCandidates.value.length
-      return
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      mentionHighlight.value = (mentionHighlight.value - 1 + mentionCandidates.value.length) % mentionCandidates.value.length
-      return
-    }
-    if ((e.key === 'Enter' || e.key === 'Tab') && !isImeComposingEnter(e, lastCompositionEndAt)) {
-      e.preventDefault()
-      const picked = mentionCandidates.value[mentionHighlight.value]
-      if (picked) pickMentionCandidate(picked.bot)
-      return
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      mentionOpen.value = false
-      return
-    }
-  }
-
-  if (slashOpen.value && filteredSlashCommands.value.length > 0) {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      slashHighlight.value = (slashHighlight.value + 1) % filteredSlashCommands.value.length
-      return
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      slashHighlight.value = (slashHighlight.value - 1 + filteredSlashCommands.value.length) % filteredSlashCommands.value.length
-      return
-    }
-    if ((e.key === 'Enter' || e.key === 'Tab') && !isImeComposingEnter(e, lastCompositionEndAt)) {
-      e.preventDefault()
-      const picked = filteredSlashCommands.value[slashHighlight.value]
-      if (picked) pickSlashCommand(picked)
-      return
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      slashOpen.value = false
-      return
-    }
-  }
-
-  if (e.key === 'Escape' && replyTarget.value) {
-    e.preventDefault()
-    e.stopPropagation()
-    replyTarget.value = null
-    return
-  }
-
-  if (e.key === 'ArrowUp' && !inputPrompt.value) {
-    const fallbackPrompt =
-      lastPrompt ||
-      [...store.state.timeline].reverse().find((m) => m.role === 'user')?.content ||
-      ''
-    if (fallbackPrompt) {
-      e.preventDefault()
-      inputPrompt.value = fallbackPrompt
-      nextTick(() => autoResizeTextarea())
-      return
-    }
-  }
-
-  if ((e.key === 'Enter' && !e.shiftKey) || ((e.metaKey || e.ctrlKey) && e.key === 'Enter')) {
-    e.preventDefault()
-    if (isImeComposingEnter(e, lastCompositionEndAt)) return
-    formRef.value?.requestSubmit()
-  }
 }
 
 watch(inputPrompt, (val) => {
   if (store.state.activeBotId) {
     store.setBotDraft(store.state.activeBotId, val, store.state.activeThreadId)
-  }
-  if (!val) {
-    mentionOpen.value = false
-    slashOpen.value = false
-    if (!supportsFieldSizing) {
-      nextTick(() => {
-        if (textareaRef.value) textareaRef.value.style.height = ''
-      })
-    }
   }
 })
 
@@ -855,60 +385,22 @@ watch(
     }
     closeChatSearch()
     userScrolledUp.value = false
+    unreadBelowCount.value = 0
     scrollToBottom(true)
-    nextTick(() => {
-      autoResizeTextarea()
-    })
   }
 )
 
 watch(
   () => store.state.timeline.length,
-  () => {
+  (newLen, oldLen) => {
+    if (userScrolledUp.value && typeof oldLen === 'number' && newLen > oldLen) {
+      unreadBelowCount.value += newLen - oldLen
+    } else if (newLen === 0) {
+      unreadBelowCount.value = 0
+    }
     scrollToBottom(false)
   }
 )
-
-function positionFallbackPopover() {
-  const btn = moreBtnRef.value
-  const pop = morePopoverRef.value
-  if (!btn || !pop) return
-  if (window.CSS?.supports?.('position-area', 'block-end')) return
-  const rect = btn.getBoundingClientRect()
-  const panelWidth = Math.max(pop.offsetWidth, 184)
-  const left = Math.max(8, Math.min(rect.right - panelWidth, window.innerWidth - panelWidth - 8))
-  const spaceBelow = window.innerHeight - rect.bottom
-  const top = spaceBelow < 180 ? Math.max(8, rect.top - 160) : rect.bottom + 8
-  pop.style.top = `${top}px`
-  pop.style.left = `${left}px`
-}
-
-function onMoreBeforeToggle(e: Event) {
-  const toggleEvt = e as ToggleEvent
-  if (toggleEvt.newState === 'open') {
-    nextTick(() => positionFallbackPopover())
-  }
-}
-
-function handleMoreButtonClick() {
-  if (!hasNativePopover) {
-    moreFallbackOpen.value = !moreFallbackOpen.value
-  }
-}
-
-function closeMoreMenu() {
-  if (hasNativePopover && morePopoverRef.value?.matches(':popover-open')) {
-    morePopoverRef.value.hidePopover()
-  }
-  moreFallbackOpen.value = false
-}
-
-function handleOutsideFallback(e: MouseEvent) {
-  if (hasNativePopover || !moreFallbackOpen.value) return
-  const t = e.target as Node
-  if (moreBtnRef.value?.contains(t) || morePopoverRef.value?.contains(t)) return
-  moreFallbackOpen.value = false
-}
 
 function handleWorkspaceKeydown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
@@ -925,30 +417,20 @@ function handleWorkspaceKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
-  document.addEventListener('click', handleOutsideFallback)
   window.addEventListener('keydown', handleWorkspaceKeydown)
   const savedDraft = store.getBotDraft(store.state.activeBotId)
   if (savedDraft && !inputPrompt.value) {
     inputPrompt.value = savedDraft
-    nextTick(() => autoResizeTextarea())
   }
 })
 onBeforeUnmount(() => {
-  document.removeEventListener('click', handleOutsideFallback)
   window.removeEventListener('keydown', handleWorkspaceKeydown)
-  if (streamTicker !== null) {
-    window.clearInterval(streamTicker)
-    streamTicker = null
-  }
 })
 
 function appendMention(tag: string) {
   const prefix = inputPrompt.value && !inputPrompt.value.endsWith(' ') ? ' ' : ''
   inputPrompt.value = `${inputPrompt.value}${prefix}${tag}`
-  nextTick(() => {
-    autoResizeTextarea()
-    textareaRef.value?.focus()
-  })
+  nextTick(() => composerRef.value?.focus())
 }
 
 function handleMarkdownClick(e: MouseEvent) {
@@ -987,17 +469,6 @@ async function copyPlainTextContent(text: string) {
   }
 }
 
-function clearDraftPrompt() {
-  inputPrompt.value = ''
-  if (store.state.activeBotId) {
-    store.setBotDraft(store.state.activeBotId, '', store.state.activeThreadId)
-  }
-  nextTick(() => {
-    autoResizeTextarea()
-    textareaRef.value?.focus()
-  })
-}
-
 function stopStream() {
   abortCtrl?.abort()
 }
@@ -1014,10 +485,9 @@ async function sendPrompt(overrideText?: string) {
   }
   const botId = curBot.id
   const quote = replyTarget.value
-  lastPrompt = msg
+  lastPrompt.value = msg
   if (!overrideText) inputPrompt.value = ''
-  mentionOpen.value = false
-  slashOpen.value = false
+  composerRef.value?.closePopovers()
   replyTarget.value = null
   relaySteps.value = []
 
@@ -1215,7 +685,7 @@ async function sendPrompt(overrideText?: string) {
     if (activeTurn.statusText === '思考与生成中...') activeTurn.statusText = '已完成'
     streamStatus.value = '就绪'
     store.playSubtleChime()
-    await store.loadDashboard(false)
+    await store.refreshWorkspaceSlices(['bots', 'memories', 'todos', 'notes', 'model_health'])
     // Reload synced server IDs, threads, memories and execution logs quietly
     if (curBot?.id === store.state.activeBotId) {
       const synced = await BotHubApi.getBotMessages(curBot.id, store.state.activeThreadId).catch(() => null)
@@ -1292,232 +762,21 @@ async function clearTimeline() {
   if (!window.confirm(`确定清空 [${bot.value.name}] 的对话时间线吗？`)) return
   await store.clearActiveBotTimeline()
 }
-
-function stateBadgeClass(state?: string): string {
-  if (state === 'thinking') return 'border-amber-400/40 bg-amber-400/10 text-amber-300'
-  if (state === 'working') return 'border-[#f2b880]/45 bg-[#f2b880]/12 text-[#f2b880]'
-  if (state === 'done') return 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
-  if (state === 'blocked') return 'border-rose-400/45 bg-rose-400/10 text-rose-300'
-  return 'border-[#fff8ee]/15 text-slate-400'
-}
 </script>
 
 <template>
   <section class="flex-1 min-h-0 flex flex-col">
-    <!-- Minimal Bot Top Header -->
-    <header class="px-3.5 sm:px-6 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pb-3 border-b border-[#fff8ee]/8 bg-[#080c18]/50 backdrop-blur-md flex flex-wrap items-center justify-between gap-2.5">
-      <div class="flex items-center gap-2.5 min-w-0">
-        <button
-          type="button"
-          aria-label="打开菜单"
-          class="md:hidden min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
-          @click="emit('openMobileMenu')"
-        >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <line x1="3" y1="6" x2="21" y2="6" />
-            <line x1="3" y1="12" x2="21" y2="12" />
-            <line x1="3" y1="18" x2="21" y2="18" />
-          </svg>
-        </button>
-        <button
-          v-if="desktopCollapsed"
-          type="button"
-          aria-label="展开侧边栏"
-          title="展开侧边栏"
-          class="relative hidden md:inline-flex items-center justify-center w-9 h-9 rounded-xl border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
-          @click="emit('toggleDesktopSidebar')"
-        >
-          <span
-            v-if="store.unreadInboxCount.value > 0 || store.pendingTodoCount.value > 0"
-            class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#f2b880] shadow-[0_0_6px_#f2b880]"
-            aria-hidden="true"
-          />
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <line x1="9" y1="3" x2="9" y2="21" />
-            <polyline points="13 9 16 12 13 15" />
-          </svg>
-        </button>
-        <BotGroupAvatar
-          v-if="isGroupBot"
-          :members="groupMembers"
-          :fallback-style="bot?.avatar_style"
-          :state="bot?.state"
-          size="md"
-        />
-        <BotAvatar v-else :avatar-style="bot?.avatar_style" :state="bot?.state" size="md" />
-        <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <h1 class="text-sm md:text-base font-semibold text-white truncate">{{ bot?.name || 'BotHub 工作台' }}</h1>
-            <span
-              v-if="isGroupBot"
-              class="hidden sm:inline-flex font-mono text-[10px] px-2 py-0.5 rounded-full border border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] text-slate-300 leading-none shrink-0"
-            >
-              {{ groupModeLabel(bot?.group_mode) }}
-            </span>
-            <span
-              v-else-if="bot"
-              :class="[
-                'hidden sm:inline-flex font-mono text-[10px] px-2 py-0.5 rounded-full border leading-none shrink-0',
-                bot.bot_mode === 'companion'
-                  ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200'
-                  : bot.bot_mode === 'worker'
-                  ? 'border-cyan-400/35 bg-cyan-500/10 text-cyan-200'
-                  : 'border-[#fff8ee]/14 bg-[#fff8ee]/[0.04] text-slate-300',
-              ]"
-            >
-              {{ botModeLabel(bot.bot_mode) }}
-            </span>
-            <span
-              v-if="bot?.state && bot.state !== 'idle'"
-              :class="['font-mono text-[10px] px-2 py-0.5 rounded-full border leading-none shrink-0', stateBadgeClass(bot?.state)]"
-            >
-              {{ botStateLabel(bot?.state) }}
-            </span>
-          </div>
-          <p class="hidden sm:block text-xs text-slate-400/90 truncate">{{ bot?.role_title }}</p>
-        </div>
-      </div>
-
-      <div v-if="bot" class="flex items-center gap-2 max-w-full ml-auto">
-        <!-- Gliding Physics Segmented Control (Desktop/Tablet) -->
-        <div class="hidden sm:inline-flex">
-          <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="Bot 子视图" />
-        </div>
-
-        <!-- Quick Personal Assistant Workhub Pill -->
-        <button
-          type="button"
-          @click="store.state.showWorkhubModal = true"
-          title="打开个人行动台（待办与工作文档）"
-          class="hidden md:inline-flex min-h-[36px] items-center gap-1.5 px-2.5 rounded-full border border-[#fff8ee]/12 bg-[#060913]/85 hover:border-cyan-400/45 hover:text-cyan-200 text-xs text-slate-300 cursor-pointer shrink-0"
-        >
-          <span>行动台</span>
-          <span
-            v-if="store.pendingTodoCount.value > 0"
-            class="px-1.5 py-0.5 rounded-full bg-cyan-400/20 text-cyan-200 font-mono text-[10px] leading-none"
-          >
-            {{ store.pendingTodoCount.value }}
-          </span>
-        </button>
-
-        <!-- QQ/WeChat Member / Invite Pill -->
-        <button
-          type="button"
-          @click="store.state.showGroupDrawer = true"
-          :title="isGroupBot ? '查看群成员与拉人管理' : '临时拉人发起协同群聊'"
-          class="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-3 rounded-full border border-[#f2b880]/30 bg-[#f2b880]/10 hover:bg-[#f2b880]/18 hover:border-[#f2b880]/55 text-xs font-medium text-[#f7cba0] cursor-pointer shrink-0"
-        >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="8.5" cy="7" r="4" />
-            <line x1="20" y1="8" x2="20" y2="14" />
-            <line x1="23" y1="11" x2="17" y2="11" />
-          </svg>
-          <span class="hidden sm:inline">{{ isGroupBot ? `群成员 (${groupMembers.length})` : '拉人建群' }}</span>
-        </button>
-
-        <!-- Native Top-Layer Popover + Anchor Positioned More Actions -->
-        <div class="relative shrink-0">
-          <button
-            ref="moreBtnRef"
-            type="button"
-            :popovertarget="hasNativePopover ? moreMenuId : undefined"
-            aria-label="更多操作"
-            title="更多操作"
-            @click="handleMoreButtonClick"
-            class="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] inline-flex items-center justify-center rounded-full border border-[#fff8ee]/10 bg-[#060913]/85 text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
-          >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-              <circle cx="5" cy="12" r="1.75" />
-              <circle cx="12" cy="12" r="1.75" />
-              <circle cx="19" cy="12" r="1.75" />
-            </svg>
-          </button>
-
-          <div
-            ref="morePopoverRef"
-            :id="moreMenuId"
-            :popover="hasNativePopover ? 'auto' : undefined"
-            @beforetoggle="onMoreBeforeToggle"
-            :class="[
-              'vesper-popover anchored-end',
-              !hasNativePopover ? (moreFallbackOpen ? 'fixed right-4 top-16 flex flex-col gap-0.5 z-50' : 'hidden') : ''
-            ]"
-          >
-            <button
-              type="button"
-              @click="openChatSearch(); closeMoreMenu()"
-              class="min-h-[44px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-              <span>查找聊天记录</span>
-            </button>
-            <button
-              type="button"
-              @click="store.toggleSound(); closeMoreMenu()"
-              class="min-h-[44px] sm:min-h-[34px] w-full flex items-center justify-between gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
-            >
-              <span class="inline-flex items-center gap-2.5">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>
-                <span>回复提示音</span>
-              </span>
-              <span class="font-mono text-[10px]" :class="store.state.soundEnabled ? 'text-[#f2b880]' : 'text-slate-500'">
-                {{ store.state.soundEnabled ? '开' : '关' }}
-              </span>
-            </button>
-            <button
-              type="button"
-              @click="store.loadDashboard(false); closeMoreMenu()"
-              class="min-h-[44px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
-              <span>刷新状态</span>
-            </button>
-            <button
-              type="button"
-              @click="exportTimelineMarkdown(); closeMoreMenu()"
-              class="min-h-[44px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-              <span>导出 Markdown</span>
-            </button>
-            <div class="my-1 border-t border-[#fff8ee]/10" />
-            <button
-              type="button"
-              @click="clearTimeline(); closeMoreMenu()"
-              class="min-h-[44px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-rose-300 hover:bg-rose-500/15 cursor-pointer text-left"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-              <span>清空对话流</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </header>
-
-    <!-- Dedicated Mobile View Switcher + Workhub Strip (<640px) -->
-    <div
-      v-if="bot"
-      class="sm:hidden px-3 py-1.5 border-b border-[#fff8ee]/8 bg-[#060913]/80 flex items-center justify-between gap-2 shrink-0"
-    >
-      <div class="min-w-0 flex-1 overflow-x-auto no-scrollbar">
-        <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="移动端 Bot 子视图" />
-      </div>
-      <button
-        type="button"
-        @click="store.state.showWorkhubModal = true"
-        class="min-h-[34px] inline-flex items-center gap-1 px-2.5 rounded-full border border-[#fff8ee]/12 bg-[#0a0f1e] text-[11px] text-slate-300 shrink-0 cursor-pointer"
-      >
-        <span>行动台</span>
-        <span
-          v-if="store.pendingTodoCount.value > 0"
-          class="px-1.5 py-0.5 rounded-full bg-cyan-400/20 text-cyan-200 font-mono text-[9.5px] leading-none"
-        >
-          {{ store.pendingTodoCount.value }}
-        </span>
-      </button>
-    </div>
+    <BotWorkspaceHeader
+      :bot="bot"
+      :is-group-bot="isGroupBot"
+      :group-members="groupMembers"
+      :desktop-collapsed="desktopCollapsed"
+      @open-mobile-menu="emit('openMobileMenu')"
+      @toggle-desktop-sidebar="emit('toggleDesktopSidebar')"
+      @open-chat-search="openChatSearch"
+      @export-markdown="exportTimelineMarkdown"
+      @clear-timeline="clearTimeline"
+    />
 
     <!-- Empty Team Onboarding View when 0 Bots exist -->
     <div v-if="!bot" class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-10 flex items-center justify-center">
@@ -1641,6 +900,7 @@ function stateBadgeClass(state?: string): string {
                 :data-msg-id="m.localId"
                 :class="[
                   'msg-enter reveal-host max-w-[820px] w-full mx-auto flex flex-col items-end gap-1 rounded-2xl transition-shadow',
+                  shouldDeferMessageRender(idx) ? 'msg-deferred-user' : '',
                   focusedMatchId === m.localId ? 'ring-1 ring-[#f2b880]/70 p-1' : ''
                 ]"
               >
@@ -1720,6 +980,7 @@ function stateBadgeClass(state?: string): string {
                 :data-msg-id="m.localId"
                 :class="[
                   'msg-enter reveal-host max-w-[820px] w-full mx-auto rounded-2xl transition-shadow',
+                  shouldDeferMessageRender(idx) ? 'msg-deferred-bot' : '',
                   focusedMatchId === m.localId ? 'ring-1 ring-[#f2b880]/70 bg-[#f2b880]/[0.04] px-2.5 py-1.5' : ''
                 ]"
               >
@@ -1931,204 +1192,44 @@ function stateBadgeClass(state?: string): string {
               @click="scrollToBottom(true)"
               class="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 min-h-[40px] sm:min-h-[34px] px-4 rounded-full border border-[#f2b880]/45 bg-[#0a0f1f]/95 text-xs font-medium text-[#f2b880] shadow-xl backdrop-blur-md hover:bg-[#f2b880]/15 cursor-pointer"
             >
-              <span v-if="store.state.isStreaming" class="w-1.5 h-1.5 rounded-full bg-[#f2b880] animate-pulse shrink-0" aria-hidden="true" />
+              <span
+                v-if="store.state.isStreaming || unreadBelowCount > 0"
+                :class="['w-1.5 h-1.5 rounded-full shrink-0', store.state.isStreaming ? 'bg-[#f2b880] animate-pulse' : 'bg-emerald-400']"
+                aria-hidden="true"
+              />
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <polyline points="6 9 12 15 18 9" />
               </svg>
-              <span>{{ store.state.isStreaming ? '正在生成 · 回到底部' : '回到底部' }}</span>
+              <span>
+                {{
+                  store.state.isStreaming
+                    ? '正在生成 · 回到底部'
+                    : unreadBelowCount > 0
+                      ? `${unreadBelowCount} 条新消息 · 回到底部`
+                      : '回到底部'
+                }}
+              </span>
             </button>
           </Transition>
         </div>
 
         <!-- Floating Composer Dock + Popovers -->
-        <div class="relative px-3 sm:px-6 pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] sm:pb-5">
-          <!-- Live Multi-Bot Relay Strip during Group Collaboration -->
-          <div
-            v-if="relaySteps.length > 0"
-            class="max-w-[820px] w-full mx-auto mb-2 px-3 py-1.5 rounded-full border border-[#f2b880]/25 bg-[#080d1c]/90 backdrop-blur-md flex items-center gap-2 overflow-x-auto no-scrollbar text-[11px]"
-          >
-            <span class="font-mono text-slate-400 shrink-0">协同接力:</span>
-            <template v-for="(step, sidx) in relaySteps" :key="step.id + sidx">
-              <span v-if="sidx > 0" class="text-slate-600 shrink-0">-></span>
-              <span
-                :class="[
-                  'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full shrink-0',
-                  step.status === 'active'
-                    ? 'bg-[#f2b880]/15 text-[#f2b880] font-medium'
-                    : 'bg-emerald-400/10 text-emerald-300'
-                ]"
-              >
-                <span :class="['w-1.5 h-1.5 rounded-full', step.status === 'active' ? 'bg-[#f2b880] animate-pulse' : 'bg-emerald-400']" />
-                <span>{{ step.name }}</span>
-                <span v-if="step.guest" class="text-[9.5px] opacity-80">(外援)</span>
-              </span>
-            </template>
-          </div>
-
-          <!-- Interactive @Mention Autocomplete Popover -->
-          <BotComposerDropdown
-            :is-group-bot="isGroupBot"
-            :group-member-count="groupMembers.length"
-            :mention-open="mentionOpen"
-            :mention-query="mentionQuery"
-            :mention-candidates="mentionCandidates"
-            :mention-highlight="mentionHighlight"
-            :slash-open="slashOpen"
-            :slash-commands="filteredSlashCommands"
-            :slash-highlight="slashHighlight"
-            @pick-mention-text="pickMentionText"
-            @pick-mention-candidate="pickMentionCandidate"
-            @invite-from-mention-and-pick="inviteFromMentionAndPick"
-            @pick-slash-command="pickSlashCommand"
-          />
-
-          <div
-            v-if="isGroupBot && groupMembers.length > 0"
-            class="max-w-[820px] w-full mx-auto mb-2 flex items-center gap-1.5 flex-wrap"
-          >
-            <span class="font-mono text-[11px] text-slate-400">@点名协同:</span>
-            <button
-              v-for="member in groupMembers"
-              :key="member.id"
-              type="button"
-              @click="appendMention(`@${member.name} `)"
-              class="min-h-[36px] sm:min-h-[28px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border border-[#fff8ee]/12 bg-[#fff8ee]/[0.04] hover:border-[#f2b880]/50 hover:text-[#f2b880] text-slate-200 cursor-pointer"
-            >
-              <BotAvatar :avatar-style="member.avatar_style" :state="member.state" size="sm" :interactive="false" />
-              <span>@{{ member.name }}</span>
-            </button>
-            <button
-              type="button"
-              @click="store.state.showGroupDrawer = true"
-              class="min-h-[36px] sm:min-h-[28px] inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border border-dashed border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/10 cursor-pointer"
-            >
-              <span>+ 拉人</span>
-            </button>
-          </div>
-
-          <form
-            ref="formRef"
-            @submit.prevent="sendPrompt()"
-            :class="[
-              'composer-dock max-w-[820px] w-full mx-auto rounded-[22px] border border-[#fff8ee]/14 focus-within:border-[#f2b880]/55 bg-[#0b101e]/92 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,248,238,0.08),0_20px_46px_rgba(0,0,0,0.52)] px-3.5 sm:px-4 pt-3 pb-2.5 flex flex-col gap-2.5',
-              store.state.isStreaming ? 'is-streaming' : ''
-            ]"
-          >
-            <!-- Quote-Reply Preview Bar inside Composer -->
-            <div
-              v-if="replyTarget"
-              class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl border border-[#f2b880]/25 bg-[#f2b880]/[0.06] text-xs"
-            >
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="w-0.5 h-4 rounded-full bg-[#f2b880] shrink-0" />
-                <span class="text-slate-300 truncate">{{ replyTarget.preview }}</span>
-              </div>
-              <button
-                type="button"
-                aria-label="取消引用"
-                @click="replyTarget = null"
-                class="w-5 h-5 rounded-full inline-flex items-center justify-center text-slate-400 hover:text-white cursor-pointer shrink-0"
-              >
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-
-            <label :for="composerId" class="sr-only">向当前专属 Bot 下达指令</label>
-            <textarea
-              :id="composerId"
-              ref="textareaRef"
-              v-model="inputPrompt"
-              rows="1"
-              placeholder="输入指令，@ 召唤任何 Bot，/ 呼出快捷指令（Enter 发送）..."
-              @input="handleComposerInput"
-              @compositionend="handleCompositionEnd"
-              @keydown="handleComposerKeydown"
-              class="auto-size-textarea w-full bg-transparent border-0 text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none min-h-[24px] max-h-[160px] overflow-y-auto leading-relaxed"
-            />
-
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
-                <div class="flex-1 min-w-[140px] max-w-[230px] sm:flex-none sm:w-56 shrink-0">
-                  <CustomSelect v-model="selectedModel" :options="store.modelOptions.value" compact aria-label="选择推理模型" />
-                </div>
-                <button
-                  type="button"
-                  :aria-pressed="enableThinking"
-                  @click="enableThinking = !enableThinking"
-                  :title="selectedModel.startsWith('pool:') || selectedModel === 'free-pool' ? '深度思考开关主要作用于 DeepSeek Flash / 支持 thinking 的中转站' : '开启或关闭 Flash 深度推理'"
-                  :class="[
-                    'min-h-[44px] sm:min-h-[32px] px-3 rounded-full text-xs border cursor-pointer whitespace-nowrap shrink-0 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880]',
-                    enableThinking
-                      ? 'border-[#f2b880]/50 bg-[#f2b880]/15 text-[#f2b880]'
-                      : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
-                  ]"
-                >
-                  深度思考: {{ enableThinking ? '开' : '关' }}
-                </button>
-                <span class="hidden sm:inline-flex items-center gap-1.5 font-mono text-[11px] text-slate-400 truncate" aria-live="polite">
-                  <span
-                    v-if="store.state.isStreaming"
-                    class="w-1.5 h-1.5 rounded-full bg-[#f2b880] animate-pulse shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span class="truncate">
-                    {{ streamStatus }}<template v-if="store.state.isStreaming && streamElapsedMs >= 400"> · {{ formatDurationMs(streamElapsedMs) }}</template>
-                  </span>
-                </span>
-              </div>
-
-              <div class="flex items-center gap-2 shrink-0">
-                <button
-                  v-if="inputPrompt.length >= 1600 && !store.state.isStreaming"
-                  type="button"
-                  @click="saveLongDraftAsNote"
-                  title="把粘贴的长文档自动存进 Workhub 后按 ID 引用，对话更干净"
-                  class="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-cyan-400/35 bg-cyan-500/10 text-[10.5px] text-cyan-200 hover:bg-cyan-500/20 cursor-pointer"
-                >
-                  长文转文档 ({{ inputPrompt.length }}字)
-                </button>
-                <span
-                  v-else-if="inputPrompt.length > 80"
-                  class="hidden sm:inline font-mono text-[10.5px] text-slate-500 tabular-nums"
-                >
-                  {{ inputPrompt.length }} 字
-                </span>
-                <button
-                  v-if="inputPrompt.trim().length > 20 && !store.state.isStreaming"
-                  type="button"
-                  @click="clearDraftPrompt"
-                  title="清空当前输入框草稿"
-                  class="inline-flex items-center min-h-[40px] sm:min-h-[30px] px-2.5 py-1 rounded-full text-[11px] text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer"
-                >
-                  清空
-                </button>
-                <button
-                  v-if="store.state.isStreaming"
-                  type="button"
-                  @click="stopStream"
-                  class="min-h-[44px] sm:min-h-[34px] px-3.5 rounded-full text-xs bg-rose-500/20 border border-rose-400/45 text-rose-300 hover:bg-rose-500/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-400 cursor-pointer"
-                >
-                  停止
-                </button>
-                <button
-                  type="submit"
-                  :disabled="store.state.isStreaming || !inputPrompt.trim()"
-                  aria-label="发送指令"
-                  title="发送 (Enter)"
-                  class="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-[#f2b880] hover:bg-[#f7cba0] hover:scale-105 text-[#070a13] flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer disabled:opacity-35 disabled:hover:scale-100 disabled:cursor-not-allowed shadow-md"
-                >
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
-                    <line x1="12" y1="19" x2="12" y2="5" />
-                    <polyline points="5 12 12 5 19 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
+        <BotChatComposer
+          ref="composerRef"
+          v-model:input-prompt="inputPrompt"
+          v-model:selected-model="selectedModel"
+          v-model:enable-thinking="enableThinking"
+          v-model:reply-target="replyTarget"
+          :stream-status="streamStatus"
+          :relay-steps="relaySteps"
+          :is-group-bot="isGroupBot"
+          :group-members="groupMembers"
+          :last-prompt="lastPrompt"
+          @submit-prompt="sendPrompt"
+          @stop-stream="stopStream"
+          @clear-timeline="clearTimeline"
+          @summarize-thread="handleSummarizeThread"
+        />
       </div>
     </Transition>
 

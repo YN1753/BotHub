@@ -85,7 +85,7 @@ func (s *Store) ListPushLogs(limit int) ([]PushLog, error) {
 	}
 	defer rows.Close()
 
-	var logs []PushLog
+	logs := make([]PushLog, 0)
 	for rows.Next() {
 		var l PushLog
 		if err := rows.Scan(&l.ID, &l.ModuleID, &l.Title, &l.Content, &l.Status, &l.ResponseMsg, &l.CreatedAt); err == nil {
@@ -136,16 +136,16 @@ func (s *Store) BatchMarkSeen(items []SeenItem) error {
 }
 
 func (s *Store) PruneOldRecords() error {
-	// Retain latest 500 push logs
-	_, _ = s.db.Exec(`DELETE FROM push_logs WHERE id NOT IN (SELECT id FROM push_logs ORDER BY id DESC LIMIT 500)`)
+	// Retain latest 500 push logs via O(1) index offset seek
+	_, _ = s.db.Exec(`DELETE FROM push_logs WHERE id <= COALESCE((SELECT id FROM push_logs ORDER BY id DESC LIMIT 1 OFFSET 500), 0)`)
 	// Retain module runs within 60 days
 	_, _ = s.db.Exec(`DELETE FROM module_runs WHERE started_at < datetime('now', '-60 days')`)
 	// Retain seen items within 90 days
 	_, _ = s.db.Exec(`DELETE FROM seen_items WHERE first_seen_at < datetime('now', '-90 days')`)
 	// Retain read notifications within 90 days
 	_, _ = s.db.Exec(`DELETE FROM notifications WHERE read_at != '' AND created_at < datetime('now', '-90 days')`)
-	// Retain latest 2000 bot execution logs
-	_, _ = s.db.Exec(`DELETE FROM bot_execution_logs WHERE id NOT IN (SELECT id FROM bot_execution_logs ORDER BY id DESC LIMIT 2000)`)
+	// Retain latest 2000 bot execution logs via O(1) index offset seek
+	_, _ = s.db.Exec(`DELETE FROM bot_execution_logs WHERE id <= COALESCE((SELECT id FROM bot_execution_logs ORDER BY id DESC LIMIT 1 OFFSET 2000), 0)`)
 	// Non-blocking WAL checkpoint to keep db file size lean
 	_, _ = s.db.Exec(`PRAGMA wal_checkpoint(PASSIVE)`)
 	return nil

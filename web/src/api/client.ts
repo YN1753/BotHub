@@ -19,13 +19,13 @@ async function executeRequest<T = any>(
   options: RequestInit & { timeoutMs?: number } = {}
 ): Promise<{ status: number; data: T }> {
   const { timeoutMs = 45_000, ...fetchOpts } = options
-  const ctrl = new AbortController()
-  const timer =
-    typeof window !== 'undefined' && timeoutMs > 0
-      ? window.setTimeout(() => ctrl.abort(), timeoutMs)
-      : undefined
-  if (fetchOpts.signal) {
-    fetchOpts.signal.addEventListener('abort', () => ctrl.abort(), { once: true })
+  let signal: AbortSignal | undefined = fetchOpts.signal ?? undefined
+  if (timeoutMs > 0 && typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    const deadlineSignal = AbortSignal.timeout(timeoutMs)
+    signal =
+      signal && typeof AbortSignal.any === 'function'
+        ? AbortSignal.any([signal, deadlineSignal])
+        : signal || deadlineSignal
   }
   const hasBody = fetchOpts.body !== undefined && fetchOpts.body !== null
   const headers: Record<string, string> = {
@@ -36,7 +36,7 @@ async function executeRequest<T = any>(
     const res = await fetch(path, {
       credentials: 'same-origin',
       ...fetchOpts,
-      signal: ctrl.signal,
+      signal,
       headers,
     })
     const rawText = await res.text().catch(() => '')
@@ -64,12 +64,10 @@ async function executeRequest<T = any>(
     }
     return { status: res.status, data: data as T }
   } catch (err: any) {
-    if (err?.name === 'AbortError') {
-      throw new Error('请求超时，请检查网络连接或服务端响应状态')
+    if (err?.name === 'TimeoutError') {
+      throw new Error('请求超时，请检查网络连接或服务端响应状态', { cause: err })
     }
     throw err
-  } finally {
-    if (timer !== undefined) window.clearTimeout(timer)
   }
 }
 
@@ -99,9 +97,18 @@ export const BotHubApi = {
   login: (password: string, remember_device = false) =>
     apiRequest('/api/auth/login', { method: 'POST', body: JSON.stringify({ password, remember_device }) }),
   logout: () => apiRequest('/api/auth/logout', { method: 'POST' }),
+  logoutAllDevices: (keep_current = true) =>
+    apiRequest<{ ok: boolean; keep_current: boolean; message: string }>('/api/auth/logout-all', {
+      method: 'POST',
+      body: JSON.stringify({ keep_current }),
+    }),
   updatePassword: (new_password: string) =>
     apiRequest('/api/auth/password', { method: 'POST', body: JSON.stringify({ new_password }) }),
   dashboard: () => apiRequest<DashboardPayload>('/api/dashboard'),
+  dashboardSlice: (kinds: string[]) =>
+    apiRequest<Partial<DashboardPayload> & { ok: boolean }>(
+      `/api/v2/dashboard/slice?kinds=${encodeURIComponent(kinds.join(','))}`
+    ),
   saveConfig: (payload: Record<string, string>) =>
     apiRequest('/api/config', { method: 'POST', body: JSON.stringify(payload) }),
   saveModelPool: (entries: ModelPoolEntry[]) =>

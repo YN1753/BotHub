@@ -1,9 +1,13 @@
 package modules
 
 import (
+	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
@@ -76,5 +80,35 @@ func TestAssetShouldWarn(t *testing.T) {
 	}
 	if got := store.NormalizeAssetStatus("已停用"); got != "已停用" {
 		t.Errorf("expected 已停用 preserved, got %q", got)
+	}
+}
+
+func TestAssetWatcherSortsMostUrgentAlertFirst(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "watcher.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	loc := ShanghaiLocation()
+	now := time.Now().In(loc)
+	in7Days := now.AddDate(0, 0, 7).Format("2006-01-02")
+	in1Day := now.AddDate(0, 0, 1).Format("2006-01-02")
+
+	_ = st.SaveAsset(store.Asset{ID: "asset_later", Name: "次紧急服务器", Spec: "2C4G", Status: "生效中", DueDate: in7Days, WarnDays: "[7,3,1]"})
+	_ = st.SaveAsset(store.Asset{ID: "asset_urgent", Name: "明日到期域名", Spec: "example.com", Status: "生效中", DueDate: in1Day, WarnDays: "[7,3,1]"})
+
+	push := notifier.NewClient(st)
+	mod := NewAssetWatcherModule(st, push)
+	res, err := mod.Run(context.Background())
+	if err != nil {
+		t.Fatalf("AssetWatcherModule.Run failed: %v", err)
+	}
+	if res.ItemsPushed != 2 {
+		t.Fatalf("expected 2 alerts pushed, got %d (%s)", res.ItemsPushed, res.Summary)
+	}
+	notifs, _ := st.ListNotifications(0, 10, false)
+	if len(notifs) != 1 || !strings.Contains(notifs[0].Title, "最快剩余 1 天") {
+		t.Fatalf("expected urgent-first sorted title with 最快剩余 1 天, got %+v", notifs)
 	}
 }

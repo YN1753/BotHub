@@ -12,6 +12,7 @@ import (
 
 	"github.com/YN1753/vesper/bothub/internal/agent"
 	"github.com/YN1753/vesper/bothub/internal/modules"
+	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
@@ -42,28 +43,128 @@ var sensitiveConfigKeys = map[string]bool{
 }
 
 func maskSecret(val string) string {
-	v := strings.TrimSpace(val)
-	if v == "" {
-		return ""
-	}
-	runes := []rune(v)
-	if len(runes) <= 8 {
-		return "****"
-	}
-	return string(runes[:3]) + "****" + string(runes[len(runes)-4:])
+	return store.MaskSecretValue(val)
 }
 
-func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+func (s *Server) schedulerTasksList() ([]any, error) {
 	tasks := make([]any, 0)
 	if s.scheduler != nil {
 		tList, err := s.scheduler.Status()
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "读取任务状态失败")
-			return
+			return nil, err
 		}
 		for _, t := range tList {
 			tasks = append(tasks, t)
 		}
+	}
+	return tasks, nil
+}
+
+// handleDashboardSlice serves targeted partial refreshes (workhub, ops, agents, or comma-separated kinds)
+// so SSE assistant_update bursts only query the changed SQLite tables instead of all 16 dashboard tables.
+func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
+	rawKinds := strings.TrimSpace(r.PathValue("slice"))
+	if q := strings.TrimSpace(r.URL.Query().Get("kinds")); q != "" {
+		if rawKinds != "" && rawKinds != "slice" {
+			rawKinds = rawKinds + "," + q
+		} else {
+			rawKinds = q
+		}
+	}
+	if rawKinds == "" || rawKinds == "slice" {
+		writeError(w, http.StatusBadRequest, "缺少 slice 或 kinds 参数")
+		return
+	}
+
+	want := make(map[string]bool)
+	for _, part := range strings.Split(rawKinds, ",") {
+		switch strings.ToLower(strings.TrimSpace(part)) {
+		case "workhub":
+			want["todos"] = true
+			want["notes"] = true
+		case "ops":
+			want["tasks"] = true
+			want["assets"] = true
+			want["push_logs"] = true
+			want["stats"] = true
+		case "agents":
+			want["bots"] = true
+			want["skills"] = true
+			want["memories"] = true
+			want["model_health"] = true
+		case "todos", "notes", "memories", "assets", "tasks", "bots", "skills", "notifications", "push_logs", "stats", "model_health":
+			want[strings.ToLower(strings.TrimSpace(part))] = true
+		default:
+			writeError(w, http.StatusBadRequest, "不支持的 dashboard slice: "+part)
+			return
+		}
+	}
+
+	resp := map[string]any{
+		"ok":         true,
+		"uptime_sec": int64(time.Since(s.startedAt).Seconds()),
+		"server_now": store.NowShanghai(),
+	}
+	if want["todos"] {
+		todos, _ := s.store.ListTodos("all", "", 120)
+		resp["todos"] = todos
+	}
+	if want["notes"] {
+		notes, _ := s.store.ListNotes("", "", 80)
+		resp["notes"] = notes
+	}
+	if want["memories"] {
+		memories, _ := s.store.ListAgentMemories("", 50)
+		resp["agent_memories"] = memories
+	}
+	if want["assets"] {
+		assets, _ := s.store.ListAssets()
+		resp["assets"] = assets
+		if !want["stats"] {
+			want["stats"] = true
+		}
+	}
+	if want["tasks"] {
+		tasks, err := s.schedulerTasksList()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "读取任务状态失败")
+			return
+		}
+		resp["tasks"] = tasks
+		resp["modules"] = tasks
+	}
+	if want["bots"] {
+		bots, _ := s.store.ListBots()
+		resp["bots"] = bots
+	}
+	if want["skills"] {
+		skills, _ := s.store.ListSkills()
+		resp["skills"] = skills
+	}
+	if want["notifications"] {
+		notifications, _ := s.store.ListNotifications(0, 40, false)
+		resp["notifications"] = notifications
+	}
+	if want["push_logs"] {
+		logs, _ := s.store.ListPushLogs(40)
+		resp["push_logs"] = logs
+	}
+	if want["stats"] {
+		stats, _ := s.store.CountStats()
+		resp["stats"] = stats
+	}
+	if want["model_health"] && s.agent != nil {
+		resp["model_health"] = s.agent.GetModelHealth()
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	tasks, err := s.schedulerTasksList()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "读取任务状态失败")
+		return
 	}
 	cfgs, _ := s.store.GetAllConfigs()
 	delete(cfgs, store.KeyAdminPassHash)
@@ -235,6 +336,19 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 	cfgs, _ := s.store.GetAllConfigs()
 	delete(cfgs, store.KeyAdminPassHash)
 	delete(cfgs, store.KeySessionSecret)
+	maskSecrets := r.URL.Query().Get("mask_secrets") == "1" || r.URL.Query().Get("mask_secrets") == "true"
+	if maskSecrets {
+		for k := range sensitiveConfigKeys {
+			if raw, ok := cfgs[k]; ok && strings.TrimSpace(raw) != "" {
+				cfgs[k] = maskSecret(raw)
+			}
+		}
+		if rawPool, ok := cfgs[store.KeyFreeModelPool]; ok && strings.TrimSpace(rawPool) != "" {
+			if maskedPoolBytes, mErr := json.Marshal(store.MaskModelPool(s.store.GetModelPool())); mErr == nil {
+				cfgs[store.KeyFreeModelPool] = string(maskedPoolBytes)
+			}
+		}
+	}
 
 	if assets == nil {
 		assets = []store.Asset{}
@@ -281,13 +395,17 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Now().Add(2 * time.Minute))
+	_ = rc.SetWriteDeadline(time.Now().Add(2 * time.Minute))
+
 	var backup BackupData
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 5*1024*1024)).Decode(&backup); err != nil {
 		writeError(w, http.StatusBadRequest, "无效备份文件: "+err.Error())
 		return
 	}
 
-	// 1. Restore Configs
+	// 1. Restore Configs (never overwrite stored secrets with masked "****" placeholders)
 	allowedKeys := map[string]bool{
 		"cf_api_token":        true,
 		"nezha_url":           true,
@@ -320,15 +438,30 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 		if urlConfigKeys[k] && !validateHTTPURL(val) {
 			continue
 		}
+		if sensitiveConfigKeys[k] && strings.Contains(val, "****") {
+			continue
+		}
+		if k == store.KeyFreeModelPool {
+			var entries []store.ModelPoolEntry
+			if json.Unmarshal([]byte(val), &entries) == nil {
+				_ = s.store.SaveModelPool(entries)
+			}
+			continue
+		}
 		_ = s.store.SetConfig(k, val)
 	}
 
 	// 2. Restore Assets
 	assetsCount := 0
 	for _, a := range backup.Assets {
-		if strings.TrimSpace(a.ID) == "" || strings.TrimSpace(a.Name) == "" {
+		a.ID = strings.TrimSpace(a.ID)
+		a.Name = notifier.StripEmoji(strings.TrimSpace(a.Name))
+		if a.ID == "" || a.Name == "" {
 			continue
 		}
+		a.Spec = notifier.StripEmoji(strings.TrimSpace(a.Spec))
+		a.Price = notifier.StripEmoji(strings.TrimSpace(a.Price))
+		a.Category = notifier.StripEmoji(strings.TrimSpace(a.Category))
 		if err := s.store.SaveAsset(a); err == nil {
 			assetsCount++
 		}
@@ -337,20 +470,33 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 	// 3. Restore Tasks
 	tasksCount := 0
 	for _, t := range backup.Tasks {
-		if strings.TrimSpace(t.ID) == "" || strings.TrimSpace(t.Name) == "" {
+		t.ID = strings.TrimSpace(t.ID)
+		t.Name = notifier.StripEmoji(strings.TrimSpace(t.Name))
+		if t.ID == "" || t.Name == "" {
 			continue
 		}
+		t.Description = notifier.StripEmoji(strings.TrimSpace(t.Description))
 		if err := s.store.SaveTask(t); err == nil {
 			tasksCount++
 		}
 	}
 
-	// 4. Restore Agent Memories (preserve scope, importance, pinned)
+	// 4. Restore Agent Memories (preserve scope, clamped importance, pinned)
 	for _, m := range backup.AgentMemories {
-		if strings.TrimSpace(m.FactKey) == "" || strings.TrimSpace(m.Content) == "" {
+		key := notifier.StripEmoji(strings.TrimSpace(m.FactKey))
+		content := notifier.StripEmoji(strings.TrimSpace(m.Content))
+		if key == "" || content == "" {
 			continue
 		}
-		_ = s.store.SaveAgentMemoryDetailed(m.Scope, m.Category, m.FactKey, m.Content, m.Importance, m.Pinned)
+		scope := notifier.StripEmoji(strings.TrimSpace(m.Scope))
+		if scope == "" {
+			scope = "global"
+		}
+		cat := notifier.StripEmoji(strings.TrimSpace(m.Category))
+		if cat == "" {
+			cat = "general"
+		}
+		_ = s.store.SaveAgentMemoryDetailed(scope, cat, key, content, clampMemoryImportance(m.Importance), m.Pinned)
 	}
 
 	// 5. Restore Custom Skills
@@ -423,10 +569,17 @@ func (s *Server) handleSaveModelPool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "无效模型池请求体")
 		return
 	}
+	for _, entry := range req.Entries {
+		if strings.TrimSpace(entry.BaseURL) != "" && !validateHTTPURL(entry.BaseURL) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("模型池条目 %s 的 Base URL 必须为合法的 http/https 地址", entry.Name))
+			return
+		}
+	}
 	if err := s.store.SaveModelPool(req.Entries); err != nil {
 		writeError(w, http.StatusInternalServerError, "保存免费模型池失败: "+err.Error())
 		return
 	}
+	s.publishAssistantEvent("model_health")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":         true,
 		"model_pool": store.MaskModelPool(s.store.GetModelPool()),

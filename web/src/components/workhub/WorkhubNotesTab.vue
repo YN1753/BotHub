@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
 import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../../utils/markdown'
@@ -21,6 +21,25 @@ const draftNoteContent = ref('')
 const draftNotePinned = ref(false)
 const savingNote = ref(false)
 const noteTitleRef = ref<HTMLInputElement | null>(null)
+
+watch(
+  () => store.state.pendingNoteId,
+  (targetId) => {
+    if (!targetId) return
+    noteSearch.value = ''
+    selectedNoteId.value = targetId
+    editingNote.value = false
+    store.state.pendingNoteId = ''
+  },
+  { immediate: true }
+)
+
+function handleNoteSearchEscape(e: KeyboardEvent) {
+  if (!noteSearch.value.trim()) return
+  e.preventDefault()
+  e.stopPropagation()
+  noteSearch.value = ''
+}
 
 const filteredNotes = computed(() => {
   const q = noteSearch.value.trim().toLowerCase()
@@ -90,7 +109,7 @@ async function handleSaveNote() {
     }
     editingNote.value = false
     selectedNoteId.value = saved.id
-    await store.loadDashboard(false)
+    await store.refreshWorkspaceSlices(['notes'])
     store.notify('工作文档已保存')
   } catch (err: any) {
     store.notify(err.message || '保存文档失败')
@@ -105,7 +124,7 @@ async function removeNote(id: string) {
     await BotHubApi.deleteNote(id)
     if (selectedNoteId.value === id) selectedNoteId.value = ''
     editingNote.value = false
-    await store.loadDashboard(false)
+    await store.refreshWorkspaceSlices(['notes'])
     store.notify('工作文档已删除')
   } catch (err: any) {
     store.notify(err.message || '删除文档失败')
@@ -158,7 +177,7 @@ async function refineNoteWithBot(n: WorkNote) {
           type="search"
           aria-label="搜索文档"
           placeholder="搜索文档..."
-          @keydown.escape.stop="noteSearch = ''"
+          @keydown.escape="handleNoteSearchEscape"
           class="flex-1 min-w-0 min-h-[34px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white"
         />
         <button

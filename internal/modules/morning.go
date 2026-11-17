@@ -159,6 +159,9 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 		title = fmt.Sprintf("%s · %s %s %.0f~%.0f°C", taskName, dateStr, w.City, w.MinTemp, w.MaxTemp)
 	}
 
+	if m.push == nil {
+		return RunResult{Summary: fmt.Sprintf("已生成 %s（城市: %s, 日期: %s）", taskName, city, dateStr)}, nil
+	}
 	if err := m.push.SendMarkdown(ctx, task.ID, title, sb.String()); err != nil {
 		return RunResult{Summary: "推送失败: " + err.Error()}, err
 	}
@@ -308,7 +311,7 @@ func (m *MorningModule) fetchWeatherWttrIn(ctx context.Context, city string) (we
 	}
 	cond := "晴朗/多云"
 	if len(curr.WeatherDesc) > 0 && curr.WeatherDesc[0].Value != "" {
-		cond = curr.WeatherDesc[0].Value
+		cond = notifier.StripEmoji(strings.TrimSpace(curr.WeatherDesc[0].Value))
 	}
 
 	return weatherInfo{

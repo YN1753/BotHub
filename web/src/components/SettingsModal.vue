@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, watch, defineAsyncComponent } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
+import { lazyPanelChunk } from '../utils/lazyComponent'
 import type { ModelPoolEntry, UpstreamModelCheck } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 
-const SettingsSecurityTab = defineAsyncComponent(() => import('./settings/SettingsSecurityTab.vue'))
-const ModelPoolSection = defineAsyncComponent(() => import('./settings/ModelPoolSection.vue'))
+const SettingsSecurityTab = lazyPanelChunk(() => import('./settings/SettingsSecurityTab.vue'))
+const ModelPoolSection = lazyPanelChunk(() => import('./settings/ModelPoolSection.vue'))
 
 const store = useAppStore()
 const activeTab = ref<'ai' | 'push' | 'integrations' | 'security'>('ai')

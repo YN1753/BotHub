@@ -81,7 +81,7 @@ const hasProfileChanges = computed(() => {
   const parseSorted = (raw?: string) => {
     try {
       const a = JSON.parse(raw || '[]')
-      return Array.isArray(a) ? [...a].sort().join(',') : ''
+      return Array.isArray(a) ? a.toSorted().join(',') : ''
     } catch {
       return ''
     }
@@ -97,9 +97,9 @@ const hasProfileChanges = computed(() => {
     cfgMemoryPolicy.value !== normPolicy ||
     cfgTraits.value.trim() !== (b.traits || '').trim() ||
     cfgGroupMode.value !== (b.group_mode || 'smart') ||
-    [...cfgTools.value].sort().join(',') !== parseSorted(b.allowed_tools) ||
-    [...cfgSkillIds.value].sort().join(',') !== parseSorted(b.skill_ids) ||
-    [...cfgMembers.value].sort().join(',') !== parseSorted(b.member_ids)
+    cfgTools.value.toSorted().join(',') !== parseSorted(b.allowed_tools) ||
+    cfgSkillIds.value.toSorted().join(',') !== parseSorted(b.skill_ids) ||
+    cfgMembers.value.toSorted().join(',') !== parseSorted(b.member_ids)
   )
 })
 

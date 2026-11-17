@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -307,5 +308,26 @@ func TestBuiltinToolsExecution(t *testing.T) {
 	})
 	if strings.Contains(sysPrompt, "[] :") || !strings.Contains(sysPrompt, "[infra] region: tokyo") {
 		t.Fatalf("unexpected BuildSystemPrompt memory output: %s", sysPrompt)
+	}
+
+	// 9. Verify SSRF IP guard blocks Tailscale/CGNAT, benchmark, and loopback while allowing public IPs
+	for _, blocked := range []string{"127.0.0.1", "10.0.0.5", "100.64.0.1", "100.127.255.254", "198.18.0.1", "0.0.0.0", "::1"} {
+		if !isPrivateOrLoopbackIP(net.ParseIP(blocked)) {
+			t.Fatalf("expected IP %s to be blocked by SSRF guard", blocked)
+		}
+	}
+	for _, allowed := range []string{"8.8.8.8", "1.1.1.1", "100.128.0.1"} {
+		if isPrivateOrLoopbackIP(net.ParseIP(allowed)) {
+			t.Fatalf("expected public IP %s to be allowed", allowed)
+		}
+	}
+
+	// 10. Verify toolManageMemory pin matches normalized fact keys & clamps importance
+	if _, err := eng.ExecuteTool(context.Background(), "remember_fact", `{"fact_key":"primary_vps","content":"RackNerd"}`); err != nil {
+		t.Fatalf("remember_fact failed: %v", err)
+	}
+	pinOut, err := eng.ExecuteTool(context.Background(), "manage_memory", `{"action":"pin","fact_key":" Primary VPS ","importance":9,"pinned":true}`)
+	if err != nil || !strings.Contains(pinOut, `"fact_key":"primary_vps"`) {
+		t.Fatalf("expected manage_memory pin to resolve normalized key, out=%s err=%v", pinOut, err)
 	}
 }

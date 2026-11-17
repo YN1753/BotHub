@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
+import { lazyPanelChunk } from '../utils/lazyComponent'
 import type { TodoItem, WorkspaceBriefing } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 
-const WorkhubBriefingTab = defineAsyncComponent(() => import('./workhub/WorkhubBriefingTab.vue'))
-const WorkhubNotesTab = defineAsyncComponent(() => import('./workhub/WorkhubNotesTab.vue'))
+const WorkhubBriefingTab = lazyPanelChunk(() => import('./workhub/WorkhubBriefingTab.vue'))
+const WorkhubNotesTab = lazyPanelChunk(() => import('./workhub/WorkhubNotesTab.vue'))
 
 const store = useAppStore()
 

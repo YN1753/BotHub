@@ -11,10 +11,13 @@ import {
   csvEscapeCell,
   groupModeLabel,
   summarizeAssetsMonthlyCost,
+  scoreOmnisearchMatch,
 } from '../src/utils/format.ts'
 import { formatToolDisplayName, groupAvailableTools } from '../src/utils/toolMeta.ts'
 import { parseAvatarStyle, composeAvatarStyle, resolveGroupMemberBots } from '../src/utils/botLook.ts'
 import { renderSafeMarkdown } from '../src/utils/markdown.ts'
+import { shouldReloadOnPreloadError, installPreloadErrorRecovery } from '../src/utils/lazyComponent.ts'
+import { isImeComposingEnter, isPointOutsideRect } from '../src/utils/topLayer.ts'
 
 test('format utilities produce expected strings', () => {
   assert.equal(formatDurationMs(420), '420ms')
@@ -45,6 +48,20 @@ test('format utilities produce expected strings', () => {
     ]),
     '$6/月 + ¥30/月'
   )
+})
+
+test('scoreOmnisearchMatch ranks exact, prefix, title, subtitle and body hits', () => {
+  const exact = scoreOmnisearchMatch('VPS', 'Asset', '资产', '', 'vps')
+  const prefix = scoreOmnisearchMatch('VPS HongKong', 'Asset', '资产', '', 'vps')
+  const subTitle = scoreOmnisearchMatch('My Server', 'VPS HongKong', '资产', '', 'vps')
+  const bodyOnly = scoreOmnisearchMatch('Quarterly Note', 'deliverable', '文档', 'Renew VPS next week', 'vps')
+  const none = scoreOmnisearchMatch('Quarterly Note', 'deliverable', '文档', 'Nothing here', 'vps')
+
+  assert.equal(exact > prefix, true)
+  assert.equal(prefix > subTitle, true)
+  assert.equal(subTitle > bodyOnly, true)
+  assert.equal(bodyOnly > 0, true)
+  assert.equal(none, 0)
 })
 
 test('toolMeta groups and formats builtin & skill names cleanly', () => {
@@ -103,4 +120,52 @@ test('renderSafeMarkdown sanitizes XSS and renders structured blocks', () => {
   assert.match(rich, /<table>/)
   assert.match(rich, /<blockquote>/)
   assert.match(rich, /md-copy-code-btn/)
+})
+
+test('preload error recovery guards against reload loops and storage exceptions', () => {
+  assert.equal(shouldReloadOnPreloadError(25_000, 10_000, 10_000), true)
+  assert.equal(shouldReloadOnPreloadError(18_000, 10_000, 10_000), false)
+
+  let reloadCount = 0
+  let listener: ((ev: any) => void) | null = null
+  const mockWin = {
+    addEventListener(type: string, fn: (ev: any) => void) {
+      if (type === 'vite:preloadError') listener = fn
+    },
+    sessionStorage: {
+      getItem() {
+        throw new Error('Private browsing SecurityError')
+      },
+      setItem() {
+        throw new Error('Private browsing SecurityError')
+      },
+    },
+    location: {
+      reload() {
+        reloadCount += 1
+      },
+    },
+  } as unknown as Window
+
+  installPreloadErrorRecovery(mockWin)
+  assert.equal(typeof listener, 'function')
+
+  let prevented = 0
+  listener!({ preventDefault: () => { prevented += 1 } })
+  listener!({ preventDefault: () => { prevented += 1 } })
+
+  assert.equal(prevented, 2)
+  assert.equal(reloadCount, 1)
+})
+
+test('topLayer IME and hit-test helpers handle edge cases accurately', () => {
+  assert.equal(isImeComposingEnter({ isComposing: true, keyCode: 13, timeStamp: 100 } as KeyboardEvent, null), true)
+  assert.equal(isImeComposingEnter({ isComposing: false, keyCode: 229, timeStamp: 100 } as KeyboardEvent, null), true)
+  assert.equal(isImeComposingEnter({ isComposing: false, keyCode: 13, timeStamp: 120 } as KeyboardEvent, 95), true)
+  assert.equal(isImeComposingEnter({ isComposing: false, keyCode: 13, timeStamp: 200 } as KeyboardEvent, 95), false)
+
+  const rect = { left: 10, top: 20, right: 110, bottom: 120 } as DOMRect
+  assert.equal(isPointOutsideRect(50, 50, rect), false)
+  assert.equal(isPointOutsideRect(5, 50, rect), true)
+  assert.equal(isPointOutsideRect(50, 125, rect), true)
 })

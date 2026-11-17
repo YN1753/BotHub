@@ -4,28 +4,15 @@ import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import type { Skill, SkillParamField } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
-import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
+import SkillWebhookBuilder, { type HeaderRowItem } from './skills/SkillWebhookBuilder.vue'
+import SkillTestBench from './skills/SkillTestBench.vue'
 
 const store = useAppStore()
 
 const KIND_TABS = [
   { id: 'prompt', label: '行为规范 / Playbook' },
   { id: 'webhook', label: 'API / Webhook 工具' },
-]
-
-const METHOD_OPTIONS = [
-  { value: 'GET', label: 'GET' },
-  { value: 'POST', label: 'POST' },
-  { value: 'PUT', label: 'PUT' },
-  { value: 'PATCH', label: 'PATCH' },
-  { value: 'DELETE', label: 'DELETE' },
-]
-
-const PARAM_TYPE_OPTIONS = [
-  { value: 'string', label: '文本 (string)' },
-  { value: 'integer', label: '整数 (integer)' },
-  { value: 'boolean', label: '布尔 (boolean)' },
 ]
 
 const editingId = ref<string | null>(null)
@@ -36,17 +23,12 @@ const description = ref('')
 const instruction = ref('')
 const httpMethod = ref('GET')
 const httpUrl = ref('')
-const headerRows = ref<Array<{ key: string; value: string }>>([])
+const headerRows = ref<HeaderRowItem[]>([])
 const paramRows = ref<SkillParamField[]>([])
 const enabled = ref(true)
 const saving = ref(false)
 
-// Live test state for webhook skills (remembers last test args per skill)
 const testSkillTarget = ref<Skill | null>(null)
-const testArgs = ref<Record<string, string>>({})
-const lastTestArgsBySkill = ref<Record<string, Record<string, string>>>({})
-const testing = ref(false)
-const testResult = ref<{ statusCode?: number; latencyMs?: number; output: string; error?: string } | null>(null)
 
 function applyWebhookTemplate(mode: 'get' | 'post') {
   kind.value = 'webhook'
@@ -144,22 +126,6 @@ function cloneSkillToForm(sk: Skill) {
   slug.value = `${sk.slug}_copy`
 }
 
-function addHeaderRow() {
-  headerRows.value.push({ key: '', value: '' })
-}
-
-function removeHeaderRow(idx: number) {
-  headerRows.value.splice(idx, 1)
-}
-
-function addParamRow() {
-  paramRows.value.push({ key: '', type: 'string', description: '', required: false, default: '' })
-}
-
-function removeParamRow(idx: number) {
-  paramRows.value.splice(idx, 1)
-}
-
 function buildPayload(): Partial<Skill> {
   const headersObj: Record<string, string> = {}
   for (const h of headerRows.value) {
@@ -207,7 +173,7 @@ async function handleSave() {
       store.notify(`已创建技能「${payload.name}」`)
     }
     resetForm()
-    await store.loadDashboard(false)
+    await store.refreshWorkspaceSlices(['skills'])
   } catch (err: any) {
     store.notify(err.message || '保存技能失败')
   } finally {
@@ -218,7 +184,7 @@ async function handleSave() {
 async function toggleSkillEnabled(sk: Skill) {
   try {
     await BotHubApi.updateSkill(sk.id, { enabled: !sk.enabled })
-    await store.loadDashboard(false)
+    await store.refreshWorkspaceSlices(['skills'])
     store.notify(!sk.enabled ? `已启用技能「${sk.name}」` : `已停用技能「${sk.name}」`)
   } catch (err: any) {
     store.notify(err.message || '切换技能状态失败')
@@ -231,92 +197,11 @@ async function handleDelete(sk: Skill) {
     if (editingId.value === sk.id) resetForm()
     if (testSkillTarget.value?.id === sk.id) {
       testSkillTarget.value = null
-      testResult.value = null
     }
-    await store.loadDashboard(false)
+    await store.refreshWorkspaceSlices(['skills'])
     store.notify(`已删除技能「${sk.name}」`)
   } catch (err: any) {
     store.notify(err.message || '删除技能失败')
-  }
-}
-
-function openTestPanel(sk: Skill) {
-  if (testSkillTarget.value) {
-    lastTestArgsBySkill.value[testSkillTarget.value.id] = { ...testArgs.value }
-  }
-  testSkillTarget.value = sk
-  testResult.value = null
-  const initArgs: Record<string, string> = {}
-  const prevSaved = lastTestArgsBySkill.value[sk.id] || {}
-  try {
-    const arr = JSON.parse(sk.params_schema || '[]')
-    if (Array.isArray(arr)) {
-      arr.forEach((f: any) => {
-        if (f?.key) {
-          const k = String(f.key)
-          initArgs[k] = k in prevSaved ? prevSaved[k] : String(f.default || '')
-        }
-      })
-    }
-  } catch {
-    // ignore
-  }
-  testArgs.value = initArgs
-}
-
-function formatTestOutput(raw: string): string {
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2)
-  } catch {
-    return raw
-  }
-}
-
-async function copyTestOutput(raw: string) {
-  try {
-    await navigator.clipboard.writeText(formatTestOutput(raw))
-    store.notify('已复制响应内容')
-  } catch {
-    store.notify('复制失败')
-  }
-}
-
-async function runLiveTest() {
-  if (!testSkillTarget.value || testing.value) return
-  testing.value = true
-  testResult.value = null
-  try {
-    const typedArgs: Record<string, any> = {}
-    let schemaList: SkillParamField[] = []
-    try {
-      schemaList = JSON.parse(testSkillTarget.value.params_schema || '[]')
-    } catch {
-      schemaList = []
-    }
-    const typeMap = new Map(schemaList.map((f) => [f.key, f.type]))
-    for (const [k, rawVal] of Object.entries(testArgs.value)) {
-      const ftype = typeMap.get(k) || 'string'
-      if (ftype === 'integer') {
-        typedArgs[k] = Number.parseInt(rawVal || '0', 10) || 0
-      } else if (ftype === 'boolean') {
-        typedArgs[k] = rawVal.trim().toLowerCase() === 'true' || rawVal.trim() === '1'
-      } else {
-        typedArgs[k] = rawVal
-      }
-    }
-    const res = await BotHubApi.testSkill(testSkillTarget.value.id, typedArgs)
-    testResult.value = {
-      statusCode: res.status_code,
-      latencyMs: res.latency_ms,
-      output: typeof res.result === 'string' ? res.result : JSON.stringify(res.result, null, 2),
-    }
-  } catch (err: any) {
-    testResult.value = {
-      output: '',
-      error: err.message || '调用测试失败',
-    }
-  } finally {
-    testing.value = false
   }
 }
 
@@ -329,7 +214,6 @@ watch(
   (open) => {
     if (!open) {
       testSkillTarget.value = null
-      testResult.value = null
     }
   }
 )
@@ -404,176 +288,20 @@ watch(
             v-model="instruction"
             rows="4"
             placeholder="写入具体的工作流步骤、说话风格、输出要求或判断原则；挂载后将注入该 Bot 的能力上下文。"
-            class="rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-xs text-white focus:border-[#f2b880]/60 leading-relaxed"
+            class="auto-size-textarea rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-xs text-white focus:border-[#f2b880]/60 leading-relaxed"
           />
         </label>
 
         <!-- Webhook / API Tool Builder -->
-        <template v-else>
-          <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
-            <span class="text-slate-500">快速脚手架:</span>
-            <button
-              type="button"
-              @click="applyWebhookTemplate('get')"
-              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-cyan-400/45 hover:text-cyan-200 cursor-pointer"
-            >
-              GET 查询模板
-            </button>
-            <button
-              type="button"
-              @click="applyWebhookTemplate('post')"
-              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
-            >
-              POST JSON 模板
-            </button>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <div class="flex flex-col gap-1 text-xs text-slate-300">
-              <span>请求方法</span>
-              <CustomSelect v-model="httpMethod" :options="METHOD_OPTIONS" aria-label="请求方法" />
-            </div>
-            <label class="sm:col-span-2 flex flex-col gap-1 text-xs text-slate-300">
-              <span>Endpoint URL (支持 <code class="text-[#f2b880]">&#123;&#123;key&#125;&#125;</code> 参数插值)</span>
-              <input
-                v-model="httpUrl"
-                type="url"
-                placeholder="https://api.example.com/v1/item?q={{query}}"
-                required
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
-              />
-              <div v-if="paramRows.some((p) => p.key.trim())" class="flex items-center gap-1 flex-wrap text-[10.5px]">
-                <span class="text-slate-500">插入变量:</span>
-                <button
-                  v-for="pk in paramRows.map((p) => p.key.trim()).filter(Boolean)"
-                  :key="pk"
-                  type="button"
-                  @click="httpUrl = `${httpUrl}{{${pk}}}`"
-                  class="px-1.5 py-0.5 rounded border border-[#fff8ee]/12 bg-[#050811] font-mono text-[#f2b880] hover:border-[#f2b880]/45 cursor-pointer"
-                >
-                  &#123;&#123;{{ pk }}&#125;&#125;
-                </button>
-              </div>
-            </label>
-          </div>
-
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
-            <span v-if="httpMethod === 'GET'">补充调用说明 (可选)</span>
-            <span v-else>Body 请求模板 (支持 <code class="text-[#f2b880]">&#123;&#123;key&#125;&#125;</code> 插值或留空自动传 JSON)</span>
-            <textarea
-              v-model="instruction"
-              rows="3"
-              :placeholder="
-                httpMethod === 'GET'
-                  ? '给模型的参数提示，例如：city 建议传英文城市名'
-                  : '{&quot;target&quot;: &quot;{{target}}&quot;, &quot;note&quot;: &quot;{{note}}&quot;}'
-              "
-              class="rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-[11.5px] text-white focus:border-[#f2b880]/60"
-            />
-          </label>
-
-          <!-- Dynamic Parameter Schema -->
-          <div class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-2.5 flex flex-col gap-2">
-            <div class="flex items-center justify-between">
-              <span class="text-[11px] font-medium text-slate-300">输入参数定义 (编译为 Function Calling Schema)</span>
-              <button
-                type="button"
-                @click="addParamRow"
-                class="text-[11px] text-[#f2b880] hover:underline cursor-pointer"
-              >
-                + 添加参数
-              </button>
-            </div>
-            <div v-if="paramRows.length === 0" class="text-[11px] text-slate-500">
-              无入参；若 URL/Body 中包含插值变量，请在这里声明参数名。
-            </div>
-            <div
-              v-for="(p, idx) in paramRows"
-              :key="idx"
-              class="grid grid-cols-1 sm:grid-cols-12 gap-1.5 items-center"
-            >
-              <input
-                v-model="p.key"
-                type="text"
-                placeholder="参数名 key"
-                class="sm:col-span-3 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 font-mono text-[11px] text-white"
-              />
-              <div class="sm:col-span-2">
-                <CustomSelect v-model="p.type" :options="PARAM_TYPE_OPTIONS" aria-label="参数类型" />
-              </div>
-              <input
-                v-model="p.description"
-                type="text"
-                placeholder="参数说明"
-                class="sm:col-span-3 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 text-[11px] text-white"
-              />
-              <input
-                v-model="p.default"
-                type="text"
-                placeholder="默认值(可选)"
-                class="sm:col-span-2 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 font-mono text-[11px] text-white"
-              />
-              <div class="sm:col-span-2 flex items-center justify-between gap-1">
-                <label class="inline-flex items-center gap-1 text-[10.5px] text-slate-400 cursor-pointer">
-                  <input v-model="p.required" type="checkbox" class="accent-[#f2b880]" />
-                  <span>必填</span>
-                </label>
-                <button
-                  type="button"
-                  @click="removeParamRow(idx)"
-                  class="text-[11px] text-rose-400 hover:text-rose-300 cursor-pointer"
-                >
-                  删
-                </button>
-              </div>
-            </div>
-            <div v-if="paramRows.length > 0" class="hidden sm:grid sm:grid-cols-12 gap-1.5 text-[10px] text-slate-500 px-0.5">
-              <span class="col-span-3">参数键名</span>
-              <span class="col-span-2">类型</span>
-              <span class="col-span-3">语义描述</span>
-              <span class="col-span-2">默认值</span>
-              <span class="col-span-2">操作</span>
-            </div>
-          </div>
-
-          <!-- Custom Headers -->
-          <div class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-2.5 flex flex-col gap-2">
-            <div class="flex items-center justify-between">
-              <span class="text-[11px] font-medium text-slate-300">请求头 Headers (可选)</span>
-              <button
-                type="button"
-                @click="addHeaderRow"
-                class="text-[11px] text-[#f2b880] hover:underline cursor-pointer"
-              >
-                + 添加请求头
-              </button>
-            </div>
-            <div
-              v-for="(h, idx) in headerRows"
-              :key="idx"
-              class="grid grid-cols-12 gap-1.5 items-center"
-            >
-              <input
-                v-model="h.key"
-                type="text"
-                placeholder="Header 名 (如 Authorization)"
-                class="col-span-5 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 font-mono text-[11px] text-white"
-              />
-              <input
-                v-model="h.value"
-                type="text"
-                placeholder="Header 值 (如 Bearer xxx)"
-                class="col-span-6 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 font-mono text-[11px] text-white"
-              />
-              <button
-                type="button"
-                @click="removeHeaderRow(idx)"
-                class="col-span-1 text-[11px] text-rose-400 hover:text-rose-300 cursor-pointer text-right"
-              >
-                删
-              </button>
-            </div>
-          </div>
-        </template>
+        <SkillWebhookBuilder
+          v-else
+          v-model:http-method="httpMethod"
+          v-model:http-url="httpUrl"
+          v-model:instruction="instruction"
+          v-model:param-rows="paramRows"
+          v-model:header-rows="headerRows"
+          @apply-template="applyWebhookTemplate"
+        />
 
         <div class="flex items-center justify-between pt-1">
           <label class="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
@@ -604,7 +332,7 @@ watch(
             type="search"
             aria-label="筛选技能"
             placeholder="搜索技能名称、slug 或描述..."
-            @keydown.escape.stop="skillSearch = ''"
+            @keydown.escape="skillSearch.trim() ? ($event.preventDefault(), $event.stopPropagation(), skillSearch = '') : undefined"
             class="w-full min-h-[34px] rounded-lg border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
           />
 
@@ -658,7 +386,7 @@ watch(
               <button
                 v-if="sk.kind === 'webhook'"
                 type="button"
-                @click="openTestPanel(sk)"
+                @click="testSkillTarget = sk"
                 class="px-2.5 py-1 rounded-lg border border-cyan-400/35 text-[11px] text-cyan-300 hover:bg-cyan-500/15 cursor-pointer"
               >
                 实时调试
@@ -696,64 +424,11 @@ watch(
         </div>
 
         <!-- Webhook Live Test Box -->
-        <div
+        <SkillTestBench
           v-if="testSkillTarget"
-          class="rounded-xl border border-cyan-400/30 bg-[#060914] p-4 flex flex-col gap-2.5"
-        >
-          <div class="flex items-center justify-between">
-            <h4 class="text-xs font-semibold text-cyan-200">
-              实时调试工具: skill_{{ testSkillTarget.slug }}
-            </h4>
-            <button
-              type="button"
-              @click="testSkillTarget = null"
-              class="text-[11px] text-slate-400 hover:text-white cursor-pointer"
-            >
-              收起
-            </button>
-          </div>
-          <div v-if="Object.keys(testArgs).length > 0" class="flex flex-col gap-2">
-            <label
-              v-for="k in Object.keys(testArgs)"
-              :key="k"
-              class="flex flex-col gap-1 text-[11px] text-slate-300"
-            >
-              <span class="font-mono text-cyan-300">{{ k }}</span>
-              <input
-                v-model="testArgs[k]"
-                type="text"
-                placeholder="输入测试参数值"
-                class="min-h-[34px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white"
-              />
-            </label>
-          </div>
-          <button
-            type="button"
-            :disabled="testing"
-            @click="runLiveTest"
-            class="min-h-[36px] px-3 py-1.5 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-xs font-medium text-cyan-200 hover:bg-cyan-500/30 cursor-pointer disabled:opacity-50"
-          >
-            {{ testing ? '正在请求远端接口...' : '发送测试请求' }}
-          </button>
-          <div v-if="testResult" class="rounded-lg bg-[#050811] border border-[#fff8ee]/10 p-2.5 text-[11px] font-mono">
-            <div v-if="testResult.error" class="text-rose-300">{{ testResult.error }}</div>
-            <template v-else>
-              <div class="flex items-center justify-between gap-2 mb-1">
-                <span class="text-emerald-300">
-                  HTTP {{ testResult.statusCode || 200 }} · {{ testResult.latencyMs }}ms
-                </span>
-                <button
-                  type="button"
-                  @click="copyTestOutput(testResult.output)"
-                  class="px-2 py-0.5 rounded border border-[#fff8ee]/12 text-[10px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
-                >
-                  复制响应
-                </button>
-              </div>
-              <pre class="whitespace-pre-wrap break-all text-slate-300 max-h-48 overflow-y-auto">{{ formatTestOutput(testResult.output) }}</pre>
-            </template>
-          </div>
-        </div>
+          :skill="testSkillTarget"
+          @close="testSkillTarget = null"
+        />
       </div>
     </div>
   </BaseModal>

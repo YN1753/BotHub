@@ -208,9 +208,14 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("未配置轻量模型、免费模型池或主力 API Key")
 	}
+	candidates = e.health.prioritizeHealthy(candidates)
 
 	var lastErr error
 	for _, target := range candidates {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		turnStart := time.Now()
 		reqCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		bodyMap := map[string]any{
 			"model":  target.Model,
@@ -245,6 +250,9 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 		resp, err := e.httpClient.Do(req)
 		if err != nil {
 			cancel()
+			if ctx.Err() == nil {
+				e.health.recordFailure(target.ID, err.Error(), false)
+			}
 			lastErr = err
 			continue
 		}
@@ -253,7 +261,9 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 		cancel()
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			lastErr = fmt.Errorf("%s HTTP %d: %s", target.Label, resp.StatusCode, strings.TrimSpace(string(rawBytes)))
+			errMsg := fmt.Sprintf("%s HTTP %d: %s", target.Label, resp.StatusCode, strings.TrimSpace(string(rawBytes)))
+			e.health.recordFailure(target.ID, errMsg, resp.StatusCode == http.StatusTooManyRequests)
+			lastErr = fmt.Errorf("%s", errMsg)
 			continue
 		}
 
@@ -265,9 +275,11 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 			} `json:"choices"`
 		}
 		if err := json.Unmarshal(rawBytes, &parsed); err != nil || len(parsed.Choices) == 0 {
+			e.health.recordFailure(target.ID, "解析响应失败", false)
 			lastErr = fmt.Errorf("%s 解析响应失败", target.Label)
 			continue
 		}
+		e.health.recordSuccess(target.ID, time.Since(turnStart).Milliseconds())
 		return notifier.StripEmoji(strings.TrimSpace(parsed.Choices[0].Message.Content)), nil
 	}
 
@@ -831,6 +843,9 @@ func (e *Engine) streamRoundWithFailover(
 			e.health.recordSuccess(target.ID, time.Since(turnStart).Milliseconds())
 			return rReasoning, rContent, tcs, usage, target, nil
 		}
+		if ctx.Err() != nil {
+			return "", "", nil, nil, target, err
+		}
 		lastErr = err
 		lowerMsg := strings.ToLower(err.Error())
 		is429 := strings.Contains(err.Error(), "(429)") || strings.Contains(lowerMsg, "rate")
@@ -839,10 +854,10 @@ func (e *Engine) streamRoundWithFailover(
 			e.health.recordFailure(target.ID, err.Error(), is429)
 			return "", "", nil, nil, target, err
 		}
-		if len(targets) > 1 || idx > 0 {
+		if len(targets) > 1 || idx > 0 || isTransient {
 			e.health.recordFailure(target.ID, err.Error(), is429)
 		}
-		if emittedAny || ctx.Err() != nil {
+		if emittedAny {
 			return "", "", nil, nil, target, err
 		}
 	}

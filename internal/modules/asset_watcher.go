@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -72,11 +73,18 @@ func (w *AssetWatcherModule) RunWithTask(ctx context.Context, task store.Task) (
 	var noticeAssets []store.Asset
 	nowDateStr := time.Now().In(ShanghaiLocation()).Format("2006-01-02")
 	syncedCount := 0
+	sem := make(chan struct{}, 6)
 
 	for _, a := range assets {
 		wg.Add(1)
 		go func(asset store.Asset) {
 			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
 			updated := w.syncSingleAsset(ctx, &asset)
 			mu.Lock()
 			if updated {
@@ -93,9 +101,19 @@ func (w *AssetWatcherModule) RunWithTask(ctx context.Context, task store.Task) (
 		}(a)
 	}
 	wg.Wait()
+	if ctx.Err() != nil {
+		return RunResult{Summary: "巡检已取消"}, ctx.Err()
+	}
+
+	sort.Slice(noticeAssets, func(i, j int) bool {
+		if noticeAssets[i].DaysLeft != noticeAssets[j].DaysLeft {
+			return noticeAssets[i].DaysLeft < noticeAssets[j].DaysLeft
+		}
+		return noticeAssets[i].ID < noticeAssets[j].ID
+	})
 
 	itemsPushed := 0
-	if len(noticeAssets) > 0 {
+	if len(noticeAssets) > 0 && w.push != nil {
 		if err := w.dispatchNotice(ctx, task.ID, noticeAssets, nowDateStr); err == nil {
 			itemsPushed = len(noticeAssets)
 			warnSeen := make([]store.SeenItem, 0, len(noticeAssets))

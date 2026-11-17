@@ -19,15 +19,34 @@ func TestHubPubSubDropAndClose(t *testing.T) {
 		t.Fatal("expected published event in subscriber channel")
 	}
 
-	// Fill channel buffer so slow-consumer drop counter increments deterministically
+	// Fill channel buffer so slow-consumer drop counter increments and latest event is retained
 	for i := 0; i < 200; i++ {
 		hub.PublishEvent("burst", i)
 	}
 	if hub.DroppedCount() == 0 {
 		t.Fatal("expected non-zero dropped events on full subscriber buffer")
 	}
+	var lastVal int
+	for len(ch) > 0 {
+		ev := <-ch
+		lastVal, _ = ev.Data.(int)
+	}
+	if lastVal != 199 {
+		t.Fatalf("expected oldest-eviction to retain latest event 199, got %d", lastVal)
+	}
 
-	unsub()
+	// KickSubscribers disconnects active subscribers without permanently closing Hub
+	hub.KickSubscribers()
+	if _, ok := <-ch; ok {
+		t.Fatal("expected subscriber channel closed after KickSubscribers")
+	}
+	unsub() // idempotent after kick
+	ch2, unsub2 := hub.SubscribeEvents()
+	hub.PublishEvent("post_kick", "alive")
+	if ev := <-ch2; ev.Event != "post_kick" {
+		t.Fatalf("expected Hub to remain usable after KickSubscribers, got %+v", ev)
+	}
+	unsub2()
 	if hub.SubscriberCount() != 0 {
 		t.Fatalf("expected 0 subscribers after unsubscribe, got %d", hub.SubscriberCount())
 	}

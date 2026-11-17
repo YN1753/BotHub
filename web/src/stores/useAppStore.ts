@@ -58,7 +58,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.30.0',
+  version: 'v2.31.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -123,6 +123,7 @@ const state = reactive({
   forwardingMessage: null as { fromName: string; content: string } | null,
   createModalMode: 'bot' as 'bot' | 'group',
   pendingDraftPrompt: '',
+  pendingNoteId: '',
   editingAsset: undefined as Asset | null | undefined, // undefined = closed, null = new
   editingTask: undefined as Task | Partial<Task> | null | undefined,
 
@@ -333,6 +334,14 @@ export function useAppStore() {
     state.authenticated = false
   }
 
+  async function logoutAllOtherDevices() {
+    const res = await BotHubApi.logoutAllDevices(true)
+    stopSSE()
+    startSSE()
+    notify(res.message || '已吊销所有其他已登录设备的访问会话')
+    return res
+  }
+
   let inflightDashboard: Promise<void> | null = null
   let pendingDashboard = false
   let pendingLoadInitial = false
@@ -340,66 +349,90 @@ export function useAppStore() {
   const pendingSliceKinds = new Set<string>()
   let sliceRefreshTimer: number | null = null
 
+  const SLICEABLE_KINDS = new Set([
+    'todos',
+    'notes',
+    'memories',
+    'assets',
+    'tasks',
+    'bots',
+    'skills',
+    'notifications',
+    'push_logs',
+    'stats',
+    'model_health',
+    'workhub',
+    'ops',
+    'agents',
+  ])
+
   async function refreshWorkspaceSlices(kinds: string[]) {
-    const jobs: Promise<void>[] = []
-    for (const kind of kinds) {
-      switch (kind) {
-        case 'todos':
-          jobs.push(
-            BotHubApi.listTodos('all', '').then((res) => {
-              state.todos = res.todos || []
-            })
-          )
-          break
-        case 'notes':
-          jobs.push(
-            BotHubApi.listNotes('', '').then((res) => {
-              state.notes = res.notes || []
-            })
-          )
-          break
-        case 'tasks':
-          jobs.push(
-            BotHubApi.listTasks().then((res) => {
-              state.tasks = res.tasks || []
-            })
-          )
-          break
-        case 'assets':
-          jobs.push(
-            BotHubApi.listAssets().then((res) => {
-              state.assets = res.assets || []
-            })
-          )
-          break
-        case 'memories':
-          jobs.push(
-            BotHubApi.listMemories().then((res) => {
-              state.memories = res.memories || []
-            })
-          )
-          if (state.activeBotId) {
-            const memScope =
-              activeBot.value?.memory_policy === 'isolated'
-                ? `bot:${state.activeBotId}`
-                : `bot:${state.activeBotId},global`
-            jobs.push(
-              BotHubApi.listMemories(memScope).then((res) => {
-                state.botMemories = res.memories || []
-              })
-            )
-          }
-          break
-        case 'notifications_cleared':
-          state.notifications = state.notifications.filter((n) => !n.read_at)
-          break
-        case 'backup_restored':
-        case 'dashboard':
-        default:
-          jobs.push(loadDashboard(false))
-          break
+    const sliceBatch: string[] = []
+    let needFullReload = false
+
+    for (const rawKind of kinds) {
+      const kind = rawKind.trim().toLowerCase()
+      if (!kind) continue
+      if (kind === 'notifications_cleared') {
+        state.notifications = state.notifications.filter((n) => !n.read_at)
+        continue
+      }
+      if (kind === 'backup_restored' || kind === 'dashboard') {
+        needFullReload = true
+        break
+      }
+      if (SLICEABLE_KINDS.has(kind)) {
+        sliceBatch.push(kind)
+      } else {
+        needFullReload = true
+        break
       }
     }
+
+    if (needFullReload) {
+      await loadDashboard(false)
+      return
+    }
+    if (sliceBatch.length === 0) return
+
+    const jobs: Promise<void>[] = [
+      BotHubApi.dashboardSlice(sliceBatch)
+        .then((data) => {
+          if (data.server_now) state.serverNow = data.server_now
+          if (data.todos !== undefined) state.todos = data.todos || []
+          if (data.notes !== undefined) state.notes = data.notes || []
+          if (data.agent_memories !== undefined) state.memories = data.agent_memories || []
+          if (data.assets !== undefined) state.assets = data.assets || []
+          if (data.tasks !== undefined) state.tasks = data.tasks || []
+          if (data.bots !== undefined) {
+            state.bots = data.bots || []
+            if (state.bots.length > 0 && !state.bots.some((b) => b.id === state.activeBotId)) {
+              void selectBot(state.bots[0].id)
+            }
+          }
+          if (data.skills !== undefined) state.skills = data.skills || []
+          if (data.notifications !== undefined) state.notifications = data.notifications || []
+          if (data.push_logs !== undefined) state.pushLogs = data.push_logs || []
+          if (data.stats !== undefined && data.stats) state.stats = data.stats
+          if (data.model_health !== undefined && data.model_health) state.modelHealth = data.model_health
+        })
+        .catch(() => {
+          return loadDashboard(false)
+        }),
+    ]
+
+    if ((sliceBatch.includes('memories') || sliceBatch.includes('workhub')) && state.activeBotId) {
+      const memScope =
+        activeBot.value?.memory_policy === 'isolated'
+          ? `bot:${state.activeBotId}`
+          : `bot:${state.activeBotId},global`
+      jobs.push(
+        BotHubApi.listMemories(memScope).then((res) => {
+          state.botMemories = res.memories || []
+        })
+      )
+    }
+
     await Promise.allSettled(jobs)
   }
 
@@ -601,7 +634,7 @@ export function useAppStore() {
       const res = await BotHubApi.summarizeBotThread(state.activeBotId, tid || 'main', saveToMemory)
       if (res.threads) state.botThreads = res.threads
       if (res.memories) state.botMemories = res.memories
-      await loadDashboard(false)
+      await refreshWorkspaceSlices(['memories'])
       notify(
         res.saved_fact_key
           ? `已生成话题摘要并沉淀为记忆「${res.saved_fact_key}」`
@@ -631,7 +664,7 @@ export function useAppStore() {
       await BotHubApi.updateBot(targetBot.id, { is_pinned: nextPinned })
       targetBot.is_pinned = nextPinned
       notify(nextPinned ? `已置顶「${targetBot.name}」` : `已取消置顶「${targetBot.name}」`)
-      await loadDashboard(false)
+      await refreshWorkspaceSlices(['bots'])
     } catch (err: any) {
       notify(err.message || '更新置顶状态失败')
     }
@@ -851,7 +884,9 @@ export function useAppStore() {
     checkAuth,
     login,
     logout,
+    logoutAllOtherDevices,
     loadDashboard,
+    refreshWorkspaceSlices,
     selectBot,
     refreshActiveBot,
     switchThread,

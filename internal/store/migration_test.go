@@ -52,8 +52,8 @@ CREATE TABLE bots (
 );
 INSERT INTO agent_memories (category, fact_key, content, created_at, updated_at, scope)
 VALUES ('infra', 'primary_vps', 'Tokyo Node', '2026-11-15 10:00:00', '2026-11-15 10:00:00', 'bot:existing');
-INSERT INTO bots (id, name, role_title, system_prompt, created_at, updated_at)
-VALUES ('existing', 'LegacyBot', 'Ops', 'Hello', '2026-11-15 10:00:00', '2026-11-15 10:00:00');
+INSERT INTO bots (id, name, role_title, state, system_prompt, created_at, updated_at)
+VALUES ('existing', 'LegacyBot', 'Ops', 'working', 'Hello', '2026-11-15 10:00:00', '2026-11-15 10:00:00');
 `
 	if _, err := rawDB.Exec(legacySQL); err != nil {
 		rawDB.Close()
@@ -78,7 +78,7 @@ VALUES ('existing', 'LegacyBot', 'Ops', 'Hello', '2026-11-15 10:00:00', '2026-11
 		t.Fatalf("expected 2 migrated/scoped memories, err=%v mems=%+v", err, mems)
 	}
 	bot, err := st.GetBot("existing")
-	if err != nil || bot == nil {
-		t.Fatalf("expected legacy bot to load after migration, err=%v bot=%+v", err, bot)
+	if err != nil || bot == nil || bot.State != "idle" {
+		t.Fatalf("expected legacy bot to load and reset crashed working->idle after migration, err=%v bot=%+v", err, bot)
 	}
 }

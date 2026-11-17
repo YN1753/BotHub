@@ -82,6 +82,7 @@ func (s *Server) handleV2RotateAppToken(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "保存新 Token 失败")
 		return
 	}
+	s.KickPushSubscribers()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
 		"token":   generated,
@@ -296,9 +297,9 @@ func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rawBody, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
+	rawBody, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64*1024))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "读取请求体失败")
+		writeError(w, http.StatusRequestEntityTooLarge, "Webhook 请求体超过 64KB 限制或读取失败")
 		return
 	}
 

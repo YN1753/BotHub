@@ -294,8 +294,38 @@ func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
 	}
 
 	snap := eng.GetModelHealth()
-	if snap["pool:google_ai_studio"].CooldownSec <= 0 || snap["pool:siliconflow_free"].SuccessCount != 2 {
+	if snap["pool:google_ai_studio"].CooldownSec <= 0 || snap["pool:google_ai_studio"].Status != "cooling_down" || snap["pool:siliconflow_free"].SuccessCount != 2 || snap["pool:siliconflow_free"].Status != "healthy" {
 		t.Fatalf("unexpected health snapshot: %+v", snap)
+	}
+
+	// Verify CallLightModel also skips cooled google_ai_studio and records health telemetry
+	s2Light := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hitCounts["sf_light"]++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"轻量摘要结果"}}]}`))
+	}))
+	defer s2Light.Close()
+	_ = st.SaveModelPool([]store.ModelPoolEntry{
+		{ID: "google_ai_studio", Name: "Google AI Studio", Provider: "google", BaseURL: s1.URL, APIKey: "AIzaTestKey", Model: "gemini-2.5-flash", Enabled: true, Priority: 10},
+		{ID: "siliconflow_free", Name: "硅基流动", Provider: "siliconflow", BaseURL: s2Light.URL, APIKey: "sk-sf-key", Model: "Qwen/Qwen2.5-7B-Instruct", Enabled: true, Priority: 20},
+	})
+	lightReply, lightErr := eng.CallLightModel(context.Background(), "摘要助手", "测试输入")
+	if lightErr != nil || lightReply != "轻量摘要结果" {
+		t.Fatalf("CallLightModel failed: err=%v reply=%q", lightErr, lightReply)
+	}
+	if hitCounts["google"] != 1 || hitCounts["sf_light"] != 1 {
+		t.Fatalf("expected CallLightModel to bypass cooled google_ai_studio and hit sf_light once, got %+v", hitCounts)
+	}
+
+	// Verify primary cooldown deprioritizes primary behind healthy pool fallback while retaining primary at tail
+	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "sk-primary-key")
+	eng.health.recordFailure("primary", "HTTP 429 rate limited", true)
+	targets, rErr := eng.ResolveChatTargets("")
+	if rErr != nil || len(targets) < 2 {
+		t.Fatalf("ResolveChatTargets primary fallback failed: err=%v targets=%+v", rErr, targets)
+	}
+	if targets[0].ID != "pool:siliconflow_free" || targets[1].ID != "primary" {
+		t.Fatalf("expected healthy pool target first and cooled primary moved into cooling tail, got %+v", targets)
 	}
 
 	msgs, _ := st.ListBotMessages("assistant_one", 10)
