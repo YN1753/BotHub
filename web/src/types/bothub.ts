@@ -38,6 +38,7 @@ export interface SkillParamField {
   type: 'string' | 'integer' | 'boolean' | string
   description: string
   required?: boolean
+  default?: string
 }
 
 export type SkillKind = 'prompt' | 'webhook'

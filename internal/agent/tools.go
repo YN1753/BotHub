@@ -335,6 +335,8 @@ func BuiltinTools() []ToolDefinition {
 	}
 }
 
+var reTrailingJSONComma = regexp.MustCompile(`,\s*([}\]])`)
+
 func normalizeToolArgsJSON(raw string) string {
 	s := strings.TrimSpace(raw)
 	if s == "" {
@@ -346,6 +348,7 @@ func normalizeToolArgsJSON(raw string) string {
 		s = strings.TrimSuffix(s, "```")
 		s = strings.TrimSpace(s)
 	}
+	s = reTrailingJSONComma.ReplaceAllString(s, "$1")
 	if s == "" {
 		return "{}"
 	}

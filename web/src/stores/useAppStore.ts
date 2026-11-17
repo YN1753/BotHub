@@ -56,7 +56,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.14.0',
+  version: 'v2.15.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -414,6 +414,27 @@ export function useAppStore() {
     }
   }
 
+  async function forkThread(upToMsgId?: number, title?: string) {
+    if (!state.activeBotId) return null
+    try {
+      const res = await BotHubApi.forkBotThread(state.activeBotId, {
+        source_thread_id: state.activeThreadId || '',
+        up_to_msg_id: upToMsgId || 0,
+        title: title || '',
+      })
+      state.botThreads = res.threads || []
+      state.activeThreadId = res.thread.id
+      state.botView = 'stream'
+      const bot = state.bots.find((b) => b.id === state.activeBotId)
+      state.timeline = mapServerMessages(res.messages || [], bot)
+      notify(`已从该节点分支出新话题「${res.thread.title}」`)
+      return res.thread
+    } catch (err: any) {
+      notify(err.message || '创建分支话题失败')
+      return null
+    }
+  }
+
   async function renameThread(threadId: string, title: string) {
     if (!state.activeBotId) return
     try {
@@ -655,6 +676,7 @@ export function useAppStore() {
     refreshActiveBot,
     switchThread,
     createThread,
+    forkThread,
     renameThread,
     deleteThread,
     summarizeThread,

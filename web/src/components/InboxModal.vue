@@ -47,22 +47,27 @@ async function askBotAnalyze(n: { id: number; source: string; title: string; sum
     store.state.showInboxModal = false
     store.state.createModalMode = 'bot'
     store.state.showCreateBotModal = true
-    store.notify('当前还没有 Bot，请先从模板或空白创建一个助手')
+    store.notify('当前还没有 Bot，请先创建一个助手')
     return
   }
   const s = n.source.toLowerCase()
-  const findByToolOrRole = (toolId: string, keywords: string[]) =>
-    store.state.bots.find((b) => (b.allowed_tools || '').includes(toolId)) ||
-    store.state.bots.find((b) =>
-      keywords.some((kw) => `${b.name} ${b.role_title} ${b.id}`.toLowerCase().includes(kw))
-    )
-  let picked = store.state.bots.find((b) => b.is_group) || store.state.bots[0]
-  if (s.includes('nezha') || s.includes('alert') || s.includes('webhook')) {
-    picked = findByToolOrRole('query_nezha_nodes', ['运维', '哨兵', 'sentinel', '监控']) || picked
-  } else if (s.includes('radar') || s.includes('bili')) {
-    picked = findByToolOrRole('web_search', ['雷达', 'radar', '情报', '探索']) || picked
-  } else if (s.includes('morning') || s.includes('asset')) {
-    picked = findByToolOrRole('manage_assets', ['管家', '资产', 'butler']) || picked
+  const boundTask = store.state.tasks.find((t) => t.id === n.source && t.bot_id)
+  const findByTool = (toolId: string) =>
+    store.state.bots.find((b) => !b.is_group && (b.allowed_tools || '').includes(toolId))
+
+  let picked =
+    (boundTask?.bot_id && store.state.bots.find((b) => b.id === boundTask.bot_id)) ||
+    store.state.bots.find((b) => !b.is_group && (b.bot_mode === 'worker' || b.bot_mode === 'hybrid')) ||
+    store.state.bots[0]
+
+  if (!boundTask?.bot_id) {
+    if (s.includes('nezha') || s.includes('alert') || s.includes('webhook')) {
+      picked = findByTool('query_nezha_nodes') || picked
+    } else if (s.includes('radar') || s.includes('bili')) {
+      picked = findByTool('web_search') || picked
+    } else if (s.includes('morning') || s.includes('asset')) {
+      picked = findByTool('manage_assets') || picked
+    }
   }
   await store.jumpToBot(picked.id, `请深度分析这条系统情报并给出建议：\n标题：${n.title}\n摘要：${n.summary}`)
 }

@@ -308,3 +308,55 @@ func TestSearchTokenizationGroupRoutingAndManageMemoryTool(t *testing.T) {
 		t.Fatalf("expected hasLightTarget()=true when active free pool node exists and pool_for_light defaults true")
 	}
 }
+
+func TestWebhookSkillDefaultsRequiredValidationHTMLStripAndBatchConcurrency(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "skill_v215.db"))
+	if err != nil {
+		t.Fatalf("open store failed: %v", err)
+	}
+	defer st.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		city := r.URL.Query().Get("city")
+		unit := r.URL.Query().Get("unit")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<html><head><style>body{}</style><script>alert(1)</script></head><body><h1>" + city + " Weather</h1><p>Temp 22 " + unit + "</p></body></html>"))
+	}))
+	defer srv.Close()
+
+	sk := store.Skill{
+		ID:           "sk_html_weather",
+		Name:         "HTML Weather",
+		Slug:         "html_weather",
+		Kind:         "webhook",
+		Description:  "获取天气",
+		HTTPMethod:   "GET",
+		HTTPURL:      srv.URL + "?city={{city}}&unit={{unit}}",
+		ParamsSchema: `[{"key":"city","type":"string","description":"城市","required":true},{"key":"unit","type":"string","description":"单位","default":"Celsius"}]`,
+		Enabled:      true,
+	}
+	_ = st.SaveSkill(sk)
+
+	eng := NewEngine(st, nil)
+	eng.allowLocalhostForTest = true
+
+	// 1. Missing required param fails fast cleanly without HTTP call
+	_, _, missErr := eng.ExecuteWebhookSkill(context.Background(), sk, map[string]any{})
+	if missErr == nil || !strings.Contains(missErr.Error(), "缺少必填参数: city") {
+		t.Fatalf("expected missing required parameter error, got: %v", missErr)
+	}
+
+	// 2. Omitted optional param uses Default ("Celsius") + HTML stripped + trailing comma JSON repaired
+	out, execErr := eng.ExecuteTool(context.Background(), "skill_html_weather", `{"city":"Hangzhou",}`)
+	if execErr != nil {
+		t.Fatalf("execute skill with default & trailing comma failed: %v", execErr)
+	}
+	if !strings.Contains(out, "Hangzhou Weather") || !strings.Contains(out, "Celsius") || strings.Contains(out, "<script>") {
+		t.Fatalf("expected stripped HTML + Celsius default, got: %s", out)
+	}
+
+	// 3. Read-only tool batching check
+	if !eng.isReadOnlyTool("skill_html_weather") || !eng.isReadOnlyTool("web_search") || eng.isReadOnlyTool("manage_memory") {
+		t.Fatalf("read-only tool classification mismatch")
+	}
+}

@@ -45,6 +45,30 @@ type TaskTemplate struct {
 func BuiltinTemplates() []TaskTemplate {
 	return []TaskTemplate{
 		{
+			Type:        "bot_prompt",
+			Name:        "AI Bot 自主定时指令",
+			Description: "按 Cron 定时唤醒归属 Bot，以其性格、私有记忆与绑定工具主动发声或执行巡检",
+			DefaultCron: "0 9 * * *",
+			ParamsSchema: []ParamField{
+				{
+					Key:         "prompt",
+					Label:       "定时指令 / 唤醒提示词",
+					Type:        "text",
+					DefaultVal:  "",
+					Placeholder: "例如：结合今天天气和我们的约定问候一句，或检查节点并总结",
+					Hint:        "到达设定时间后，系统将以归属 Bot 身份执行这段指令并推送结果",
+				},
+				{
+					Key:        "notify",
+					Label:      "同时投递至原生 APP 收件箱",
+					Type:       "select",
+					DefaultVal: "true",
+					Options:    []string{"true", "false"},
+					Hint:       "true=写入收件箱并触发实时推送提醒；false=仅安静发在 Bot 对话流里",
+				},
+			},
+		},
+		{
 			Type:        "morning",
 			Name:        "每日早报简报",
 			Description: "汇总目标城市气象预报、出行建议、每日格言、节点脉搏与临期资产",

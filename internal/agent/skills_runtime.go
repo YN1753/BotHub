@@ -93,12 +93,33 @@ func interpolateSkillTemplate(tpl string, args map[string]any, urlEscape bool) s
 	})
 }
 
-// ExecuteWebhookSkill executes a webhook skill with SSRF checks and argument interpolation.
+// ExecuteWebhookSkill executes a webhook skill with parameter defaults, required-field checks,
+// SSRF guards, argument interpolation, and clean HTML-to-text sanitization.
 func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args map[string]any) (int, string, error) {
-	if args == nil {
-		args = map[string]any{}
+	workingArgs := make(map[string]any, len(args)+4)
+	for k, v := range args {
+		workingArgs[k] = v
 	}
-	rawURL := strings.TrimSpace(interpolateSkillTemplate(sk.HTTPURL, args, true))
+
+	for _, f := range sk.Params() {
+		key := strings.TrimSpace(f.Key)
+		if key == "" {
+			continue
+		}
+		val, exists := workingArgs[key]
+		valStr := strings.TrimSpace(fmt.Sprintf("%v", val))
+		if (!exists || val == nil || valStr == "") && strings.TrimSpace(f.Default) != "" {
+			workingArgs[key] = strings.TrimSpace(f.Default)
+			val = workingArgs[key]
+			valStr = strings.TrimSpace(fmt.Sprintf("%v", val))
+			exists = true
+		}
+		if f.Required && (!exists || val == nil || valStr == "") {
+			return 0, "", fmt.Errorf("技能「%s」缺少必填参数: %s", sk.Name, key)
+		}
+	}
+
+	rawURL := strings.TrimSpace(interpolateSkillTemplate(sk.HTTPURL, workingArgs, true))
 	if rawURL == "" {
 		return 0, "", fmt.Errorf("技能 %s 未配置 HTTP URL", sk.Name)
 	}
@@ -117,10 +138,10 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 	if hasBody {
 		tpl := strings.TrimSpace(sk.Instruction)
 		if tpl != "" && strings.Contains(tpl, "{{") {
-			bodyText := interpolateSkillTemplate(tpl, args, false)
+			bodyText := interpolateSkillTemplate(tpl, workingArgs, false)
 			bodyReader = strings.NewReader(bodyText)
 		} else {
-			payloadBytes, _ := json.Marshal(args)
+			payloadBytes, _ := json.Marshal(workingArgs)
 			bodyReader = bytes.NewReader(payloadBytes)
 		}
 	}
@@ -141,7 +162,7 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 		if k == "" {
 			continue
 		}
-		req.Header.Set(k, interpolateSkillTemplate(hv, args, false))
+		req.Header.Set(k, interpolateSkillTemplate(hv, workingArgs, false))
 	}
 
 	client := e.safeFetchClient()
@@ -151,8 +172,17 @@ func (e *Engine) ExecuteWebhookSkill(ctx context.Context, sk store.Skill, args m
 	}
 	defer resp.Body.Close()
 
-	rawBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 32*1024))
-	text := notifier.StripEmoji(strings.TrimSpace(string(rawBytes)))
+	rawBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 128*1024))
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	rawStr := strings.TrimSpace(string(rawBytes))
+
+	var text string
+	if strings.Contains(contentType, "html") || strings.HasPrefix(strings.ToLower(rawStr), "<!doctype") || strings.HasPrefix(strings.ToLower(rawStr), "<html") {
+		text = stripHTMLToText(rawStr)
+	} else {
+		text = notifier.StripEmoji(rawStr)
+	}
+
 	runes := []rune(text)
 	if len(runes) > 6000 {
 		text = string(runes[:6000]) + "\n...[已截断过长响应]"

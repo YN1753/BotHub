@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -489,6 +490,11 @@ func (e *Engine) chatStreamForBot(
 			memberSet[m.ID] = true
 		}
 
+		// Group @全体成员 / @所有人 triggers all group members cleanly like QQ/WeChat
+		if (strings.Contains(userMsg, "@全体成员") || strings.Contains(userMsg, "@所有人")) && len(members) > 0 {
+			return e.runTeamRoomHandoff(ctx, req, bot, members, memberSet, history, promptMsg, baseURL, apiKey, emit)
+		}
+
 		if len(mentioned) > 0 {
 			var guests []string
 			for _, sp := range mentioned {
@@ -643,6 +649,11 @@ func (e *Engine) runTeamRoomHandoffWithRelay(
 		spCopy := sp
 		resp, err := e.runSingleBotTurn(ctx, req, &spCopy, roomBot.ID, roomHistory, turnPrompt, baseURL, apiKey, emit)
 		if err != nil {
+			if combinedContent.Len() > 0 {
+				combinedContent.WriteString("\n\n---\n\n")
+				combinedContent.WriteString(fmt.Sprintf("**[%s]**\n[暂未响应: %s]", sp.Name, err.Error()))
+				continue
+			}
 			e.emitBotState(roomBot.ID, store.BotStateBlocked, err.Error())
 			return nil, err
 		}
@@ -858,13 +869,17 @@ func (e *Engine) runSingleBotTurn(
 			totalUsage.TotalTokens += roundUsage.TotalTokens
 		}
 
+		msgKind := strings.TrimSpace(req.MsgKind)
+		if msgKind == "" {
+			msgKind = "chat"
+		}
 		if len(toolCalls) == 0 {
 			_, _ = e.store.AppendAgentMessage(store.AgentMessage{
 				SessionID:        "bot:" + timelineBotID,
 				BotID:            timelineBotID,
 				ThreadID:         threadID,
 				SenderBotID:      actingBot.ID,
-				MsgKind:          "chat",
+				MsgKind:          msgKind,
 				Role:             "assistant",
 				Content:          notifier.StripEmoji(roundContent),
 				ReasoningContent: notifier.StripEmoji(totalReasoning.String()),
@@ -880,7 +895,7 @@ func (e *Engine) runSingleBotTurn(
 			BotID:            timelineBotID,
 			ThreadID:         threadID,
 			SenderBotID:      actingBot.ID,
-			MsgKind:          "chat",
+			MsgKind:          msgKind,
 			Role:             "assistant",
 			Content:          notifier.StripEmoji(roundContent),
 			ReasoningContent: notifier.StripEmoji(roundReasoning),
@@ -895,18 +910,23 @@ func (e *Engine) runSingleBotTurn(
 		})
 
 		e.emitBotState(actingBot.ID, store.BotStateWorking, "正在调用工具...")
+
+		allReadOnly := len(toolCalls) > 1
 		for _, tc := range toolCalls {
-			if timelineBotID != "" && timelineBotID != actingBot.ID {
-				e.emitBotState(timelineBotID, store.BotStateWorking, fmt.Sprintf("%s: 调用 %s...", actingBot.Name, tc.Function.Name))
+			if !e.isReadOnlyTool(tc.Function.Name) {
+				allReadOnly = false
+				break
 			}
-			if emit != nil {
-				emit("tool_start", map[string]any{
-					"id":            tc.ID,
-					"name":          tc.Function.Name,
-					"arguments":     tc.Function.Arguments,
-					"sender_bot_id": actingBot.ID,
-				})
-			}
+		}
+
+		type batchExecResult struct {
+			output     string
+			status     string
+			durationMs int64
+		}
+		batchResults := make([]batchExecResult, len(toolCalls))
+
+		runOne := func(idx int, tc apiToolCall) {
 			toolStart := time.Now()
 			toolOutput, toolErr := e.ExecuteTool(toolCtx, tc.Function.Name, tc.Function.Arguments)
 			toolDurationMs := time.Since(toolStart).Milliseconds()
@@ -916,7 +936,51 @@ func (e *Engine) runSingleBotTurn(
 				errPayload, _ := json.Marshal(map[string]any{"ok": false, "error": toolErr.Error()})
 				toolOutput = string(errPayload)
 			}
-			toolOutput = notifier.StripEmoji(toolOutput)
+			batchResults[idx] = batchExecResult{
+				output:     notifier.StripEmoji(toolOutput),
+				status:     execStatus,
+				durationMs: toolDurationMs,
+			}
+		}
+
+		for _, tc := range toolCalls {
+			if emit != nil {
+				emit("tool_start", map[string]any{
+					"id":            tc.ID,
+					"name":          tc.Function.Name,
+					"arguments":     tc.Function.Arguments,
+					"sender_bot_id": actingBot.ID,
+				})
+			}
+		}
+
+		if allReadOnly {
+			if timelineBotID != "" && timelineBotID != actingBot.ID {
+				e.emitBotState(timelineBotID, store.BotStateWorking, fmt.Sprintf("%s: 并发查询 %d 项工具...", actingBot.Name, len(toolCalls)))
+			}
+			var wg sync.WaitGroup
+			for idx, tc := range toolCalls {
+				wg.Add(1)
+				go func(i int, call apiToolCall) {
+					defer wg.Done()
+					runOne(i, call)
+				}(idx, tc)
+			}
+			wg.Wait()
+		} else {
+			for idx, tc := range toolCalls {
+				if timelineBotID != "" && timelineBotID != actingBot.ID {
+					e.emitBotState(timelineBotID, store.BotStateWorking, fmt.Sprintf("%s: 调用 %s...", actingBot.Name, tc.Function.Name))
+				}
+				runOne(idx, tc)
+			}
+		}
+
+		for idx, tc := range toolCalls {
+			res := batchResults[idx]
+			toolOutput := res.output
+			execStatus := res.status
+			toolDurationMs := res.durationMs
 
 			execType := "tool"
 			if strings.HasPrefix(tc.Function.Name, "skill_") {
@@ -978,15 +1042,15 @@ func (e *Engine) runSingleBotTurn(
 	preview := truncateTitle(finalContent.String())
 	e.emitBotState(actingBot.ID, store.BotStateIdle, preview)
 
-	// Background scoped memory distillation for both Companion & Worker Bots
+	// Background scoped memory distillation for real chat turns (never synthetic cron routine runs)
 	rememberedInTurn := false
 	for _, tr := range traces {
-		if tr.Name == "remember_fact" {
+		if tr.Name == "remember_fact" || tr.Name == "manage_memory" {
 			rememberedInTurn = true
 			break
 		}
 	}
-	if !rememberedInTurn && strings.TrimSpace(finalContent.String()) != "" {
+	if req.MsgKind != "routine" && !rememberedInTurn && strings.TrimSpace(finalContent.String()) != "" {
 		go e.distillMemoryWithScope("bot:"+timelineBotID, actingBot.BotMode, userMsg, finalContent.String())
 	}
 
@@ -1010,4 +1074,86 @@ func (e *Engine) runSingleBotTurn(
 		emit("done", resp)
 	}
 	return resp, nil
+}
+
+func (e *Engine) isReadOnlyTool(name string) bool {
+	switch name {
+	case "read_url", "web_search", "query_nezha_nodes", "recall_memory":
+		return true
+	}
+	if strings.HasPrefix(name, "skill_") {
+		slug := strings.TrimPrefix(name, "skill_")
+		if sk, err := e.store.GetSkillBySlug(slug); err == nil && sk != nil {
+			m := strings.ToUpper(strings.TrimSpace(sk.HTTPMethod))
+			return m == "" || m == "GET"
+		}
+	}
+	return false
+}
+
+// RunBotRoutine implements modules.BotRoutineExecutor so cron tasks wake up any Bot cleanly
+// with its own personality, scoped memories, and tools without storing artificial user prompts.
+func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName string) (string, error) {
+	bot, err := e.store.GetBot(strings.TrimSpace(botID))
+	if err != nil || bot == nil {
+		return "", fmt.Errorf("未找到例程绑定 Bot: %s", botID)
+	}
+
+	threadID := strings.TrimSpace(bot.ActiveThreadID)
+	history, _ := e.store.ListBotMessagesByThread(bot.ID, threadID, 20)
+	routinePrompt := fmt.Sprintf("[后台定时任务「%s」触发，请用你本人的口吻与能力完成以下要求并直接回复给用户]\n%s", taskName, strings.TrimSpace(prompt))
+
+	req := ChatRequest{
+		BotID:    bot.ID,
+		ThreadID: threadID,
+		MsgKind:  "routine",
+		Message:  routinePrompt,
+		Model:    bot.Model,
+	}
+
+	var resp *ChatResponse
+	if bot.IsGroup {
+		allBots, _ := e.store.ListBots()
+		members := resolveGroupMemberBots(bot, allBots)
+		if len(members) == 0 {
+			return "", fmt.Errorf("群聊「%s」暂无可用成员", bot.Name)
+		}
+		memberSet := make(map[string]bool, len(members))
+		for _, m := range members {
+			memberSet[m.ID] = true
+		}
+		allSkills, _ := e.store.ListSkills()
+		skillMap := make(map[string]store.Skill, len(allSkills))
+		for _, sk := range allSkills {
+			skillMap[sk.ID] = sk
+		}
+		targets := selectSmartGroupMembersWithSkills(members, skillMap, prompt)
+		resp, err = e.runTeamRoomHandoff(ctx, req, bot, targets, memberSet, history, routinePrompt, "", "", nil)
+	} else {
+		resp, err = e.runSingleBotTurn(ctx, req, bot, bot.ID, history, routinePrompt, "", "", nil)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	summary := truncateTitle(resp.Content)
+	_ = e.store.IncrementBotUnread(bot.ID, summary)
+	if e.hub != nil {
+		msgs, _ := e.store.ListBotMessagesByThread(bot.ID, threadID, 1)
+		if len(msgs) > 0 {
+			e.hub.PublishEvent("bot_message", msgs[len(msgs)-1])
+		}
+		updatedBot, _ := e.store.GetBot(bot.ID)
+		unread := 0
+		if updatedBot != nil {
+			unread = updatedBot.UnreadCount
+		}
+		e.hub.PublishEvent("bot_state", map[string]any{
+			"bot_id":       bot.ID,
+			"state":        store.BotStateDone,
+			"unread_count": unread,
+			"last_summary": summary,
+		})
+	}
+	return resp.Content, nil
 }

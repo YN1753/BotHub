@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/agent"
@@ -41,19 +42,45 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 180*time.Second)
 	defer cancel()
 
+	var sseMu sync.Mutex
 	emitSSE := func(event string, data any) {
 		b, err := json.Marshal(data)
 		if err != nil {
 			return
 		}
+		sseMu.Lock()
+		defer sseMu.Unlock()
 		_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, string(b))
 		flusher.Flush()
 	}
 
+	// Send periodic SSE keepalive comments so reverse proxies never drop slow reasoning/tool streams
+	hbDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(12 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-hbDone:
+				return
+			case <-ticker.C:
+				sseMu.Lock()
+				_, _ = fmt.Fprint(w, ": keepalive\n\n")
+				flusher.Flush()
+				sseMu.Unlock()
+			}
+		}
+	}()
+	defer close(hbDone)
+
 	if _, err := s.agent.ChatStream(ctx, req, emitSSE); err != nil {
-		emitSSE("error", map[string]any{
-			"error": notifier.StripEmoji(err.Error()),
-		})
+		if ctx.Err() == nil {
+			emitSSE("error", map[string]any{
+				"error": notifier.StripEmoji(err.Error()),
+			})
+		}
 	}
 }
 

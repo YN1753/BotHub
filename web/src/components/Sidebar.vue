@@ -19,16 +19,17 @@ const emit = defineEmits<{
 
 const store = useAppStore()
 const searchQuery = ref('')
-const rosterScope = ref<'all' | 'groups' | 'dms'>('all')
+const rosterScope = ref<'all' | 'groups' | 'companion' | 'worker'>('all')
 const rosterRef = ref<HTMLElement | null>(null)
 
 const filteredBots = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return store.state.bots.filter((b) => {
     if (rosterScope.value === 'groups' && !isGroup(b)) return false
-    if (rosterScope.value === 'dms' && isGroup(b)) return false
+    if (rosterScope.value === 'companion' && (isGroup(b) || b.bot_mode !== 'companion')) return false
+    if (rosterScope.value === 'worker' && (isGroup(b) || (b.bot_mode !== 'worker' && b.bot_mode !== 'hybrid' && Boolean(b.bot_mode)))) return false
     if (!q) return true
-    return `${b.name} ${b.role_title} ${b.last_summary}`.toLowerCase().includes(q)
+    return `${b.name} ${b.role_title} ${b.traits || ''} ${b.last_summary}`.toLowerCase().includes(q)
   })
 })
 
@@ -244,12 +245,13 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
             />
           </div>
 
-          <div class="grid grid-cols-3 gap-1 rounded-lg bg-[#050811]/70 p-0.5 border border-[#fff8ee]/8">
+          <div class="grid grid-cols-4 gap-1 rounded-lg bg-[#050811]/70 p-0.5 border border-[#fff8ee]/8">
             <button
               v-for="tab in ([
                 { id: 'all', label: '全部' },
                 { id: 'groups', label: '群聊' },
-                { id: 'dms', label: '专属' },
+                { id: 'companion', label: '陪伴' },
+                { id: 'worker', label: '执行' },
               ] as const)"
               :key="tab.id"
               type="button"
@@ -274,7 +276,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
           class="py-8 text-center flex flex-col items-center gap-2 text-xs text-slate-500 px-3"
         >
           <span v-if="store.state.bots.length === 0">还没有 Bot，点击上方「新建 Bot」开始</span>
-          <span v-else>无匹配的专属 Bot</span>
+          <span v-else>当前筛选下暂无会话</span>
           <button
             v-if="searchQuery"
             type="button"
@@ -319,6 +321,18 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
                     class="px-1.5 py-0.5 rounded bg-[#fff8ee]/8 text-[9.5px] font-mono text-slate-300 leading-none shrink-0"
                   >
                     群聊
+                  </span>
+                  <span
+                    v-else-if="b.bot_mode === 'companion'"
+                    class="px-1.5 py-0.5 rounded bg-emerald-500/12 text-[9.5px] font-mono text-emerald-300 leading-none shrink-0"
+                  >
+                    陪伴
+                  </span>
+                  <span
+                    v-else-if="b.bot_mode === 'worker'"
+                    class="px-1.5 py-0.5 rounded bg-cyan-500/12 text-[9.5px] font-mono text-cyan-300 leading-none shrink-0"
+                  >
+                    执行
                   </span>
                   <span
                     v-if="b.is_pinned"

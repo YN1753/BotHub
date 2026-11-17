@@ -49,6 +49,12 @@ func (s *Scheduler) SetHub(hub *pushstream.Hub) {
 	s.hub = hub
 }
 
+func (s *Scheduler) SetBotRoutineExecutor(exec modules.BotRoutineExecutor) {
+	if s != nil && s.registry != nil {
+		s.registry.SetBotRoutineExecutor(exec)
+	}
+}
+
 // NewWithRegistry creates a Scheduler backed by a dynamic module Registry.
 func NewWithRegistry(st *store.Store, reg *modules.Registry) *Scheduler {
 	return &Scheduler{
@@ -196,39 +202,60 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 
 	if botID != "" {
 		cleanSummary := notifier.StripEmoji(summary)
-		finalState := store.BotStateDone
+		finalState := store.BotStateIdle
 		if runErr != nil {
 			finalState = store.BotStateBlocked
+		} else if task.Type != "bot_prompt" {
+			finalState = store.BotStateDone
 		}
-		report := fmt.Sprintf("### 例程主动汇报: %s\n\n- **执行状态**: %s (%dms)\n- **结果摘要**: %s",
-			task.Name, status, durationMs, cleanSummary)
-		msg := store.AgentMessage{
-			SessionID:   "bot:" + botID,
-			BotID:       botID,
-			SenderBotID: botID,
-			MsgKind:     "routine",
-			Role:        "assistant",
-			Content:     report,
-		}
-		if msgID, aErr := s.store.AppendAgentMessage(msg); aErr == nil {
-			msg.ID = msgID
-			msg.CreatedAt = store.NowShanghai()
-		}
-		_ = s.store.SetBotState(botID, finalState, cleanSummary)
-		_ = s.store.IncrementBotUnread(botID, cleanSummary)
-		updatedBot, _ := s.store.GetBot(botID)
-		unread := 0
-		if updatedBot != nil {
-			unread = updatedBot.UnreadCount
-		}
-		if s.hub != nil {
-			s.hub.PublishEvent("bot_message", msg)
-			s.hub.PublishEvent("bot_state", map[string]any{
-				"bot_id":       botID,
-				"state":        finalState,
-				"unread_count": unread,
-				"last_summary": cleanSummary,
-			})
+
+		// Record per-Bot routine execution audit log cleanly
+		s.store.RecordBotExecution(store.BotExecutionLog{
+			BotID:         botID,
+			ExecType:      "routine",
+			Name:          task.Name,
+			InputSummary:  task.Type,
+			OutputSummary: cleanSummary,
+			Status:        status,
+			DurationMs:    durationMs,
+		})
+
+		if task.Type != "bot_prompt" || runErr != nil {
+			targetThread := ""
+			if b, bErr := s.store.GetBot(botID); bErr == nil && b != nil {
+				targetThread = strings.TrimSpace(b.ActiveThreadID)
+			}
+			report := fmt.Sprintf("### 例程主动汇报: %s\n\n- **执行状态**: %s (%dms)\n- **结果摘要**: %s",
+				task.Name, status, durationMs, cleanSummary)
+			msg := store.AgentMessage{
+				SessionID:   "bot:" + botID,
+				BotID:       botID,
+				ThreadID:    targetThread,
+				SenderBotID: botID,
+				MsgKind:     "routine",
+				Role:        "assistant",
+				Content:     report,
+			}
+			if msgID, aErr := s.store.AppendAgentMessage(msg); aErr == nil {
+				msg.ID = msgID
+				msg.CreatedAt = store.NowShanghai()
+			}
+			_ = s.store.SetBotState(botID, finalState, cleanSummary)
+			_ = s.store.IncrementBotUnread(botID, cleanSummary)
+			updatedBot, _ := s.store.GetBot(botID)
+			unread := 0
+			if updatedBot != nil {
+				unread = updatedBot.UnreadCount
+			}
+			if s.hub != nil {
+				s.hub.PublishEvent("bot_message", msg)
+				s.hub.PublishEvent("bot_state", map[string]any{
+					"bot_id":       botID,
+					"state":        finalState,
+					"unread_count": unread,
+					"last_summary": cleanSummary,
+				})
+			}
 		}
 	}
 

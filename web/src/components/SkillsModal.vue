@@ -92,6 +92,7 @@ function loadSkillToEdit(sk: Skill) {
           type: String(f.type || 'string'),
           description: String(f.description || ''),
           required: Boolean(f.required),
+          default: String(f.default || ''),
         }))
       : []
   } catch {
@@ -108,7 +109,7 @@ function removeHeaderRow(idx: number) {
 }
 
 function addParamRow() {
-  paramRows.value.push({ key: '', type: 'string', description: '', required: false })
+  paramRows.value.push({ key: '', type: 'string', description: '', required: false, default: '' })
 }
 
 function removeParamRow(idx: number) {
@@ -127,6 +128,7 @@ function buildPayload(): Partial<Skill> {
       type: p.type || 'string',
       description: p.description.trim(),
       required: Boolean(p.required),
+      default: (p.default || '').trim(),
     }))
     .filter((p) => p.key !== '')
 
@@ -202,7 +204,7 @@ function openTestPanel(sk: Skill) {
     const arr = JSON.parse(sk.params_schema || '[]')
     if (Array.isArray(arr)) {
       arr.forEach((f: any) => {
-        if (f?.key) initArgs[String(f.key)] = ''
+        if (f?.key) initArgs[String(f.key)] = String(f.default || '')
       })
     }
   } catch {
@@ -405,7 +407,13 @@ watch(
                 v-model="p.description"
                 type="text"
                 placeholder="参数说明"
-                class="sm:col-span-4 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 text-[11px] text-white"
+                class="sm:col-span-3 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 text-[11px] text-white"
+              />
+              <input
+                v-model="p.default"
+                type="text"
+                placeholder="默认值(可选)"
+                class="sm:col-span-2 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 font-mono text-[11px] text-white"
               />
               <div class="sm:col-span-2 flex items-center justify-between gap-1">
                 <label class="inline-flex items-center gap-1 text-[10.5px] text-slate-400 cursor-pointer">
@@ -420,6 +428,13 @@ watch(
                   删
                 </button>
               </div>
+            </div>
+            <div v-if="paramRows.length > 0" class="hidden sm:grid sm:grid-cols-12 gap-1.5 text-[10px] text-slate-500 px-0.5">
+              <span class="col-span-3">参数键名</span>
+              <span class="col-span-2">类型</span>
+              <span class="col-span-3">语义描述</span>
+              <span class="col-span-2">默认值</span>
+              <span class="col-span-2">操作</span>
             </div>
           </div>
 

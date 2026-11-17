@@ -218,6 +218,18 @@ async function handleClearTimeline() {
   closeDrawer()
 }
 
+async function openScopedMemory() {
+  if (!bot.value) return
+  store.state.memoryModalDefaultScope = `bot:${bot.value.id}`
+  closeDrawer()
+  store.state.showMemoriesModal = true
+}
+
+async function handleCreateFreshThread() {
+  closeDrawer()
+  await store.createThread('')
+}
+
 async function handleDisbandGroup() {
   if (!bot.value) return
   if (!window.confirm(`确定解散群聊 [${bot.value.name}] 吗？群消息记录将被清除。`)) return
@@ -419,7 +431,7 @@ async function handleDisbandGroup() {
             </button>
           </form>
 
-          <!-- Pin & Dangerous Actions -->
+          <!-- Pin, Topic, Memory & Dangerous Actions -->
           <div class="modal-section flex flex-col gap-2.5">
             <ToggleSwitch
               :model-value="bot.is_pinned"
@@ -428,6 +440,20 @@ async function handleDisbandGroup() {
               @update:model-value="store.togglePinBot(bot)"
             />
             <div class="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                @click="handleCreateFreshThread"
+                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+              >
+                开启新话题
+              </button>
+              <button
+                type="button"
+                @click="openScopedMemory"
+                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+              >
+                本群专属记忆
+              </button>
               <button
                 type="button"
                 @click="handleClearTimeline"
@@ -535,6 +561,20 @@ async function handleDisbandGroup() {
                 class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
               >
                 形象与人设配置
+              </button>
+              <button
+                type="button"
+                @click="openScopedMemory"
+                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+              >
+                专属记忆域
+              </button>
+              <button
+                type="button"
+                @click="handleCreateFreshThread"
+                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+              >
+                开启新话题
               </button>
               <button
                 type="button"

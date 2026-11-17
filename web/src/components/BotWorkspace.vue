@@ -679,22 +679,43 @@ function handleComposerInput() {
   syncMentionAndSlash()
 }
 
-function pickMentionCandidate(sp: Bot) {
+function pickMentionText(mentionName: string) {
   const val = inputPrompt.value
   const pos = textareaRef.value?.selectionStart ?? val.length
   const anchor = mentionAnchorIdx.value >= 0 ? mentionAnchorIdx.value : val.lastIndexOf('@', pos)
   if (anchor >= 0) {
     const before = val.slice(0, anchor)
     const after = val.slice(pos)
-    inputPrompt.value = `${before}@${sp.name} ${after}`
+    inputPrompt.value = `${before}@${mentionName} ${after}`
   } else {
-    appendMention(`@${sp.name} `)
+    appendMention(`@${mentionName} `)
   }
   mentionOpen.value = false
   nextTick(() => {
     autoResizeTextarea()
     textareaRef.value?.focus()
   })
+}
+
+function pickMentionCandidate(sp: Bot) {
+  pickMentionText(sp.name)
+}
+
+function editResendUserMessage(msg: ChatMessageUI) {
+  if (!msg.content) return
+  inputPrompt.value = msg.content
+  if (msg.replyPreview) {
+    replyTarget.value = {
+      serverId: msg.replyToId || 0,
+      senderName: '',
+      preview: msg.replyPreview,
+    }
+  }
+  nextTick(() => {
+    autoResizeTextarea()
+    textareaRef.value?.focus()
+  })
+  store.notify('已填入编辑框，修改后直接发送')
 }
 
 async function inviteFromMentionAndPick(sp: Bot) {
@@ -1213,11 +1234,28 @@ function exportTimelineMarkdown() {
     return
   }
   const bName = bot.value?.name || 'BotHub'
-  const parts = [`# Vesper GrokBot · ${bName} 对话流导出\n\n- 导出时间: ${new Date().toISOString()}\n`]
+  const activeTh = store.state.botThreads.find((t) => t.id === store.state.activeThreadId)
+  const thTitle = activeTh ? activeTh.title : '主时间线'
+  const parts = [
+    `# Vesper BotHub · ${bName}（${thTitle}）\n\n- 导出时间: ${new Date().toISOString()}\n`,
+  ]
+  if (scopedMemories.value.length > 0) {
+    parts.push('\n## 核心记忆上下文\n\n')
+    scopedMemories.value.slice(0, 10).forEach((mem) => {
+      parts.push(`- **${mem.fact_key}** (${mem.category}): ${mem.content}\n`)
+    })
+  }
   for (const m of store.state.timeline) {
-    parts.push(`\n---\n\n### ${m.role === 'user' ? '管理员指令' : `${m.senderName} (${m.model})`}\n`)
+    parts.push(`\n---\n\n### ${m.role === 'user' ? '管理员指令' : m.role === 'system' ? '系统动态' : `${m.senderName} (${m.model})`}\n`)
     if (m.reasoning) {
       parts.push(`\n> 深度思考:\n> ${m.reasoning.replace(/\n/g, '\n> ')}\n`)
+    }
+    if (m.tools && m.tools.length > 0) {
+      parts.push('\n<details><summary>工具调用轨迹</summary>\n\n')
+      m.tools.forEach((t, ti) => {
+        parts.push(`- #${ti + 1} \`${t.name}\` (${t.durationMs !== undefined ? t.durationMs + 'ms' : '完成'})\n`)
+      })
+      parts.push('\n</details>\n')
     }
     if (m.content) parts.push(`\n${m.content}\n`)
   }
@@ -1228,7 +1266,7 @@ function exportTimelineMarkdown() {
   a.download = `bothub_${bot.value?.id || 'bot'}_${Date.now()}.md`
   a.click()
   URL.revokeObjectURL(url)
-  store.notify('已导出为 Markdown')
+  store.notify('已导出为结构化 Markdown')
 }
 
 async function clearTimeline() {
@@ -1804,6 +1842,21 @@ function stateBadgeClass(state?: string): string {
                   </button>
                   <button
                     type="button"
+                    @click="editResendUserMessage(m)"
+                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
+                  >
+                    编辑重发
+                  </button>
+                  <button
+                    v-if="m.serverId"
+                    type="button"
+                    @click="store.forkThread(m.serverId)"
+                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-emerald-300 cursor-pointer"
+                  >
+                    分支话题
+                  </button>
+                  <button
+                    type="button"
                     @click="openForwardForMessage(m)"
                     class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
                   >
@@ -2003,6 +2056,14 @@ function stateBadgeClass(state?: string): string {
                       复制全文
                     </button>
                     <button
+                      v-if="m.serverId"
+                      type="button"
+                      @click="store.forkThread(m.serverId)"
+                      class="min-h-[36px] sm:min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-emerald-300 hover:border-emerald-400/40 cursor-pointer"
+                    >
+                      分支话题
+                    </button>
+                    <button
                       v-if="findPrecedingUserPrompt(idx)"
                       type="button"
                       @click="sendPrompt(findPrecedingUserPrompt(idx))"
@@ -2086,6 +2147,21 @@ function stateBadgeClass(state?: string): string {
                 <span>选择要 @点名 或临时支援的 Bot</span>
                 <span>Enter 确认 · Esc 关闭</span>
               </div>
+              <button
+                v-if="isGroupBot && (!mentionQuery || '全体成员所有人all'.includes(mentionQuery.toLowerCase()))"
+                type="button"
+                @click="pickMentionText('全体成员')"
+                class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-left cursor-pointer"
+              >
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="w-6 h-6 rounded-full bg-[#f2b880]/25 text-[#f2b880] font-mono text-[11px] font-bold flex items-center justify-center shrink-0">@</span>
+                  <div class="min-w-0">
+                    <div class="text-xs font-semibold text-[#f7cba0]">@全体成员</div>
+                    <div class="text-[10.5px] text-slate-400 truncate">唤起群内全部 {{ groupMembers.length }} 位成员协同回应</div>
+                  </div>
+                </div>
+                <span class="px-1.5 py-0.5 rounded font-mono text-[9.5px] bg-[#f2b880]/18 text-[#f2b880] shrink-0">群协同</span>
+              </button>
               <div
                 v-for="(item, idx) in mentionCandidates"
                 :key="item.bot.id"

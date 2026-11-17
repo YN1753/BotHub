@@ -88,11 +88,23 @@ func NewDefaultRegistry(st *store.Store, push *notifier.Client) *Registry {
 	watcher := NewAssetWatcherModule(st, push)
 	reg.RegisterTaskRunner("asset_watcher", watcher)
 
+	botPrompt := NewBotPromptModule(st, push)
+	reg.RegisterTaskRunner("bot_prompt", botPrompt)
+
 	for _, tpl := range BuiltinTemplates() {
 		reg.RegisterTaskTemplate(tpl)
 	}
 
 	return reg
+}
+
+// SetBotRoutineExecutor injects the agent routine executor into the registered bot_prompt module.
+func (r *Registry) SetBotRoutineExecutor(exec BotRoutineExecutor) {
+	if runner, ok := r.GetTaskRunner("bot_prompt"); ok {
+		if bp, ok := runner.(*BotPromptModule); ok {
+			bp.SetExecutor(exec)
+		}
+	}
 }
 
 // EnsureRunnerExists validates if a runner is registered for the specified task type.

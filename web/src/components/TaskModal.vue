@@ -119,21 +119,26 @@ watch(
     if (!item || !(item as any).id) {
       id.value = ''
       name.value = ''
-      type.value = 'morning'
-      botId.value = (item as any)?.bot_id || store.state.activeBotId || store.state.bots[0]?.id || ''
+      type.value = store.state.templates[0]?.type || 'bot_prompt'
+      botId.value = (item as any)?.bot_id || store.state.activeBotId || ''
       enabled.value = true
       description.value = ''
       freq.value = 'daily'
-      hour.value = '08'
+      hour.value = '09'
       minute.value = '00'
-      paramsMap.value = {}
+      const initParams: Record<string, string> = {}
+      const tpl = store.state.templates.find((t) => t.type === type.value)
+      ;(tpl?.params_schema || tpl?.fields || []).forEach((f) => {
+        if (f.default_val !== undefined) initParams[f.key] = String(f.default_val)
+      })
+      paramsMap.value = initParams
       return
     }
     const t = item as any
     id.value = t.id
     name.value = t.name
     type.value = t.type
-    botId.value = t.bot_id || store.state.bots[0]?.id || ''
+    botId.value = t.bot_id || ''
     enabled.value = Boolean(t.enabled)
     description.value = t.description || ''
     parseCronExpr(t.cron_expr || '0 8 * * *')

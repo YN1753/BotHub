@@ -48,6 +48,7 @@ type ChatRequest struct {
 	SessionID      string `json:"session_id"`
 	BotID          string `json:"bot_id,omitempty"`
 	ThreadID       string `json:"thread_id,omitempty"`
+	MsgKind        string `json:"-"`
 	Message        string `json:"message"`
 	Persona        string `json:"persona"`
 	Model          string `json:"model"`

@@ -99,8 +99,8 @@ func SummarizeWithDeepSeek(ctx context.Context, st *store.Store, systemPrompt, u
 		return "", fmt.Errorf("api_key not configured")
 	}
 
-	// Inject long-term user memories so AI curation matches user tech stack & infra context
-	memories, _ := st.ListAgentMemories("", 20)
+	// Inject ONLY global shared memories so private bot:<id> memories never leak into global tasks
+	memories, _ := st.ListScopedMemories([]string{"global"}, "", 20)
 	if len(memories) > 0 {
 		var memBuf strings.Builder
 		memBuf.WriteString("\n\n[用户长期记忆与技术栈背景]\n")

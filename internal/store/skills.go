@@ -12,6 +12,7 @@ type SkillParamField struct {
 	Description string `json:"description"`
 	Type        string `json:"type"` // string | integer | boolean
 	Required    bool   `json:"required"`
+	Default     string `json:"default,omitempty"`
 }
 
 type Skill struct {

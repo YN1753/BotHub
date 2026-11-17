@@ -135,6 +135,14 @@ export const BotHubApi = {
       `/api/v2/bots/${encodeURIComponent(botId)}/threads`,
       { method: 'POST', body: JSON.stringify({ title: title || '' }) }
     ),
+  forkBotThread: (
+    botId: string,
+    payload: { source_thread_id?: string; up_to_msg_id?: number; title?: string }
+  ) =>
+    apiRequest<{ ok: boolean; thread: BotThread; threads: BotThread[]; messages: AgentMessage[] }>(
+      `/api/v2/bots/${encodeURIComponent(botId)}/threads/fork`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    ),
   updateBotThread: (botId: string, threadId: string, payload: { title?: string; archived?: boolean }) =>
     apiRequest<{ ok: boolean; thread: BotThread; threads: BotThread[] }>(
       `/api/v2/bots/${encodeURIComponent(botId)}/threads/${encodeURIComponent(threadId)}`,

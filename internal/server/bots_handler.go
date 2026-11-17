@@ -657,6 +657,94 @@ func (s *Server) handleCreateBotThread(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleForkBotThread(w http.ResponseWriter, r *http.Request) {
+	botID := strings.TrimSpace(r.PathValue("id"))
+	bot, err := s.store.GetBot(botID)
+	if err != nil || bot == nil {
+		writeError(w, http.StatusNotFound, "Bot 不存在")
+		return
+	}
+	var req struct {
+		SourceThreadID string `json:"source_thread_id"`
+		UpToMsgID      int64  `json:"up_to_msg_id"`
+		Title          string `json:"title"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*1024)).Decode(&req)
+
+	srcMsgs, _ := s.store.ListBotMessagesByThread(botID, strings.TrimSpace(req.SourceThreadID), 60)
+	var contextSlice []store.AgentMessage
+	for _, m := range srcMsgs {
+		if req.UpToMsgID > 0 && m.ID > req.UpToMsgID {
+			break
+		}
+		if m.Role == "user" || m.Role == "assistant" {
+			contextSlice = append(contextSlice, m)
+		}
+	}
+	if len(contextSlice) > 12 {
+		contextSlice = contextSlice[len(contextSlice)-12:]
+	}
+
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	newThreadID := "th_" + hex.EncodeToString(b)
+	title := notifier.StripEmoji(strings.TrimSpace(req.Title))
+	if title == "" {
+		if len(contextSlice) > 0 {
+			lastTxt := strings.TrimSpace(contextSlice[len(contextSlice)-1].Content)
+			runes := []rune(lastTxt)
+			if len(runes) > 14 {
+				lastTxt = string(runes[:14]) + "..."
+			}
+			title = "分支: " + lastTxt
+		} else {
+			title = "新话题分支"
+		}
+	}
+
+	th := store.BotThread{
+		ID:    newThreadID,
+		BotID: botID,
+		Title: title,
+	}
+	if err := s.store.SaveBotThread(th); err != nil {
+		writeError(w, http.StatusInternalServerError, "创建分支话题失败: "+err.Error())
+		return
+	}
+	_ = s.store.SetBotActiveThread(botID, newThreadID)
+
+	_, _ = s.store.AppendAgentMessage(store.AgentMessage{
+		SessionID: "bot:" + botID,
+		BotID:     botID,
+		ThreadID:  newThreadID,
+		MsgKind:   "system",
+		Role:      "system",
+		Content:   fmt.Sprintf("已从历史对话分叉开启话题「%s」（继承 %d 条上下文）", title, len(contextSlice)),
+	})
+	for _, m := range contextSlice {
+		_, _ = s.store.AppendAgentMessage(store.AgentMessage{
+			SessionID:    "bot:" + botID,
+			BotID:        botID,
+			ThreadID:     newThreadID,
+			SenderBotID:  m.SenderBotID,
+			MsgKind:      m.MsgKind,
+			Role:         m.Role,
+			Content:      m.Content,
+			ReplyPreview: m.ReplyPreview,
+			ModelUsed:    m.ModelUsed,
+		})
+	}
+
+	threads, _ := s.store.ListBotThreads(botID)
+	msgs, _ := s.store.ListBotMessagesByThread(botID, newThreadID, 60)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"thread":   th,
+		"threads":  threads,
+		"messages": msgs,
+	})
+}
+
 func (s *Server) handleUpdateBotThread(w http.ResponseWriter, r *http.Request) {
 	botID := strings.TrimSpace(r.PathValue("id"))
 	threadID := strings.TrimSpace(r.PathValue("threadId"))

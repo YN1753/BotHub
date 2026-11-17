@@ -9,12 +9,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YN1753/vesper/bothub/internal/modules"
+	"github.com/YN1753/vesper/bothub/internal/notifier"
+	"github.com/YN1753/vesper/bothub/internal/scheduler"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
 func TestV2SkillsThreadsScopedMemoriesAndBackup(t *testing.T) {
 	s, cleanup := setupTestServer(t)
 	defer cleanup()
+	s.push = notifier.NewClient(s.store)
+	s.agent.SetHub(s.push.Hub())
+	s.scheduler = scheduler.NewWithRegistry(s.store, modules.NewDefaultRegistry(s.store, s.push))
+	s.scheduler.SetHub(s.push.Hub())
+	s.scheduler.SetBotRoutineExecutor(s.agent)
 
 	// 1. Create a Bot with isolated memory policy and companion mode
 	botPayload := `{
@@ -219,7 +227,62 @@ func TestV2SkillsThreadsScopedMemoriesAndBackup(t *testing.T) {
 		t.Fatalf("expected <=2 memories after prune (keeping pinned + top weighted), got %d", len(remaining))
 	}
 
-	// 7. Delete thread removes thread & its messages
+	// 7. Fork thread preserves conversation branch cleanly
+	reqFork := httptest.NewRequest(http.MethodPost, "/api/v2/bots/"+botID+"/threads/fork", strings.NewReader(fmt.Sprintf(`{"source_thread_id":"%s","title":"早会支线"}`, th1ID)))
+	reqFork.SetPathValue("id", botID)
+	recFork := httptest.NewRecorder()
+	s.handleForkBotThread(recFork, reqFork)
+	if recFork.Code != http.StatusOK || !strings.Contains(recFork.Body.String(), "早会支线") || !strings.Contains(recFork.Body.String(), "明天还要开早会") {
+		t.Fatalf("fork thread failed (%d): %s", recFork.Code, recFork.Body.String())
+	}
+
+	// 8. bot_prompt template registered and scheduled routine runs cleanly with mock upstream
+	tpls := s.scheduler.TaskTemplates()
+	hasBotPromptTpl := false
+	for _, tpl := range tpls {
+		if tpl.Type == "bot_prompt" {
+			hasBotPromptTpl = true
+			break
+		}
+	}
+	if !hasBotPromptTpl {
+		t.Fatalf("expected bot_prompt template registered in scheduler")
+	}
+
+	// Execute bot_prompt task end-to-end via scheduler.RunNow with mock upstream AI server
+	mockAI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintln(w, `data: {"choices":[{"delta":{"role":"assistant","content":"早安，记得多喝温水，今天也要顺顺利利。"}}]}`)
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, `data: [DONE]`)
+		_, _ = fmt.Fprintln(w)
+	}))
+	defer mockAI.Close()
+	_ = s.store.SetConfig(store.KeyDeepSeekBaseURL, mockAI.URL)
+	_ = s.store.SetConfig(store.KeyDeepSeekAPIKey, "sk-routine-test")
+	_ = s.store.SetConfig(store.KeyAIModel, "mock-model")
+
+	if err := s.store.SaveTask(store.Task{
+		ID:       "routine_morning_warm",
+		Name:     "早安问候",
+		Type:     "bot_prompt",
+		BotID:    botID,
+		CronExpr: "0 9 * * *",
+		Enabled:  true,
+		Params:   `{"prompt":"跟用户打个温柔的早安招呼","notify":"true"}`,
+	}); err != nil {
+		t.Fatalf("save bot_prompt task failed: %v", err)
+	}
+	resRun, runErr := s.scheduler.RunNow(t.Context(), "routine_morning_warm")
+	if runErr != nil || !strings.Contains(resRun.Summary, "多喝温水") || resRun.ItemsPushed != 1 {
+		t.Fatalf("expected bot_prompt routine execution + inbox push, err=%v res=%+v", runErr, resRun)
+	}
+	execLogs, _ := s.store.ListBotExecutions(botID, 10)
+	if len(execLogs) == 0 || execLogs[0].ExecType != "routine" || execLogs[0].Status != "success" {
+		t.Fatalf("expected routine recorded in bot_execution_logs, got %+v", execLogs)
+	}
+
+	// 9. Delete thread removes thread & its messages
 	reqDelTh := httptest.NewRequest(http.MethodDelete, "/api/v2/bots/"+botID+"/threads/"+th1ID, nil)
 	reqDelTh.SetPathValue("id", botID)
 	reqDelTh.SetPathValue("threadId", th1ID)

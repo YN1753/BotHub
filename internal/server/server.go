@@ -44,6 +44,9 @@ func New(
 	if push != nil {
 		eng.SetHub(push.Hub())
 	}
+	if sched != nil {
+		sched.SetBotRoutineExecutor(eng)
+	}
 
 	return &Server{
 		store:     st,
@@ -134,6 +137,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v2/bots/{id}/messages", s.requireAuth(s.handleClearBotMessages))
 	mux.HandleFunc("DELETE /api/v2/bots/{id}/messages/{msgId}", s.requireAuth(s.handleDeleteBotMessage))
 	mux.HandleFunc("POST /api/v2/bots/{id}/threads", s.requireAuth(s.handleCreateBotThread))
+	mux.HandleFunc("POST /api/v2/bots/{id}/threads/fork", s.requireAuth(s.handleForkBotThread))
 	mux.HandleFunc("POST /api/v2/bots/{id}/threads/{threadId}", s.requireAuth(s.handleUpdateBotThread))
 	mux.HandleFunc("POST /api/v2/bots/{id}/threads/{threadId}/summarize", s.requireAuth(s.handleSummarizeBotThread))
 	mux.HandleFunc("DELETE /api/v2/bots/{id}/threads/{threadId}", s.requireAuth(s.handleDeleteBotThread))
