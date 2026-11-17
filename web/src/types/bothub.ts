@@ -62,8 +62,8 @@ export interface BotThread {
   id: string
   bot_id: string
   title: string
-  last_summary: string
-  message_count: number
+  summary?: string
+  msg_count: number
   archived: boolean
   created_at: string
   updated_at: string
@@ -72,11 +72,12 @@ export interface BotThread {
 export interface BotExecutionLog {
   id: number
   bot_id: string
-  thread_id: string
-  action_kind: string
-  tool_name: string
+  thread_id?: string
+  exec_type: string
+  name: string
+  input_summary?: string
+  output_summary?: string
   status: string
-  summary: string
   duration_ms: number
   created_at: string
 }

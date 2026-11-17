@@ -450,17 +450,17 @@ const activityEntries = computed(() => {
   // 1. Real per-Bot execution audit logs (tools, custom skills, chat/routine completions)
   ;(store.state.botExecutions || []).forEach((ex) => {
     const kindLabel =
-      ex.action_kind === 'tool'
-        ? `工具调用 · ${ex.tool_name}`
-        : ex.action_kind === 'skill'
-        ? `技能调用 · ${ex.tool_name}`
-        : ex.action_kind === 'routine'
+      ex.exec_type === 'tool'
+        ? `工具调用 · ${ex.name}`
+        : ex.exec_type === 'skill'
+        ? `技能调用 · ${ex.name}`
+        : ex.exec_type === 'routine'
         ? '例程任务'
-        : '对话响应'
+        : `对话响应 · ${ex.name}`
     items.push({
       title: kindLabel,
       time: `${formatTime(ex.created_at)} · ${ex.duration_ms}ms`,
-      detail: ex.summary || ex.tool_name,
+      detail: ex.output_summary || ex.input_summary || ex.name,
       status: ex.status,
     })
   })
@@ -1453,8 +1453,8 @@ function stateBadgeClass(state?: string): string {
                 class="px-2.5 py-1 text-[11px] whitespace-nowrap cursor-pointer font-medium"
               >
                 {{ th.title }}
-                <span v-if="th.message_count > 0" class="font-mono text-[10px] opacity-65 ml-0.5">
-                  ({{ th.message_count }})
+                <span v-if="th.msg_count > 0" class="font-mono text-[10px] opacity-65 ml-0.5">
+                  ({{ th.msg_count }})
                 </span>
               </button>
               <button

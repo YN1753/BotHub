@@ -178,7 +178,6 @@ CREATE TABLE IF NOT EXISTS agent_memories (
 	UNIQUE(scope, fact_key)
 );
 CREATE INDEX IF NOT EXISTS idx_agent_memories_cat ON agent_memories(category, updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope, pinned DESC, importance DESC, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS bot_threads (
 	id TEXT PRIMARY KEY,
@@ -304,7 +303,8 @@ func (s *Store) migrateScopedMemoriesTable() error {
 	if err != nil {
 		return nil
 	}
-	needsTableRebuild := strings.Contains(createSQL, "fact_key TEXT NOT NULL UNIQUE")
+	normalizedSQL := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(createSQL, "\n", ""), " ", ""))
+	needsTableRebuild := !strings.Contains(normalizedSQL, "unique(scope,fact_key)")
 	if needsTableRebuild {
 		tx, err := s.db.Begin()
 		if err != nil {
