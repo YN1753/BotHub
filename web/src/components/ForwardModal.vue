@@ -146,6 +146,18 @@ async function submitForward(jumpAfter: boolean) {
               <div class="text-xs font-semibold text-white truncate">{{ b.name }}</div>
               <div class="text-[10.5px] text-slate-400 truncate">{{ b.role_title }}</div>
             </div>
+            <span
+              :class="[
+                'w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors',
+                selectedId === b.id
+                  ? 'bg-[#f2b880] border-[#f2b880] text-[#070a13]'
+                  : 'border-[#fff8ee]/20 text-transparent'
+              ]"
+            >
+              <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.8" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </span>
           </button>
         </div>
       </div>

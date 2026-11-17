@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { trackSpotlight } from '../utils/topLayer'
@@ -58,6 +58,20 @@ const groupMode = ref<'smart' | 'sequential' | 'mention_only'>('smart')
 const groupAnnouncement = ref('')
 const toolSearch = ref('')
 const saving = ref(false)
+const botNameInputRef = ref<HTMLInputElement | null>(null)
+const groupNameInputRef = ref<HTMLInputElement | null>(null)
+
+function resetCreateForm() {
+  name.value = ''
+  roleTitle.value = ''
+  traits.value = ''
+  systemPrompt.value = ''
+  selectedSkillIds.value = []
+  groupName.value = ''
+  groupDesc.value = ''
+  groupAnnouncement.value = ''
+  toolSearch.value = ''
+}
 
 const availableTools = computed(() => store.state.availableTools || [])
 const groupedTools = computed(() => groupAvailableTools(availableTools.value))
@@ -115,6 +129,10 @@ watch(
     if (groupMembers.value.length === 0) {
       groupMembers.value = availableSpecialistBots.value.slice(0, 3).map((b) => b.id)
     }
+    nextTick(() => {
+      if (mode.value === 'group') groupNameInputRef.value?.focus()
+      else botNameInputRef.value?.focus()
+    })
   }
 )
 
@@ -254,6 +272,15 @@ async function handleSubmit() {
     max-width="2xl"
     @close="closeModal"
   >
+    <template #header-actions>
+      <button
+        type="button"
+        @click="resetCreateForm"
+        class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-400 hover:text-white cursor-pointer"
+      >
+        重置表单
+      </button>
+    </template>
     <div class="shrink-0">
       <SegmentedTabs v-model="mode" :items="CREATE_TABS" aria-label="创建类型" />
     </div>
@@ -292,6 +319,7 @@ async function handleSubmit() {
             <label class="flex flex-col gap-1.5 text-xs text-slate-300">
               <span>Bot 名称</span>
               <input
+                ref="botNameInputRef"
                 v-model="name"
                 type="text"
                 placeholder="如：阿彻 / 云账单管家 / 深夜酒馆"
@@ -437,6 +465,7 @@ async function handleSubmit() {
             <label class="flex flex-col gap-1.5 text-xs text-slate-300">
               <span>群聊名称</span>
               <input
+                ref="groupNameInputRef"
                 v-model="groupName"
                 type="text"
                 placeholder="如：深夜吐槽茶话会 / 生产故障联合群"

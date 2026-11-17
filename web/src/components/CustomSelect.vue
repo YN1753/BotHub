@@ -112,6 +112,20 @@ function handleTriggerKeydown(e: KeyboardEvent) {
     e.preventDefault()
     const opt = props.options[highlightedIndex.value]
     if (opt) selectOption(opt.value)
+    return
+  }
+  if (open.value && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const ch = e.key.toLowerCase()
+    const start = (highlightedIndex.value + 1) % Math.max(1, props.options.length)
+    for (let step = 0; step < props.options.length; step++) {
+      const idx = (start + step) % props.options.length
+      if (props.options[idx].label.toLowerCase().includes(ch)) {
+        e.preventDefault()
+        highlightedIndex.value = idx
+        void scrollHighlightedIntoView()
+        return
+      }
+    }
   }
 }
 

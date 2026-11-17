@@ -61,7 +61,15 @@ const showLightKey = ref(false)
 const showAppToken = ref(false)
 const showCfToken = ref(false)
 const showBiliSess = ref(false)
+const poolKeyVisible = ref<Record<string, boolean>>({})
 const savedSnapshot = ref('')
+
+const poolSummaryChip = computed(() => {
+  const total = poolEntries.value.length
+  const enabled = poolEntries.value.filter((x) => x.enabled).length
+  const ready = poolEntries.value.filter((x) => x.enabled && x.api_key && x.model).length
+  return `已启用 ${enabled}/${total} · 就绪 ${ready}`
+})
 
 function currentConfigSnapshot(): string {
   return JSON.stringify({
@@ -592,7 +600,12 @@ async function handleImportBackup(e: Event) {
           <div class="modal-section flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2 flex-wrap">
               <div>
-                <div class="text-xs font-semibold text-emerald-300">免费 / 扩展 AI 模型池 (自主添加 · 实时探测可用模型)</div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs font-semibold text-emerald-300">免费 / 扩展 AI 模型池 (自主添加 · 实时探测可用模型)</span>
+                  <span v-if="poolEntries.length > 0" class="font-mono text-[10px] px-1.5 py-0.5 rounded border border-emerald-400/25 bg-emerald-400/10 text-emerald-200">
+                    {{ poolSummaryChip }}
+                  </span>
+                </div>
                 <p class="text-[11px] text-slate-400 mt-0.5">支持接入任意 OpenAI 兼容或 Gemini 接口，自动过滤不可用模型并按优先级故障切换</p>
               </div>
               <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
@@ -746,7 +759,12 @@ async function handleImportBackup(e: Event) {
                 <div v-if="expandedPoolId === entry.id" class="pt-2 border-t border-[#fff8ee]/8 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                   <label class="sm:col-span-2 flex flex-col gap-1 text-slate-400">
                     <span>API Key ({{ entry.api_key ? '已配置，留着 **** 不变或覆盖输入新 Key' : '待填入 API Key' }})</span>
-                    <input v-model="entry.api_key" type="password" placeholder="粘贴对应平台的 API Key..." class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                    <div class="relative">
+                      <input v-model="entry.api_key" :type="poolKeyVisible[entry.id] ? 'text' : 'password'" placeholder="粘贴对应平台的 API Key..." class="w-full min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#070b18] pl-2.5 pr-12 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60" />
+                      <button type="button" @click="poolKeyVisible[entry.id] = !poolKeyVisible[entry.id]" class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded text-[10.5px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
+                        {{ poolKeyVisible[entry.id] ? '隐藏' : '显示' }}
+                      </button>
+                    </div>
                   </label>
                   <label class="flex flex-col gap-1 text-slate-400">
                     <span>显示名称</span>

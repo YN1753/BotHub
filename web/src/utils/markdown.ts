@@ -21,6 +21,7 @@ export function renderSafeMarkdown(raw: string): string {
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     out = out.replace(/~~([^~\n]+)~~/g, '<del class="md-del">$1</del>')
     out = out.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+    out = out.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">[图片: $1]</a>')
     out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     return out
   }
@@ -127,4 +128,20 @@ export function renderSafeMarkdown(raw: string): string {
   }
   closeList()
   return `<div class="md-body">${html.join('')}</div>`
+}
+
+export function handleMarkdownCodeCopy(e: MouseEvent, onCopied?: () => void): void {
+  const target = e.target as HTMLElement | null
+  const btn = target?.closest('.md-copy-code-btn') as HTMLButtonElement | null
+  if (!btn) return
+  const code = btn.closest('.md-code-wrap')?.querySelector('pre code')?.textContent || ''
+  navigator.clipboard?.writeText(code).then(() => {
+    btn.textContent = '已复制'
+    btn.classList.add('text-emerald-300', 'border-emerald-400/45')
+    onCopied?.()
+    window.setTimeout(() => {
+      btn.textContent = '复制代码'
+      btn.classList.remove('text-emerald-300', 'border-emerald-400/45')
+    }, 1500)
+  })
 }

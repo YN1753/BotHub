@@ -37,6 +37,25 @@ const inviteCandidates = computed<Bot[]>(() =>
   specialistBots.value.filter((b) => !currentMemberIds.value.includes(b.id))
 )
 
+const inviteQuery = ref('')
+
+const filteredInviteCandidates = computed<Bot[]>(() => {
+  const q = inviteQuery.value.trim().toLowerCase()
+  if (!q) return inviteCandidates.value
+  return inviteCandidates.value.filter(
+    (b) => b.name.toLowerCase().includes(q) || (b.role_title || '').toLowerCase().includes(q)
+  )
+})
+
+const adhocCandidates = computed<Bot[]>(() => {
+  const q = inviteQuery.value.trim().toLowerCase()
+  const base = specialistBots.value.filter((x) => x.id !== bot.value?.id)
+  if (!q) return base
+  return base.filter(
+    (b) => b.name.toLowerCase().includes(q) || (b.role_title || '').toLowerCase().includes(q)
+  )
+})
+
 // Group edit state
 const showInviteList = ref(false)
 const editName = ref('')
@@ -385,9 +404,18 @@ async function handleDisbandGroup() {
 
             <!-- Expandable Invite Candidate List -->
             <div v-if="showInviteList && inviteCandidates.length > 0" class="pt-2.5 border-t border-[#fff8ee]/10 flex flex-col gap-1.5">
-              <span class="font-mono text-[10.5px] text-slate-400">选择要临时拉入本群的 Bot：</span>
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-mono text-[10.5px] text-slate-400">选择要临时拉入本群的 Bot：</span>
+                <input
+                  v-if="inviteCandidates.length > 4"
+                  v-model="inviteQuery"
+                  type="search"
+                  placeholder="搜索..."
+                  class="w-28 min-h-[26px] rounded-md border border-[#fff8ee]/12 bg-[#050811] px-2 text-[11px] text-white"
+                />
+              </div>
               <button
-                v-for="cand in inviteCandidates"
+                v-for="cand in filteredInviteCandidates"
                 :key="cand.id"
                 type="button"
                 @pointermove="trackSpotlight"
@@ -507,9 +535,16 @@ async function handleDisbandGroup() {
               无需中断思路：保留「{{ bot.name }}」，勾选其他专家即刻组建多人协同群。
             </p>
 
+            <input
+              v-if="specialistBots.length > 5"
+              v-model="inviteQuery"
+              type="search"
+              placeholder="搜索成员名字或职责..."
+              class="min-h-[34px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white focus:border-[#f2b880]/60"
+            />
             <div class="flex flex-col gap-1.5">
               <button
-                v-for="cand in specialistBots.filter((x) => x.id !== bot!.id)"
+                v-for="cand in adhocCandidates"
                 :key="cand.id"
                 type="button"
                 @pointermove="trackSpotlight"

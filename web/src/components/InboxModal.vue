@@ -2,8 +2,8 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { formatTime } from '../utils/format'
-import { renderSafeMarkdown } from '../utils/markdown'
+import { formatRelativeTime, formatTime } from '../utils/format'
+import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -11,6 +11,7 @@ import SegmentedTabs from './SegmentedTabs.vue'
 const store = useAppStore()
 const activeFilter = ref<'all' | 'morning' | 'radar' | 'asset' | 'alert'>('all')
 const onlyUnread = ref(false)
+const inboxQuery = ref('')
 const listRef = ref<HTMLElement | null>(null)
 
 const FILTER_TABS = [
@@ -29,13 +30,14 @@ const desktopNotify = ref(
 const filtered = computed(() =>
   store.state.notifications.filter((n) => {
     if (onlyUnread.value && n.read_at) return false
-    if (activeFilter.value === 'all') return true
     const s = n.source.toLowerCase()
-    if (activeFilter.value === 'morning') return s.includes('morning')
-    if (activeFilter.value === 'radar') return s.includes('radar') || s.includes('bili')
-    if (activeFilter.value === 'asset') return s.includes('asset')
-    if (activeFilter.value === 'alert') return s.includes('nezha') || s.includes('alert') || s.includes('webhook')
-    return true
+    if (activeFilter.value === 'morning' && !s.includes('morning')) return false
+    if (activeFilter.value === 'radar' && !s.includes('radar') && !s.includes('bili')) return false
+    if (activeFilter.value === 'asset' && !s.includes('asset')) return false
+    if (activeFilter.value === 'alert' && !s.includes('nezha') && !s.includes('alert') && !s.includes('webhook')) return false
+    const q = inboxQuery.value.trim().toLowerCase()
+    if (!q) return true
+    return `${n.title} ${n.summary} ${n.source} ${n.markdown || ''}`.toLowerCase().includes(q)
   })
 )
 
@@ -175,19 +177,29 @@ watch(
 
     <div class="shrink-0 flex items-center justify-between gap-2 flex-wrap">
       <SegmentedTabs v-model="activeFilter" :items="FILTER_TABS" variant="subtle" aria-label="情报分类筛选" />
-      <button
-        type="button"
-        :aria-pressed="onlyUnread"
-        @click="onlyUnread = !onlyUnread"
-        :class="[
-          'min-h-[34px] px-3 rounded-xl border text-xs cursor-pointer transition-colors',
-          onlyUnread
-            ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
-            : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
-        ]"
-      >
-        仅看未读 ({{ store.unreadInboxCount.value }})
-      </button>
+      <div class="flex items-center gap-2 flex-wrap">
+        <input
+          v-model="inboxQuery"
+          type="search"
+          aria-label="搜索收件箱情报"
+          placeholder="搜索情报关键词..."
+          @keydown.escape.stop="inboxQuery = ''"
+          class="w-36 sm:w-44 min-h-[34px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/55"
+        />
+        <button
+          type="button"
+          :aria-pressed="onlyUnread"
+          @click="onlyUnread = !onlyUnread"
+          :class="[
+            'min-h-[34px] px-3 rounded-xl border text-xs cursor-pointer transition-colors',
+            onlyUnread
+              ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
+              : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+          ]"
+        >
+          仅看未读 ({{ store.unreadInboxCount.value }})
+        </button>
+      </div>
     </div>
 
     <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
@@ -221,7 +233,9 @@ watch(
             </span>
             <strong class="text-sm text-white truncate">{{ n.title }}</strong>
           </div>
-          <span class="font-mono tabular-nums text-[11px] text-slate-400 shrink-0">{{ formatTime(n.created_at) }}</span>
+          <span :title="formatTime(n.created_at)" class="font-mono tabular-nums text-[11px] text-slate-400 shrink-0">
+            {{ formatRelativeTime(n.created_at) }}
+          </span>
         </div>
         <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">{{ n.summary }}</p>
         <div class="mt-2 flex items-center justify-between gap-2 flex-wrap">
@@ -232,7 +246,7 @@ watch(
               </svg>
               <span>展开全文</span>
             </summary>
-            <div class="mt-2 pt-2 border-t border-[#fff8ee]/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
+            <div @click="handleMarkdownCodeCopy($event)" class="mt-2 pt-2 border-t border-[#fff8ee]/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
           </details>
           <div class="flex items-center gap-1.5 shrink-0 self-start">
             <button

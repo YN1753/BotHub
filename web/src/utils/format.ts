@@ -1,3 +1,7 @@
+function pad2(n: string | number): string {
+  return String(n).padStart(2, '0')
+}
+
 export function escapeHtml(s: unknown): string {
   return String(s ?? '')
     .replaceAll('&', '&amp;')
@@ -10,8 +14,26 @@ export function formatTime(str?: string): string {
   if (!str) return '--'
   const d = new Date(str)
   if (Number.isNaN(d.getTime())) return str
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+export function formatRelativeTime(str?: string): string {
+  if (!str) return '--'
+  const d = new Date(str)
+  if (Number.isNaN(d.getTime())) return str
+  const diffSec = Math.floor((Date.now() - d.getTime()) / 1000)
+  if (diffSec < 0) return formatTime(str)
+  if (diffSec < 60) return '刚刚'
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)} 分钟前`
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} 小时前`
+  return formatChatTime(str) || formatTime(str)
+}
+
+export function formatDurationMs(ms?: number): string {
+  if (ms === undefined || ms === null || Number.isNaN(ms)) return ''
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`
 }
 
 export function formatDateOnly(str?: string): string {
@@ -21,8 +43,7 @@ export function formatDateOnly(str?: string): string {
   if (m) return m[1]
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return s
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 }
 
 export function generateSlug(text: string, prefix = 'item'): string {

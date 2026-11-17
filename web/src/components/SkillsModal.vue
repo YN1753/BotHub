@@ -230,6 +230,23 @@ function openTestPanel(sk: Skill) {
   testArgs.value = initArgs
 }
 
+function formatTestOutput(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2)
+  } catch {
+    return raw
+  }
+}
+
+async function copyTestOutput(raw: string) {
+  try {
+    await navigator.clipboard.writeText(formatTestOutput(raw))
+    store.notify('已复制响应内容')
+  } catch {
+    store.notify('复制失败')
+  }
+}
+
 async function runLiveTest() {
   if (!testSkillTarget.value || testing.value) return
   testing.value = true
@@ -651,10 +668,19 @@ watch(
           <div v-if="testResult" class="rounded-lg bg-[#050811] border border-[#fff8ee]/10 p-2.5 text-[11px] font-mono">
             <div v-if="testResult.error" class="text-rose-300">{{ testResult.error }}</div>
             <template v-else>
-              <div class="text-emerald-300 mb-1">
-                HTTP {{ testResult.statusCode || 200 }} · {{ testResult.latencyMs }}ms
+              <div class="flex items-center justify-between gap-2 mb-1">
+                <span class="text-emerald-300">
+                  HTTP {{ testResult.statusCode || 200 }} · {{ testResult.latencyMs }}ms
+                </span>
+                <button
+                  type="button"
+                  @click="copyTestOutput(testResult.output)"
+                  class="px-2 py-0.5 rounded border border-[#fff8ee]/12 text-[10px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+                >
+                  复制响应
+                </button>
               </div>
-              <pre class="whitespace-pre-wrap break-all text-slate-300 max-h-48 overflow-y-auto">{{ testResult.output }}</pre>
+              <pre class="whitespace-pre-wrap break-all text-slate-300 max-h-48 overflow-y-auto">{{ formatTestOutput(testResult.output) }}</pre>
             </template>
           </div>
         </div>

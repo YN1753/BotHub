@@ -58,7 +58,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.19.0',
+  version: 'v2.20.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -713,5 +713,6 @@ export function useAppStore() {
     toggleSound,
     playSubtleChime,
     startSSE,
+    stopSSE,
   }
 }

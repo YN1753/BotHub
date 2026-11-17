@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onBeforeUnmount } from 'vue'
 import { getColorPalette, parseAvatarStyle } from '../utils/botLook'
 
 const props = withDefaults(
@@ -29,6 +29,10 @@ function triggerWink() {
   }, 850)
 }
 
+onBeforeUnmount(() => {
+  if (winkTimer !== null) window.clearTimeout(winkTimer)
+})
+
 const parsed = computed(() => parseAvatarStyle(props.avatarStyle))
 const archetype = computed(() => parsed.value.shape)
 const palette = computed(() => getColorPalette(parsed.value.color))
@@ -52,13 +56,14 @@ const sizeClass = computed(() => {
 <template>
   <div
     :style="{ '--bot-glow': palette.glow }"
+    :aria-hidden="!interactive || undefined"
     @click="triggerWink"
     :class="[
       'bot-avatar-root shrink-0 relative inline-flex items-center justify-center select-none',
       sizeClass,
       `bot-avatar-${isWinking ? 'done' : state}`,
       `bot-kind-${archetype}`,
-      interactive ? 'bot-avatar-interactive' : ''
+      interactive ? 'bot-avatar-interactive cursor-pointer' : ''
     ]"
   >
     <!-- Soft ambient aura behind hero/large avatars -->

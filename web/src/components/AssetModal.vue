@@ -447,8 +447,19 @@ async function handleDelete() {
           </button>
         </div>
 
-        <div v-if="extraRows.length === 0" class="text-[11px] text-slate-500 py-1">
-          暂无扩展属性，点击右上角「+ 添加属性」即可自由挂载扩展键值。
+        <div v-if="extraRows.length === 0" class="flex flex-col gap-2 py-1">
+          <span class="text-[11px] text-slate-500">暂无扩展属性，点击右上角「+ 添加属性」或点击下方常用字段名快速添加：</span>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="k in ['host', 'region', 'registrar', 'panel_url', 'account']"
+              :key="k"
+              type="button"
+              @click="addExtraRow(k, '')"
+              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] font-mono text-[10.5px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+            >
+              + {{ k }}
+            </button>
+          </div>
         </div>
 
         <div v-else class="flex flex-col gap-2">
@@ -463,12 +474,24 @@ async function handleDelete() {
               placeholder="键名 (如 region)"
               class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60"
             />
-            <input
-              v-model="row.value"
-              type="text"
-              placeholder="属性值"
-              class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60"
-            />
+            <div class="flex items-center gap-1.5 min-w-0">
+              <input
+                v-model="row.value"
+                type="text"
+                placeholder="属性值"
+                class="flex-1 min-w-0 min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60"
+              />
+              <a
+                v-if="/^https?:\/\//i.test(row.value.trim())"
+                :href="row.value.trim()"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="在新窗口打开此链接"
+                class="px-2 py-1.5 rounded-lg border border-cyan-400/35 text-[10.5px] text-cyan-200 hover:bg-cyan-500/15 shrink-0"
+              >
+                打开
+              </a>
+            </div>
             <button
               type="button"
               @click="removeExtraRow(idx)"

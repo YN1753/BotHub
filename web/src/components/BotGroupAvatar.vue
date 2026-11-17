@@ -51,7 +51,10 @@ const isBusy = computed(() => props.state === 'working' || props.state === 'thin
     <div
       v-for="m in displayMembers"
       :key="m.id"
-      class="w-full h-full flex items-center justify-center rounded-[4px] bg-[#0e1427]/90 overflow-hidden"
+      :class="[
+        'w-full h-full flex items-center justify-center rounded-[4px] bg-[#0e1427]/90 overflow-hidden transition-colors',
+        m.state === 'working' || m.state === 'thinking' ? 'ring-1 ring-[#f2b880]/75 bg-[#f2b880]/10' : ''
+      ]"
     >
       <BotAvatar
         :avatar-style="m.avatar_style"

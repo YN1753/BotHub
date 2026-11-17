@@ -21,6 +21,7 @@ const searchQuery = ref('')
 const filterCat = ref('all')
 const filterScope = ref('all')
 const pinnedOnly = ref(false)
+const coreOnly = ref(false)
 const sortBy = ref<'weight' | 'recent' | 'recalled'>('weight')
 const pruning = ref(false)
 const saving = ref(false)
@@ -104,6 +105,7 @@ const filteredMemories = computed(() => {
     if (filterScope.value !== 'all' && mScope !== filterScope.value) return false
     if (filterCat.value !== 'all' && m.category !== filterCat.value) return false
     if (pinnedOnly.value && !m.pinned) return false
+    if (coreOnly.value && (m.importance || 3) < 4) return false
     if (!q) return true
     return `${m.fact_key} ${m.content} ${m.category} ${mScope}`.toLowerCase().includes(q)
   })
@@ -289,6 +291,15 @@ async function togglePin(m: AgentMemory) {
   }
 }
 
+async function copyMemoryContent(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    store.notify('已复制记忆内容')
+  } catch {
+    store.notify('复制失败')
+  }
+}
+
 async function handleDelete(id: number) {
   try {
     await BotHubApi.deleteMemory(id)
@@ -428,6 +439,19 @@ watch(
           仅置顶
         </button>
         <button
+          type="button"
+          :aria-pressed="coreOnly"
+          @click="coreOnly = !coreOnly"
+          :class="[
+            'min-h-[34px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+            coreOnly
+              ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
+              : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+          ]"
+        >
+          核心 W4+
+        </button>
+        <button
           v-if="filterScope !== 'all' && filteredMemories.length > 25"
           type="button"
           :disabled="pruning"
@@ -545,6 +569,13 @@ watch(
               class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
             >
               {{ m.pinned ? '取消置顶' : '置顶' }}
+            </button>
+            <button
+              type="button"
+              @click="copyMemoryContent(m.content)"
+              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+            >
+              复制
             </button>
             <button
               type="button"

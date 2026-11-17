@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from './stores/useAppStore'
 import StarfieldBg from './components/StarfieldBg.vue'
 import LoginGate from './components/LoginGate.vue'
@@ -62,17 +62,35 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
 }
 
+function handleUnauthorized() {
+  if (!store.state.authenticated) return
+  store.stopSSE()
+  store.state.authenticated = false
+  store.notify('会话登录已失效，请重新验证访问密钥')
+}
+
+watch(
+  () => [store.state.authenticated, store.unreadInboxCount.value] as const,
+  ([authed, unread]) => {
+    if (typeof document === 'undefined') return
+    document.title = authed && unread > 0 ? `(${unread}) Vesper BotHub` : 'Vesper BotHub'
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
   store.checkAuth()
   window.addEventListener('keydown', handleGlobalKeydown)
   window.addEventListener('online', handleOnlineStatus)
   window.addEventListener('offline', handleOnlineStatus)
+  window.addEventListener('bothub:unauthorized', handleUnauthorized)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener('online', handleOnlineStatus)
   window.removeEventListener('offline', handleOnlineStatus)
+  window.removeEventListener('bothub:unauthorized', handleUnauthorized)
 })
 </script>
 
@@ -171,9 +189,20 @@ onBeforeUnmount(() => {
         v-if="store.state.toastMessage"
         role="status"
         aria-live="polite"
-        class="fixed top-[max(0.875rem,env(safe-area-inset-top,0.875rem))] left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-[60] max-w-[min(92vw,24rem)] flex items-center gap-2.5 rounded-xl border border-[#f2b880]/45 bg-[#0a0f1f]/96 px-3.5 py-2.5 text-xs text-slate-100 shadow-2xl backdrop-blur-xl"
+        :class="[
+          'fixed top-[max(0.875rem,env(safe-area-inset-top,0.875rem))] left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-[60] max-w-[min(92vw,24rem)] flex items-center gap-2.5 rounded-xl bg-[#0a0f1f]/96 px-3.5 py-2.5 text-xs text-slate-100 shadow-2xl backdrop-blur-xl border',
+          /失败|错误|异常|超时|失效|无法/.test(store.state.toastMessage)
+            ? 'border-rose-400/55'
+            : 'border-[#f2b880]/45'
+        ]"
       >
-        <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880] shrink-0" aria-hidden="true" />
+        <span
+          :class="[
+            'w-1.5 h-1.5 rounded-full shrink-0',
+            /失败|错误|异常|超时|失效|无法/.test(store.state.toastMessage) ? 'bg-rose-400' : 'bg-[#f2b880]'
+          ]"
+          aria-hidden="true"
+        />
         <span class="flex-1 leading-snug">{{ store.state.toastMessage }}</span>
         <button
           type="button"

@@ -14,20 +14,45 @@ import type {
   WorkspaceBriefing,
 } from '../types/bothub'
 
-export async function apiRequest<T = any>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
-    credentials: 'same-origin',
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(data.error || `请求失败 (${res.status})`)
+export async function apiRequest<T = any>(
+  path: string,
+  options: RequestInit & { timeoutMs?: number } = {}
+): Promise<T> {
+  const { timeoutMs = 45_000, ...fetchOpts } = options
+  const ctrl = new AbortController()
+  const timer =
+    typeof window !== 'undefined' && timeoutMs > 0
+      ? window.setTimeout(() => ctrl.abort(), timeoutMs)
+      : undefined
+  if (fetchOpts.signal) {
+    fetchOpts.signal.addEventListener('abort', () => ctrl.abort(), { once: true })
   }
-  return data as T
+  try {
+    const res = await fetch(path, {
+      credentials: 'same-origin',
+      ...fetchOpts,
+      signal: ctrl.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(fetchOpts.headers || {}),
+      },
+    })
+    const data = await res.json().catch(() => ({}))
+    if (res.status === 401 && !path.startsWith('/api/auth/') && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('bothub:unauthorized'))
+    }
+    if (!res.ok) {
+      throw new Error(data.error || `请求失败 (${res.status})`)
+    }
+    return data as T
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new Error('请求超时，请检查网络连接或服务端响应状态')
+    }
+    throw err
+  } finally {
+    if (timer !== undefined) window.clearTimeout(timer)
+  }
 }
 
 export const BotHubApi = {
@@ -58,7 +83,7 @@ export const BotHubApi = {
       reply: string
       model_health?: Record<string, any>
       message: string
-    }>('/api/v2/model-pool/test', { method: 'POST', body: JSON.stringify(payload) }),
+    }>('/api/v2/model-pool/test', { method: 'POST', timeoutMs: 90_000, body: JSON.stringify(payload) }),
   fetchUpstreamModels: (payload: {
     target_id: string
     provider: string
@@ -78,7 +103,7 @@ export const BotHubApi = {
       }>
       filtered_out_count?: number
       unverified_count?: number
-    }>('/api/v2/model-pool/models', { method: 'POST', body: JSON.stringify(payload) }),
+    }>('/api/v2/model-pool/models', { method: 'POST', timeoutMs: 120_000, body: JSON.stringify(payload) }),
   testPush: () => apiRequest<{ ok: boolean; message: string }>('/api/test-push', { method: 'POST' }),
   rotateAppToken: () =>
     apiRequest<{ ok: boolean; token: string; message: string }>('/api/v2/auth/token/rotate', {

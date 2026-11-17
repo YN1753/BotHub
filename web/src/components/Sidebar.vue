@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { botStateLabel, formatChatTime, shortVersion } from '../utils/format'
 import { applySiblingStaggerFallback } from '../utils/topLayer'
@@ -92,7 +92,27 @@ function switchWorkspace(ws: 'bots' | 'ops') {
   emit('closeMobile')
 }
 
-onMounted(() => applySiblingStaggerFallback(rosterRef.value))
+function handleRosterShortcut(e: KeyboardEvent) {
+  if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+  if (store.state.isStreaming || document.querySelector('dialog[open]')) return
+  const list = filteredBots.value
+  if (list.length < 2) return
+  e.preventDefault()
+  const idx = list.findIndex((b) => b.id === store.state.activeBotId)
+  const nextIdx =
+    e.key === 'ArrowDown'
+      ? (idx + 1 + list.length) % list.length
+      : (idx - 1 + list.length) % list.length
+  void store.selectBot(list[nextIdx].id)
+}
+
+onMounted(() => {
+  applySiblingStaggerFallback(rosterRef.value)
+  window.addEventListener('keydown', handleRosterShortcut)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleRosterShortcut)
+})
 watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerFallback(rosterRef.value)))
 </script>
 
@@ -330,12 +350,12 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
           <span v-if="store.state.bots.length === 0">还没有 Bot，点击上方「新建 Bot」开始</span>
           <span v-else>当前筛选下暂无会话</span>
           <button
-            v-if="searchQuery"
+            v-if="searchQuery || rosterScope !== 'all'"
             type="button"
-            @click="searchQuery = ''"
+            @click="searchQuery = ''; rosterScope = 'all'"
             class="px-2.5 py-1 rounded-full border border-[#fff8ee]/14 text-slate-300 hover:text-[#f2b880] cursor-pointer"
           >
-            清除筛选
+            重置筛选
           </button>
         </div>
 

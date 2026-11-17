@@ -2,8 +2,8 @@
 import { ref, computed, watch, nextTick, useId, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore, mapServerMessages, type ChatMessageUI } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { botStateLabel, describeCron, formatTime, formatTimelineDivider, groupModeLabel } from '../utils/format'
-import { renderSafeMarkdown } from '../utils/markdown'
+import { botStateLabel, describeCron, formatDurationMs, formatTime, formatTimelineDivider, groupModeLabel } from '../utils/format'
+import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
 import { applySiblingStaggerFallback, isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
 import { groupAvailableTools, shortToolLabel } from '../utils/toolMeta'
 import type { AgentMemory, Bot, BotMode, MemoryPolicy } from '../types/bothub'
@@ -1092,7 +1092,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
     return
   }
 
-  if (e.key === 'Enter' && !e.shiftKey) {
+  if ((e.key === 'Enter' && !e.shiftKey) || ((e.metaKey || e.ctrlKey) && e.key === 'Enter')) {
     e.preventDefault()
     if (isImeComposingEnter(e, lastCompositionEndAt)) return
     formRef.value?.requestSubmit()
@@ -1232,18 +1232,7 @@ function appendMention(tag: string) {
 }
 
 function handleMarkdownClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  const btn = target.closest('.md-copy-code-btn') as HTMLButtonElement | null
-  if (!btn) return
-  const code = btn.closest('.md-code-wrap')?.querySelector('pre code')?.textContent || ''
-  navigator.clipboard?.writeText(code).then(() => {
-    btn.textContent = '已复制'
-    btn.classList.add('text-emerald-300', 'border-emerald-400/45')
-    window.setTimeout(() => {
-      btn.textContent = '复制代码'
-      btn.classList.remove('text-emerald-300', 'border-emerald-400/45')
-    }, 1500)
-  })
+  handleMarkdownCodeCopy(e, () => store.notify('代码块已复制'))
 }
 
 async function copyMessageContent(text: string) {
@@ -2250,6 +2239,13 @@ function stateBadgeClass(state?: string): string {
                   </button>
                   <button
                     type="button"
+                    @click="copyMessageContent(m.content)"
+                    class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
+                  >
+                    复制
+                  </button>
+                  <button
+                    type="button"
                     @click="openForwardForMessage(m)"
                     class="px-2 py-0.5 rounded-md text-[10.5px] text-slate-500 hover:text-[#f2b880] cursor-pointer"
                   >
@@ -2386,7 +2382,7 @@ function stateBadgeClass(state?: string): string {
                         <div class="flex items-center justify-between gap-2 text-[11px]">
                           <span class="text-[#f2b880] font-semibold truncate">#{{ idx + 1 }} {{ formatToolLabel(tc.name) }}</span>
                           <div class="flex items-center gap-2 shrink-0">
-                            <span v-if="tc.durationMs !== undefined" class="text-[10px] text-slate-400">{{ tc.durationMs }}ms</span>
+                            <span v-if="tc.durationMs !== undefined" class="text-[10px] text-slate-400">{{ formatDurationMs(tc.durationMs) }}</span>
                             <button
                               v-if="tc.result || tc.arguments"
                               type="button"
@@ -2539,6 +2535,7 @@ function stateBadgeClass(state?: string): string {
               @click="scrollToBottom(true)"
               class="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 min-h-[40px] sm:min-h-[34px] px-4 rounded-full border border-[#f2b880]/45 bg-[#0a0f1f]/95 text-xs font-medium text-[#f2b880] shadow-xl backdrop-blur-md hover:bg-[#f2b880]/15 cursor-pointer"
             >
+              <span v-if="store.state.isStreaming" class="w-1.5 h-1.5 rounded-full bg-[#f2b880] animate-pulse shrink-0" aria-hidden="true" />
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <polyline points="6 9 12 15 18 9" />
               </svg>

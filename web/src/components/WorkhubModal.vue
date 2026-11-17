@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { renderSafeMarkdown } from '../utils/markdown'
+import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
 import { formatTime } from '../utils/format'
 import type { TodoItem, WorkNote, WorkspaceBriefing } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
@@ -317,18 +317,7 @@ function startEditNote(n: WorkNote) {
 }
 
 function handleNoteMarkdownClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  const btn = target.closest('.md-copy-code-btn') as HTMLButtonElement | null
-  if (!btn) return
-  const code = btn.closest('.md-code-wrap')?.querySelector('pre code')?.textContent || ''
-  navigator.clipboard?.writeText(code).then(() => {
-    btn.textContent = '已复制'
-    btn.classList.add('text-emerald-300', 'border-emerald-400/45')
-    window.setTimeout(() => {
-      btn.textContent = '复制代码'
-      btn.classList.remove('text-emerald-300', 'border-emerald-400/45')
-    }, 1500)
-  })
+  handleMarkdownCodeCopy(e, () => store.notify('代码块已复制'))
 }
 
 function openAssetOpsFromBriefing() {
@@ -752,21 +741,26 @@ async function refineNoteWithBot(n: WorkNote) {
             @keydown.ctrl.enter.prevent="handleSaveNote"
             class="flex-1 min-h-[220px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] p-3 font-mono text-xs text-slate-100 resize-none"
           />
-          <div class="flex items-center justify-end gap-2 shrink-0">
-            <button
-              type="button"
-              @click="editingNote = false"
-              class="px-3.5 py-1.5 rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-white cursor-pointer"
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              :disabled="savingNote"
-              class="px-4 py-1.5 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
-            >
-              {{ savingNote ? '保存中...' : '保存文档' }}
-            </button>
+          <div class="flex items-center justify-between gap-2 shrink-0">
+            <span class="font-mono text-[10.5px] text-slate-500">
+              {{ draftNoteContent.length }} 字符 · {{ draftNoteContent ? draftNoteContent.split('\n').length : 0 }} 行
+            </span>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                @click="editingNote = false"
+                class="px-3.5 py-1.5 rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-white cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                :disabled="savingNote"
+                class="px-4 py-1.5 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+              >
+                {{ savingNote ? '保存中...' : '保存文档' }}
+              </button>
+            </div>
           </div>
         </form>
 
