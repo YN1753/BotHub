@@ -342,7 +342,9 @@ func (s *Store) PruneColdMemories(scope string, maxKeep int) (int64, error) {
 		AND id NOT IN (
 			SELECT id FROM agent_memories
 			WHERE COALESCE(NULLIF(TRIM(scope),''),'global') = ?
-			ORDER BY COALESCE(pinned,0) DESC, COALESCE(importance,3) DESC, COALESCE(recall_count,0) DESC, updated_at DESC
+			ORDER BY COALESCE(pinned,0) DESC,
+				(COALESCE(importance,3) * 10 + MIN(COALESCE(recall_count,0), 15) * 3) DESC,
+				COALESCE(NULLIF(last_recalled_at,''), updated_at) DESC
 			LIMIT ?
 		)`, sc, sc, maxKeep)
 	if err != nil {

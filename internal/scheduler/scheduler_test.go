@@ -109,3 +109,51 @@ func TestSchedulerOneShotRunAtAutoDisables(t *testing.T) {
 	latest, _ := st.GetTask("once_reminder")
 	t.Fatalf("expected one-shot reminder to run once and auto-disable; hits=%d task=%+v", runner.hits.Load(), latest)
 }
+
+func TestSchedulerSkipsMalformedTaskWithoutBlockingHealthyTasks(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "sched_bad_cron.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	_ = st.SaveTask(store.Task{
+		ID:       "bad_cron",
+		Name:     "损坏规则",
+		Type:     "once_mod",
+		CronExpr: "invalid cron expr",
+		Enabled:  true,
+		Params:   "{}",
+	})
+	_ = st.SaveTask(store.Task{
+		ID:       "good_cron",
+		Name:     "正常定时任务",
+		Type:     "once_mod",
+		CronExpr: "0 9 * * *",
+		Enabled:  true,
+		Params:   "{}",
+	})
+
+	runner := &onceRunner{}
+	reg := modules.NewRegistry()
+	reg.RegisterTaskRunner("once_mod", runner)
+	sched := NewWithRegistry(st, reg)
+	if err := sched.Start(); err != nil {
+		t.Fatalf("expected scheduler start to skip bad cron instead of failing: %v", err)
+	}
+	defer sched.Stop()
+
+	statuses, err := sched.Status()
+	if err != nil {
+		t.Fatalf("status error: %v", err)
+	}
+	foundNext := false
+	for _, ts := range statuses {
+		if ts.ID == "good_cron" && ts.NextRunAt != "" {
+			foundNext = true
+		}
+	}
+	if !foundNext {
+		t.Fatalf("expected good_cron to have scheduled NextRunAt despite bad_cron, got %+v", statuses)
+	}
+}

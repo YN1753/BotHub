@@ -22,6 +22,11 @@ const store = useAppStore()
 const searchQuery = ref('')
 const rosterScope = ref<'all' | 'groups' | 'companion' | 'worker'>('all')
 const rosterRef = ref<HTMLElement | null>(null)
+const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
+
+function updateOnlineFlag() {
+  isOnline.value = typeof navigator === 'undefined' ? true : navigator.onLine
+}
 
 const scopeCounts = computed(() => {
   const bots = store.state.bots
@@ -43,7 +48,7 @@ const filteredBots = computed(() => {
   return store.state.bots.filter((b) => {
     if (rosterScope.value === 'groups' && !isGroup(b)) return false
     if (rosterScope.value === 'companion' && (isGroup(b) || b.bot_mode !== 'companion')) return false
-    if (rosterScope.value === 'worker' && (isGroup(b) || (b.bot_mode !== 'worker' && b.bot_mode !== 'hybrid' && Boolean(b.bot_mode)))) return false
+    if (rosterScope.value === 'worker' && (isGroup(b) || b.bot_mode === 'companion')) return false
     if (!q) return true
     return `${b.name} ${b.role_title} ${b.traits || ''} ${b.last_summary}`.toLowerCase().includes(q)
   })
@@ -104,9 +109,13 @@ function handleRosterShortcut(e: KeyboardEvent) {
 onMounted(() => {
   applySiblingStaggerFallback(rosterRef.value)
   window.addEventListener('keydown', handleRosterShortcut)
+  window.addEventListener('online', updateOnlineFlag)
+  window.addEventListener('offline', updateOnlineFlag)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleRosterShortcut)
+  window.removeEventListener('online', updateOnlineFlag)
+  window.removeEventListener('offline', updateOnlineFlag)
 })
 watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerFallback(rosterRef.value)))
 </script>
@@ -145,16 +154,26 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
         <div class="flex items-center justify-between px-1">
           <div class="flex items-center gap-2 min-w-0">
             <span
-              :title="store.state.sseConnected ? 'SSE 实时事件通道在线' : 'SSE 通道重连中'"
+              :title="!isOnline ? '当前设备已离线' : store.state.sseConnected ? 'SSE 实时事件通道在线' : 'SSE 通道重连中'"
               :class="[
                 'w-2 h-2 rounded-full shrink-0',
-                store.state.sseConnected ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-amber-400 animate-pulse'
+                !isOnline
+                  ? 'bg-rose-400'
+                  : store.state.sseConnected
+                  ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
+                  : 'bg-amber-400 animate-pulse'
               ]"
               aria-hidden="true"
             />
             <strong class="text-base font-semibold tracking-tight text-white truncate">Vesper BotHub</strong>
             <span
-              v-if="!store.state.sseConnected"
+              v-if="!isOnline"
+              class="font-mono text-[9.5px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-400/35 shrink-0"
+            >
+              离线
+            </span>
+            <span
+              v-else-if="!store.state.sseConnected"
               class="font-mono text-[9.5px] px-1.5 py-0.5 rounded bg-amber-400/15 text-amber-300 border border-amber-400/30 shrink-0"
             >
               重连中

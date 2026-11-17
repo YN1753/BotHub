@@ -738,13 +738,33 @@ func (e *Engine) streamRoundWithFailover(
 	onDelta func(deltaReasoning, deltaContent string),
 ) (string, string, []apiToolCall, *TokenUsage, ModelTarget, error) {
 	var lastErr error
-	for idx, target := range targets {
-		if idx > 0 && emit != nil {
-			emit("model_switch", map[string]any{
-				"from_label": targets[idx-1].Label,
-				"to_label":   target.Label,
-				"to_model":   target.Model,
-			})
+	tryList := targets
+	// Single-node transient resilience: allow one short-backoff retry on 429/5xx network hiccup
+	if len(targets) == 1 {
+		tryList = []ModelTarget{targets[0], targets[0]}
+	}
+	for idx, target := range tryList {
+		if idx > 0 {
+			if len(targets) == 1 {
+				timer := time.NewTimer(450 * time.Millisecond)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return "", "", nil, nil, target, ctx.Err()
+				case <-timer.C:
+				}
+			} else if emit != nil {
+				reason := ""
+				if lastErr != nil {
+					reason = truncateTitle(lastErr.Error())
+				}
+				emit("model_switch", map[string]any{
+					"from_label": targets[idx-1].Label,
+					"to_label":   target.Label,
+					"to_model":   target.Model,
+					"reason":     reason,
+				})
+			}
 		}
 		var thinkingCfg *thinkingConfig
 		if target.AllowThinking {
@@ -778,8 +798,16 @@ func (e *Engine) streamRoundWithFailover(
 			return rReasoning, rContent, tcs, usage, target, nil
 		}
 		lastErr = err
-		is429 := strings.Contains(err.Error(), "(429)") || strings.Contains(strings.ToLower(err.Error()), "rate")
-		e.health.recordFailure(target.ID, err.Error(), is429)
+		lowerMsg := strings.ToLower(err.Error())
+		is429 := strings.Contains(err.Error(), "(429)") || strings.Contains(lowerMsg, "rate")
+		isTransient := is429 || strings.Contains(err.Error(), "(502)") || strings.Contains(err.Error(), "(503)") || strings.Contains(err.Error(), "(504)") || strings.Contains(lowerMsg, "eof") || strings.Contains(lowerMsg, "reset")
+		if len(targets) == 1 && idx == 0 && !isTransient {
+			e.health.recordFailure(target.ID, err.Error(), is429)
+			return "", "", nil, nil, target, err
+		}
+		if len(targets) > 1 || idx > 0 {
+			e.health.recordFailure(target.ID, err.Error(), is429)
+		}
 		if emittedAny || ctx.Err() != nil {
 			return "", "", nil, nil, target, err
 		}
@@ -788,6 +816,31 @@ func (e *Engine) streamRoundWithFailover(
 		return "", "", nil, nil, ModelTarget{}, lastErr
 	}
 	return "", "", nil, nil, ModelTarget{}, fmt.Errorf("无可用模型节点")
+}
+
+// trimContextMessages safely drops the oldest middle conversation turns when upstream rejects context length,
+// keeping leading system prompts intact and ensuring no orphaned tool responses remain.
+func trimContextMessages(messages []apiMessage) ([]apiMessage, bool) {
+	sysEnd := 0
+	for sysEnd < len(messages) && messages[sysEnd].Role == "system" {
+		sysEnd++
+	}
+	tail := messages[sysEnd:]
+	if len(tail) <= 4 {
+		return messages, false
+	}
+	cut := len(tail) / 2
+	// Advance cut until we land on a clean user boundary (avoid orphaned assistant tool responses)
+	for cut < len(tail)-2 && tail[cut].Role != "user" {
+		cut++
+	}
+	if cut == 0 || cut >= len(tail)-1 {
+		return messages, false
+	}
+	trimmed := make([]apiMessage, 0, sysEnd+len(tail)-cut)
+	trimmed = append(trimmed, messages[:sysEnd]...)
+	trimmed = append(trimmed, tail[cut:]...)
+	return trimmed, true
 }
 
 func (e *Engine) streamSingleRound(
@@ -886,9 +939,15 @@ func (e *Engine) streamSingleRoundWithProvider(
 		errText := strings.TrimSpace(string(errBody))
 		lowerErr := strings.ToLower(errText)
 
-		// Auto-downgrade optional OpenAI params on 400/422 before giving up (thinking, stream_options, tools, or system role for Gemma)
-		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity) && attempt < 2 {
+		// Auto-downgrade optional OpenAI params on 400/413/422 or trim oversized history before giving up
+		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusRequestEntityTooLarge || resp.StatusCode == http.StatusUnprocessableEntity) && attempt < 2 {
 			adjusted := false
+			if strings.Contains(lowerErr, "context_length") || strings.Contains(lowerErr, "maximum context") || strings.Contains(lowerErr, "too many tokens") || strings.Contains(lowerErr, "context window") {
+				if trimmed, ok := trimContextMessages(curMessages); ok {
+					curMessages = trimmed
+					adjusted = true
+				}
+			}
 			if curThinking != nil && (strings.Contains(lowerErr, "thinking") || strings.Contains(lowerErr, "unknown")) {
 				curThinking = nil
 				adjusted = true

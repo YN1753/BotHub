@@ -4,8 +4,8 @@ import { useAppStore, mapServerMessages, type ChatMessageUI } from '../stores/us
 import { BotHubApi } from '../api/client'
 import { botStateLabel, formatDurationMs, formatTime, formatTimelineDivider, groupModeLabel, triggerBlobDownload } from '../utils/format'
 import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
-import { applySiblingStaggerFallback, isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
-import { formatToolDisplayName, shortToolLabel } from '../utils/toolMeta'
+import { isImeComposingEnter, trackSpotlight } from '../utils/topLayer'
+import { formatToolDisplayName } from '../utils/toolMeta'
 import type { Bot } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
 import BotGroupAvatar from './BotGroupAvatar.vue'
@@ -16,6 +16,7 @@ import GroupDrawer from './GroupDrawer.vue'
 const BotRoutinesTab = defineAsyncComponent(() => import('./workspace/BotRoutinesTab.vue'))
 const BotConfigTab = defineAsyncComponent(() => import('./workspace/BotConfigTab.vue'))
 const BotActivityTab = defineAsyncComponent(() => import('./workspace/BotActivityTab.vue'))
+const BotStarterPanel = defineAsyncComponent(() => import('./workspace/BotStarterPanel.vue'))
 
 defineProps<{
   desktopCollapsed?: boolean
@@ -36,8 +37,51 @@ const inputPrompt = ref('')
 const selectedModel = ref('primary')
 const enableThinking = ref(true)
 const streamStatus = ref('就绪')
+const streamElapsedMs = ref(0)
+let streamTicker: number | null = null
+
+watch(
+  () => store.state.isStreaming,
+  (active) => {
+    if (streamTicker !== null) {
+      window.clearInterval(streamTicker)
+      streamTicker = null
+    }
+    if (active) {
+      const started = Date.now()
+      streamElapsedMs.value = 0
+      streamTicker = window.setInterval(() => {
+        streamElapsedMs.value = Date.now() - started
+      }, 200)
+    }
+  }
+)
+
+async function saveLongDraftAsNote() {
+  const text = inputPrompt.value.trim()
+  if (!text || !bot.value) return
+  try {
+    const firstLine = text.split('\n').find((l) => l.trim()) || '草稿资料'
+    const title = firstLine.replace(/^#+\s*/, '').slice(0, 32)
+    const res = await BotHubApi.createNote({
+      title: `参考资料: ${title}`,
+      category: 'draft',
+      bot_id: bot.value.id,
+      content: text,
+    })
+    const notesRes = await BotHubApi.listNotes('', '')
+    store.state.notes = notesRes.notes || []
+    inputPrompt.value = `请使用 manage_notes(action="get", id="${res.note.id}") 读取我刚存入工作文档《${res.note.title}》的完整正文，帮我提炼要点并处理：`
+    nextTick(() => {
+      autoResizeTextarea()
+      textareaRef.value?.focus()
+    })
+    store.notify(`已将 ${text.length} 字存入工作文档`)
+  } catch (err: any) {
+    store.notify(err.message || '保存文档失败')
+  }
+}
 const scrollContainerRef = ref<HTMLElement | null>(null)
-const starterGridRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const formRef = ref<HTMLFormElement | null>(null)
 const renameInputRef = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
@@ -370,24 +414,6 @@ function runQuickToolStarter(toolId: string) {
 function continueFromMessage() {
   sendPrompt('请承接你上一条答复继续深入展开可执行步骤、关键细节与具体产出物。')
 }
-
-const botToolBadges = computed(() => {
-  if (!bot.value) return []
-  let allowed: string[] = []
-  try {
-    const parsed = JSON.parse(bot.value.allowed_tools || '[]')
-    if (Array.isArray(parsed)) allowed = parsed
-  } catch {
-    allowed = []
-  }
-  return allowed.map((id) => {
-    const found = availableTools.value.find((t) => t.id === id)
-    return {
-      id,
-      desc: found?.description || id,
-    }
-  })
-})
 
 watch(
   bot,
@@ -904,16 +930,14 @@ watch(
     scrollToBottom(true)
     nextTick(() => {
       autoResizeTextarea()
-      applySiblingStaggerFallback(starterGridRef.value)
     })
   }
 )
 
 watch(
   () => store.state.timeline.length,
-  (len) => {
+  () => {
     scrollToBottom(false)
-    if (len === 0) nextTick(() => applySiblingStaggerFallback(starterGridRef.value))
   }
 )
 
@@ -980,11 +1004,14 @@ onMounted(() => {
     inputPrompt.value = savedDraft
     nextTick(() => autoResizeTextarea())
   }
-  applySiblingStaggerFallback(starterGridRef.value)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleOutsideFallback)
   window.removeEventListener('keydown', handleWorkspaceKeydown)
+  if (streamTicker !== null) {
+    window.clearInterval(streamTicker)
+    streamTicker = null
+  }
 })
 
 function appendMention(tag: string) {
@@ -1861,72 +1888,13 @@ function stateBadgeClass(state?: string): string {
             @click="handleMarkdownClick"
             class="cq-container stream-scroller flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-5 flex flex-col gap-5"
           >
-            <!-- Empty State Hero + Living Companion Avatar + Spotlight Bento Starter Cards -->
-            <div
+            <BotStarterPanel
               v-if="store.state.timeline.length === 0"
-              class="m-auto max-w-[780px] w-full text-center py-6 px-2 flex flex-col items-center gap-3.5"
-            >
-              <div class="relative inline-flex items-center justify-center mb-1">
-                <BotGroupAvatar
-                  v-if="isGroupBot"
-                  :members="groupMembers"
-                  :fallback-style="bot?.avatar_style"
-                  :state="bot?.state || 'idle'"
-                  size="xl"
-                />
-                <BotAvatar
-                  v-else
-                  :avatar-style="bot?.avatar_style"
-                  :state="bot?.state || 'idle'"
-                  size="xl"
-                />
-              </div>
-              <div class="flex flex-col items-center gap-1.5">
-                <h2 class="text-xl sm:text-2xl font-semibold text-white tracking-tight">{{ bot?.name }}</h2>
-                <p class="text-xs sm:text-sm text-slate-400 max-w-md">
-                  {{ bot?.role_title }} · 输入消息开始对话，键入 <code class="font-mono text-[#f2b880]">@</code> 协同成员或 <code class="font-mono text-[#f2b880]">/</code> 触发指令
-                </p>
-              </div>
-
-              <div
-                v-if="botToolBadges.length > 0"
-                ref="starterGridRef"
-                class="stagger-list mt-2 flex flex-wrap items-center justify-center gap-2 max-w-2xl"
-              >
-                <button
-                  v-for="tool in botToolBadges"
-                  :key="tool.id"
-                  type="button"
-                  :title="`${tool.desc}（点击立即触发或填入指令）`"
-                  @click="runQuickToolStarter(tool.id)"
-                  class="stagger-item inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#fff8ee]/12 bg-[#070b18]/80 hover:border-[#f2b880]/55 hover:text-[#f7cba0] text-[11px] text-slate-300 cursor-pointer transition-colors"
-                >
-                  <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880]/75" aria-hidden="true" />
-                  <span>{{ shortToolLabel({ id: tool.id, description: tool.desc }) }}</span>
-                </button>
-              </div>
-
-              <div
-                v-if="bot?.bot_mode !== 'companion' && (store.pendingTodoCount.value > 0 || store.expiringAssetCount.value > 0)"
-                class="mt-2 px-4 py-2.5 rounded-2xl border border-[#f2b880]/25 bg-[#f2b880]/[0.06] flex items-center justify-center gap-3 flex-wrap text-xs"
-              >
-                <span class="text-slate-300">
-                  当前工作区共有
-                  <strong v-if="store.pendingTodoCount.value > 0" class="text-cyan-200 font-mono"> {{ store.pendingTodoCount.value }} </strong>
-                  <template v-if="store.pendingTodoCount.value > 0">项未完待办</template>
-                  <template v-if="store.pendingTodoCount.value > 0 && store.expiringAssetCount.value > 0"> · </template>
-                  <strong v-if="store.expiringAssetCount.value > 0" class="text-amber-300 font-mono">{{ store.expiringAssetCount.value }} </strong>
-                  <template v-if="store.expiringAssetCount.value > 0">项 7 日内到期资产</template>
-                </span>
-                <button
-                  type="button"
-                  @click="runQuickToolStarter('workspace_briefing')"
-                  class="px-3 py-1 rounded-lg bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-[11px] cursor-pointer"
-                >
-                  立即梳理今日安排
-                </button>
-              </div>
-            </div>
+              :bot="bot"
+              :is-group-bot="isGroupBot"
+              :group-members="groupMembers"
+              @starter="runQuickToolStarter"
+            />
 
             <!-- Messages -->
             <template v-for="(m, idx) in store.state.timeline" :key="m.localId">
@@ -2550,13 +2518,24 @@ function stateBadgeClass(state?: string): string {
                     class="w-1.5 h-1.5 rounded-full bg-[#f2b880] animate-pulse shrink-0"
                     aria-hidden="true"
                   />
-                  <span class="truncate">{{ streamStatus }}</span>
+                  <span class="truncate">
+                    {{ streamStatus }}<template v-if="store.state.isStreaming && streamElapsedMs >= 400"> · {{ formatDurationMs(streamElapsedMs) }}</template>
+                  </span>
                 </span>
               </div>
 
               <div class="flex items-center gap-2 shrink-0">
+                <button
+                  v-if="inputPrompt.length >= 1600 && !store.state.isStreaming"
+                  type="button"
+                  @click="saveLongDraftAsNote"
+                  title="把粘贴的长文档自动存进 Workhub 后按 ID 引用，对话更干净"
+                  class="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-cyan-400/35 bg-cyan-500/10 text-[10.5px] text-cyan-200 hover:bg-cyan-500/20 cursor-pointer"
+                >
+                  长文转文档 ({{ inputPrompt.length }}字)
+                </button>
                 <span
-                  v-if="inputPrompt.length > 80"
+                  v-else-if="inputPrompt.length > 80"
                   class="hidden sm:inline font-mono text-[10.5px] text-slate-500 tabular-nums"
                 >
                   {{ inputPrompt.length }} 字

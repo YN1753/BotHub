@@ -58,7 +58,7 @@ export interface ChatMessageUI {
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.25.0',
+  version: 'v2.26.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,

@@ -10,6 +10,7 @@ import type { Bot } from '../types/bothub'
 
 const store = useAppStore()
 const query = ref('')
+const scopeFilter = ref<'全部' | '会话' | '待办' | '文档' | '记忆' | '快捷操作'>('全部')
 const highlighted = ref(0)
 const inputRef = ref<HTMLInputElement | null>(null)
 const listContainerRef = ref<HTMLElement | null>(null)
@@ -237,10 +238,12 @@ const entries = computed<SearchEntry[]>(() => {
     })
   })
 
-  if (!q) return list.slice(0, 12)
-  return list
+  const scoped =
+    scopeFilter.value === '全部' ? list : list.filter((item) => item.category === scopeFilter.value)
+  if (!q) return scoped.slice(0, scopeFilter.value === '全部' ? 12 : 20)
+  return scoped
     .filter((item) => `${item.title} ${item.subtitle} ${item.category}`.toLowerCase().includes(q))
-    .slice(0, 14)
+    .slice(0, 18)
 })
 
 watch(
@@ -248,6 +251,7 @@ watch(
   (open) => {
     if (!open) return
     query.value = ''
+    scopeFilter.value = '全部'
     highlighted.value = 0
     nextTick(() => inputRef.value?.focus())
   }
@@ -329,7 +333,24 @@ function handleKeydown(e: KeyboardEvent) {
         />
       </div>
 
-      <div ref="listContainerRef" class="flex-1 min-h-0 max-h-[52dvh] overflow-y-auto flex flex-col gap-1 pr-0.5">
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <button
+          v-for="tab in (['全部', '会话', '待办', '文档', '记忆', '快捷操作'] as const)"
+          :key="tab"
+          type="button"
+          @click="scopeFilter = tab; highlighted = 0"
+          :class="[
+            'px-2.5 py-0.5 rounded-full border text-[11px] cursor-pointer transition-colors',
+            scopeFilter === tab
+              ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
+              : 'border-[#fff8ee]/10 text-slate-400 hover:text-white'
+          ]"
+        >
+          {{ tab === '快捷操作' ? '操作' : tab }}
+        </button>
+      </div>
+
+      <div ref="listContainerRef" class="flex-1 min-h-0 max-h-[50dvh] overflow-y-auto flex flex-col gap-1 pr-0.5">
         <div v-if="entries.length === 0" class="py-8 text-center text-xs text-slate-500">
           未找到匹配结果
         </div>

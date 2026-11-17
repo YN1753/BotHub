@@ -107,8 +107,36 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 	sb.WriteString("#### 3. 每日格言\n")
 	sb.WriteString(fmt.Sprintf("> %s\n\n", quote))
 
+	if openTodos, err := m.store.ListTodos("open", "", 15); err == nil && len(openTodos) > 0 {
+		sb.WriteString("#### 4. 今日个人待办提醒\n")
+		shown := 0
+		for _, td := range openTodos {
+			if shown >= 8 {
+				sb.WriteString(fmt.Sprintf("- ... 另有 %d 项待办请前往个人行动台查看\n", len(openTodos)-8))
+				break
+			}
+			dueNote := ""
+			if strings.TrimSpace(td.DueAt) != "" {
+				dueDay := td.DueAt
+				if len(dueDay) >= 10 {
+					dueDay = dueDay[:10]
+				}
+				if dueDay < dateStr {
+					dueNote = fmt.Sprintf(" [已逾期 %s]", td.DueAt)
+				} else if dueDay == dateStr {
+					dueNote = fmt.Sprintf(" [今日截止 %s]", td.DueAt)
+				} else {
+					dueNote = fmt.Sprintf(" [截止 %s]", td.DueAt)
+				}
+			}
+			sb.WriteString(fmt.Sprintf("- **[%s]** %s%s\n", td.Priority, td.Title, dueNote))
+			shown++
+		}
+		sb.WriteString("\n")
+	}
+
 	if expiring, _ := m.store.GetExpiringAssets(7); len(expiring) > 0 {
-		sb.WriteString("#### 4. 数字资产临期提醒\n")
+		sb.WriteString("#### 5. 数字资产临期提醒\n")
 		for _, a := range expiring {
 			sb.WriteString(fmt.Sprintf("- **临期资产**：%s（%s · 剩余 %d 天）\n", a.Name, a.Spec, a.DaysLeft))
 		}
@@ -116,7 +144,7 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 	}
 
 	// Optional AI synthesis when DeepSeek API Key is configured
-	sysPrompt := "你是 Vesper BotHub 的晨间参谋。请基于提供的今日气象、哪吒节点脉搏与临期资产原始数据，用不超过 150 字输出「今日执更要点与优先级建议」（分 2-3 条简明要点）。严禁输出任何 Emoji 或特殊装饰符号。"
+	sysPrompt := "你是 Vesper BotHub 的晨间参谋。请基于提供的今日气象、哪吒节点脉搏、个人待办清单与临期资产原始数据，用不超过 160 字输出「今日执更要点与行动优先级建议」（分 2-3 条简明要点）。严禁输出任何 Emoji 或特殊装饰符号。"
 	if aiInsight, aiErr := SummarizeWithDeepSeek(ctx, m.store, sysPrompt, sb.String()); aiErr == nil && aiInsight != "" {
 		sb.WriteString("#### AI 执更参谋锐评\n")
 		sb.WriteString(aiInsight)

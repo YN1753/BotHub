@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { describeCron, formatDateOnly, triggerBlobDownload } from '../utils/format'
+import { describeCron, formatDateOnly, summarizeAssetsMonthlyCost, triggerBlobDownload } from '../utils/format'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import type { Asset } from '../types/bothub'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -82,33 +82,7 @@ const filteredAssets = computed(() => {
   })
 })
 
-const activeCostSummary = computed(() => {
-  const totals = new Map<string, number>()
-  for (const a of filteredAssets.value) {
-    if (a.status === '已停用') continue
-    const raw = String(a.price || '').trim()
-    if (!raw || raw.includes('免费')) continue
-    const m = raw.match(/(\d+(?:\.\d+)?)/)
-    if (!m) continue
-    const num = Number(m[1])
-    if (!Number.isFinite(num) || num <= 0) continue
-    const upper = raw.toUpperCase()
-    const sym = upper.includes('HK$') || upper.includes('HKD')
-      ? 'HK$'
-      : upper.includes('$') || upper.includes('USD')
-        ? '$'
-        : upper.includes('€') || upper.includes('EUR')
-          ? '€'
-          : upper.includes('£') || upper.includes('GBP')
-            ? '£'
-            : '¥'
-    totals.set(sym, (totals.get(sym) || 0) + num)
-  }
-  if (totals.size === 0) return ''
-  return Array.from(totals.entries())
-    .map(([sym, val]) => `${sym}${val.toFixed(2).replace(/\.00$/, '')}`)
-    .join(' + ')
-})
+const activeCostSummary = computed(() => summarizeAssetsMonthlyCost(filteredAssets.value))
 
 function resetAssetFilters() {
   searchQuery.value = ''
@@ -176,6 +150,22 @@ async function handleSyncAssets() {
   } finally {
     syncing.value = false
   }
+}
+
+async function auditAssetsWithAssistant() {
+  const targetBotId =
+    store.activeBot.value?.id ||
+    store.state.bots.find((b) => !b.is_group && b.bot_mode !== 'companion')?.id ||
+    store.state.bots[0]?.id ||
+    ''
+  if (!targetBotId) {
+    store.notify('请先创建一个可执行 Bot')
+    return
+  }
+  await store.jumpToBot(
+    targetBotId,
+    '请调用 manage_assets(action="summary") 与 manage_assets(action="expiring", within_days=30) 为我全面核查月/年费预算与 30 天内到期续费风险，需要续费的项目请顺便整理为待办事项。'
+  )
 }
 
 function taskBot(botId?: string) {
@@ -361,12 +351,20 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
               <span
                 v-if="activeCostSummary"
                 class="font-mono text-[11px] px-2.5 py-0.5 rounded-full border border-[#f2b880]/25 bg-[#f2b880]/10 text-[#f7cba0]"
-                title="按当前筛选视图非停用资产账面金额累加统计"
+                title="已将按年/季/周/日计费资产自动折算为当前筛选视图的月均预估合计"
               >
-                账面合计: {{ activeCostSummary }}
+                折合月均: {{ activeCostSummary }}
               </span>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
+              <button
+                v-if="store.state.bots.length > 0"
+                type="button"
+                @click="auditAssetsWithAssistant"
+                class="min-h-[44px] sm:min-h-[34px] px-3 py-2 rounded-xl border border-cyan-400/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/18 text-xs cursor-pointer"
+              >
+                派助手审计
+              </button>
               <button
                 type="button"
                 @click="exportAssetsCsv"

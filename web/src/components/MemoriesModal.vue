@@ -22,6 +22,7 @@ const filterCat = ref('all')
 const filterScope = ref('all')
 const pinnedOnly = ref(false)
 const coreOnly = ref(false)
+const unrecalledOnly = ref(false)
 const sortBy = ref<'weight' | 'recent' | 'recalled'>('weight')
 const pruning = ref(false)
 const consolidating = ref(false)
@@ -107,6 +108,7 @@ const filteredMemories = computed(() => {
     if (filterCat.value !== 'all' && m.category !== filterCat.value) return false
     if (pinnedOnly.value && !m.pinned) return false
     if (coreOnly.value && (m.importance || 3) < 4) return false
+    if (unrecalledOnly.value && (m.recall_count || 0) > 0) return false
     if (!q) return true
     return `${m.fact_key} ${m.content} ${m.category} ${mScope}`.toLowerCase().includes(q)
   })
@@ -476,6 +478,19 @@ watch(
           ]"
         >
           核心 W4+
+        </button>
+        <button
+          type="button"
+          :aria-pressed="unrecalledOnly"
+          @click="unrecalledOnly = !unrecalledOnly"
+          :class="[
+            'min-h-[34px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+            unrecalledOnly
+              ? 'border-amber-400/55 bg-amber-500/15 text-amber-200'
+              : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+          ]"
+        >
+          0次召回
         </button>
         <button
           type="button"

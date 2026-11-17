@@ -239,37 +239,44 @@ func (s *Store) SaveBot(b Bot) error {
 
 func (s *Store) DeleteBot(id string) error {
 	trimmed := strings.TrimSpace(id)
-	_, _ = s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ?`, trimmed)
-	_, _ = s.db.Exec(`DELETE FROM bot_threads WHERE bot_id = ?`, trimmed)
-	_, _ = s.db.Exec(`DELETE FROM bot_execution_logs WHERE bot_id = ?`, trimmed)
-	_, _ = s.db.Exec(`DELETE FROM agent_memories WHERE scope = ?`, "bot:"+trimmed)
-	_, _ = s.db.Exec(`UPDATE tasks SET bot_id = '' WHERE bot_id = ?`, trimmed)
-	_, _ = s.db.Exec(`UPDATE todos SET bot_id = '' WHERE bot_id = ?`, trimmed)
-	_, _ = s.db.Exec(`UPDATE notes SET bot_id = '' WHERE bot_id = ?`, trimmed)
-	if bots, err := s.ListBots(); err == nil {
-		for _, b := range bots {
-			if !b.IsGroup {
+	bots, _ := s.ListBots()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, _ = tx.Exec(`DELETE FROM agent_messages WHERE bot_id = ?`, trimmed)
+	_, _ = tx.Exec(`DELETE FROM bot_threads WHERE bot_id = ?`, trimmed)
+	_, _ = tx.Exec(`DELETE FROM bot_execution_logs WHERE bot_id = ?`, trimmed)
+	_, _ = tx.Exec(`DELETE FROM agent_memories WHERE scope = ?`, "bot:"+trimmed)
+	_, _ = tx.Exec(`UPDATE tasks SET bot_id = '' WHERE bot_id = ?`, trimmed)
+	_, _ = tx.Exec(`UPDATE todos SET bot_id = '' WHERE bot_id = ?`, trimmed)
+	_, _ = tx.Exec(`UPDATE notes SET bot_id = '' WHERE bot_id = ?`, trimmed)
+	for _, b := range bots {
+		if !b.IsGroup {
+			continue
+		}
+		cur := b.MemberIDList()
+		next := make([]string, 0, len(cur))
+		changed := false
+		for _, mid := range cur {
+			if mid == trimmed {
+				changed = true
 				continue
 			}
-			cur := b.MemberIDList()
-			next := make([]string, 0, len(cur))
-			changed := false
-			for _, mid := range cur {
-				if mid == trimmed {
-					changed = true
-					continue
-				}
-				next = append(next, mid)
-			}
-			if changed {
-				raw, _ := json.Marshal(next)
-				b.MemberIDs = string(raw)
-				_ = s.SaveBot(b)
-			}
+			next = append(next, mid)
+		}
+		if changed {
+			raw, _ := json.Marshal(next)
+			_, _ = tx.Exec(`UPDATE bots SET member_ids = ?, updated_at = ? WHERE id = ?`, string(raw), NowShanghai(), b.ID)
 		}
 	}
-	_, err := s.db.Exec(`DELETE FROM bots WHERE id = ?`, trimmed)
-	return err
+	if _, err := tx.Exec(`DELETE FROM bots WHERE id = ?`, trimmed); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) SetBotState(id, state, lastSummary string) error {

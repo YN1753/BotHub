@@ -153,7 +153,8 @@ func (s *Scheduler) Reload() error {
 		if strings.TrimSpace(t.RunAt) != "" {
 			targetAt, pErr := ParseRunAt(t.RunAt, s.loc)
 			if pErr != nil {
-				return fmt.Errorf("task %s: %w", taskID, pErr)
+				log.Printf("[scheduler] skip invalid one-shot run_at for task %s (%q): %v", taskID, t.RunAt, pErr)
+				continue
 			}
 			delay := time.Until(targetAt)
 			if delay < -5*time.Minute {
@@ -192,7 +193,8 @@ func (s *Scheduler) Reload() error {
 			}
 		})
 		if err != nil {
-			return fmt.Errorf("invalid cron expr for task %s (%q): %w", taskID, t.CronExpr, err)
+			log.Printf("[scheduler] skip invalid cron expr for task %s (%q): %v", taskID, t.CronExpr, err)
+			continue
 		}
 		entries[taskID] = entryID
 	}

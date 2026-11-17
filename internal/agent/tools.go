@@ -13,6 +13,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -841,6 +842,14 @@ func (e *Engine) safeFetchClient() *http.Client {
 			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
 				return fmt.Errorf("安全拦截：不支持的重定向协议 %s", req.URL.Scheme)
 			}
+			host := strings.ToLower(req.URL.Hostname())
+			if host == "localhost" || strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") {
+				return fmt.Errorf("安全拦截：禁止重定向到内网主机 %s", host)
+			}
+			if len(via) > 0 && !strings.EqualFold(via[len(via)-1].URL.Host, req.URL.Host) {
+				req.Header.Del("Authorization")
+				req.Header.Del("Cookie")
+			}
 			return nil
 		},
 	}
@@ -986,6 +995,19 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 	return string(payload), nil
 }
 
+func canonicalSearchURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return strings.TrimRight(strings.TrimSpace(raw), "/")
+	}
+	host := strings.ToLower(strings.TrimPrefix(u.Hostname(), "www."))
+	p := strings.TrimRight(u.Path, "/")
+	if u.RawQuery != "" {
+		return host + p + "?" + u.RawQuery
+	}
+	return host + p
+}
+
 func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Query string `json:"query"`
@@ -1003,7 +1025,7 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 		limit = 5
 	}
 
-	reqCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	type searchItem struct {
@@ -1012,170 +1034,206 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 		Snippet string `json:"snippet,omitempty"`
 		Source  string `json:"source"`
 	}
-	results := make([]searchItem, 0, limit)
-	seenURLs := make(map[string]bool)
-	appendUnique := func(item searchItem) bool {
-		u := strings.TrimSpace(item.URL)
-		if u == "" || seenURLs[u] || strings.TrimSpace(item.Title) == "" {
-			return false
-		}
-		seenURLs[u] = true
-		results = append(results, item)
-		return len(results) >= limit
-	}
 
-	// 1. DuckDuckGo Instant Answer JSON API (covers general topics, daily queries, docs & entities)
-	ddgAPI := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", url.QueryEscape(query))
-	if req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, ddgAPI, nil); err == nil {
-		req.Header.Set("User-Agent", "VesperBotHub/2.14")
-		if resp, err := e.httpClient.Do(req); err == nil {
-			defer resp.Body.Close()
-			var ddg struct {
-				Heading       string `json:"Heading"`
-				AbstractText  string `json:"AbstractText"`
-				AbstractURL   string `json:"AbstractURL"`
-				RelatedTopics []struct {
+	// Fan out across 4 independent public search providers concurrently (slots preserve priority rank)
+	buckets := make([][]searchItem, 4)
+	var wg sync.WaitGroup
+
+	// Provider 0: DuckDuckGo Instant Answer JSON API
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
+		defer pCancel()
+		ddgAPI := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", url.QueryEscape(query))
+		req, err := http.NewRequestWithContext(pCtx, http.MethodGet, ddgAPI, nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("User-Agent", "VesperBotHub/2.26")
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		var ddg struct {
+			Heading       string `json:"Heading"`
+			AbstractText  string `json:"AbstractText"`
+			AbstractURL   string `json:"AbstractURL"`
+			RelatedTopics []struct {
+				Text     string `json:"Text"`
+				FirstURL string `json:"FirstURL"`
+				Topics   []struct {
 					Text     string `json:"Text"`
 					FirstURL string `json:"FirstURL"`
-					Topics   []struct {
-						Text     string `json:"Text"`
-						FirstURL string `json:"FirstURL"`
-					} `json:"Topics"`
-				} `json:"RelatedTopics"`
+				} `json:"Topics"`
+			} `json:"RelatedTopics"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&ddg) != nil {
+			return
+		}
+		if ddg.AbstractText != "" && ddg.AbstractURL != "" {
+			buckets[0] = append(buckets[0], searchItem{
+				Title:   notifier.StripEmoji(ddg.Heading),
+				URL:     ddg.AbstractURL,
+				Snippet: notifier.StripEmoji(ddg.AbstractText),
+				Source:  "DuckDuckGo",
+			})
+		}
+		for _, rt := range ddg.RelatedTopics {
+			if len(buckets[0]) >= limit {
+				break
 			}
-			if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&ddg) == nil {
-				if ddg.AbstractText != "" && ddg.AbstractURL != "" {
-					appendUnique(searchItem{
-						Title:   notifier.StripEmoji(ddg.Heading),
-						URL:     ddg.AbstractURL,
-						Snippet: notifier.StripEmoji(ddg.AbstractText),
+			if rt.Text != "" && rt.FirstURL != "" {
+				title := rt.Text
+				if idx := strings.Index(title, " - "); idx > 0 {
+					title = title[:idx]
+				}
+				buckets[0] = append(buckets[0], searchItem{
+					Title:   notifier.StripEmoji(truncateTitle(title)),
+					URL:     rt.FirstURL,
+					Snippet: notifier.StripEmoji(rt.Text),
+					Source:  "DuckDuckGo",
+				})
+			}
+			for _, sub := range rt.Topics {
+				if len(buckets[0]) >= limit {
+					break
+				}
+				if sub.Text != "" && sub.FirstURL != "" {
+					buckets[0] = append(buckets[0], searchItem{
+						Title:   notifier.StripEmoji(truncateTitle(sub.Text)),
+						URL:     sub.FirstURL,
+						Snippet: notifier.StripEmoji(sub.Text),
 						Source:  "DuckDuckGo",
 					})
 				}
-				for _, rt := range ddg.RelatedTopics {
-					if len(results) >= limit {
-						break
-					}
-					if rt.Text != "" && rt.FirstURL != "" {
-						title := rt.Text
-						if idx := strings.Index(title, " - "); idx > 0 {
-							title = title[:idx]
-						}
-						if appendUnique(searchItem{
-							Title:   notifier.StripEmoji(truncateTitle(title)),
-							URL:     rt.FirstURL,
-							Snippet: notifier.StripEmoji(rt.Text),
-							Source:  "DuckDuckGo",
-						}) {
-							break
-						}
-					}
-					for _, sub := range rt.Topics {
-						if len(results) >= limit {
-							break
-						}
-						if sub.Text != "" && sub.FirstURL != "" {
-							if appendUnique(searchItem{
-								Title:   notifier.StripEmoji(truncateTitle(sub.Text)),
-								URL:     sub.FirstURL,
-								Snippet: notifier.StripEmoji(sub.Text),
-								Source:  "DuckDuckGo",
-							}) {
-								break
-							}
-						}
-					}
-				}
 			}
 		}
-	}
+	}()
 
-	// 2. Hacker News Algolia Search (engineering, open-source, security, startups)
-	if len(results) < limit {
-		hnURL := fmt.Sprintf("https://hn.algolia.com/api/v1/search?query=%s&hitsPerPage=%d", url.QueryEscape(query), limit)
-		if req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, hnURL, nil); err == nil {
-			req.Header.Set("User-Agent", "VesperBotHub/2.14")
-			if resp, err := e.httpClient.Do(req); err == nil {
-				defer resp.Body.Close()
-				var hnResp struct {
-					Hits []struct {
-						Title     string `json:"title"`
-						URL       string `json:"url"`
-						StoryText string `json:"story_text"`
-						ObjectID  string `json:"objectID"`
-						Points    int    `json:"points"`
-						CreatedAt string `json:"created_at"`
-					} `json:"hits"`
-				}
-				if json.NewDecoder(resp.Body).Decode(&hnResp) == nil {
-					for _, h := range hnResp.Hits {
-						if h.Title == "" {
-							continue
-						}
-						itemURL := h.URL
-						if itemURL == "" {
-							itemURL = "https://news.ycombinator.com/item?id=" + h.ObjectID
-						}
-						snippet := stripHTMLToText(h.StoryText)
-						if len([]rune(snippet)) > 200 {
-							snippet = string([]rune(snippet)[:200]) + "..."
-						}
-						if appendUnique(searchItem{
-							Title:   notifier.StripEmoji(h.Title),
-							URL:     itemURL,
-							Snippet: snippet,
-							Source:  "HackerNews",
-						}) {
-							break
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// 3. Wikipedia OpenSearch fallback/supplement for general Chinese & encyclopedic knowledge
-	if len(results) < limit {
-		wikiURL := fmt.Sprintf("https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=%s&utf8=1&format=json&srlimit=%d", url.QueryEscape(query), limit-len(results))
-		if req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, wikiURL, nil); err == nil {
-			req.Header.Set("User-Agent", "VesperBotHub/2.14")
-			if resp, err := e.httpClient.Do(req); err == nil {
-				defer resp.Body.Close()
-				var wikiResp struct {
-					Query struct {
-						Search []struct {
-							Title   string `json:"title"`
-							Snippet string `json:"snippet"`
-						} `json:"search"`
-					} `json:"query"`
-				}
-				if json.NewDecoder(resp.Body).Decode(&wikiResp) == nil {
-					for _, s := range wikiResp.Query.Search {
-						if appendUnique(searchItem{
-							Title:   notifier.StripEmoji(s.Title),
-							URL:     "https://zh.wikipedia.org/wiki/" + url.PathEscape(s.Title),
-							Snippet: stripHTMLToText(s.Snippet),
-							Source:  "Wikipedia",
-						}) {
-							break
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// 4. DuckDuckGo Lite HTML search fallback when structured APIs return fewer than limit results
-	if len(results) < limit {
-		for _, item := range e.searchDuckDuckGoHTML(reqCtx, query, limit-len(results)) {
-			if appendUnique(searchItem{
+	// Provider 1: DuckDuckGo Lite HTML (broad web results)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
+		defer pCancel()
+		for _, item := range e.searchDuckDuckGoHTML(pCtx, query, limit) {
+			buckets[1] = append(buckets[1], searchItem{
 				Title:   item.Title,
 				URL:     item.URL,
 				Snippet: item.Snippet,
 				Source:  "Web",
-			}) {
+			})
+		}
+	}()
+
+	// Provider 2: Hacker News Algolia Search
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
+		defer pCancel()
+		hnURL := fmt.Sprintf("https://hn.algolia.com/api/v1/search?query=%s&hitsPerPage=%d", url.QueryEscape(query), limit)
+		req, err := http.NewRequestWithContext(pCtx, http.MethodGet, hnURL, nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("User-Agent", "VesperBotHub/2.26")
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		var hnResp struct {
+			Hits []struct {
+				Title     string `json:"title"`
+				URL       string `json:"url"`
+				StoryText string `json:"story_text"`
+				ObjectID  string `json:"objectID"`
+			} `json:"hits"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&hnResp) != nil {
+			return
+		}
+		for _, h := range hnResp.Hits {
+			if h.Title == "" {
+				continue
+			}
+			itemURL := h.URL
+			if itemURL == "" {
+				itemURL = "https://news.ycombinator.com/item?id=" + h.ObjectID
+			}
+			snippet := stripHTMLToText(h.StoryText)
+			if len([]rune(snippet)) > 200 {
+				snippet = string([]rune(snippet)[:200]) + "..."
+			}
+			buckets[2] = append(buckets[2], searchItem{
+				Title:   notifier.StripEmoji(h.Title),
+				URL:     itemURL,
+				Snippet: snippet,
+				Source:  "HackerNews",
+			})
+		}
+	}()
+
+	// Provider 3: Chinese Wikipedia OpenSearch
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
+		defer pCancel()
+		wikiURL := fmt.Sprintf("https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=%s&utf8=1&format=json&srlimit=%d", url.QueryEscape(query), limit)
+		req, err := http.NewRequestWithContext(pCtx, http.MethodGet, wikiURL, nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("User-Agent", "VesperBotHub/2.26")
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		var wikiResp struct {
+			Query struct {
+				Search []struct {
+					Title   string `json:"title"`
+					Snippet string `json:"snippet"`
+				} `json:"search"`
+			} `json:"query"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&wikiResp) != nil {
+			return
+		}
+		for _, s := range wikiResp.Query.Search {
+			buckets[3] = append(buckets[3], searchItem{
+				Title:   notifier.StripEmoji(s.Title),
+				URL:     "https://zh.wikipedia.org/wiki/" + url.PathEscape(s.Title),
+				Snippet: stripHTMLToText(s.Snippet),
+				Source:  "Wikipedia",
+			})
+		}
+	}()
+
+	wg.Wait()
+
+	results := make([]searchItem, 0, limit)
+	seenCanonical := make(map[string]bool)
+	for _, bkt := range buckets {
+		for _, item := range bkt {
+			u := strings.TrimSpace(item.URL)
+			canon := canonicalSearchURL(u)
+			if u == "" || strings.TrimSpace(item.Title) == "" || seenCanonical[canon] {
+				continue
+			}
+			seenCanonical[canon] = true
+			results = append(results, item)
+			if len(results) >= limit {
 				break
 			}
+		}
+		if len(results) >= limit {
+			break
 		}
 	}
 

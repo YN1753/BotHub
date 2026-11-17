@@ -125,6 +125,50 @@ export function botStateLabel(state?: string): string {
   return map[String(state || 'idle')] || '待命'
 }
 
+export function summarizeAssetsMonthlyCost(
+  assets: Array<{ status?: string; price?: string }>
+): string {
+  const totals = new Map<string, number>()
+  for (const a of assets) {
+    if (a.status === '已停用') continue
+    const raw = String(a.price || '').trim()
+    if (!raw || raw.includes('免费')) continue
+    const m = raw.match(/(\d+(?:\.\d+)?)/)
+    if (!m) continue
+    const num = Number(m[1])
+    if (!Number.isFinite(num) || num <= 0) continue
+    const upper = raw.toUpperCase()
+    const sym =
+      upper.includes('HK$') || upper.includes('HKD')
+        ? 'HK$'
+        : upper.includes('$') || upper.includes('USD')
+        ? '$'
+        : upper.includes('€') || upper.includes('EUR')
+        ? '€'
+        : upper.includes('£') || upper.includes('GBP')
+        ? '£'
+        : '¥'
+    let monthly = num
+    const lower = raw.toLowerCase()
+    if (raw.includes('年') || lower.includes('/yr') || lower.includes('year') || lower.includes('/y')) {
+      monthly = num / 12
+    } else if (raw.includes('季') || lower.includes('/qtr') || lower.includes('quarter')) {
+      monthly = num / 3
+    } else if (raw.includes('周') || lower.includes('/wk') || lower.includes('week')) {
+      monthly = num * 4.33
+    } else if (raw.includes('天') || raw.includes('日') || lower.includes('/day') || lower.includes('/d')) {
+      monthly = num * 30
+    }
+    totals.set(sym, (totals.get(sym) || 0) + monthly)
+  }
+  if (totals.size === 0) return ''
+  return (
+    Array.from(totals.entries())
+      .map(([sym, val]) => `${sym}${val.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}/月`)
+      .join(' + ')
+  )
+}
+
 export function groupModeLabel(mode?: string): string {
   if (mode === 'sequential') return '全员接力'
   if (mode === 'parallel') return '全员并发'

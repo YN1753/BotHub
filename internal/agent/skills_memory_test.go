@@ -566,4 +566,22 @@ func TestAssistantToolsTodosNotesNotificationConsultAndDatetime(t *testing.T) {
 	if !strings.Contains(errPayload, `"hint"`) || !strings.Contains(errPayload, `"retryable":false`) {
 		t.Fatalf("unexpected toolErrorPayload output: %s", errPayload)
 	}
+
+	// 14. trimContextMessages preserves system prompt + valid user turn boundary, canonicalSearchURL normalizes duplicates
+	hist := []apiMessage{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "q1"},
+		{Role: "assistant", Content: "", ToolCalls: []apiToolCall{{ID: "c1"}}},
+		{Role: "tool", Content: "res1", ToolCallID: "c1"},
+		{Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "q2"},
+		{Role: "assistant", Content: "a2"},
+	}
+	trimmed, ok := trimContextMessages(hist)
+	if !ok || trimmed[0].Role != "system" || trimmed[1].Role != "user" {
+		t.Fatalf("expected clean trim starting with system+user, ok=%v trimmed=%+v", ok, trimmed)
+	}
+	if canonicalSearchURL("https://www.example.com/docs/") != canonicalSearchURL("http://example.com/docs") {
+		t.Fatalf("expected canonicalSearchURL to normalize scheme/www/trailing slash")
+	}
 }

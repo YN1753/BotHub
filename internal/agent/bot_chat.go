@@ -787,10 +787,14 @@ func (e *Engine) runTeamRoomHandoffWithRelay(
 
 		turnPrompt := userMsg
 		if combinedContent.Len() > 0 {
+			priorText := combinedContent.String()
+			if r := []rune(priorText); len(r) > 2800 {
+				priorText = string(r[:1200]) + "\n...\n[中段讨论已折叠]\n...\n" + string(r[len(r)-1400:])
+			}
 			if store.NormalizeBotMode(sp.BotMode) == store.BotModeCompanion {
-				turnPrompt = fmt.Sprintf("用户说：%s\n\n[同群伙伴刚接了这几句话]\n%s\n\n请你以自己的性格自然接话、吐槽或回应，不要重复对方已经说过的话。", userMsg, combinedContent.String())
+				turnPrompt = fmt.Sprintf("用户说：%s\n\n[同群伙伴刚接了这几句话]\n%s\n\n请你以自己的性格自然接话、吐槽或回应，不要重复对方已经说过的话。", userMsg, priorText)
 			} else {
-				turnPrompt = fmt.Sprintf("用户指令：%s\n\n[前置协同成员输出参考]\n%s\n\n请紧扣你的专业定位补充差异化结论或执行结果，避免重复前文。", userMsg, combinedContent.String())
+				turnPrompt = fmt.Sprintf("用户指令：%s\n\n[前置协同成员输出参考]\n%s\n\n请紧扣你的专业定位补充差异化结论或执行结果，避免重复前文。", userMsg, priorText)
 			}
 		}
 		spCopy := sp
@@ -870,6 +874,7 @@ func (e *Engine) runTeamRoomParallel(
 	if len(specialists) <= 1 {
 		return e.runTeamRoomHandoff(ctx, req, roomBot, specialists, memberSet, roomHistory, userMsg, baseURL, apiKey, emit)
 	}
+	parStart := time.Now()
 	e.emitBotState(roomBot.ID, store.BotStateWorking, fmt.Sprintf("并发协同 %d 位成员并行作答...", len(specialists)))
 
 	type sseFrame struct {
@@ -993,6 +998,21 @@ func (e *Engine) runTeamRoomParallel(
 	}
 
 	e.emitBotState(roomBot.ID, store.BotStateIdle, truncateTitle(combinedContent.String()))
+
+	memberNames := make([]string, 0, len(specialists))
+	for _, sp := range specialists {
+		memberNames = append(memberNames, sp.Name)
+	}
+	e.store.RecordBotExecution(store.BotExecutionLog{
+		BotID:         roomBot.ID,
+		ThreadID:      strings.TrimSpace(req.ThreadID),
+		ExecType:      "delegate",
+		Name:          fmt.Sprintf("并发协同 %d 人", len(specialists)),
+		InputSummary:  truncateTitle(userMsg),
+		OutputSummary: strings.Join(memberNames, "、"),
+		Status:        "ok",
+		DurationMs:    time.Since(parStart).Milliseconds(),
+	})
 
 	finalResp := &ChatResponse{
 		BotID:            roomBot.ID,
@@ -1587,7 +1607,8 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 
 	threadID := strings.TrimSpace(bot.ActiveThreadID)
 	history, _ := e.store.ListBotMessagesByThread(bot.ID, threadID, 20)
-	routinePrompt := fmt.Sprintf("[后台定时任务「%s」触发，请用你本人的口吻与能力完成以下要求并直接回复给用户]\n%s", taskName, strings.TrimSpace(prompt))
+	nowStr := store.NowShanghai()
+	routinePrompt := fmt.Sprintf("[后台定时例程「%s」于 %s 自动触发，请用你本人的口吻与工具能力完成以下指令并直接输出给用户]\n%s", taskName, nowStr, strings.TrimSpace(prompt))
 
 	req := ChatRequest{
 		BotID:    bot.ID,
@@ -1613,8 +1634,15 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 		for _, sk := range allSkills {
 			skillMap[sk.ID] = sk
 		}
-		targets := selectSmartGroupMembersWithSkills(members, skillMap, prompt)
-		resp, err = e.runTeamRoomHandoff(ctx, req, bot, targets, memberSet, history, routinePrompt, "", "", nil)
+		switch strings.TrimSpace(bot.GroupMode) {
+		case "parallel":
+			resp, err = e.runTeamRoomParallel(ctx, req, bot, members, memberSet, history, routinePrompt, "", "", nil)
+		case "sequential":
+			resp, err = e.runTeamRoomHandoff(ctx, req, bot, members, memberSet, history, routinePrompt, "", "", nil)
+		default:
+			targets := selectSmartGroupMembersWithSkills(members, skillMap, prompt)
+			resp, err = e.runTeamRoomHandoff(ctx, req, bot, targets, memberSet, history, routinePrompt, "", "", nil)
+		}
 	} else {
 		resp, err = e.runSingleBotTurn(ctx, req, bot, bot.ID, history, routinePrompt, "", "", nil)
 	}
