@@ -8,6 +8,8 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -126,17 +128,30 @@ fun BotHubApp(
     sharedText: String?,
     onSharedTextConsumed: () -> Unit,
     requestedTab: Int? = null,
-    onRequestedTabConsumed: () -> Unit = {}
+    onRequestedTabConsumed: () -> Unit = {},
+    pairPayload: Pair<String, String>? = null,
+    onPairPayloadConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { BiometricAuthHelper.findFragmentActivity(context) }
     val clipboard = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var selectedTab by remember { mutableIntStateOf(0) }
+    var isPairedState by remember { mutableStateOf(prefs.bearerToken.isNotEmpty()) }
     var showSettingsSheet by remember { mutableStateOf(prefs.bearerToken.isEmpty()) }
+    var biometricUnlocked by remember {
+        mutableStateOf(!prefs.biometricAppLockEnabled || prefs.bearerToken.isEmpty())
+    }
     var selectedNotification by remember { mutableStateOf<NotificationItem?>(null) }
+
+    fun ensurePushRunning() {
+        if (prefs.bearerToken.isNotEmpty() && prefs.realtimeServiceEnabled) {
+            runCatching { RealtimePushService.start(context) }
+        }
+    }
 
     // Persistent GrokBot Team State
     var bots by remember { mutableStateOf<List<BotItem>>(emptyList()) }
@@ -347,7 +362,27 @@ fun BotHubApp(
     }
 
     LaunchedEffect(Unit) {
-        refreshAll()
+        if (prefs.bearerToken.isNotEmpty()) {
+            ensurePushRunning()
+            refreshAll()
+        }
+    }
+
+    // Handle one-tap passwordless browser pairing (bothub://pair?url=...&code=...)
+    LaunchedEffect(pairPayload) {
+        val payload = pairPayload ?: return@LaunchedEffect
+        onPairPayloadConsumed()
+        val (targetUrl, pairCode) = payload
+        api.exchangePairCode(targetUrl, pairCode).onSuccess {
+            isPairedState = true
+            biometricUnlocked = true
+            showSettingsSheet = false
+            ensurePushRunning()
+            refreshAll()
+            snackbarHostState.showSnackbar("已免密绑定成功，手机锁屏实时通知已自动开启")
+        }.onFailure { err ->
+            snackbarHostState.showSnackbar(err.message ?: "免密配对失败")
+        }
     }
 
     // Handle Android system share / deep-chat forwarding intent
@@ -378,6 +413,108 @@ fun BotHubApp(
     val unreadCount = notifications.count { it.readAt.isEmpty() }
     val unreadStashCount = stashItems.count { it.status != "archived" && it.readCount == 0 }
     val topBarBot = bots.find { it.id == activeBotId }
+
+    if (!biometricUnlocked && isPairedState) {
+        var fallbackPass by remember { mutableStateOf("") }
+        var showPassUnlock by remember { mutableStateOf(false) }
+        var unlockBusy by remember { mutableStateOf(false) }
+
+        fun triggerBiometricUnlock() {
+            val act = activity
+            if (act == null || !BiometricAuthHelper.canUseLocalBiometrics(context)) {
+                showPassUnlock = true
+                return
+            }
+            BiometricAuthHelper.authenticateLocal(
+                activity = act,
+                title = "解锁 Vesper BotHub",
+                subtitle = "优先无感面容识别，不支持面容自动降级指纹或密码",
+                onSuccess = { biometricUnlocked = true },
+                onFallbackOrCancel = { showPassUnlock = true }
+            )
+        }
+
+        LaunchedEffect(Unit) {
+            triggerBiometricUnlock()
+        }
+
+        Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            containerColor = MaterialTheme.colorScheme.background
+        ) { pad ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(pad)
+                    .padding(horizontal = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                GrokBotAvatar(
+                    avatarStyle = "butler:gold",
+                    state = if (unlockBusy) "working" else "thinking",
+                    size = 96.dp,
+                    interactive = true,
+                    seedKey = "biometric_gate"
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Vesper BotHub 生物识别保护",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "后台实时通知常驻运行中，刷脸或按指纹即可进入工作台",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = { triggerBiometricUnlock() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .sizeIn(minHeight = 48.dp)
+                ) {
+                    Text("无感面容 / 指纹解锁")
+                }
+                if (showPassUnlock) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedTextField(
+                        value = fallbackPass,
+                        onValueChange = { fallbackPass = it },
+                        label = { Text("兜底访问密码") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            if (fallbackPass.isBlank() || unlockBusy) return@OutlinedButton
+                            scope.launch {
+                                unlockBusy = true
+                                api.exchangeToken(prefs.serverUrl, fallbackPass).onSuccess {
+                                    biometricUnlocked = true
+                                    fallbackPass = ""
+                                }.onFailure { err ->
+                                    snackbarHostState.showSnackbar(err.message ?: "密码验证失败")
+                                }
+                                unlockBusy = false
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .sizeIn(minHeight = 48.dp)
+                    ) {
+                        Text(if (unlockBusy) "验证中..." else "使用访问密码进入")
+                    }
+                }
+            }
+        }
+        return
+    }
 
     Scaffold(
         modifier = Modifier
@@ -779,10 +916,59 @@ fun BotHubApp(
 
     if (showSettingsSheet) {
         var urlInput by remember { mutableStateOf(prefs.serverUrl) }
-        var passOrTokenInput by remember { mutableStateOf(prefs.bearerToken) }
+        var passwordInput by remember { mutableStateOf("") }
+        var showPasswordFallback by remember { mutableStateOf(false) }
+        var showCustomUrlField by remember { mutableStateOf(false) }
         var serviceOn by remember { mutableStateOf(prefs.realtimeServiceEnabled) }
+        var biometricLockOn by remember { mutableStateOf(prefs.biometricAppLockEnabled) }
         var zeroClickOn by remember { mutableStateOf(prefs.zeroClickCaptureEnabled) }
         var connecting by remember { mutableStateOf(false) }
+        var registeringPasskey by remember { mutableStateOf(false) }
+        var sheetHint by remember { mutableStateOf("") }
+
+        fun runPasskeyConnect(autoTriggered: Boolean) {
+            val act = activity
+            if (act == null) {
+                showPasswordFallback = true
+                return
+            }
+            scope.launch {
+                connecting = true
+                sheetHint = ""
+                when (val out = BiometricAuthHelper.signInWithPasskey(act, api, urlInput)) {
+                    is PasskeyOutcome.Success -> {
+                        isPairedState = true
+                        biometricUnlocked = true
+                        showSettingsSheet = false
+                        ensurePushRunning()
+                        refreshAll()
+                        snackbarHostState.showSnackbar("无感面容 / 指纹验证通过，实时通知已开启")
+                    }
+                    is PasskeyOutcome.Cancelled -> {
+                        if (!autoTriggered) {
+                            sheetHint = "已取消生物识别验证，也可从手机浏览器一键免密绑定"
+                        }
+                    }
+                    is PasskeyOutcome.Failed -> {
+                        if (!autoTriggered) {
+                            sheetHint = out.message
+                            showPasswordFallback = true
+                        }
+                    }
+                }
+                connecting = false
+            }
+        }
+
+        // Auto-attempt passive Face / Fingerprint Passkey on fresh install when server has Passkeys
+        LaunchedEffect(Unit) {
+            if (!isPairedState && activity != null) {
+                val serverHasPasskey = api.fetchPasskeyStatus(urlInput).getOrDefault(false)
+                if (serverHasPasskey) {
+                    runPasskeyConnect(autoTriggered = true)
+                }
+            }
+        }
 
         ModalBottomSheet(
             onDismissRequest = { showSettingsSheet = false },
@@ -792,136 +978,317 @@ fun BotHubApp(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "中枢服务器与原生推送设置",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                OutlinedTextField(
-                    value = urlInput,
-                    onValueChange = { urlInput = it },
-                    label = { Text("BotHub 服务端地址") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = passOrTokenInput,
-                    onValueChange = { passOrTokenInput = it },
-                    label = { Text("管理密钥 或 App Bearer Token") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                ListItem(
-                    headlineContent = { Text("常驻 SSE 实时秒推服务") },
-                    supportingContent = { Text("开启后锁屏实时直弹通知；关闭则仅使用 WorkManager 周期省电同步") },
-                    trailingContent = {
-                        Switch(
-                            checked = serviceOn,
-                            onCheckedChange = { checked ->
-                                serviceOn = checked
-                                prefs.realtimeServiceEnabled = checked
-                                val svcIntent = Intent(context, RealtimePushService::class.java)
-                                if (checked) {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                        context.startForegroundService(svcIntent)
-                                    } else {
-                                        context.startService(svcIntent)
-                                    }
-                                } else {
-                                    context.stopService(svcIntent)
-                                }
-                            }
-                        )
-                    }
-                )
-                ListItem(
-                    headlineContent = { Text("系统分享零点击秒收") },
-                    supportingContent = { Text("开启后在任意应用点击系统分享将自动收入收藏匣并立即返回原应用") },
-                    trailingContent = {
-                        Switch(
-                            checked = zeroClickOn,
-                            onCheckedChange = { checked ->
-                                zeroClickOn = checked
-                                prefs.zeroClickCaptureEnabled = checked
-                            }
-                        )
-                    }
-                )
-                Button(
-                    onClick = {
-                        scope.launch {
-                            connecting = true
-                            api.exchangeToken(urlInput, passOrTokenInput).onSuccess {
-                                showSettingsSheet = false
-                                refreshAll()
-                                snackbarHostState.showSnackbar("已连接至 ${prefs.serverUrl}")
-                            }.onFailure { err ->
-                                snackbarHostState.showSnackbar(err.message ?: "连接失败")
-                            }
-                            connecting = false
-                        }
-                    },
-                    enabled = !connecting,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .sizeIn(minHeight = 48.dp)
-                ) {
-                    Text(if (connecting) "验证并同步中..." else "保存并验证连接")
-                }
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = {
-                            scope.launch {
-                                api.testHealth(urlInput).onSuccess { (ms, ver) ->
-                                    snackbarHostState.showSnackbar("连通正常 (${ms}ms · $ver)")
-                                }.onFailure { err ->
-                                    snackbarHostState.showSnackbar("连通测试失败: ${err.message}")
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .sizeIn(minHeight = 48.dp)
-                    ) {
-                        Text("测试连通性")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            val batIntent = Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                            runCatching { context.startActivity(batIntent) }.onFailure {
-                                context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                            }
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .sizeIn(minHeight = 48.dp)
-                    ) {
-                        Text("后台保活白名单")
+                    GrokBotAvatar(
+                        avatarStyle = "butler:gold",
+                        state = if (connecting || registeringPasskey) "working" else "idle",
+                        size = 38.dp,
+                        interactive = true,
+                        seedKey = "settings_spirit"
+                    )
+                    Column {
+                        Text(
+                            text = if (isPairedState) "实时通知与生物识别设置" else "无感激活手机实时通知",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = if (isPairedState) {
+                                "已连接 ${prefs.serverUrl.removePrefix("https://")} · 无需配置任何 Token"
+                            } else {
+                                "优先面容无感识别 -> 指纹 -> 网页一键绑定 / 密码兜底"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-                OutlinedButton(
-                    onClick = {
-                        val apkIntent = Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk")
+
+                if (sheetHint.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = sheetHint,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(12.dp)
                         )
-                        context.startActivity(apkIntent)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .sizeIn(minHeight = 48.dp)
-                ) {
-                    Text("拉取云端最新编译 APK 安装包")
+                    }
+                }
+
+                if (!isPairedState) {
+                    Button(
+                        onClick = { runPasskeyConnect(autoTriggered = false) },
+                        enabled = !connecting,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .sizeIn(minHeight = 48.dp)
+                    ) {
+                        Text(if (connecting) "正在调起面容 / 指纹..." else "面容 / 指纹无感连接")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val target = urlInput.trim().ifEmpty { prefs.serverUrl }
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
+                            }
+                        },
+                        enabled = !connecting,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .sizeIn(minHeight = 48.dp)
+                    ) {
+                        Text("从已登录手机浏览器一键免密绑定")
+                    }
+
+                    if (!showPasswordFallback) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "改用访问密码连接（兜底）",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .clickable { showPasswordFallback = true }
+                                    .padding(vertical = 6.dp)
+                            )
+                            Text(
+                                text = if (showCustomUrlField) "收起服务器地址" else "修改服务器地址",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .clickable { showCustomUrlField = !showCustomUrlField }
+                                    .padding(vertical = 6.dp)
+                            )
+                        }
+                    }
+
+                    if (showCustomUrlField) {
+                        OutlinedTextField(
+                            value = urlInput,
+                            onValueChange = { urlInput = it },
+                            label = { Text("BotHub 服务端地址") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    if (showPasswordFallback) {
+                        OutlinedTextField(
+                            value = passwordInput,
+                            onValueChange = { passwordInput = it },
+                            label = { Text("控制台访问密码（仅首次兜底，无需填 Token）") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                if (passwordInput.isBlank() || connecting) return@Button
+                                scope.launch {
+                                    connecting = true
+                                    api.exchangeToken(urlInput, passwordInput).onSuccess {
+                                        isPairedState = true
+                                        biometricUnlocked = true
+                                        passwordInput = ""
+                                        showSettingsSheet = false
+                                        ensurePushRunning()
+                                        refreshAll()
+                                        snackbarHostState.showSnackbar("已连接并自动开启锁屏实时通知")
+                                    }.onFailure { err ->
+                                        sheetHint = err.message ?: "密码验证失败"
+                                    }
+                                    connecting = false
+                                }
+                            },
+                            enabled = !connecting && passwordInput.isNotBlank(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .sizeIn(minHeight = 48.dp)
+                        ) {
+                            Text(if (connecting) "验证并开启通知中..." else "验证密码并自动开启通知")
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            val act = activity ?: return@Button
+                            scope.launch {
+                                registeringPasskey = true
+                                sheetHint = ""
+                                when (val out = BiometricAuthHelper.registerPasskey(act, api)) {
+                                    is PasskeyOutcome.Success -> {
+                                        snackbarHostState.showSnackbar("已绑定本机面容 / 指纹通行密钥，重装也可刷脸秒连")
+                                    }
+                                    is PasskeyOutcome.Cancelled -> {}
+                                    is PasskeyOutcome.Failed -> {
+                                        sheetHint = out.message
+                                    }
+                                }
+                                registeringPasskey = false
+                            }
+                        },
+                        enabled = !registeringPasskey,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .sizeIn(minHeight = 48.dp)
+                    ) {
+                        Text(if (registeringPasskey) "正在调起面容 / 指纹..." else "绑定本机面容 / 指纹通行密钥")
+                    }
+
+                    ListItem(
+                        headlineContent = { Text("启动 APP 时无感面容 / 指纹验证") },
+                        supportingContent = {
+                            Text("优先前置无感面容，不支持面容自动降级指纹或密码；不影响后台锁屏收通知")
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = biometricLockOn,
+                                onCheckedChange = { checked ->
+                                    if (!checked) {
+                                        biometricLockOn = false
+                                        prefs.biometricAppLockEnabled = false
+                                        return@Switch
+                                    }
+                                    val act = activity
+                                    if (act == null || !BiometricAuthHelper.canUseLocalBiometrics(context)) {
+                                        sheetHint = "当前设备尚未在系统设置中录入面容或指纹"
+                                        return@Switch
+                                    }
+                                    BiometricAuthHelper.authenticateLocal(
+                                        activity = act,
+                                        title = "开启无感面容 / 指纹保护",
+                                        subtitle = "验证一次本机面容或指纹即可启用",
+                                        onSuccess = {
+                                            biometricLockOn = true
+                                            prefs.biometricAppLockEnabled = true
+                                            biometricUnlocked = true
+                                        },
+                                        onFallbackOrCancel = { msg ->
+                                            sheetHint = msg
+                                        }
+                                    )
+                                }
+                            )
+                        }
+                    )
+
+                    ListItem(
+                        headlineContent = { Text("常驻 SSE 实时秒推服务") },
+                        supportingContent = { Text("默认开启，锁屏实时直弹服务端通知；关闭则仅使用周期同步") },
+                        trailingContent = {
+                            Switch(
+                                checked = serviceOn,
+                                onCheckedChange = { checked ->
+                                    serviceOn = checked
+                                    prefs.realtimeServiceEnabled = checked
+                                    val svcIntent = Intent(context, RealtimePushService::class.java)
+                                    if (checked) {
+                                        RealtimePushService.start(context)
+                                    } else {
+                                        context.stopService(svcIntent)
+                                    }
+                                }
+                            )
+                        }
+                    )
+
+                    ListItem(
+                        headlineContent = { Text("系统分享零点击秒收") },
+                        supportingContent = { Text("开启后在任意应用点击系统分享将自动收入收藏匣并立即返回原应用") },
+                        trailingContent = {
+                            Switch(
+                                checked = zeroClickOn,
+                                onCheckedChange = { checked ->
+                                    zeroClickOn = checked
+                                    prefs.zeroClickCaptureEnabled = checked
+                                }
+                            )
+                        }
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    api.testHealth(urlInput).onSuccess { (ms, ver) ->
+                                        snackbarHostState.showSnackbar("连通正常 (${ms}ms · $ver)")
+                                    }.onFailure { err ->
+                                        snackbarHostState.showSnackbar("连通测试失败: ${err.message}")
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .sizeIn(minHeight = 48.dp)
+                        ) {
+                            Text("测试连通性")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                val batIntent = Intent(
+                                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                                runCatching { context.startActivity(batIntent) }.onFailure {
+                                    context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .sizeIn(minHeight = 48.dp)
+                        ) {
+                            Text("后台保活白名单")
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                val apkIntent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk")
+                                )
+                                context.startActivity(apkIntent)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .sizeIn(minHeight = 48.dp)
+                        ) {
+                            Text("拉取最新 APK")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                prefs.bearerToken = ""
+                                isPairedState = false
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .sizeIn(minHeight = 48.dp)
+                        ) {
+                            Text("重新绑定服务端")
+                        }
+                    }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
             }

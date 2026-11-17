@@ -111,8 +111,17 @@ jobs:
 
       - name: Build Release APK
         working-directory: android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > /tmp/bothub-release.p12
+            export ANDROID_KEYSTORE_PATH=/tmp/bothub-release.p12
+          fi
           gradle assembleRelease --no-daemon
+          rm -f /tmp/bothub-release.p12
           mkdir -p ../dist
           cp app/build/outputs/apk/release/app-release.apk ../dist/vesper-bothub-android.apk
 

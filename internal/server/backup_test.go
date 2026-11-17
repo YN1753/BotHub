@@ -28,10 +28,12 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 	}
 
 	s := &Server{
-		store:   st,
-		agent:   agent.NewEngine(st, nil),
-		version: "v1.6.0",
-		commit:  "test-commit",
+		store:    st,
+		agent:    agent.NewEngine(st, nil),
+		limiter:  newRateLimiter(),
+		passkeys: newPasskeyStateStore(),
+		version:  "v1.6.0",
+		commit:   "test-commit",
 	}
 
 	cleanup := func() {

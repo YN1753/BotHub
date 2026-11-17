@@ -155,6 +155,125 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun exchangePairCode(serverUrl: String, code: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanUrl = serverUrl.trim().trimEnd('/').ifEmpty { prefs.serverUrl }
+            val bodyJson = JSONObject().put("code", code.trim()).toString()
+            val req = Request.Builder()
+                .url("$cleanUrl/api/v2/auth/pair/exchange")
+                .post(bodyJson.toRequestBody(jsonMedia))
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    val err = runCatching { JSONObject(raw).optString("error") }.getOrDefault("")
+                    throw IllegalStateException(err.ifEmpty { "免密配对失败 (${resp.code})" })
+                }
+                val token = JSONObject(raw).optString("token", "")
+                if (token.isEmpty()) throw IllegalStateException("服务端未返回有效凭证")
+                prefs.serverUrl = cleanUrl
+                prefs.bearerToken = token
+                token
+            }
+        }
+    }
+
+    suspend fun fetchPasskeyStatus(serverUrl: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanUrl = serverUrl.trim().trimEnd('/').ifEmpty { prefs.serverUrl }
+            val req = Request.Builder()
+                .url("$cleanUrl/api/auth/passkey/status")
+                .get()
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) return@use false
+                JSONObject(raw).optBoolean("has_passkeys", false)
+            }
+        }
+    }
+
+    suspend fun beginPasskeyLogin(serverUrl: String): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanUrl = serverUrl.trim().trimEnd('/').ifEmpty { prefs.serverUrl }
+            val req = Request.Builder()
+                .url("$cleanUrl/api/auth/passkey/login/options")
+                .post("{}".toRequestBody(jsonMedia))
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    val err = runCatching { JSONObject(raw).optString("error") }.getOrDefault("")
+                    throw IllegalStateException(err.ifEmpty { "请求生物识别挑战失败 (${resp.code})" })
+                }
+                val root = JSONObject(raw)
+                val ceremonyId = root.optString("ceremony_id", "")
+                val pubKeyObj = root.optJSONObject("publicKey")
+                    ?: throw IllegalStateException("挑战参数缺失")
+                ceremonyId to pubKeyObj.toString()
+            }
+        }
+    }
+
+    suspend fun finishPasskeyLogin(serverUrl: String, ceremonyId: String, responseJson: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanUrl = serverUrl.trim().trimEnd('/').ifEmpty { prefs.serverUrl }
+            val encId = URLEncoder.encode(ceremonyId, "UTF-8")
+            val req = Request.Builder()
+                .url("$cleanUrl/api/auth/passkey/login/verify?ceremony_id=$encId")
+                .post(responseJson.toRequestBody(jsonMedia))
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    val err = runCatching { JSONObject(raw).optString("error") }.getOrDefault("")
+                    throw IllegalStateException(err.ifEmpty { "通行密钥签名校验未通过 (${resp.code})" })
+                }
+                val token = JSONObject(raw).optString("token", "")
+                if (token.isEmpty()) throw IllegalStateException("服务端未返回推送凭证")
+                prefs.serverUrl = cleanUrl
+                prefs.bearerToken = token
+                token
+            }
+        }
+    }
+
+    suspend fun beginPasskeyRegister(): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = authRequestBuilder("/api/auth/passkey/register/options")
+                .post("""{"promotion":true}""".toRequestBody(jsonMedia))
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    val err = runCatching { JSONObject(raw).optString("error") }.getOrDefault("")
+                    throw IllegalStateException(err.ifEmpty { "获取通行密钥注册参数失败 (${resp.code})" })
+                }
+                val root = JSONObject(raw)
+                val ceremonyId = root.optString("ceremony_id", "")
+                val pubKeyObj = root.optJSONObject("publicKey")
+                    ?: throw IllegalStateException("注册参数格式无效")
+                ceremonyId to pubKeyObj.toString()
+            }
+        }
+    }
+
+    suspend fun finishPasskeyRegister(ceremonyId: String, responseJson: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encId = URLEncoder.encode(ceremonyId, "UTF-8")
+            val req = authRequestBuilder("/api/auth/passkey/register/verify?ceremony_id=$encId")
+                .post(responseJson.toRequestBody(jsonMedia))
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    val err = runCatching { JSONObject(raw).optString("error") }.getOrDefault("")
+                    throw IllegalStateException(err.ifEmpty { "保存本机通行密钥失败 (${resp.code})" })
+                }
+            }
+        }
+    }
+
     suspend fun fetchNotifications(afterId: Long = 0L, limit: Int = 50): Result<List<NotificationItem>> = withContext(Dispatchers.IO) {
         runCatching {
             val req = authRequestBuilder("/api/v2/notifications?after_id=$afterId&limit=$limit").get().build()

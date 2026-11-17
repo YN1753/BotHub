@@ -1,30 +1,90 @@
 <script setup lang="ts">
-import { ref, useId, onMounted } from 'vue'
+import { ref, useId, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
+import { BotHubApi } from '../api/client'
 import { trackSpotlight } from '../utils/topLayer'
+import { checkPasskeyCapabilities, loginWithPasskeyCeremony } from '../utils/passkey'
 import BotAvatar from './BotAvatar.vue'
 
 const store = useAppStore()
+const headingId = useId()
 const passwordId = useId()
 const hostLabel = typeof window !== 'undefined' && window.location.host ? window.location.host : 'Vesper BotHub'
 const password = ref('')
 const showPassword = ref(false)
-const rememberDevice = ref(false)
+const rememberDevice = ref(true)
 const capsLockOn = ref(false)
 const loading = ref(false)
+const passkeyLoading = ref(false)
+const hasPasskeys = ref(false)
+const passkeySupported = ref(false)
+const showPasswordFallback = ref(true)
 const errorMsg = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
+
+let autofillAbort: AbortController | null = null
 
 function checkCapsLock(e: KeyboardEvent) {
   capsLockOn.value = typeof e.getModifierState === 'function' && e.getModifierState('CapsLock')
 }
 
-onMounted(() => {
-  inputEl.value?.focus()
+async function armConditionalAutofill(conditionalOk: boolean) {
+  if (!conditionalOk || !hasPasskeys.value) return
+  autofillAbort?.abort()
+  autofillAbort = new AbortController()
+  const res = await loginWithPasskeyCeremony({
+    signal: autofillAbort.signal,
+    conditional: true,
+  })
+  if (res.ok) {
+    await store.completeSessionActivation()
+  }
+}
+
+onMounted(async () => {
+  const [statusRes, caps] = await Promise.all([
+    BotHubApi.passkeyStatus().catch(() => ({ has_passkeys: false, count: 0, rp_id: '' })),
+    checkPasskeyCapabilities(),
+  ])
+  hasPasskeys.value = Boolean(statusRes.has_passkeys)
+  passkeySupported.value = caps.platformSupported
+
+  if (hasPasskeys.value && caps.platformSupported) {
+    showPasswordFallback.value = false
+    void armConditionalAutofill(caps.conditionalSupported)
+  } else {
+    inputEl.value?.focus()
+  }
 })
+
+onBeforeUnmount(() => {
+  autofillAbort?.abort()
+})
+
+async function handlePasskeyUnlock() {
+  if (passkeyLoading.value || loading.value) return
+  autofillAbort?.abort()
+  autofillAbort = new AbortController()
+  passkeyLoading.value = true
+  errorMsg.value = ''
+  try {
+    const res = await loginWithPasskeyCeremony({ signal: autofillAbort.signal })
+    if (res.ok) {
+      await store.completeSessionActivation()
+      return
+    }
+    if (!res.cancelled && res.error) {
+      errorMsg.value = res.error
+      showPasswordFallback.value = true
+    }
+  } finally {
+    passkeyLoading.value = false
+  }
+}
 
 async function handleSubmit() {
   if (!password.value.trim() || loading.value) return
+  autofillAbort?.abort()
   loading.value = true
   errorMsg.value = ''
   try {
@@ -51,16 +111,56 @@ async function handleSubmit() {
           <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880] shadow-[0_0_8px_#f2b880]" aria-hidden="true" />
           <span>VESPER BOTHUB</span>
         </div>
-        <BotAvatar avatar-style="butler:gold" :state="loading ? 'working' : password ? 'thinking' : 'idle'" size="lg" focusable />
+        <BotAvatar
+          avatar-style="butler:gold"
+          :state="loading || passkeyLoading ? 'working' : password ? 'thinking' : 'idle'"
+          size="lg"
+          focusable
+        />
       </div>
-      <h1 class="text-2xl font-semibold text-white mb-1 tracking-tight">星穹 GrokBot 中枢</h1>
-      <p class="font-mono text-xs text-slate-300 mb-6">{{ hostLabel }} · 请输入管理密钥</p>
+      <h1 :id="headingId" class="text-2xl font-semibold text-white mb-1 tracking-tight">星穹 GrokBot 中枢</h1>
+      <p class="font-mono text-xs text-slate-300 mb-6">
+        {{ hostLabel }} · {{ hasPasskeys && passkeySupported ? '支持面容 / 指纹通行密钥解锁' : '身份验证' }}
+      </p>
 
-      <form class="flex flex-col gap-3" @submit.prevent="handleSubmit">
+      <!-- Biometric Passkey Primary Sign-In -->
+      <div v-if="hasPasskeys && passkeySupported" class="flex flex-col gap-3 mb-4">
+        <button
+          type="button"
+          :disabled="passkeyLoading || loading"
+          @click="handlePasskeyUnlock"
+          class="btn-jewel w-full min-h-[48px] rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+        >
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
+            <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+            <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" />
+            <path d="M2 12a10 10 0 0 1 18-6" />
+            <path d="M2 16h.01" />
+            <path d="M21.8 16c.2-2 .131-5.354 0-6" />
+            <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
+            <path d="M8.65 22c.21-.66.45-1.32.57-2" />
+            <path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
+          </svg>
+          <span>{{ passkeyLoading ? '正在调起面容 / 指纹...' : '使用面容 / 指纹无感解锁' }}</span>
+        </button>
+
+        <button
+          v-if="!showPasswordFallback"
+          type="button"
+          @click="showPasswordFallback = true"
+          class="text-xs text-slate-400 hover:text-[#f2b880] py-1 cursor-pointer"
+        >
+          改用访问密码解锁
+        </button>
+      </div>
+
+      <form v-if="showPasswordFallback" class="flex flex-col gap-3" @submit.prevent="handleSubmit">
         <input
           type="text"
           name="username"
-          autocomplete="username"
+          :aria-describedby="headingId"
+          autocomplete="username webauthn"
           :value="hostLabel"
           readonly
           tabindex="-1"
@@ -99,7 +199,7 @@ async function handleSubmit() {
         </p>
         <label class="inline-flex items-start gap-2 text-xs text-slate-300 cursor-pointer select-none">
           <input v-model="rememberDevice" type="checkbox" class="accent-[#f2b880] rounded mt-0.5 shrink-0" />
-          <span>记住此设备（30 天免重输；未勾选为 7 天会话，公共设备请勿勾选）</span>
+          <span>记住此设备（30 天免重输；公共设备请勿勾选）</span>
         </label>
         <button
           type="submit"
@@ -108,8 +208,8 @@ async function handleSubmit() {
         >
           {{ loading ? '验证中...' : '解锁控制台' }}
         </button>
-        <p v-if="errorMsg" role="alert" class="text-xs text-rose-400 mt-1">{{ errorMsg }}</p>
       </form>
+      <p v-if="errorMsg" role="alert" class="text-xs text-rose-400 mt-2">{{ errorMsg }}</p>
     </section>
   </main>
 </template>

@@ -25,6 +25,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="bothub"
+                    android:host="pair" />
+            </intent-filter>
         </activity>
 
         <!-- 系统级半屏无感秒收面板 (拦截 ACTION_SEND 并支持收入收藏匣或转发 AI 深聊) -->

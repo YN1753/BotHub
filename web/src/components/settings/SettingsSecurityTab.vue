@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
 import { formatUptime, triggerBlobDownload } from '../../utils/format'
+import {
+  checkPasskeyCapabilities,
+  registerPasskeyCeremony,
+  syncAcceptedPasskeys,
+  type PasskeyCredentialItem,
+} from '../../utils/passkey'
 
 const emit = defineEmits<{
   close: []
@@ -13,6 +19,84 @@ const newPassword = ref('')
 const showNewPassword = ref(false)
 const exportingMode = ref<'' | 'full' | 'redacted'>('')
 const revokingDevices = ref(false)
+
+const passkeySupported = ref(false)
+const passkeyLoading = ref(false)
+const passkeyRegistering = ref(false)
+const passkeys = ref<PasskeyCredentialItem[]>([])
+
+function formatEpochDate(epochSec?: number): string {
+  if (!epochSec || epochSec <= 0) return '尚未在登录时使用'
+  try {
+    return new Date(epochSec * 1000).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return ''
+  }
+}
+
+async function loadPasskeyList() {
+  passkeyLoading.value = true
+  try {
+    const res = await BotHubApi.listPasskeys()
+    const creds = (res.credentials || []) as PasskeyCredentialItem[]
+    passkeys.value = creds
+    await syncAcceptedPasskeys(res.rpId, res.userId, creds)
+  } catch {
+    // Ignore silently
+  } finally {
+    passkeyLoading.value = false
+  }
+}
+
+onMounted(async () => {
+  const caps = await checkPasskeyCapabilities()
+  passkeySupported.value = caps.platformSupported
+  await loadPasskeyList()
+})
+
+async function handleCreatePasskey() {
+  if (passkeyRegistering.value) return
+  passkeyRegistering.value = true
+  try {
+    const res = await registerPasskeyCeremony({ promotion: false })
+    if (res.ok) {
+      store.notify('面容 / 指纹通行密钥已创建，手机 APP 与网页端均可直接无感登录')
+      await loadPasskeyList()
+    } else if (!res.cancelled && res.error) {
+      store.notify(res.error)
+    }
+  } finally {
+    passkeyRegistering.value = false
+  }
+}
+
+async function handleRenamePasskey(item: PasskeyCredentialItem) {
+  const next = window.prompt('修改通行密钥备注名称：', item.name)
+  if (!next || next.trim() === item.name) return
+  try {
+    await BotHubApi.renamePasskey(item.id, next.trim())
+    store.notify('通行密钥名称已更新')
+    await loadPasskeyList()
+  } catch (err: any) {
+    store.notify(err.message || '重命名失败')
+  }
+}
+
+async function handleDeletePasskey(item: PasskeyCredentialItem) {
+  if (!window.confirm(`确定移除通行密钥「${item.name}」吗？`)) return
+  try {
+    await BotHubApi.deletePasskey(item.id)
+    store.notify('已移除通行密钥并同步更新设备密码库')
+    await loadPasskeyList()
+  } catch (err: any) {
+    store.notify(err.message || '移除失败')
+  }
+}
 
 async function handleUpdatePassword() {
   if (newPassword.value.trim().length < 6) {
@@ -29,13 +113,10 @@ async function handleUpdatePassword() {
 }
 
 async function handleRotateToken() {
-  if (!window.confirm('确定重置移动端 App Bearer Token 吗？重置后手机端需重新连接。')) return
+  if (!window.confirm('确定轮换底层推送凭证吗？轮换后已连接手机需重新刷脸或一键唤醒绑定。')) return
   try {
     const res = await BotHubApi.rotateAppToken()
-    if (res.token) {
-      await navigator.clipboard?.writeText(res.token).catch(() => {})
-    }
-    store.notify(res.message || '已生成全新 App Bearer Token 并复制到剪贴板')
+    store.notify(res.message || '已轮换底层推送凭证，旧设备连接已断开')
     await store.refreshWorkspaceSlices(['configs'])
   } catch (err: any) {
     store.notify(err.message)
@@ -128,8 +209,83 @@ async function handleImportBackup(e: Event) {
 
 <template>
   <div class="flex flex-col gap-3.5">
+    <!-- Passkey Biometric Management -->
+    <div class="modal-section flex flex-col gap-3">
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div class="text-xs font-semibold text-[#f2b880]">面容 / 指纹通行密钥 (Passkey)</div>
+          <p class="text-[11px] text-slate-400 mt-0.5">
+            绑定后在 Android 原生 APP 或浏览器均可优先无感刷脸、按指纹免密码登录与激活通知。
+          </p>
+        </div>
+        <button
+          v-if="passkeySupported"
+          type="button"
+          :disabled="passkeyRegistering"
+          @click="handleCreatePasskey"
+          class="btn-jewel min-h-[36px] px-3.5 py-1.5 rounded-xl text-xs font-semibold cursor-pointer shrink-0 disabled:opacity-50"
+        >
+          {{ passkeyRegistering ? '正在验证生物特征...' : '+ 注册面容 / 指纹密钥' }}
+        </button>
+      </div>
+
+      <div v-if="passkeyLoading" class="text-xs text-slate-400 py-1">正在读取已注册密钥...</div>
+      <div v-else-if="passkeys.length === 0" class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/60 px-3 py-2.5 text-xs text-slate-400">
+        尚未注册通行密钥。点击右上方按钮即可使用当前设备的面容、触控 ID 或指纹一键绑定。
+      </div>
+      <div v-else class="flex flex-col gap-2">
+        <div
+          v-for="pk in passkeys"
+          :key="pk.id"
+          class="flex items-center justify-between gap-3 rounded-xl border border-[#fff8ee]/12 bg-[#050811]/75 px-3 py-2.5"
+        >
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-8 h-8 rounded-xl bg-[#f2b880]/15 border border-[#f2b880]/30 inline-flex items-center justify-center text-[#f2b880] shrink-0" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
+                <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+                <path d="M2 12a10 10 0 0 1 18-6" />
+                <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
+                <path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
+              </svg>
+            </span>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-medium text-white truncate">{{ pk.name }}</span>
+                <span
+                  v-if="pk.credentialBackedUp"
+                  class="font-mono text-[9.5px] px-1.5 py-0.5 rounded border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 shrink-0"
+                >
+                  跨端同步
+                </span>
+              </div>
+              <div class="text-[10.5px] text-slate-400 font-mono truncate mt-0.5">
+                注册于 {{ formatEpochDate(pk.registeredAt) }} · 最近使用 {{ formatEpochDate(pk.lastUsedAt) }}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              @click="handleRenamePasskey(pk)"
+              class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+            >
+              改名
+            </button>
+            <button
+              type="button"
+              @click="handleDeletePasskey(pk)"
+              class="px-2.5 py-1 rounded-lg border border-rose-400/35 bg-rose-500/10 text-[11px] text-rose-300 hover:bg-rose-500/20 cursor-pointer"
+            >
+              移除
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <form @submit.prevent="handleUpdatePassword" class="modal-section flex flex-col gap-2.5">
-      <label for="settings-new-password" class="text-xs font-semibold text-[#f2b880]">访问密钥管理</label>
+      <label for="settings-new-password" class="text-xs font-semibold text-[#f2b880]">兜底访问密码管理</label>
       <div class="flex flex-col sm:flex-row gap-2">
         <div class="relative flex-1 flex items-center">
           <input
@@ -154,15 +310,15 @@ async function handleImportBackup(e: Event) {
           </button>
         </div>
         <button type="submit" class="min-h-[44px] sm:min-h-[40px] px-4 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer shrink-0">
-          更新密钥
+          更新密码
         </button>
       </div>
     </form>
 
     <div class="modal-section flex flex-col gap-3">
       <div>
-        <div class="text-xs font-semibold text-[#f2b880]">系统数据灾备与令牌轮换</div>
-        <p class="text-[11px] text-slate-400 mt-0.5">支持含密钥全量灾备导出，或自动遮蔽 API Key 与密码的脱敏分享导出（导入时自动保留现有密钥）</p>
+        <div class="text-xs font-semibold text-[#f2b880]">系统数据灾备与设备解绑</div>
+        <p class="text-[11px] text-slate-400 mt-0.5">支持含密钥全量灾备导出，或自动遮蔽 API Key 与密码的脱敏分享导出</p>
       </div>
       <div class="flex flex-wrap gap-2.5">
         <button
@@ -186,7 +342,7 @@ async function handleImportBackup(e: Event) {
           <input type="file" accept=".json" class="hidden" @change="handleImportBackup" />
         </label>
         <button type="button" @click="handleRotateToken" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer">
-          重置移动端 App Token
+          解绑所有已连接手机客户端
         </button>
       </div>
     </div>
@@ -216,7 +372,7 @@ async function handleImportBackup(e: Event) {
     <div class="modal-section flex items-center justify-between gap-3 flex-wrap">
       <div>
         <h4 class="text-xs font-semibold text-white">多端会话管理与退出登录</h4>
-        <p class="text-[11px] text-slate-400 mt-0.5">可一键轮换会话签名密钥使所有其他设备（含 30 天免输设备）立即下线，或退出本机登录</p>
+        <p class="text-[11px] text-slate-400 mt-0.5">可一键吊销其他浏览器登录会话，或退出本机登录</p>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <button

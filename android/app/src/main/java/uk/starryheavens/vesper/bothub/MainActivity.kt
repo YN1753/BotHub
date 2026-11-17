@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.notify.NotificationHelper
@@ -21,10 +21,11 @@ import uk.starryheavens.vesper.bothub.sync.RealtimePushService
 import uk.starryheavens.vesper.bothub.ui.BotHubApp
 import uk.starryheavens.vesper.bothub.ui.theme.VesperBotHubTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private var sharedTextState by mutableStateOf<String?>(null)
     private var requestedTabState by mutableStateOf<Int?>(null)
+    private var pairPayloadState by mutableStateOf<Pair<String, String>?>(null)
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -40,7 +41,7 @@ class MainActivity : ComponentActivity() {
 
         val prefs = BotHubPrefs(this)
         if (prefs.realtimeServiceEnabled && prefs.bearerToken.isNotEmpty()) {
-            RealtimePushService.start(this)
+            runCatching { RealtimePushService.start(this) }
         }
 
         extractIncomingIntent(intent)
@@ -54,7 +55,9 @@ class MainActivity : ComponentActivity() {
                     sharedText = sharedTextState,
                     onSharedTextConsumed = { sharedTextState = null },
                     requestedTab = requestedTabState,
-                    onRequestedTabConsumed = { requestedTabState = null }
+                    onRequestedTabConsumed = { requestedTabState = null },
+                    pairPayload = pairPayloadState,
+                    onPairPayloadConsumed = { pairPayloadState = null }
                 )
             }
         }
@@ -68,6 +71,14 @@ class MainActivity : ComponentActivity() {
 
     private fun extractIncomingIntent(intent: Intent?) {
         if (intent == null) return
+        if (intent.action == Intent.ACTION_VIEW && intent.data?.scheme == "bothub" && intent.data?.host == "pair") {
+            val pairUrl = intent.data?.getQueryParameter("url")?.trim().orEmpty()
+            val pairCode = intent.data?.getQueryParameter("code")?.trim().orEmpty()
+            if (pairCode.isNotEmpty()) {
+                pairPayloadState = pairUrl to pairCode
+            }
+            return
+        }
         val deepChat = intent.getStringExtra(EXTRA_DEEP_CHAT_TEXT)?.trim()
         if (!deepChat.isNullOrEmpty()) {
             sharedTextState = deepChat

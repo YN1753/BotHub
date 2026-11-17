@@ -386,6 +386,9 @@ END;`
 	_, _ = s.db.Exec(`UPDATE stash_items SET status = CASE WHEN ai_tldr != '' THEN 'ready' ELSE 'failed' END, error_msg = CASE WHEN ai_tldr != '' THEN '' ELSE '服务重启中断后台提炼，可点击重提炼恢复' END, updated_at = ? WHERE status = 'processing'`, NowShanghai())
 	_, _ = s.db.Exec(`DELETE FROM configs WHERE key IN ('wecom_corpid', 'wecom_agentid', 'wecom_secret', 'wecom_touser', 'pushplus_token')`)
 	_, _ = s.db.Exec(`UPDATE configs SET value = 'native' WHERE key = 'push_channel' AND value != 'native'`)
+	if err := s.migratePasskeysTable(); err != nil {
+		return err
+	}
 	s.migrateStashToolOnce()
 	return nil
 }

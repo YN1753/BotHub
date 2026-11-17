@@ -4,6 +4,7 @@ import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { lazyPanelChunk } from '../utils/lazyComponent'
 import { resolveTabSlideTransition, type DirectionalTransitionName } from '../utils/motion'
+import { checkPasskeyCapabilities, registerPasskeyCeremony } from '../utils/passkey'
 import type { ModelPoolEntry, UpstreamModelCheck } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -61,15 +62,17 @@ const lightModel = ref('')
 
 const nezhaUrl = ref('')
 const nezhaDbPath = ref('')
-const appBearerToken = ref('')
 const cfApiToken = ref('')
 const biliSessdata = ref('')
 
 const saving = ref(false)
 const testingPush = ref(false)
+const pairingApp = ref(false)
+const registeringPasskey = ref(false)
+const passkeyCapable = ref(false)
+const passkeyCount = ref(0)
 const showPrimaryKey = ref(false)
 const showLightKey = ref(false)
-const showAppToken = ref(false)
 const showCfToken = ref(false)
 const showBiliSess = ref(false)
 const savedSnapshot = ref('')
@@ -87,7 +90,6 @@ function currentConfigSnapshot(): string {
     lightModel: lightModel.value.trim(),
     nezhaUrl: nezhaUrl.value.trim(),
     nezhaDbPath: nezhaDbPath.value.trim(),
-    appBearerToken: appBearerToken.value.trim(),
     cfApiToken: cfApiToken.value.trim(),
     biliSessdata: biliSessdata.value.trim(),
   })
@@ -117,10 +119,17 @@ watch(
 
     nezhaUrl.value = c['nezha_url'] || ''
     nezhaDbPath.value = c['nezha_db_path'] || ''
-    appBearerToken.value = c['app_bearer_token'] || ''
     cfApiToken.value = c['cf_api_token'] || ''
     biliSessdata.value = c['bili_sessdata'] || ''
     savedSnapshot.value = currentConfigSnapshot()
+    void checkPasskeyCapabilities().then((caps) => {
+      passkeyCapable.value = caps.platformSupported
+    })
+    void BotHubApi.passkeyStatus()
+      .then((st) => {
+        passkeyCount.value = st.count || 0
+      })
+      .catch(() => {})
   }
 )
 
@@ -142,7 +151,6 @@ async function saveAllConfig() {
       light_model: lightModel.value.trim(),
       nezha_url: nezhaUrl.value.trim(),
       nezha_db_path: nezhaDbPath.value.trim(),
-      app_bearer_token: appBearerToken.value.trim(),
       cf_api_token: cfApiToken.value.trim(),
       bili_sessdata: biliSessdata.value.trim(),
     })
@@ -278,21 +286,34 @@ async function handleTestPush() {
   }
 }
 
-function copyNativeAppProfile() {
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const profile = JSON.stringify(
-    {
-      endpoint: origin,
-      sse_events: `${origin}/api/v2/events`,
-      inbox_api: `${origin}/api/v2/notifications`,
-      auth_header: 'Authorization: Bearer <YOUR_APP_BEARER_TOKEN>',
-    },
-    null,
-    2
-  )
-  navigator.clipboard?.writeText(profile).then(() => {
-    store.notify('已复制原生 APP 接入端点 JSON')
-  })
+async function handleOneTapPairApp() {
+  if (pairingApp.value) return
+  pairingApp.value = true
+  try {
+    const res = await BotHubApi.createAppPairCode()
+    store.notify('正在唤醒手机客户端并自动完成免密绑定...')
+    window.location.href = res.deep_link
+  } catch (err: any) {
+    store.notify(err.message || '发起一键绑定失败')
+  } finally {
+    pairingApp.value = false
+  }
+}
+
+async function handleQuickCreatePasskey() {
+  if (registeringPasskey.value) return
+  registeringPasskey.value = true
+  try {
+    const res = await registerPasskeyCeremony({ promotion: false })
+    if (res.ok) {
+      passkeyCount.value += 1
+      store.notify('已绑定面容 / 指纹通行密钥，手机与网页端均可直接刷脸或指纹连接')
+    } else if (!res.cancelled && res.error) {
+      store.notify(res.error)
+    }
+  } finally {
+    registeringPasskey.value = false
+  }
 }
 </script>
 
@@ -520,50 +541,78 @@ function copyNativeAppProfile() {
           </div>
         </form>
 
-        <!-- Tab: Native App Push -->
-        <form v-else-if="activeTab === 'push'" key="push" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
+        <!-- Tab: Native App Push (Zero Manual Configuration) -->
+        <div v-else-if="activeTab === 'push'" key="push" class="flex flex-col gap-3.5">
           <div class="luxury-card rounded-2xl p-4 border-[#f2b880]/28">
             <div class="flex items-center justify-between gap-2 flex-wrap">
               <div class="flex items-center gap-2">
                 <span :class="['w-2 h-2 rounded-full shrink-0', store.state.sseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400']" aria-hidden="true" />
-                <strong class="text-sm font-semibold text-white">原生 APP 通知通道（独家启用）</strong>
+                <strong class="text-sm font-semibold text-white">手机原生通知（零配置自动就绪）</strong>
               </div>
               <span :class="['font-mono text-[10.5px] px-2 py-0.5 rounded-full border', store.state.sseConnected ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' : 'border-amber-400/30 bg-amber-400/10 text-amber-300']">
-                {{ store.state.sseConnected ? 'SSE 实时通道已连接' : 'SSE 等待重连' }}
+                {{ store.state.sseConnected ? 'SSE 实时通道在线' : 'SSE 等待重连' }}
               </span>
             </div>
             <p class="text-xs text-slate-300/90 mt-1.5 leading-relaxed">
-              所有定时晨报、前沿雷达、资产到期提醒与哪吒探针告警均直接入库至原生收件箱，并通过 <code class="font-mono text-[#f2b880]">/api/v2/events</code> SSE 长连接实时投递至移动端 APP 与控制台。
+              服务端已自动维护加密推送凭证，无需手动填写任何 Token。定时晨报、技术雷达、资产到期提醒与哪吒探针告警均自动直推手机锁屏。
             </p>
           </div>
 
-          <div class="modal-section flex flex-col gap-2">
-            <label class="flex flex-col gap-1.5 text-xs text-slate-300">
-              <span>Android / 原生 APP 接入令牌 (App Bearer Token)</span>
-              <div class="relative">
-                <input v-model="appBearerToken" :type="showAppToken ? 'text' : 'password'" placeholder="bh_..." class="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] pl-3 pr-14 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
-                <button type="button" @click="showAppToken = !showAppToken" class="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[11px] font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer">
-                  {{ showAppToken ? '隐藏' : '显示' }}
-                </button>
-              </div>
-            </label>
-            <p class="text-[11px] text-slate-400">客户端请求头携带 Authorization: Bearer 令牌即可订阅实时通知流；可在「安全与数据灾备」中轮换。</p>
-          </div>
+          <div class="modal-section flex flex-col gap-3">
+            <div>
+              <div class="text-xs font-semibold text-[#f2b880]">无感面容 / 指纹激活手机客户端</div>
+              <p class="text-[11px] text-slate-400 mt-0.5">
+                方式一：注册面容/指纹通行密钥后，手机安装 APP 打开即可无感刷脸（或按指纹）直连；方式二：在手机浏览器直接点下方「一键免密唤醒绑定本机 APP」，无需输入网址或密码。
+              </p>
+            </div>
 
-          <div class="flex items-center justify-between gap-2 flex-wrap pt-1">
-            <button type="button" @click="copyNativeAppProfile" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer">
-              复制移动端接入配置
-            </button>
-            <div class="flex items-center gap-2">
-              <button type="button" :disabled="testingPush" @click="handleTestPush" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer disabled:opacity-50">
-                {{ testingPush ? '发送自检中...' : '发送测试通知到原生 APP' }}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                :disabled="pairingApp"
+                @click="handleOneTapPairApp"
+                class="btn-jewel min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-semibold cursor-pointer disabled:opacity-50"
+              >
+                {{ pairingApp ? '正在唤醒客户端...' : '一键免密唤醒绑定本机 APP' }}
               </button>
-              <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
-                保存 APP 通道配置
+
+              <button
+                v-if="passkeyCapable"
+                type="button"
+                :disabled="registeringPasskey"
+                @click="handleQuickCreatePasskey"
+                class="min-h-[44px] px-4 py-2.5 rounded-xl border border-[#f2b880]/45 bg-[#f2b880]/12 hover:bg-[#f2b880]/22 text-xs font-medium text-[#f2b880] cursor-pointer disabled:opacity-50"
+              >
+                {{
+                  registeringPasskey
+                    ? '正在调起生物识别...'
+                    : passkeyCount > 0
+                    ? `新增面容/指纹密钥 (已绑 ${passkeyCount} 个)`
+                    : '绑定面容 / 指纹通行密钥'
+                }}
               </button>
             </div>
           </div>
-        </form>
+
+          <div class="flex items-center justify-between gap-2 flex-wrap pt-1">
+            <a
+              href="https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:text-[#f2b880] hover:border-[#f2b880]/40 inline-flex items-center justify-center"
+            >
+              下载最新 Android 客户端 APK
+            </a>
+            <button
+              type="button"
+              :disabled="testingPush"
+              @click="handleTestPush"
+              class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-[#f2b880]/40 bg-[#f2b880]/12 hover:bg-[#f2b880]/20 text-xs font-medium text-[#f2b880] cursor-pointer disabled:opacity-50"
+            >
+              {{ testingPush ? '正在推送测试...' : '发送测试通知到手机' }}
+            </button>
+          </div>
+        </div>
 
         <!-- Tab: Integrations -->
         <form v-else-if="activeTab === 'integrations'" key="integrations" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">

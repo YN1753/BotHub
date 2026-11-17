@@ -96,6 +96,22 @@ export async function apiRequest<T = any>(
 
 export const BotHubApi = {
   authStatus: () => apiRequest<{ authenticated: boolean }>('/api/auth/status'),
+  passkeyStatus: () =>
+    apiRequest<{ has_passkeys: boolean; count: number; rp_id: string }>('/api/auth/passkey/status'),
+  listPasskeys: () =>
+    apiRequest<{ rpId: string; userId: string; credentials: Array<any> }>('/api/auth/passkeys'),
+  renamePasskey: (id: string, name: string) =>
+    apiRequest<{ ok: boolean; name: string }>(`/api/auth/passkeys/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }),
+  deletePasskey: (id: string) =>
+    apiRequest<{ ok: boolean }>(`/api/auth/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  createAppPairCode: () =>
+    apiRequest<{ ok: boolean; code: string; expires_in: number; deep_link: string }>(
+      '/api/v2/auth/pair/create',
+      { method: 'POST' }
+    ),
   login: (password: string, remember_device = false) =>
     apiRequest('/api/auth/login', { method: 'POST', body: JSON.stringify({ password, remember_device }) }),
   logout: () => apiRequest('/api/auth/logout', { method: 'POST' }),

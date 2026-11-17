@@ -333,11 +333,15 @@ export function useAppStore() {
     }
   }
 
-  async function login(password: string, rememberDevice = false) {
-    await BotHubApi.login(password, rememberDevice)
+  async function completeSessionActivation() {
     state.authenticated = true
     await loadDashboard(true)
     startSSE()
+  }
+
+  async function login(password: string, rememberDevice = false) {
+    await BotHubApi.login(password, rememberDevice)
+    await completeSessionActivation()
   }
 
   async function logout() {
@@ -907,6 +911,7 @@ export function useAppStore() {
     notify,
     checkAuth,
     login,
+    completeSessionActivation,
     logout,
     logoutAllOtherDevices,
     loadDashboard,

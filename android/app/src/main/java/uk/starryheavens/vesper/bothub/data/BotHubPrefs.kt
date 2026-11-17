@@ -60,8 +60,12 @@ class BotHubPrefs(context: Context) {
         set(value) = prefs.edit().putString("active_model", value).apply()
 
     var realtimeServiceEnabled: Boolean
-        get() = prefs.getBoolean("realtime_service_enabled", false)
+        get() = prefs.getBoolean("realtime_service_enabled", true)
         set(value) = prefs.edit().putBoolean("realtime_service_enabled", value).apply()
+
+    var biometricAppLockEnabled: Boolean
+        get() = prefs.getBoolean("biometric_app_lock_enabled", false)
+        set(value) = prefs.edit().putBoolean("biometric_app_lock_enabled", value).apply()
 
     var enableThinking: Boolean
         get() = prefs.getBoolean("enable_thinking", true)

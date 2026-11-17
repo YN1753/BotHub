@@ -24,6 +24,7 @@ type Server struct {
 	commit             string
 	buildTime          string
 	limiter            *rateLimiter
+	passkeys           *passkeyStateStore
 	nezhaAlertMu       sync.Mutex
 	nezhaAlertCooldown map[string]time.Time
 }
@@ -59,6 +60,7 @@ func New(
 		commit:    commit,
 		buildTime: buildTime,
 		limiter:            newRateLimiter(),
+		passkeys:           newPasskeyStateStore(),
 		nezhaAlertCooldown: make(map[string]time.Time),
 	}, nil
 }
@@ -78,12 +80,23 @@ func (s *Server) KickPushSubscribers() {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	// Public Health & Auth
+	// Public Health, Digital Asset Links & Auth (Password + Passkeys + One-Tap App Pairing)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.HandleFunc("GET /.well-known/assetlinks.json", s.handleAssetLinks)
 	mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	mux.HandleFunc("POST /api/auth/logout-all", s.requireAuth(s.handleLogoutAllDevices))
+	mux.HandleFunc("GET /api/auth/passkey/status", s.handlePasskeyStatus)
+	mux.HandleFunc("POST /api/auth/passkey/login/options", s.handlePasskeyLoginOptions)
+	mux.HandleFunc("POST /api/auth/passkey/login/verify", s.handlePasskeyLoginVerify)
+	mux.HandleFunc("POST /api/auth/passkey/register/options", s.requireAuth(s.handlePasskeyRegisterOptions))
+	mux.HandleFunc("POST /api/auth/passkey/register/verify", s.requireAuth(s.handlePasskeyRegisterVerify))
+	mux.HandleFunc("GET /api/auth/passkeys", s.requireAuth(s.handleListPasskeys))
+	mux.HandleFunc("PUT /api/auth/passkeys/{id}", s.requireAuth(s.handleRenamePasskey))
+	mux.HandleFunc("DELETE /api/auth/passkeys/{id}", s.requireAuth(s.handleDeletePasskey))
+	mux.HandleFunc("POST /api/v2/auth/pair/create", s.requireAuth(s.handleCreatePairCode))
+	mux.HandleFunc("POST /api/v2/auth/pair/exchange", s.handleExchangePairCode)
 
 	// Public Sanitized Read-only Assets Overview (CORS for main dashboard)
 	mux.HandleFunc("OPTIONS /api/v1/assets/overview", s.handleCORSPreflight)
