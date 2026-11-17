@@ -82,6 +82,7 @@ func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
 		case "workhub":
 			want["todos"] = true
 			want["notes"] = true
+			want["stash"] = true
 		case "ops":
 			want["tasks"] = true
 			want["assets"] = true
@@ -92,7 +93,7 @@ func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
 			want["skills"] = true
 			want["memories"] = true
 			want["model_health"] = true
-		case "todos", "notes", "memories", "assets", "tasks", "bots", "skills", "notifications", "push_logs", "stats", "model_health":
+		case "todos", "notes", "stash", "memories", "assets", "tasks", "bots", "skills", "notifications", "push_logs", "stats", "model_health":
 			want[strings.ToLower(strings.TrimSpace(part))] = true
 		default:
 			writeError(w, http.StatusBadRequest, "不支持的 dashboard slice: "+part)
@@ -112,6 +113,12 @@ func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
 	if want["notes"] {
 		notes, _ := s.store.ListNotes("", "", 80)
 		resp["notes"] = notes
+	}
+	if want["stash"] {
+		stashItems, _ := s.store.SearchStashItems("", "all", "", 100)
+		stashTags, _ := s.store.ListTopStashTags(14)
+		resp["stash"] = stashItems
+		resp["stash_tags"] = stashTags
 	}
 	if want["memories"] {
 		memories, _ := s.store.ListAgentMemories("", 50)
@@ -186,6 +193,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	skills, _ := s.store.ListSkills()
 	todos, _ := s.store.ListTodos("all", "", 120)
 	notes, _ := s.store.ListNotes("", "", 80)
+	stashItems, _ := s.store.SearchStashItems("", "all", "", 100)
+	stashTags, _ := s.store.ListTopStashTags(14)
 	modelPool := store.MaskModelPool(s.store.GetModelPool())
 	var modelHealth any
 	if s.agent != nil {
@@ -209,6 +218,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"skills":          skills,
 		"todos":           todos,
 		"notes":           notes,
+		"stash":           stashItems,
+		"stash_tags":      stashTags,
 		"model_pool":      modelPool,
 		"model_health":    modelHealth,
 		"available_tools": agent.AvailableToolsPayload(),
@@ -313,6 +324,7 @@ type BackupData struct {
 	Skills        []store.Skill       `json:"skills,omitempty"`
 	Todos         []store.TodoItem    `json:"todos,omitempty"`
 	Notes         []store.WorkNote    `json:"notes,omitempty"`
+	StashItems    []store.StashItem   `json:"stash_items,omitempty"`
 	AgentMemories []store.AgentMemory `json:"agent_memories,omitempty"`
 }
 
@@ -332,6 +344,7 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 	skills, _ := s.store.ListSkills()
 	todos, _ := s.store.ListTodos("all", "", 300)
 	notes, _ := s.store.ListNotes("", "", 200)
+	stashItems, _ := s.store.SearchStashItems("", "everything", "", 2000)
 	memories, _ := s.store.ListAgentMemories("", 500)
 	cfgs, _ := s.store.GetAllConfigs()
 	delete(cfgs, store.KeyAdminPassHash)
@@ -368,6 +381,9 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 	if notes == nil {
 		notes = []store.WorkNote{}
 	}
+	if stashItems == nil {
+		stashItems = []store.StashItem{}
+	}
 	if memories == nil {
 		memories = []store.AgentMemory{}
 	}
@@ -385,6 +401,7 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 		Skills:        skills,
 		Todos:         todos,
 		Notes:         notes,
+		StashItems:    stashItems,
 		AgentMemories: memories,
 	}
 
@@ -400,7 +417,7 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 	_ = rc.SetWriteDeadline(time.Now().Add(2 * time.Minute))
 
 	var backup BackupData
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 5*1024*1024)).Decode(&backup); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 20*1024*1024)).Decode(&backup); err != nil {
 		writeError(w, http.StatusBadRequest, "无效备份文件: "+err.Error())
 		return
 	}
@@ -540,6 +557,28 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 			notesCount++
 		}
 	}
+	stashCount := 0
+	for _, st := range backup.StashItems {
+		st.Title = notifier.StripEmoji(strings.TrimSpace(st.Title))
+		st.RawInput = notifier.StripEmoji(strings.TrimSpace(st.RawInput))
+		st.UserNote = notifier.StripEmoji(strings.TrimSpace(st.UserNote))
+		st.AITldr = notifier.StripEmoji(strings.TrimSpace(st.AITldr))
+		st.ContentExcerpt = notifier.StripEmoji(strings.TrimSpace(st.ContentExcerpt))
+		st.Tags = notifier.StripEmoji(strings.TrimSpace(st.Tags))
+		st.ErrorMsg = notifier.StripEmoji(strings.TrimSpace(st.ErrorMsg))
+		for i := range st.Points {
+			st.Points[i] = notifier.StripEmoji(strings.TrimSpace(st.Points[i]))
+		}
+		if st.Title == "" && st.URL == "" && st.RawInput == "" {
+			continue
+		}
+		if _, err := s.store.UpsertStashItemFull(st); err == nil {
+			stashCount++
+		}
+	}
+	if stashCount > 0 {
+		_ = s.store.RebuildStashFTS()
+	}
 
 	// 8. Reload scheduler and notify connected clients
 	if s.scheduler != nil {
@@ -551,13 +590,14 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":              true,
-		"message":         fmt.Sprintf("备份恢复成功：已恢复 %d 个资产，%d 个任务，%d 个技能，%d 个 Bot，%d 条待办与 %d 篇文档", assetsCount, tasksCount, skillsCount, botsCount, todosCount, notesCount),
+		"message":         fmt.Sprintf("备份恢复成功：已恢复 %d 个资产，%d 个任务，%d 个技能，%d 个 Bot，%d 条待办，%d 篇文档与 %d 条收藏", assetsCount, tasksCount, skillsCount, botsCount, todosCount, notesCount, stashCount),
 		"assets_restored": assetsCount,
 		"tasks_restored":  tasksCount,
 		"skills_restored": skillsCount,
 		"bots_restored":   botsCount,
 		"todos_restored":  todosCount,
 		"notes_restored":  notesCount,
+		"stash_restored":  stashCount,
 	})
 }
 

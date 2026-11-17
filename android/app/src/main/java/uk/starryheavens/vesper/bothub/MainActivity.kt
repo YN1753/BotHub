@@ -24,6 +24,7 @@ import uk.starryheavens.vesper.bothub.ui.theme.VesperBotHubTheme
 class MainActivity : ComponentActivity() {
 
     private var sharedTextState by mutableStateOf<String?>(null)
+    private var requestedTabState by mutableStateOf<Int?>(null)
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -39,15 +40,10 @@ class MainActivity : ComponentActivity() {
 
         val prefs = BotHubPrefs(this)
         if (prefs.realtimeServiceEnabled && prefs.bearerToken.isNotEmpty()) {
-            val svcIntent = Intent(this, RealtimePushService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(svcIntent)
-            } else {
-                startService(svcIntent)
-            }
+            RealtimePushService.start(this)
         }
 
-        extractSharedText(intent)
+        extractIncomingIntent(intent)
 
         val api = BotHubApiClient(prefs)
         setContent {
@@ -56,7 +52,9 @@ class MainActivity : ComponentActivity() {
                     prefs = prefs,
                     api = api,
                     sharedText = sharedTextState,
-                    onSharedTextConsumed = { sharedTextState = null }
+                    onSharedTextConsumed = { sharedTextState = null },
+                    requestedTab = requestedTabState,
+                    onRequestedTabConsumed = { requestedTabState = null }
                 )
             }
         }
@@ -65,16 +63,33 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        extractSharedText(intent)
+        extractIncomingIntent(intent)
     }
 
-    private fun extractSharedText(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+    private fun extractIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+        val deepChat = intent.getStringExtra(EXTRA_DEEP_CHAT_TEXT)?.trim()
+        if (!deepChat.isNullOrEmpty()) {
+            sharedTextState = deepChat
+            intent.removeExtra(EXTRA_DEEP_CHAT_TEXT)
+            return
+        }
+        if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()
             if (!text.isNullOrEmpty()) {
                 sharedTextState = text
             }
+            return
         }
+        val tabIdx = intent.getIntExtra("open_tab", -1)
+        if (tabIdx >= 0) {
+            requestedTabState = tabIdx
+            intent.removeExtra("open_tab")
+        }
+    }
+
+    companion object {
+        const val EXTRA_DEEP_CHAT_TEXT = "extra_deep_chat_text"
     }
 
     private fun requestNotificationPermissionIfNeeded() {

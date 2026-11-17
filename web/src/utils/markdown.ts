@@ -163,11 +163,13 @@ export function handleMarkdownCodeCopy(e: MouseEvent, onCopied?: () => void): vo
     const prevTimer = Number(btn.dataset.copyTimer || 0)
     if (prevTimer) window.clearTimeout(prevTimer)
     btn.textContent = '已复制'
-    btn.classList.add('text-emerald-300', 'border-emerald-400/45')
+    btn.classList.remove('is-copied')
+    void btn.offsetWidth
+    btn.classList.add('is-copied', 'text-emerald-300', 'border-emerald-400/50', 'bg-emerald-500/12')
     onCopied?.()
     const timer = window.setTimeout(() => {
       btn.textContent = '复制代码'
-      btn.classList.remove('text-emerald-300', 'border-emerald-400/45')
+      btn.classList.remove('is-copied', 'text-emerald-300', 'border-emerald-400/50', 'bg-emerald-500/12')
       delete btn.dataset.copyTimer
     }, 1500)
     btn.dataset.copyTimer = String(timer)

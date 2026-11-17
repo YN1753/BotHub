@@ -67,6 +67,10 @@ class BotHubPrefs(context: Context) {
         get() = prefs.getBoolean("enable_thinking", true)
         set(value) = prefs.edit().putBoolean("enable_thinking", value).apply()
 
+    var zeroClickCaptureEnabled: Boolean
+        get() = prefs.getBoolean("zero_click_capture_enabled", false)
+        set(value) = prefs.edit().putBoolean("zero_click_capture_enabled", value).apply()
+
     fun saveCachedNotifications(items: List<NotificationItem>) {
         val arr = JSONArray()
         items.take(50).forEach { n ->

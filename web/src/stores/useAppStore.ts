@@ -15,6 +15,8 @@ import type {
   PushLog,
   SelectOption,
   Skill,
+  StashItem,
+  StashTagCount,
   Task,
   TaskTemplate,
   TodoItem,
@@ -53,12 +55,13 @@ export interface ChatMessageUI {
   usageText?: string
   errorText?: string
   streaming?: boolean
+  isLiveNew?: boolean
 }
 
 const state = reactive({
   authChecked: false,
   authenticated: false,
-  version: 'v2.31.0',
+  version: 'v2.32.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
@@ -76,6 +79,8 @@ const state = reactive({
   skills: [] as Skill[],
   todos: [] as TodoItem[],
   notes: [] as WorkNote[],
+  stash: [] as StashItem[],
+  stashTags: [] as StashTagCount[],
   modelPool: [] as ModelPoolEntry[],
   availableTools: [] as AvailableToolMeta[],
   personas: [] as Persona[],
@@ -100,6 +105,7 @@ const state = reactive({
   isStreaming: false,
   sseConnected: false,
   soundEnabled: localStorage.getItem('bothub_sound') === '1',
+  ambientMotionPaused: localStorage.getItem('bothub_ambient_paused') === '1',
   draftsByBot: (() => {
     try {
       return JSON.parse(sessionStorage.getItem('bothub_drafts') || '{}') as Record<string, string>
@@ -111,7 +117,7 @@ const state = reactive({
   // Modals & Drawers
   showInboxModal: false,
   showWorkhubModal: false,
-  workhubTab: 'todos' as 'todos' | 'notes' | 'briefing',
+  workhubTab: 'todos' as 'todos' | 'notes' | 'stash' | 'briefing',
   showMemoriesModal: false,
   showSkillsModal: false,
   showLogsModal: false,
@@ -129,6 +135,7 @@ const state = reactive({
 
   // Toast
   toastMessage: '',
+  toastSeq: 0,
 })
 
 let sseSource: EventSource | null = null
@@ -136,6 +143,7 @@ let toastTimer: number | null = null
 
 function notify(msg: string) {
   state.toastMessage = msg
+  state.toastSeq += 1
   if (toastTimer !== null) {
     window.clearTimeout(toastTimer)
   }
@@ -253,6 +261,10 @@ export function useAppStore() {
     state.todos.filter((t) => t.status !== 'done').length
   )
 
+  const unreadStashCount = computed(() =>
+    state.stash.filter((s) => s.status !== 'archived' && s.read_count === 0).length
+  )
+
   const expiringAssetCount = computed(() =>
     state.assets.filter((a) => {
       if (a.status === '长期有效' || String(a.due_date || '').startsWith('2099')) return false
@@ -352,6 +364,7 @@ export function useAppStore() {
   const SLICEABLE_KINDS = new Set([
     'todos',
     'notes',
+    'stash',
     'memories',
     'assets',
     'tasks',
@@ -401,6 +414,8 @@ export function useAppStore() {
           if (data.server_now) state.serverNow = data.server_now
           if (data.todos !== undefined) state.todos = data.todos || []
           if (data.notes !== undefined) state.notes = data.notes || []
+          if (data.stash !== undefined) state.stash = data.stash || []
+          if (data.stash_tags !== undefined) state.stashTags = data.stash_tags || []
           if (data.agent_memories !== undefined) state.memories = data.agent_memories || []
           if (data.assets !== undefined) state.assets = data.assets || []
           if (data.tasks !== undefined) state.tasks = data.tasks || []
@@ -473,6 +488,8 @@ export function useAppStore() {
         state.skills = data.skills || []
         state.todos = data.todos || []
         state.notes = data.notes || []
+        state.stash = data.stash || []
+        state.stashTags = data.stash_tags || []
         state.modelPool = data.model_pool || []
         state.availableTools = data.available_tools || []
         state.personas = data.personas || []
@@ -723,6 +740,12 @@ export function useAppStore() {
     notify(state.soundEnabled ? '已开启完成轻提示音' : '已关闭提示音')
   }
 
+  function toggleAmbientMotion() {
+    state.ambientMotionPaused = !state.ambientMotionPaused
+    localStorage.setItem('bothub_ambient_paused', state.ambientMotionPaused ? '1' : '0')
+    notify(state.ambientMotionPaused ? '已暂停背景漂浮与待机动效' : '已恢复背景漂浮与待机动效')
+  }
+
   function playSubtleChime() {
     if (!state.soundEnabled || typeof window === 'undefined') return
     try {
@@ -815,7 +838,7 @@ export function useAppStore() {
         const sameThread = (msg.thread_id || '') === (state.activeThreadId || '')
         if (msg.bot_id === state.activeBotId && sameThread && (!state.isStreaming || msg.role === 'system')) {
           if (!state.timeline.some((t) => msg.id && t.serverId === msg.id)) {
-            state.timeline.push(mapServerMessage(msg))
+            state.timeline.push({ ...mapServerMessage(msg), isLiveNew: true })
           }
         } else if (msg.bot_id !== state.activeBotId) {
           const target = state.bots.find((b) => b.id === msg.bot_id)
@@ -879,6 +902,7 @@ export function useAppStore() {
     modelOptions,
     unreadInboxCount,
     pendingTodoCount,
+    unreadStashCount,
     expiringAssetCount,
     notify,
     checkAuth,
@@ -902,6 +926,7 @@ export function useAppStore() {
     setBotDraft,
     getBotDraft,
     toggleSound,
+    toggleAmbientMotion,
     playSubtleChime,
     startSSE,
     stopSSE,

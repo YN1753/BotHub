@@ -3,6 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { lazyPanelChunk } from '../utils/lazyComponent'
+import { resolveTabSlideTransition, type DirectionalTransitionName } from '../utils/motion'
 import type { TodoItem, WorkspaceBriefing } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
@@ -10,12 +11,14 @@ import SegmentedTabs from './SegmentedTabs.vue'
 
 const WorkhubBriefingTab = lazyPanelChunk(() => import('./workhub/WorkhubBriefingTab.vue'))
 const WorkhubNotesTab = lazyPanelChunk(() => import('./workhub/WorkhubNotesTab.vue'))
+const WorkhubStashTab = lazyPanelChunk(() => import('./workhub/WorkhubStashTab.vue'))
 
 const store = useAppStore()
 
 const TAB_ITEMS = [
   { id: 'todos', label: '待办与行动清单' },
   { id: 'notes', label: '工作文档与交付区' },
+  { id: 'stash', label: '收藏与闪念匣' },
   { id: 'briefing', label: '今日简报' },
 ]
 
@@ -33,9 +36,14 @@ const PRIORITY_OPTIONS = [
 
 const activeTab = computed({
   get: () => store.state.workhubTab,
-  set: (v: 'todos' | 'notes' | 'briefing') => {
+  set: (v: 'todos' | 'notes' | 'stash' | 'briefing') => {
     store.state.workhubTab = v
   },
+})
+
+const workhubTabTransition = ref<DirectionalTransitionName>('vesper-slide-forward')
+watch(activeTab, (next, prev) => {
+  workhubTabTransition.value = resolveTabSlideTransition(next, prev || 'todos', ['todos', 'notes', 'stash', 'briefing'])
 })
 
 // Todos state
@@ -314,20 +322,21 @@ function openAssetOpsFromBriefing() {
 <template>
   <BaseModal
     :open="store.state.showWorkhubModal"
-    title="个人行动台 · 待办、文档与今日简报"
-    subtitle="助手帮你拆解落地的待办事项、Markdown 交付文档与今日全局聚焦面板"
+    title="个人行动台 · 待办、文档、收藏匣与今日简报"
+    subtitle="助手帮你拆解落地的待办事项、Markdown 交付文档、智能收藏闪念匣与今日全局聚焦面板"
     max-width="3xl"
     @close="closeModal"
   >
     <div class="flex items-center justify-between gap-2 flex-wrap shrink-0">
       <SegmentedTabs v-model="activeTab" :items="TAB_ITEMS" aria-label="行动台视图切换" />
       <span class="font-mono text-[11px] text-slate-400">
-        待办 {{ store.pendingTodoCount.value }} 项 · 文档 {{ store.state.notes.length }} 份
+        待办 {{ store.pendingTodoCount.value }} 项 · 收藏 {{ store.unreadStashCount.value }} 未读 · 文档 {{ store.state.notes.length }} 份
       </span>
     </div>
 
-    <!-- Tab 1: Personal Todos -->
-    <div v-if="activeTab === 'todos'" class="flex-1 min-h-0 flex flex-col gap-3">
+    <Transition :name="workhubTabTransition" mode="out-in">
+      <!-- Tab 1: Personal Todos -->
+      <div v-if="activeTab === 'todos'" key="todos" class="flex-1 min-h-0 flex flex-col gap-3">
       <form @submit.prevent="handleAddTodo" class="modal-section flex flex-col gap-2 shrink-0">
         <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
           <input
@@ -428,7 +437,7 @@ function openAssetOpsFromBriefing() {
             type="search"
             aria-label="筛选待办"
             placeholder="筛选待办..."
-            @keydown.escape.stop="todoSearch = ''"
+            @keydown.escape="todoSearch.trim() ? ($event.preventDefault(), $event.stopPropagation(), todoSearch = '') : undefined"
             class="w-32 sm:w-40 min-h-[32px] rounded-xl border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55"
           />
         </div>
@@ -454,11 +463,12 @@ function openAssetOpsFromBriefing() {
             重置待办筛选
           </button>
         </div>
-        <article
-          v-for="t in filteredTodos"
-          :key="t.id"
-          class="luxury-card rounded-xl px-3.5 py-2.5 flex flex-col gap-2"
-        >
+        <TransitionGroup v-else name="vesper-list" tag="div" class="flex flex-col gap-2">
+          <article
+            v-for="t in filteredTodos"
+            :key="t.id"
+            class="luxury-card rounded-xl px-3.5 py-2.5 flex flex-col gap-2"
+          >
           <div class="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
             <div class="flex items-start gap-2.5 min-w-0 flex-1">
               <input
@@ -583,24 +593,35 @@ function openAssetOpsFromBriefing() {
               保存修改
             </button>
           </div>
-        </article>
+          </article>
+        </TransitionGroup>
       </div>
-    </div>
+      </div>
 
-    <!-- Tab 2: Work Notes / Deliverables -->
-    <WorkhubNotesTab v-else-if="activeTab === 'notes'" @close-modal="closeModal" />
+      <!-- Tab 2: Work Notes / Deliverables -->
+      <WorkhubNotesTab v-else-if="activeTab === 'notes'" key="notes" @close-modal="closeModal" />
 
-    <!-- Tab 3: Live Workspace Daily Briefing -->
-    <WorkhubBriefingTab
-      v-else
-      :briefing="briefing"
-      :loading-briefing="loadingBriefing"
-      :priority-todos="briefingPriorityTodos"
-      @refresh="loadBriefing"
-      @plan-today="planTodayWithBot"
-      @go-todos="activeTab = 'todos'"
-      @go-notes="activeTab = 'notes'"
-      @open-ops="openAssetOpsFromBriefing"
-    />
+      <!-- Tab 3: Smart Stash & Flash Capture -->
+      <WorkhubStashTab
+        v-else-if="activeTab === 'stash'"
+        key="stash"
+        @close-modal="closeModal"
+        @go-todos="activeTab = 'todos'"
+      />
+
+      <!-- Tab 4: Live Workspace Daily Briefing -->
+      <WorkhubBriefingTab
+        v-else
+        key="briefing"
+        :briefing="briefing"
+        :loading-briefing="loadingBriefing"
+        :priority-todos="briefingPriorityTodos"
+        @refresh="loadBriefing"
+        @plan-today="planTodayWithBot"
+        @go-todos="activeTab = 'todos'"
+        @go-notes="activeTab = 'notes'"
+        @open-ops="openAssetOpsFromBriefing"
+      />
+    </Transition>
   </BaseModal>
 </template>

@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { lazyPanelChunk } from '../utils/lazyComponent'
+import { resolveTabSlideTransition, type DirectionalTransitionName } from '../utils/motion'
 import type { ModelPoolEntry, UpstreamModelCheck } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -12,6 +13,15 @@ const ModelPoolSection = lazyPanelChunk(() => import('./settings/ModelPoolSectio
 
 const store = useAppStore()
 const activeTab = ref<'ai' | 'push' | 'integrations' | 'security'>('ai')
+const settingsTabTransition = ref<DirectionalTransitionName>('vesper-slide-forward')
+
+watch(activeTab, (next, prev) => {
+  settingsTabTransition.value = resolveTabSlideTransition(
+    next,
+    prev || 'ai',
+    ['ai', 'push', 'integrations', 'security']
+  )
+})
 
 const SETTINGS_TABS = [
   { id: 'ai', label: 'AI 大脑设置' },
@@ -298,16 +308,8 @@ function copyNativeAppProfile() {
       <SegmentedTabs v-model="activeTab" :items="SETTINGS_TABS" aria-label="系统设置分类" />
     </div>
 
-    <div class="flex-1 min-h-0 overflow-y-auto pr-1">
-      <Transition
-        mode="out-in"
-        enter-active-class="transition duration-180 ease-out"
-        enter-from-class="opacity-0 translate-y-1"
-        enter-to-class="opacity-100 translate-y-0"
-        leave-active-class="transition duration-100 ease-in"
-        leave-from-class="opacity-100"
-        leave-to-class="opacity-0"
-      >
+    <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
+      <Transition :name="settingsTabTransition" mode="out-in">
         <!-- Tab: AI & Free Model Pool -->
         <form v-if="activeTab === 'ai'" key="ai" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
           <!-- Primary: DeepSeek Flash + Relay Station Support -->

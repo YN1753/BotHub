@@ -11,6 +11,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 data class NotificationItem(
@@ -83,6 +84,30 @@ data class DashboardSnapshot(
     val unreadNotifications: Int,
     val assets: List<AssetItem>,
     val tasks: List<TaskItem>
+)
+
+data class StashItemUi(
+    val id: String,
+    val kind: String,
+    val url: String,
+    val domain: String,
+    val title: String,
+    val rawInput: String,
+    val userNote: String,
+    val aiTldr: String,
+    val points: List<String>,
+    val tags: String,
+    val status: String,
+    val errorMsg: String,
+    val pinned: Boolean,
+    val readCount: Int,
+    val createdAt: String
+)
+
+data class SharePreviewInfo(
+    val kindLabel: String,
+    val candidateTitle: String,
+    val extractedUrl: String
 )
 
 class BotHubApiClient(private val prefs: BotHubPrefs) {
@@ -394,6 +419,103 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun createStashItem(
+        rawInput: String,
+        userNote: String = "",
+        tags: String = ""
+    ): Result<Pair<StashItemUi, Boolean>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("raw_input", rawInput.trim())
+                .put("user_note", userNote.trim())
+                .put("tags", tags.trim())
+                .toString()
+            val req = authRequestBuilder("/api/v2/stash")
+                .post(payload.toRequestBody(jsonMedia))
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    val err = runCatching { JSONObject(raw).optString("error") }.getOrDefault("")
+                    throw IllegalStateException(err.ifEmpty { "收入收藏匣失败 (${resp.code})" })
+                }
+                val root = JSONObject(raw)
+                val dedup = root.optBoolean("deduplicated", false)
+                val itemObj = root.optJSONObject("item") ?: JSONObject()
+                parseSingleStashItem(itemObj) to dedup
+            }
+        }
+    }
+
+    suspend fun fetchStashItems(
+        query: String = "",
+        filter: String = "all",
+        limit: Int = 80
+    ): Result<List<StashItemUi>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encodedQ = URLEncoder.encode(query.trim(), "UTF-8")
+            val encodedF = URLEncoder.encode(filter.trim().ifEmpty { "all" }, "UTF-8")
+            val req = authRequestBuilder("/api/v2/stash?q=$encodedQ&filter=$encodedF&limit=$limit")
+                .get()
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    throw IllegalStateException("加载收藏匣失败 (${resp.code})")
+                }
+                val arr = JSONObject(raw).optJSONArray("items") ?: JSONArray()
+                val list = mutableListOf<StashItemUi>()
+                for (i in 0 until arr.length()) {
+                    list.add(parseSingleStashItem(arr.getJSONObject(i)))
+                }
+                list
+            }
+        }
+    }
+
+    suspend fun updateStashItem(
+        id: String,
+        pinned: Boolean? = null,
+        markRead: Boolean? = null,
+        status: String? = null
+    ): Result<StashItemUi> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+            if (pinned != null) payload.put("pinned", pinned)
+            if (markRead != null) payload.put("mark_read", markRead)
+            if (status != null) payload.put("status", status)
+            val req = authRequestBuilder("/api/v2/stash/$id")
+                .post(payload.toString().toRequestBody(jsonMedia))
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) error("更新收藏失败 (${resp.code})")
+                val obj = JSONObject(raw).optJSONObject("item") ?: JSONObject()
+                parseSingleStashItem(obj)
+            }
+        }
+    }
+
+    suspend fun reprocessStashItem(id: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = authRequestBuilder("/api/v2/stash/$id/reprocess")
+                .post("{}".toRequestBody(jsonMedia))
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("触发重提炼失败 (${resp.code})")
+            }
+        }
+    }
+
+    suspend fun deleteStashItem(id: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = authRequestBuilder("/api/v2/stash/$id").delete().build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("删除收藏失败 (${resp.code})")
+            }
+        }
+    }
+
     suspend fun streamChat(
         sessionId: String,
         botId: String = "",
@@ -497,6 +619,73 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 priority = n.optString("priority", "normal"),
                 createdAt = n.optString("created_at", ""),
                 readAt = n.optString("read_at", "")
+            )
+        }
+
+        fun parseSingleStashItem(s: JSONObject): StashItemUi {
+            val ptsArr = s.optJSONArray("points")
+            val pts = mutableListOf<String>()
+            if (ptsArr != null) {
+                for (i in 0 until ptsArr.length()) {
+                    val v = ptsArr.optString(i, "").trim()
+                    if (v.isNotEmpty()) pts.add(v)
+                }
+            } else {
+                val rawPts = s.optString("ai_points", "[]")
+                runCatching {
+                    val fallbackArr = JSONArray(rawPts)
+                    for (i in 0 until fallbackArr.length()) {
+                        val v = fallbackArr.optString(i, "").trim()
+                        if (v.isNotEmpty()) pts.add(v)
+                    }
+                }
+            }
+            return StashItemUi(
+                id = s.optString("id"),
+                kind = s.optString("kind", "link"),
+                url = s.optString("url", ""),
+                domain = s.optString("domain", ""),
+                title = s.optString("title", ""),
+                rawInput = s.optString("raw_input", ""),
+                userNote = s.optString("user_note", ""),
+                aiTldr = s.optString("ai_tldr", ""),
+                points = pts,
+                tags = s.optString("tags", ""),
+                status = s.optString("status", "ready"),
+                errorMsg = s.optString("error_msg", ""),
+                pinned = s.optBoolean("pinned", false),
+                readCount = s.optInt("read_count", 0),
+                createdAt = s.optString("created_at", "")
+            )
+        }
+
+        private val urlRegex = Regex("""https?://[^\s<>"'\]）】》]+""", RegexOption.IGNORE_CASE)
+
+        fun parseSharePreview(rawText: String): SharePreviewInfo {
+            val trimmed = rawText.trim()
+            val match = urlRegex.find(trimmed)
+            if (match == null) {
+                val firstLine = trimmed.lineSequence().firstOrNull()?.trim().orEmpty().take(72)
+                return SharePreviewInfo(
+                    kindLabel = "纯文字闪念",
+                    candidateTitle = firstLine.ifEmpty { "随手灵感记录" },
+                    extractedUrl = ""
+                )
+            }
+            val rawUrl = match.value.trimEnd(',', '.', ';', ':', '!', '?', '，', '。', '；', '：', '！', '？', '、', ')', '）', '】', '》')
+            val prefix = trimmed.substring(0, match.range.first).trim().trim('-', '|', '—', '·', ':', '：')
+            val suffix = trimmed.substring(match.range.last + 1).trim().trim('-', '|', '—', '·', ':', '：')
+            val cand = prefix.ifEmpty { suffix }.replace(Regex("""\s+"""), " ").take(96)
+            val lower = rawUrl.lowercase()
+            val kindLabel = when {
+                lower.contains("bilibili.com") || lower.contains("b23.tv") -> "Bilibili 视频"
+                lower.contains("github.com") -> "GitHub 仓库"
+                else -> "网页外链"
+            }
+            return SharePreviewInfo(
+                kindLabel = kindLabel,
+                candidateTitle = cand.ifEmpty { rawUrl.removePrefix("https://").removePrefix("http://").take(64) },
+                extractedUrl = rawUrl
             )
         }
     }

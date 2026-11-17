@@ -17,7 +17,8 @@ import { formatToolDisplayName, groupAvailableTools } from '../src/utils/toolMet
 import { parseAvatarStyle, composeAvatarStyle, resolveGroupMemberBots } from '../src/utils/botLook.ts'
 import { renderSafeMarkdown } from '../src/utils/markdown.ts'
 import { shouldReloadOnPreloadError, installPreloadErrorRecovery } from '../src/utils/lazyComponent.ts'
-import { isImeComposingEnter, isPointOutsideRect } from '../src/utils/topLayer.ts'
+import { isImeComposingEnter, isPointOutsideRect, closePopoverWithTransition } from '../src/utils/topLayer.ts'
+import { resolveTabSlideTransition, runViewTransition } from '../src/utils/motion.ts'
 
 test('format utilities produce expected strings', () => {
   assert.equal(formatDurationMs(420), '420ms')
@@ -66,6 +67,7 @@ test('scoreOmnisearchMatch ranks exact, prefix, title, subtitle and body hits', 
 
 test('toolMeta groups and formats builtin & skill names cleanly', () => {
   assert.equal(formatToolDisplayName('manage_todos', []), '个人待办管理 (manage_todos)')
+  assert.equal(formatToolDisplayName('manage_stash', []), '收藏与闪念匣 (manage_stash)')
   assert.equal(
     formatToolDisplayName('skill_weather', [{ id: '1', slug: 'weather', name: '天气助手' } as any]),
     '天气助手 (skill_weather)'
@@ -168,4 +170,34 @@ test('topLayer IME and hit-test helpers handle edge cases accurately', () => {
   assert.equal(isPointOutsideRect(50, 50, rect), false)
   assert.equal(isPointOutsideRect(5, 50, rect), true)
   assert.equal(isPointOutsideRect(50, 125, rect), true)
+})
+
+test('directional motion and popover exit helpers degrade gracefully', async () => {
+  const tabs = ['stream', 'routines', 'config', 'activity'] as const
+  assert.equal(resolveTabSlideTransition('config', 'stream', tabs), 'vesper-slide-forward')
+  assert.equal(resolveTabSlideTransition('routines', 'activity', tabs), 'vesper-slide-backward')
+  assert.equal(resolveTabSlideTransition('stream', 'stream', tabs), 'vesper-slide-forward')
+
+  let updated = false
+  runViewTransition(() => {
+    updated = true
+  }, 'forward')
+  assert.equal(updated, true)
+
+  let hidden = false
+  const attrs = new Set<string>()
+  const mockPopover = {
+    matches: (sel: string) => sel === ':popover-open' && !hidden,
+    setAttribute: (k: string) => attrs.add(k),
+    hasAttribute: (k: string) => attrs.has(k),
+    removeAttribute: (k: string) => attrs.delete(k),
+    getAnimations: () => [{ finished: Promise.resolve() }],
+    hidePopover: () => {
+      hidden = true
+    },
+  } as unknown as HTMLElement
+
+  await closePopoverWithTransition(mockPopover)
+  assert.equal(hidden, true)
+  assert.equal(attrs.has('data-closing'), false)
 })

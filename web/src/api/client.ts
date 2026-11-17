@@ -8,6 +8,8 @@ import type {
   DashboardPayload,
   ModelPoolEntry,
   Skill,
+  StashItem,
+  StashTagCount,
   Task,
   TodoItem,
   WorkNote,
@@ -373,4 +375,53 @@ export const BotHubApi = {
     }),
   deleteNote: (id: string) =>
     apiRequest(`/api/v2/notes/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  // Smart Stash / Capture
+  listStash: (
+    params: { q?: string; filter?: string; tag?: string; kind?: string; limit?: number } = {},
+    signal?: AbortSignal
+  ) => {
+    const qs = new URLSearchParams()
+    if (params.q) qs.set('q', params.q)
+    if (params.filter) qs.set('filter', params.filter)
+    if (params.tag) qs.set('tag', params.tag)
+    if (params.kind) qs.set('kind', params.kind)
+    if (params.limit) qs.set('limit', String(params.limit))
+    const queryStr = qs.toString() ? `?${qs.toString()}` : ''
+    return apiRequest<{ ok: boolean; items: StashItem[]; top_tags: StashTagCount[] }>(
+      `/api/v2/stash${queryStr}`,
+      { signal }
+    )
+  },
+  createStash: (payload: {
+    raw_input: string
+    user_note?: string
+    tags?: string
+    force_reprocess?: boolean
+  }) =>
+    apiRequest<{ ok: boolean; deduplicated: boolean; item: StashItem }>('/api/v2/stash', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateStash: (
+    id: string,
+    payload: {
+      title?: string
+      user_note?: string
+      tags?: string
+      pinned?: boolean
+      status?: string
+      mark_read?: boolean
+    }
+  ) =>
+    apiRequest<{ ok: boolean; item: StashItem }>(`/api/v2/stash/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  reprocessStash: (id: string) =>
+    apiRequest<{ ok: boolean; item: StashItem }>(`/api/v2/stash/${encodeURIComponent(id)}/reprocess`, {
+      method: 'POST',
+    }),
+  deleteStash: (id: string) =>
+    apiRequest<{ ok: boolean }>(`/api/v2/stash/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 }

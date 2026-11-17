@@ -2,6 +2,7 @@
 import { ref, reactive, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from './stores/useAppStore'
 import { lazyOverlayChunk } from './utils/lazyComponent'
+import { resolveTabSlideTransition, type DirectionalTransitionName } from './utils/motion'
 import StarfieldBg from './components/StarfieldBg.vue'
 import LoginGate from './components/LoginGate.vue'
 import Sidebar from './components/Sidebar.vue'
@@ -25,6 +26,14 @@ const store = useAppStore()
 const mobileSidebarOpen = ref(false)
 const desktopCollapsed = ref(localStorage.getItem('bothub_sidebar_collapsed') === '1')
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
+const workspaceTransition = ref<DirectionalTransitionName>('vesper-slide-forward')
+
+watch(
+  () => store.state.workspace,
+  (next, prev) => {
+    workspaceTransition.value = resolveTabSlideTransition(next, prev || 'bots', ['bots', 'ops'])
+  }
+)
 
 // Once opened, keep modal components mounted so closing <dialog> transitions stay smooth
 const mountedFlags = reactive({
@@ -157,7 +166,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="relative min-h-dvh">
+  <div class="relative min-h-dvh" :data-ambient-paused="store.state.ambientMotionPaused || undefined">
     <StarfieldBg />
 
     <!-- Initial Loading Gate -->
@@ -190,23 +199,17 @@ onBeforeUnmount(() => {
         :inert="mobileSidebarOpen || undefined"
         class="flex-1 min-w-0 min-h-0 flex flex-col"
       >
-        <Transition
-          mode="out-in"
-          enter-active-class="transition duration-200 ease-out"
-          enter-from-class="opacity-0 translate-y-1.5"
-          enter-to-class="opacity-100 translate-y-0"
-          leave-active-class="transition duration-120 ease-in"
-          leave-from-class="opacity-100"
-          leave-to-class="opacity-0"
-        >
+        <Transition :name="workspaceTransition" mode="out-in">
           <BotWorkspace
             v-if="store.state.workspace === 'bots'"
+            key="bots"
             :desktop-collapsed="desktopCollapsed"
             @open-mobile-menu="mobileSidebarOpen = true"
             @toggle-desktop-sidebar="toggleDesktopSidebar"
           />
           <OpsWorkspace
             v-else-if="mountedFlags.ops || store.state.workspace === 'ops'"
+            key="ops"
             :desktop-collapsed="desktopCollapsed"
             @open-mobile-menu="mobileSidebarOpen = true"
             @toggle-desktop-sidebar="toggleDesktopSidebar"
@@ -229,30 +232,41 @@ onBeforeUnmount(() => {
     <ForwardModal v-if="mountedFlags.forward || Boolean(store.state.forwardingMessage)" />
 
     <!-- Offline Banner -->
-    <div
-      v-if="!isOnline"
-      role="status"
-      class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 rounded-full border border-rose-400/45 bg-[#120912]/95 px-4 py-1.5 text-xs text-rose-200 shadow-2xl backdrop-blur-xl"
+    <Transition
+      enter-active-class="transition-[opacity,transform] duration-220 ease-[var(--ease-spring)] motion-reduce:duration-100"
+      enter-from-class="opacity-0 translate-y-3 scale-95 motion-reduce:translate-y-0 motion-reduce:scale-100"
+      enter-to-class="opacity-100 translate-y-0 scale-100"
+      leave-active-class="transition-[opacity,transform] duration-150 ease-in motion-reduce:duration-75"
+      leave-from-class="opacity-100 translate-y-0 scale-100"
+      leave-to-class="opacity-0 translate-y-2 scale-95 motion-reduce:translate-y-0 motion-reduce:scale-100"
     >
-      <span class="w-2 h-2 rounded-full bg-rose-400 animate-pulse" aria-hidden="true" />
-      <span>网络连接已断开，正在等待恢复...</span>
-    </div>
+      <div
+        v-if="!isOnline"
+        role="status"
+        class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 rounded-full border border-rose-400/45 bg-[#120912]/95 px-4 py-1.5 text-xs text-rose-200 shadow-2xl backdrop-blur-xl"
+      >
+        <span class="w-2 h-2 rounded-full bg-rose-400 animate-pulse" aria-hidden="true" />
+        <span>网络连接已断开，正在等待恢复...</span>
+      </div>
+    </Transition>
 
     <!-- Non-intrusive Top Toast Banner -->
     <Transition
-      enter-active-class="transition duration-250 ease-[var(--ease-spring)]"
-      enter-from-class="opacity-0 -translate-y-3 scale-95"
+      mode="out-in"
+      enter-active-class="transition-[opacity,transform] duration-240 ease-[var(--ease-spring)] motion-reduce:duration-100"
+      enter-from-class="opacity-0 -translate-y-3 scale-95 motion-reduce:translate-y-0 motion-reduce:scale-100"
       enter-to-class="opacity-100 translate-y-0 scale-100"
-      leave-active-class="transition duration-150 ease-in"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 -translate-y-2 scale-95"
+      leave-active-class="transition-[opacity,transform] duration-130 ease-in motion-reduce:duration-75"
+      leave-from-class="opacity-100 translate-y-0 scale-100"
+      leave-to-class="opacity-0 -translate-y-2 scale-96 motion-reduce:translate-y-0 motion-reduce:scale-100"
     >
       <div
         v-if="store.state.toastMessage"
+        :key="store.state.toastSeq"
         role="status"
         aria-live="polite"
         :class="[
-          'fixed top-[max(0.875rem,env(safe-area-inset-top,0.875rem))] left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-[60] max-w-[min(92vw,24rem)] flex items-center gap-2.5 rounded-xl bg-[#0a0f1f]/96 px-3.5 py-2.5 text-xs text-slate-100 shadow-2xl backdrop-blur-xl border',
+          'toast-host overflow-hidden fixed top-[max(0.875rem,env(safe-area-inset-top,0.875rem))] left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-[60] max-w-[min(92vw,24rem)] flex items-center gap-2.5 rounded-xl bg-[#0a0f1f]/96 px-3.5 py-2.5 text-xs text-slate-100 shadow-2xl backdrop-blur-xl border',
           /失败|错误|异常|超时|失效|无法/.test(store.state.toastMessage)
             ? 'border-rose-400/55'
             : 'border-[#f2b880]/45'
@@ -277,6 +291,13 @@ onBeforeUnmount(() => {
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
+        <span
+          aria-hidden="true"
+          :class="[
+            'toast-progress-bar pointer-events-none absolute inset-x-0 bottom-0 h-[1.5px] opacity-65',
+            /失败|错误|异常|超时|失效|无法/.test(store.state.toastMessage) ? 'bg-rose-400' : 'bg-[#f2b880]'
+          ]"
+        />
       </div>
     </Transition>
   </div>

@@ -215,6 +215,14 @@ const slashCommands = computed<SlashCmdItem[]>(() => {
       prompt: '请将以下内容整理为结构化 Markdown 工作文档并保存：',
     })
   }
+  if (allowedTools.includes('manage_stash')) {
+    items.push({
+      cmd: '/stash',
+      title: '检索或收纳收藏与闪念',
+      desc: '全文搜索之前收藏的文章/B站视频，或秒收新链接与灵感',
+      prompt: '请调用 manage_stash 检索或收纳以下内容：',
+    })
+  }
   if (allowedTools.includes('consult_bot')) {
     items.push({
       cmd: '/consult',
@@ -511,27 +519,36 @@ function handleComposerKeydown(e: KeyboardEvent) {
 <template>
   <div class="relative px-3 sm:px-6 pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] sm:pb-5">
     <!-- Live Multi-Bot Relay Strip during Group Collaboration -->
-    <div
-      v-if="relaySteps.length > 0"
-      class="max-w-[820px] w-full mx-auto mb-2 px-3 py-1.5 rounded-full border border-[#f2b880]/25 bg-[#080d1c]/90 backdrop-blur-md flex items-center gap-2 overflow-x-auto no-scrollbar text-[11px]"
+    <Transition
+      enter-active-class="transition-[opacity,transform] duration-200 ease-[var(--ease-spring)] motion-reduce:duration-100"
+      enter-from-class="opacity-0 translate-y-2 scale-96 motion-reduce:translate-y-0 motion-reduce:scale-100"
+      enter-to-class="opacity-100 translate-y-0 scale-100"
+      leave-active-class="transition-[opacity,transform] duration-150 ease-in motion-reduce:duration-75"
+      leave-from-class="opacity-100 translate-y-0 scale-100"
+      leave-to-class="opacity-0 translate-y-1.5 scale-96 motion-reduce:translate-y-0 motion-reduce:scale-100"
     >
-      <span class="font-mono text-slate-400 shrink-0">协同接力:</span>
-      <template v-for="(step, sidx) in relaySteps" :key="step.id + sidx">
-        <span v-if="sidx > 0" class="text-slate-600 shrink-0">-&gt;</span>
-        <span
-          :class="[
-            'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full shrink-0',
-            step.status === 'active'
-              ? 'bg-[#f2b880]/15 text-[#f2b880] font-medium'
-              : 'bg-emerald-400/10 text-emerald-300'
-          ]"
-        >
-          <span :class="['w-1.5 h-1.5 rounded-full', step.status === 'active' ? 'bg-[#f2b880] animate-pulse' : 'bg-emerald-400']" />
-          <span>{{ step.name }}</span>
-          <span v-if="step.guest" class="text-[9.5px] opacity-80">(外援)</span>
-        </span>
-      </template>
-    </div>
+      <div
+        v-if="relaySteps.length > 0"
+        class="origin-bottom max-w-[820px] w-full mx-auto mb-2 px-3 py-1.5 rounded-full border border-[#f2b880]/25 bg-[#080d1c]/90 backdrop-blur-md flex items-center gap-2 overflow-x-auto no-scrollbar text-[11px]"
+      >
+        <span class="font-mono text-slate-400 shrink-0">协同接力:</span>
+        <template v-for="(step, sidx) in relaySteps" :key="step.id + sidx">
+          <span v-if="sidx > 0" class="text-slate-600 shrink-0">-&gt;</span>
+          <span
+            :class="[
+              'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full shrink-0 transition-colors duration-200',
+              step.status === 'active'
+                ? 'bg-[#f2b880]/15 text-[#f2b880] font-medium'
+                : 'bg-emerald-400/10 text-emerald-300'
+            ]"
+          >
+            <span :class="['w-1.5 h-1.5 rounded-full', step.status === 'active' ? 'bg-[#f2b880] animate-pulse' : 'bg-emerald-400']" />
+            <span>{{ step.name }}</span>
+            <span v-if="step.guest" class="text-[9.5px] opacity-80">(外援)</span>
+          </span>
+        </template>
+      </div>
+    </Transition>
 
     <!-- Interactive @Mention & /Slash Autocomplete Popover -->
     <BotComposerDropdown
@@ -583,26 +600,35 @@ function handleComposerKeydown(e: KeyboardEvent) {
       ]"
     >
       <!-- Quote-Reply Preview Bar inside Composer -->
-      <div
-        v-if="replyTarget"
-        class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl border border-[#f2b880]/25 bg-[#f2b880]/[0.06] text-xs"
+      <Transition
+        enter-active-class="transition-[opacity,transform] duration-180 ease-[var(--ease-spring)] motion-reduce:duration-100"
+        enter-from-class="opacity-0 -translate-y-1.5 scale-98 motion-reduce:translate-y-0 motion-reduce:scale-100"
+        enter-to-class="opacity-100 translate-y-0 scale-100"
+        leave-active-class="transition-[opacity,transform] duration-120 ease-in motion-reduce:duration-75"
+        leave-from-class="opacity-100 translate-y-0 scale-100"
+        leave-to-class="opacity-0 -translate-y-1 scale-98 motion-reduce:translate-y-0 motion-reduce:scale-100"
       >
-        <div class="flex items-center gap-2 min-w-0">
-          <span class="w-0.5 h-4 rounded-full bg-[#f2b880] shrink-0" />
-          <span class="text-slate-300 truncate">{{ replyTarget.preview }}</span>
-        </div>
-        <button
-          type="button"
-          aria-label="取消引用"
-          @click="emit('update:replyTarget', null)"
-          class="w-5 h-5 rounded-full inline-flex items-center justify-center text-slate-400 hover:text-white cursor-pointer shrink-0"
+        <div
+          v-if="replyTarget"
+          class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl border border-[#f2b880]/25 bg-[#f2b880]/[0.06] text-xs"
         >
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-      </div>
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="w-0.5 h-4 rounded-full bg-[#f2b880] shrink-0" />
+            <span class="text-slate-300 truncate">{{ replyTarget.preview }}</span>
+          </div>
+          <button
+            type="button"
+            aria-label="取消引用"
+            @click="emit('update:replyTarget', null)"
+            class="w-5 h-5 rounded-full inline-flex items-center justify-center text-slate-400 hover:text-white cursor-pointer shrink-0"
+          >
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </Transition>
 
       <label :for="composerId" class="sr-only">向当前专属 Bot 下达指令</label>
       <div class="composer-grow-wrap" :data-replicated-value="promptModel">

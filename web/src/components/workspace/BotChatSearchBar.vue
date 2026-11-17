@@ -31,9 +31,12 @@ watch(
 
 <template>
   <Transition
-    enter-active-class="transition duration-160 ease-out"
-    enter-from-class="opacity-0 -translate-y-2"
+    enter-active-class="transition-[opacity,transform] duration-180 ease-[var(--ease-snappy)] motion-reduce:duration-100"
+    enter-from-class="opacity-0 -translate-y-2 motion-reduce:translate-y-0"
     enter-to-class="opacity-100 translate-y-0"
+    leave-active-class="transition-[opacity,transform] duration-130 ease-[var(--ease-in-snappy)] motion-reduce:duration-75"
+    leave-from-class="opacity-100 translate-y-0"
+    leave-to-class="opacity-0 -translate-y-1.5 motion-reduce:translate-y-0"
   >
     <div
       v-if="open"

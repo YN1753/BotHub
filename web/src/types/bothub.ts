@@ -199,6 +199,36 @@ export interface WorkNote {
   updated_at: string
 }
 
+export type StashKind = 'link' | 'bilibili' | 'github' | 'note' | string
+export type StashStatus = 'pending' | 'processing' | 'ready' | 'failed' | 'archived' | string
+
+export interface StashItem {
+  id: string
+  kind: StashKind
+  url: string
+  domain: string
+  title: string
+  raw_input: string
+  user_note: string
+  ai_tldr: string
+  ai_points: string
+  points: string[]
+  content_excerpt: string
+  tags: string
+  status: StashStatus
+  error_msg?: string
+  pinned: boolean
+  read_count: number
+  last_reviewed_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface StashTagCount {
+  tag: string
+  count: number
+}
+
 export interface WorkspaceBriefing {
   generated_at: string
   today: string
@@ -306,6 +336,8 @@ export interface DashboardPayload {
   skills?: Skill[]
   todos?: TodoItem[]
   notes?: WorkNote[]
+  stash?: StashItem[]
+  stash_tags?: StashTagCount[]
   model_pool?: ModelPoolEntry[]
   available_tools?: AvailableToolMeta[]
   personas?: Persona[]

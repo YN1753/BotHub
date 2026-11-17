@@ -43,6 +43,27 @@ export async function closeDialogWithTransition(dialog: HTMLDialogElement): Prom
   }
 }
 
+export async function closePopoverWithTransition(popover: HTMLElement | null): Promise<void> {
+  if (!popover || typeof popover.hidePopover !== 'function') return
+  const isOpen = typeof popover.matches === 'function' && popover.matches(':popover-open')
+  if (!isOpen) return
+  if (!supportsTopLayerExit()) {
+    popover.setAttribute('data-closing', '')
+    const animations = popover.getAnimations ? popover.getAnimations({ subtree: true }) : []
+    if (animations.length > 0) {
+      await Promise.race([
+        Promise.allSettled(animations.map((a) => a.finished)),
+        new Promise((resolve) => setTimeout(resolve, 400)),
+      ])
+    }
+    if (!popover.hasAttribute('data-closing')) return
+    popover.removeAttribute('data-closing')
+  }
+  if (typeof popover.matches === 'function' && popover.matches(':popover-open')) {
+    popover.hidePopover()
+  }
+}
+
 export function isPointOutsideRect(clientX: number, clientY: number, rect: DOMRect): boolean {
   return clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom
 }

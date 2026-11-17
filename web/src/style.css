@@ -23,13 +23,23 @@
   --accent-rose: #f87171;
   --target-size: 32px;
 
-  /* Easing primitives (cubic-bezier fallback + physics linear() spring) */
+  /* Motion timing & easing primitives */
+  --dur-fast: 150ms;
+  --dur-normal: 230ms;
+  --dur-slow: 320ms;
   --ease-snappy: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring: linear(
-    0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%, 0.938 16.7%,
-    1.017, 1.077, 1.102, 1.105 25%, 1.09 28.4%, 1.014 38.5%,
-    0.994 44.3%, 0.99 49.5%, 1.001 66.2%, 1
-  );
+  --ease-in-snappy: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+}
+
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --ease-spring: linear(
+      0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%, 0.938 16.7%,
+      1.017, 1.077, 1.102, 1.105 25%, 1.09 28.4%, 1.014 38.5%,
+      0.994 44.3%, 0.99 49.5%, 1.001 66.2%, 1
+    );
+  }
 }
 
 @media (pointer: coarse) {
@@ -95,16 +105,21 @@ img, video {
   padding: 0.9rem 1rem;
 }
 
-/* Crisp interactive tactile motion */
+/* Crisp interactive tactile motion (non-spatial color/shadow kept for all; scale opted-in) */
 :where(button, [role="button"]) {
-  transition-property: background-color, border-color, color, box-shadow, opacity, transform, scale;
-  transition-duration: 170ms;
-  transition-timing-function: var(--ease-snappy);
+  transition-property: background-color, border-color, color, box-shadow, opacity;
+  transition-duration: var(--dur-fast);
+  transition-timing-function: ease-out;
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  :where(button, [role="button"]) {
+    transition-property: background-color, border-color, color, box-shadow, opacity, transform, scale, translate;
+    transition-duration: 165ms;
+    transition-timing-function: var(--ease-snappy);
+  }
   :where(button, [role="button"]):not(:disabled):active {
-    scale: 0.965;
+    scale: 0.968;
   }
 }
 
@@ -135,6 +150,97 @@ img, video {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Native touch/trackpad momentum & proximity snap for horizontal chip rails */
+.chip-rail {
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+.snap-chip {
+  scroll-snap-align: start;
+}
+
+/* Subtle spring pop when unread / counter badges appear */
+@media (prefers-reduced-motion: no-preference) {
+  .badge-pop {
+    transition: transform 220ms var(--ease-spring), opacity 160ms ease-out;
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.65);
+    }
+  }
+}
+
+/* TransitionGroup FLIP reordering & item enter/leave (.vesper-list-*) */
+@media (prefers-reduced-motion: no-preference) {
+  .vesper-list-move {
+    transition: transform 240ms var(--ease-snappy);
+  }
+  .vesper-list-enter-active {
+    transition: opacity 200ms ease-out, transform 220ms var(--ease-spring);
+  }
+  .vesper-list-leave-active {
+    transition: opacity 150ms ease-in, transform 150ms var(--ease-in-snappy);
+  }
+  .vesper-list-enter-from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.985);
+  }
+  .vesper-list-leave-to {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0) scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vesper-list-enter-active,
+  .vesper-list-leave-active {
+    transition: opacity 100ms ease-out;
+  }
+  .vesper-list-enter-from,
+  .vesper-list-leave-to {
+    opacity: 0;
+  }
+}
+
+/* Toast auto-dismiss compositor hairline (pauses on hover/focus-within) */
+.toast-progress-bar {
+  transform-origin: left center;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .toast-progress-bar {
+    animation: toastCountdown 3200ms linear forwards;
+  }
+  .toast-host:hover .toast-progress-bar,
+  .toast-host:focus-within .toast-progress-bar {
+    animation-play-state: paused;
+  }
+}
+@keyframes toastCountdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* Markdown code copy button tactile spring confirmation */
+@media (prefers-reduced-motion: no-preference) {
+  .md-copy-code-btn.is-copied {
+    animation: copyConfirmPop 260ms var(--ease-spring);
+  }
+}
+@keyframes copyConfirmPop {
+  0% {
+    scale: 0.9;
+  }
+  60% {
+    scale: 1.05;
+  }
+  100% {
+    scale: 1;
+  }
 }
 
 /* Stream scrolling & dark luxury thin scrollbar polish */
@@ -362,33 +468,42 @@ img, video {
   }
 }
 
-/* Smooth <details> Accordion using interpolate-size & ::details-content */
+/* Smooth <details> Accordion using interpolate-size, contain: layout & ::details-content */
 details.vesper-details > summary {
   list-style: none;
 }
 details.vesper-details > summary::-webkit-details-marker {
   display: none;
 }
-details.vesper-details .details-chevron {
-  transition: transform 240ms var(--ease-snappy);
+@media (prefers-reduced-motion: no-preference) {
+  details.vesper-details .details-chevron {
+    transition: transform 220ms var(--ease-snappy);
+  }
 }
 details.vesper-details[open] .details-chevron {
   transform: rotate(90deg);
 }
 
-@supports (interpolate-size: allow-keywords) {
+details.vesper-details::details-content {
+  interpolate-size: allow-keywords;
+  overflow: clip;
+  contain: layout;
+}
+details.vesper-details:not([open])::details-content {
+  block-size: 0;
+  opacity: 0;
+}
+details.vesper-details[open]::details-content {
+  block-size: auto;
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
   details.vesper-details::details-content {
-    block-size: 0;
-    opacity: 0;
-    overflow: clip;
-    transition:
-      block-size 280ms var(--ease-snappy),
-      opacity 220ms ease-out,
-      content-visibility 280ms allow-discrete;
-  }
-  details.vesper-details[open]::details-content {
-    block-size: auto;
-    opacity: 1;
+    transition-property: block-size, opacity, content-visibility, display;
+    transition-duration: 260ms, 200ms, 260ms, 260ms;
+    transition-timing-function: var(--ease-snappy), ease-out, ease-out, ease-out;
+    /* Separate after transition properties so older browsers don't ignore the rule */
+    transition-behavior: allow-discrete;
   }
 }
 
@@ -396,60 +511,178 @@ details.vesper-details[open] .details-chevron {
 @keyframes vesperCardIn {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.985);
+    transform: translate3d(0, 10px, 0) scale(0.985);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
 @keyframes msgEnter {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.99);
+    transform: translate3d(0, 8px, 0) scale(0.988);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .stagger-list > .stagger-item {
-    --stagger-step: 36ms;
-    animation: vesperCardIn 360ms var(--ease-snappy) backwards;
+    --stagger-step: 34ms;
+    animation: vesperCardIn 340ms var(--ease-snappy) backwards;
     animation-delay: calc(min(var(--sibling-index, 0), 10) * var(--stagger-step));
     animation-delay: calc(min(sibling-index() - 1, 10) * var(--stagger-step));
   }
 
   .msg-enter {
+    animation: msgEnter 240ms var(--ease-snappy) both;
+  }
+
+  .msg-enter-user {
+    transform-origin: bottom right;
+    animation: msgEnterUser 240ms var(--ease-spring) both;
+  }
+
+  .msg-enter-bot {
+    transform-origin: top left;
     animation: msgEnter 260ms var(--ease-snappy) both;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .stagger-list > .stagger-item,
-  .msg-enter {
-    animation: none !important;
+@keyframes msgEnterUser {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.965);
   }
-  details.vesper-details::details-content {
-    transition: none !important;
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
-/* Thinking waveform dots while assistant prepares first token */
+/* Warm editorial streaming caret while assistant tokens arrive (~1Hz soft breath, WCAG 2.3.1 safe) */
+.md-streaming .md-body > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.42rem;
+  height: 0.92em;
+  margin-left: 0.22rem;
+  vertical-align: -0.08em;
+  border-radius: 2px;
+  background: var(--accent-gold);
+  opacity: 0.85;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .md-streaming .md-body > :last-child::after {
+    animation: streamCaretBreath 0.95s ease-in-out infinite;
+  }
+}
+@keyframes streamCaretBreath {
+  0%, 100% {
+    opacity: 0.28;
+    transform: scaleY(0.92);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scaleY(1);
+  }
+}
+
+/* Directional Spatial View & Tab Transitions (compositor-only opacity + translate3d) */
+.vesper-slide-forward-enter-active,
+.vesper-slide-backward-enter-active {
+  transition:
+    opacity 200ms ease-out,
+    transform 230ms var(--ease-snappy);
+}
+
+.vesper-slide-forward-leave-active,
+.vesper-slide-backward-leave-active {
+  transition:
+    opacity 120ms ease-in,
+    transform 130ms var(--ease-in-snappy);
+}
+
+.vesper-slide-forward-enter-from,
+.vesper-slide-backward-enter-from,
+.vesper-slide-forward-leave-to,
+.vesper-slide-backward-leave-to {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .vesper-slide-forward-enter-from {
+    transform: translate3d(14px, 0, 0);
+  }
+  .vesper-slide-forward-leave-to {
+    transform: translate3d(-10px, 0, 0);
+  }
+  .vesper-slide-backward-enter-from {
+    transform: translate3d(-14px, 0, 0);
+  }
+  .vesper-slide-backward-leave-to {
+    transform: translate3d(10px, 0, 0);
+  }
+}
+
+/* Instant-leave variant for v-show stream pane so two flex-1 panels never stack vertically */
+.vesper-stream-forward-enter-active,
+.vesper-stream-backward-enter-active {
+  transition:
+    opacity 200ms ease-out,
+    transform 230ms var(--ease-snappy);
+}
+.vesper-stream-forward-enter-from,
+.vesper-stream-backward-enter-from {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .vesper-stream-forward-enter-from {
+    transform: translate3d(12px, 0, 0);
+  }
+  .vesper-stream-backward-enter-from {
+    transform: translate3d(-12px, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vesper-slide-forward-enter-active,
+  .vesper-slide-backward-enter-active,
+  .vesper-slide-forward-leave-active,
+  .vesper-slide-backward-leave-active,
+  .vesper-stream-forward-enter-active,
+  .vesper-stream-backward-enter-active {
+    transition-duration: 90ms;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* Thinking waveform dots while assistant prepares first token (static default, opt-in pulse) */
 .thinking-dots span {
   display: inline-block;
   width: 5px;
   height: 5px;
   border-radius: 999px;
   background: var(--accent-gold);
-  opacity: 0.45;
-  animation: dotPulse 1.2s ease-in-out infinite;
+  opacity: 0.78;
 }
-.thinking-dots span:nth-child(2) { animation-delay: 0.18s; }
-.thinking-dots span:nth-child(3) { animation-delay: 0.36s; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .thinking-dots span {
+    opacity: 0.45;
+    animation: dotPulse 1.2s ease-in-out infinite;
+  }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.18s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.36s; }
+}
 
 @keyframes dotPulse {
   0%, 80%, 100% {
@@ -459,13 +692,6 @@ details.vesper-details[open] .details-chevron {
   40% {
     opacity: 1;
     transform: scale(1.15);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .thinking-dots span {
-    animation: none;
-    opacity: 0.8;
   }
 }
 
@@ -589,9 +815,9 @@ dialog.vesper-dialog[open]:where(:not([data-closing])) {
   }
   @media (min-width: 640px) {
     dialog.vesper-dialog[open]:where(:not([data-closing])) {
-      transition-duration: 0.32s;
-      transition-timing-function: ease-out;
-      transition-timing-function: var(--ease-spring);
+      transition-duration: 0.3s;
+      transition-timing-function: cubic-bezier(0.34, 1.36, 0.64, 1);
+      transition-timing-function: linear(0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.102, 1.105 25%, 1.09 28.4%, 1.014 38.5%, 0.994 44.3%, 0.99 49.5%, 1.001 66.2%, 1);
       @starting-style {
         opacity: 0;
         transform: translateY(10px) scale(0.955);
@@ -615,19 +841,20 @@ dialog.vesper-dialog::backdrop {
   overflow: hidden;
   overscroll-behavior: contain;
   background-color: rgba(2, 4, 10, 0);
-  backdrop-filter: blur(0px);
-  transition-property: background-color, backdrop-filter, display, overlay;
-  transition-duration: 0.24s;
+  backdrop-filter: blur(5px);
+  opacity: 0;
+  transition-property: background-color, opacity, display, overlay;
+  transition-duration: 0.22s;
   transition-timing-function: ease-out;
   transition-behavior: allow-discrete;
 }
 
 dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
   background-color: rgba(2, 4, 10, 0.72);
-  backdrop-filter: blur(5px);
+  opacity: 1;
   @starting-style {
     background-color: rgba(2, 4, 10, 0);
-    backdrop-filter: blur(0px);
+    opacity: 0;
   }
 }
 
@@ -648,10 +875,15 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
   min-width: 11.5rem;
   opacity: 0;
   transform-origin: top right;
-  transition-property: opacity, transform, display, overlay;
-  transition-duration: 0.18s;
+  transition-property: opacity, scale, translate, display, overlay;
+  transition-duration: 0.17s;
   transition-timing-function: ease-out;
+  /* Separate after transition properties so older browsers don't ignore the rule */
   transition-behavior: allow-discrete;
+}
+
+[popover].vesper-popover[data-origin="bottom"] {
+  transform-origin: bottom right;
 }
 
 @supports (position-area: block-end) {
@@ -671,28 +903,41 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
   }
 }
 
-[popover].vesper-popover:is(:popover-open, .\:popover-open) {
+[popover].vesper-popover:is(:popover-open, .\:popover-open):where(:not([data-closing])) {
   display: flex;
   flex-direction: column;
   gap: 0.125rem;
   opacity: 1;
+  @starting-style {
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   [popover].vesper-popover {
     scale: 0.92;
+    translate: 0 -4px;
   }
-  [popover].vesper-popover:is(:popover-open, .\:popover-open) {
+  [popover].vesper-popover[data-origin="bottom"] {
+    translate: 0 4px;
+  }
+  [popover].vesper-popover:is(:popover-open, .\:popover-open):where(:not([data-closing])) {
     scale: 1;
-    animation: popover-spring 280ms ease-out both;
-    animation-timing-function: var(--ease-spring);
+    translate: 0 0;
+    transition-duration: 0.24s;
+    transition-timing-function: cubic-bezier(0.34, 1.36, 0.64, 1);
+    transition-timing-function: linear(0, 0.45 15%, 1.06 36%, 0.985 58%, 1.005 78%, 1);
+    @starting-style {
+      opacity: 0;
+      scale: 0.9;
+      translate: 0 -4px;
+    }
   }
 }
 
-@keyframes popover-spring {
-  from {
-    opacity: 0;
-    scale: 0.9;
+@media (prefers-reduced-motion: reduce) {
+  [popover].vesper-popover {
+    transition-duration: 0.1s;
   }
 }
 
@@ -814,6 +1059,15 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
   .bot-avatar-interactive:hover {
     transform: scale(1.08) rotate(-4deg);
   }
+}
+
+/* WCAG 2.2.2 user-controlled pause for persistent ambient Bot idle motion */
+[data-ambient-paused="true"] .bot-avatar-idle .bot-svg,
+[data-ambient-paused="true"] .bot-avatar-idle .bot-orbit,
+[data-ambient-paused="true"] .bot-avatar-idle .bot-eye-pair,
+[data-ambient-paused="true"] .bot-avatar-idle .bot-eyes,
+[data-ambient-paused="true"] .bot-avatar-idle .bot-crest {
+  animation-play-state: paused !important;
 }
 
 @keyframes botBreath {

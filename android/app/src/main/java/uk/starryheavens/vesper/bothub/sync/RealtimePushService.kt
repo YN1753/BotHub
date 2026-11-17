@@ -1,7 +1,9 @@
 package uk.starryheavens.vesper.bothub.sync
 
 import android.app.Service
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -106,4 +108,15 @@ class RealtimePushService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    companion object {
+        fun start(context: Context) {
+            val svcIntent = Intent(context, RealtimePushService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(svcIntent)
+            } else {
+                context.startService(svcIntent)
+            }
+        }
+    }
 }

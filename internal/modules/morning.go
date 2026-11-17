@@ -152,6 +152,36 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 		sb.WriteString("\n\n")
 	}
 
+	if reviewItem, rErr := m.store.PickStashForReview(); rErr == nil && reviewItem != nil {
+		sb.WriteString("#### 收藏匣记忆重温\n")
+		titleText := notifier.StripEmoji(strings.TrimSpace(reviewItem.Title))
+		if titleText == "" {
+			titleText = "未命名收藏条目"
+		}
+		sb.WriteString(fmt.Sprintf("- **标题**：%s\n", titleText))
+		if tldr := notifier.StripEmoji(strings.TrimSpace(reviewItem.AITldr)); tldr != "" {
+			sb.WriteString(fmt.Sprintf("- **核心结论**：%s\n", tldr))
+		}
+		if len(reviewItem.Points) > 0 {
+			sb.WriteString("- **核心要点**：\n")
+			maxPts := len(reviewItem.Points)
+			if maxPts > 3 {
+				maxPts = 3
+			}
+			for i := 0; i < maxPts; i++ {
+				pt := notifier.StripEmoji(strings.TrimSpace(reviewItem.Points[i]))
+				if pt != "" {
+					sb.WriteString(fmt.Sprintf("  - %s\n", pt))
+				}
+			}
+		}
+		if u := strings.TrimSpace(reviewItem.URL); u != "" {
+			sb.WriteString(fmt.Sprintf("- **原链接**：%s\n", u))
+		}
+		sb.WriteString("\n")
+		_ = m.store.MarkStashReviewed(reviewItem.ID)
+	}
+
 	sb.WriteString("---\n*来自 Vesper BotHub 自动化汇报*")
 
 	title := fmt.Sprintf("%s · %s %s", taskName, dateStr, city)

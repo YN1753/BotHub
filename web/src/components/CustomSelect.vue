@@ -191,12 +191,12 @@ onBeforeUnmount(() => {
     </button>
 
     <Transition
-      enter-active-class="transition duration-150 ease-out"
-      enter-from-class="opacity-0 scale-95"
-      enter-to-class="opacity-100 scale-100"
-      leave-active-class="transition duration-100 ease-in"
-      leave-from-class="opacity-100"
-      leave-to-class="opacity-0"
+      enter-active-class="transition-[opacity,transform] duration-180 ease-[var(--ease-spring)] motion-reduce:duration-100"
+      :enter-from-class="openAbove ? 'opacity-0 scale-95 translate-y-1.5 motion-reduce:scale-100 motion-reduce:translate-y-0' : 'opacity-0 scale-95 -translate-y-1.5 motion-reduce:scale-100 motion-reduce:translate-y-0'"
+      enter-to-class="opacity-100 scale-100 translate-y-0"
+      leave-active-class="transition-[opacity,transform] duration-130 ease-[var(--ease-in-snappy)] motion-reduce:duration-75"
+      leave-from-class="opacity-100 scale-100 translate-y-0"
+      :leave-to-class="openAbove ? 'opacity-0 scale-95 translate-y-1 motion-reduce:scale-100 motion-reduce:translate-y-0' : 'opacity-0 scale-95 -translate-y-1 motion-reduce:scale-100 motion-reduce:translate-y-0'"
     >
       <div
         v-if="open"

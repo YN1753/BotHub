@@ -10,7 +10,7 @@ class BootCompletedReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             val prefs = BotHubPrefs(context)
             if (prefs.bearerToken.isNotBlank()) {
-                PushSyncWorker.schedulePeriodic(context)
+                PushSyncWorker.schedulePeriodicSync(context)
                 if (prefs.realtimeServiceEnabled) {
                     RealtimePushService.start(context)
                 }

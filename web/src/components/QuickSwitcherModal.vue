@@ -9,7 +9,7 @@ import BotAvatar from './BotAvatar.vue'
 import BotGroupAvatar from './BotGroupAvatar.vue'
 import type { Bot } from '../types/bothub'
 
-const SCOPE_TABS = ['全部', '会话', '待办', '文档', '技能', '资产', '例程', '记忆', '快捷操作'] as const
+const SCOPE_TABS = ['全部', '会话', '待办', '收藏', '文档', '技能', '资产', '例程', '记忆', '快捷操作'] as const
 type ScopeTab = (typeof SCOPE_TABS)[number]
 
 const store = useAppStore()
@@ -28,6 +28,7 @@ function scrollActiveEntryIntoView() {
 
 function categoryBadgeClass(cat: SearchEntry['category']): string {
   if (cat === '会话' || cat === '话题') return 'border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880]'
+  if (cat === '收藏') return 'border-rose-400/30 bg-rose-500/10 text-rose-200'
   if (cat === '待办' || cat === '技能') return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
   if (cat === '文档' || cat === '记忆') return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
   if (cat === '资产' || cat === '例程') return 'border-amber-400/30 bg-amber-500/10 text-amber-200'
@@ -40,7 +41,7 @@ function resolveGroupMembers(b: Bot): Bot[] {
 
 interface SearchEntry {
   key: string
-  category: '会话' | '话题' | '技能' | '待办' | '文档' | '快捷操作' | '资产' | '例程' | '记忆'
+  category: '会话' | '话题' | '技能' | '待办' | '收藏' | '文档' | '快捷操作' | '资产' | '例程' | '记忆'
   title: string
   subtitle: string
   searchBody?: string
@@ -123,10 +124,21 @@ const entries = computed<SearchEntry[]>(() => {
       },
     },
     {
+      key: 'act_stash',
+      category: '快捷操作',
+      title: '打开收藏与闪念匣 (Smart Stash)',
+      subtitle: `极速投喂外链、B 站视频或纯文字闪念 · 未读 ${store.unreadStashCount.value} 条`,
+      searchBody: 'stash capture 收藏夹 稍后读 闪念 bilibili github',
+      run: () => {
+        store.state.workhubTab = 'stash'
+        store.state.showWorkhubModal = true
+      },
+    },
+    {
       key: 'act_workhub',
       category: '快捷操作',
-      title: '打开个人行动台 (待办 / 文档)',
-      subtitle: `待办 ${store.pendingTodoCount.value} 项 · 文档 ${store.state.notes.length} 份`,
+      title: '打开个人行动台 (待办 / 文档 / 收藏匣)',
+      subtitle: `待办 ${store.pendingTodoCount.value} 项 · 收藏 ${store.unreadStashCount.value} 未读 · 文档 ${store.state.notes.length} 份`,
       run: () => {
         store.state.workhubTab = 'todos'
         store.state.showWorkhubModal = true
@@ -202,6 +214,20 @@ const entries = computed<SearchEntry[]>(() => {
       run: () => {
         store.state.pendingNoteId = nt.id
         store.state.workhubTab = 'notes'
+        store.state.showWorkhubModal = true
+      },
+    })
+  })
+
+  ;(store.state.stash || []).forEach((st) => {
+    list.push({
+      key: `st_${st.id}`,
+      category: '收藏',
+      title: st.title || truncateText(st.raw_input, 48),
+      subtitle: `${st.kind === 'bilibili' ? 'Bilibili' : st.kind === 'github' ? 'GitHub' : st.kind === 'note' ? '闪念' : 'Web'} · ${truncateText(st.ai_tldr || st.user_note || st.url || '', 52)}`,
+      searchBody: `${st.tags || ''} ${(st.points || []).join(' ')} ${st.user_note || ''} ${st.url || ''}`,
+      run: () => {
+        store.state.workhubTab = 'stash'
         store.state.showWorkhubModal = true
       },
     })
@@ -350,14 +376,14 @@ function handleKeydown(e: KeyboardEvent) {
         />
       </div>
 
-      <div class="flex items-center gap-1.5 flex-wrap">
+      <div class="chip-rail flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
         <button
           v-for="tab in SCOPE_TABS"
           :key="tab"
           type="button"
           @click="scopeFilter = tab; highlighted = 0"
           :class="[
-            'px-2.5 py-0.5 rounded-full border text-[11px] cursor-pointer transition-colors',
+            'snap-chip shrink-0 px-2.5 py-0.5 rounded-full border text-[11px] cursor-pointer transition-colors',
             scopeFilter === tab
               ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
               : 'border-[#fff8ee]/10 text-slate-400 hover:text-white'

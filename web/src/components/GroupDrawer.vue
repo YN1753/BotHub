@@ -308,12 +308,12 @@ async function handleDisbandGroup() {
   </Transition>
 
   <Transition
-    enter-active-class="transition duration-240 ease-[var(--ease-snappy)]"
-    enter-from-class="translate-x-full opacity-0"
+    enter-active-class="transition-[transform,opacity] duration-240 ease-[var(--ease-snappy)] motion-reduce:duration-100"
+    enter-from-class="translate-x-full opacity-0 motion-reduce:translate-x-0"
     enter-to-class="translate-x-0 opacity-100"
-    leave-active-class="transition duration-180 ease-in"
+    leave-active-class="transition-[transform,opacity] duration-180 ease-[var(--ease-in-snappy)] motion-reduce:duration-75"
     leave-from-class="translate-x-0 opacity-100"
-    leave-to-class="translate-x-full opacity-0"
+    leave-to-class="translate-x-full opacity-0 motion-reduce:translate-x-0"
   >
     <aside
       v-if="store.state.showGroupDrawer && bot"

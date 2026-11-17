@@ -283,7 +283,60 @@ CREATE TABLE IF NOT EXISTS notes (
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(pinned DESC, updated_at DESC);`
+CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(pinned DESC, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS stash_items (
+	id TEXT PRIMARY KEY,
+	kind TEXT NOT NULL DEFAULT 'link',
+	url TEXT NOT NULL DEFAULT '',
+	domain TEXT NOT NULL DEFAULT '',
+	title TEXT NOT NULL DEFAULT '',
+	raw_input TEXT NOT NULL DEFAULT '',
+	user_note TEXT NOT NULL DEFAULT '',
+	ai_tldr TEXT NOT NULL DEFAULT '',
+	ai_points TEXT NOT NULL DEFAULT '[]',
+	content_excerpt TEXT NOT NULL DEFAULT '',
+	tags TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'pending',
+	error_msg TEXT NOT NULL DEFAULT '',
+	pinned INTEGER NOT NULL DEFAULT 0,
+	read_count INTEGER NOT NULL DEFAULT 0,
+	last_reviewed_at TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_stash_status_updated ON stash_items(status, pinned DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stash_url ON stash_items(url);
+CREATE INDEX IF NOT EXISTS idx_stash_review ON stash_items(status, read_count, last_reviewed_at, created_at);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS stash_fts USING fts5(
+	title,
+	ai_tldr,
+	ai_points,
+	tags,
+	user_note,
+	content_excerpt,
+	content='stash_items',
+	content_rowid='rowid',
+	tokenize='trigram'
+);
+
+CREATE TRIGGER IF NOT EXISTS stash_items_ai AFTER INSERT ON stash_items BEGIN
+	INSERT INTO stash_fts(rowid, title, ai_tldr, ai_points, tags, user_note, content_excerpt)
+	VALUES (new.rowid, new.title, new.ai_tldr, new.ai_points, new.tags, new.user_note, new.content_excerpt);
+END;
+
+CREATE TRIGGER IF NOT EXISTS stash_items_ad AFTER DELETE ON stash_items BEGIN
+	INSERT INTO stash_fts(stash_fts, rowid, title, ai_tldr, ai_points, tags, user_note, content_excerpt)
+	VALUES ('delete', old.rowid, old.title, old.ai_tldr, old.ai_points, old.tags, old.user_note, old.content_excerpt);
+END;
+
+CREATE TRIGGER IF NOT EXISTS stash_items_au AFTER UPDATE ON stash_items BEGIN
+	INSERT INTO stash_fts(stash_fts, rowid, title, ai_tldr, ai_points, tags, user_note, content_excerpt)
+	VALUES ('delete', old.rowid, old.title, old.ai_tldr, old.ai_points, old.tags, old.user_note, old.content_excerpt);
+	INSERT INTO stash_fts(rowid, title, ai_tldr, ai_points, tags, user_note, content_excerpt)
+	VALUES (new.rowid, new.title, new.ai_tldr, new.ai_points, new.tags, new.user_note, new.content_excerpt);
+END;`
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
 	}
@@ -330,8 +383,10 @@ CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(pinned DESC, updated_at DE
 	_, _ = s.db.Exec(`UPDATE bots SET is_group = 1 WHERE id = 'team_room' AND is_group = 0`)
 	_, _ = s.db.Exec(`UPDATE bots SET state = 'idle' WHERE state = 'working'`)
 	_, _ = s.db.Exec(`UPDATE module_runs SET status = 'error', summary = '服务重启中断，已自动收敛状态', finished_at = ? WHERE status = 'running'`, NowShanghai())
+	_, _ = s.db.Exec(`UPDATE stash_items SET status = CASE WHEN ai_tldr != '' THEN 'ready' ELSE 'failed' END, error_msg = CASE WHEN ai_tldr != '' THEN '' ELSE '服务重启中断后台提炼，可点击重提炼恢复' END, updated_at = ? WHERE status = 'processing'`, NowShanghai())
 	_, _ = s.db.Exec(`DELETE FROM configs WHERE key IN ('wecom_corpid', 'wecom_agentid', 'wecom_secret', 'wecom_touser', 'pushplus_token')`)
 	_, _ = s.db.Exec(`UPDATE configs SET value = 'native' WHERE key = 'push_channel' AND value != 'native'`)
+	s.migrateStashToolOnce()
 	return nil
 }
 

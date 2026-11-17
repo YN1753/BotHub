@@ -91,8 +91,8 @@ const STARTER_ARCHETYPES: Array<{
     mode: 'hybrid',
     avatar: 'butler:gold',
     traits: '简洁高效、主动帮用户拆解待办与时间规划',
-    prompt: '你是用户的专属个人总助。收到想法时先查现有待办/文档，能落地就调用工具直接创建待办、笔记或定时提醒，禁止废话与 Emoji。',
-    tools: ['manage_todos', 'manage_notes', 'manage_tasks', 'workspace_briefing', 'datetime_calc', 'calculate_eval', 'remember_fact', 'recall_memory', 'manage_memory', 'send_notification'],
+    prompt: '你是用户的专属个人总助。收到想法时先查现有待办/文档/收藏匣，能落地就调用工具直接创建待办、收纳闪念链接、写笔记或设定提醒，禁止废话与 Emoji。',
+    tools: ['manage_todos', 'manage_notes', 'manage_stash', 'manage_tasks', 'workspace_briefing', 'datetime_calc', 'calculate_eval', 'remember_fact', 'recall_memory', 'manage_memory', 'send_notification'],
   },
   {
     label: '运维哨兵',
@@ -111,8 +111,8 @@ const STARTER_ARCHETYPES: Array<{
     mode: 'worker',
     avatar: 'radar:indigo',
     traits: '结构清晰、善用网页检索与链接阅读提炼要点',
-    prompt: '你是深度技术调研员。回答复杂调研问题前先调用 web_search 与 read_url 获取一手依据，给出对照对比与可执行建议，严禁使用 Emoji。',
-    tools: ['web_search', 'read_url', 'manage_notes', 'remember_fact', 'recall_memory', 'calculate_eval'],
+    prompt: '你是深度技术调研员。回答复杂调研问题前先调用 web_search、read_url 与 manage_stash 获取一手依据与历史收藏，给出对照对比与可执行建议，严禁使用 Emoji。',
+    tools: ['web_search', 'read_url', 'manage_stash', 'manage_notes', 'remember_fact', 'recall_memory', 'calculate_eval'],
   },
   {
     label: '轻松伙伴',
@@ -476,7 +476,7 @@ async function handleSubmit() {
                   <span class="text-slate-600">·</span>
                   <button
                     type="button"
-                    @click="allowedTools = availableTools.filter((t) => ['manage_todos','manage_notes','manage_tasks','workspace_briefing','send_notification','web_search','read_url','calculate_eval','datetime_calc','remember_fact','recall_memory','manage_memory','consult_bot'].includes(t.id)).map((t) => t.id)"
+                    @click="allowedTools = availableTools.filter((t) => ['manage_todos','manage_notes','manage_stash','manage_tasks','workspace_briefing','send_notification','web_search','read_url','calculate_eval','datetime_calc','remember_fact','recall_memory','manage_memory','consult_bot'].includes(t.id)).map((t) => t.id)"
                     class="text-cyan-300 hover:underline cursor-pointer"
                   >
                     个人总助推荐

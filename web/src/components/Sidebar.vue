@@ -183,6 +183,21 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
             <span class="font-mono text-[11px] text-slate-500">{{ shortVersion(store.state.version) }}</span>
             <button
               type="button"
+              :aria-label="store.state.ambientMotionPaused ? '恢复背景动效' : '暂停背景动效'"
+              :title="store.state.ambientMotionPaused ? '恢复背景漂浮与待机动效' : '暂停背景漂浮与待机动效'"
+              class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.06] cursor-pointer"
+              @click="store.toggleAmbientMotion()"
+            >
+              <svg v-if="store.state.ambientMotionPaused" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="6" y="4" width="4" height="16" rx="1" />
+                <rect x="14" y="4" width="4" height="16" rx="1" />
+              </svg>
+            </button>
+            <button
+              type="button"
               aria-label="收起侧边栏"
               title="收起侧边栏"
               class="hidden md:inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-[#f2b880] hover:bg-white/[0.06] cursor-pointer"
@@ -269,7 +284,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
 
           <button
             type="button"
-            @click="store.state.showWorkhubModal = true; emit('closeMobile')"
+            @click="store.state.workhubTab = 'todos'; store.state.showWorkhubModal = true; emit('closeMobile')"
             class="w-full min-h-[44px] sm:min-h-[36px] flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-sm text-slate-300 hover:bg-white/[0.04] hover:text-white cursor-pointer text-left"
           >
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
@@ -279,6 +294,21 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
               class="px-1.5 py-0.5 min-w-[20px] text-center rounded-full bg-cyan-400/20 border border-cyan-400/40 text-cyan-200 font-mono text-[10.5px] font-semibold leading-none"
             >
               {{ store.pendingTodoCount.value > 99 ? '99+' : store.pendingTodoCount.value }}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            @click="store.state.workhubTab = 'stash'; store.state.showWorkhubModal = true; emit('closeMobile')"
+            class="w-full min-h-[44px] sm:min-h-[36px] flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-sm text-slate-300 hover:bg-white/[0.04] hover:text-white cursor-pointer text-left"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+            <span class="flex-1">收藏与闪念匣</span>
+            <span
+              v-if="store.unreadStashCount.value > 0"
+              class="px-1.5 py-0.5 min-w-[20px] text-center rounded-full bg-rose-400/20 border border-rose-400/40 text-rose-200 font-mono text-[10.5px] font-semibold leading-none"
+            >
+              {{ store.unreadStashCount.value > 99 ? '99+' : store.unreadStashCount.value }}
             </span>
           </button>
 
@@ -379,10 +409,19 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
           :class="[
             'group stagger-item relative w-full min-h-[56px] flex items-center gap-2.5 px-2.5 py-2 rounded-xl border transition-colors',
             store.state.activeBotId === b.id && store.state.workspace === 'bots'
-              ? 'bg-[#f2b880]/12 border-[#f2b880]/25 border-l-[3px] border-l-[#f2b880]'
+              ? 'bg-[#f2b880]/12 border-[#f2b880]/25'
               : 'border-transparent hover:bg-white/[0.04]'
           ]"
         >
+          <span
+            aria-hidden="true"
+            :class="[
+              'pointer-events-none absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r-full bg-[#f2b880] origin-center transition-[transform,opacity] duration-220 ease-[var(--ease-spring)] motion-reduce:transition-none',
+              store.state.activeBotId === b.id && store.state.workspace === 'bots'
+                ? 'scale-y-100 opacity-100'
+                : 'scale-y-0 opacity-0'
+            ]"
+          />
           <button
             type="button"
             @click="handlePickBot(b.id)"
@@ -430,7 +469,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
                 <div class="flex items-center gap-1.5 shrink-0">
                   <span
                     v-if="b.unread_count > 0"
-                    class="px-1.5 py-0.5 rounded-full bg-[#f2b880] text-[#070a13] font-mono text-[10px] font-bold leading-none"
+                    class="badge-pop px-1.5 py-0.5 rounded-full bg-[#f2b880] text-[#070a13] font-mono text-[10px] font-bold leading-none"
                   >
                     {{ b.unread_count > 99 ? '99+' : b.unread_count }}
                   </span>

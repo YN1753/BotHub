@@ -9,6 +9,7 @@ export interface ToolGroup {
 const TOOL_META: Record<string, { group: string; shortLabel: string }> = {
   manage_todos: { group: 'assistant', shortLabel: '个人待办管理' },
   manage_notes: { group: 'assistant', shortLabel: '工作文档交付' },
+  manage_stash: { group: 'assistant', shortLabel: '收藏与闪念匣' },
   manage_tasks: { group: 'assistant', shortLabel: '定时与单次提醒' },
   workspace_briefing: { group: 'assistant', shortLabel: '今日工作简报' },
   send_notification: { group: 'assistant', shortLabel: '主动消息推送' },

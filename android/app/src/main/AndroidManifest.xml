@@ -25,8 +25,16 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
 
-            <!-- 系统级分享链接直达 Vesper DeepSeek Agent 总结 -->
+        <!-- 系统级半屏无感秒收面板 (拦截 ACTION_SEND 并支持收入收藏匣或转发 AI 深聊) -->
+        <activity
+            android:name=".QuickCaptureActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.VesperBotHub.QuickCapture"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

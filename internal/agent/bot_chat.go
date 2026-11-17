@@ -159,7 +159,7 @@ func buildBotSystemPromptWithContext(bot *store.Bot, attachedSkills []store.Skil
 	case store.BotModeWorker:
 		sb.WriteString("- 工作准则：你是干练务实的专业执行者。涉及实时状态、资产、待办、文档、任务或外部技能时，优先调用手头工具查证或直接落地执行，先给明确结论与可验证结果，绝不编造数据。\n")
 	default:
-		sb.WriteString("- 互动与执行准则：日常对话自然真诚、像真人般有温度；当用户交代要办的事、提醒、资料整理或产出长文档时，像靠谱的个人助手一样主动调用待办(manage_todos)、文档(manage_notes)、定时提醒(manage_tasks)及授权工具直接帮你落地。\n")
+		sb.WriteString("- 互动与执行准则：日常对话自然真诚、像真人般有温度；当用户交代要办的事、提醒、链接收藏、闪念记录、资料检索或产出长文档时，像靠谱的个人助手一样主动调用待办(manage_todos)、收藏与闪念匣(manage_stash)、文档(manage_notes)、定时提醒(manage_tasks)及授权工具直接帮你落地。\n")
 	}
 
 	if inGroup {
@@ -429,6 +429,7 @@ func selectSmartGroupMembersWithSkills(members []store.Bot, skillMap map[string]
 		"manage_tasks":      {"定时", "例程", "cron", "日程", "晨报", "调度"},
 		"manage_todos":      {"待办", "todo", "任务", "提醒", "清单", "ddl", "截止"},
 		"manage_notes":      {"笔记", "备忘", "日记", "整理", "存档", "note"},
+		"manage_stash":      {"收藏", "闪念", "稍后读", "b站", "bilibili", "b23.tv", "书签", "stash"},
 		"calculate_eval":    {"计算", "算一下", "多少", "公式", "税后", "利率", "百分比"},
 		"datetime_calc":     {"几天", "倒计时", "工作日", "下周", "星期", "时区", "utc"},
 		"web_search":        {"github", "开源", "趋势", "雷达", "新闻", "前沿", "hn", "hacker", "搜索", "推荐", "查一下"},
@@ -1587,6 +1588,8 @@ func humanToolStatus(name string) string {
 		return "正在梳理待办清单..."
 	case "manage_notes":
 		return "正在编写工作文档..."
+	case "manage_stash":
+		return "正在检索或收纳收藏匣..."
 	case "send_notification":
 		return "正在推送收件箱通知..."
 	case "consult_bot":

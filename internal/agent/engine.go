@@ -27,6 +27,10 @@ type Engine struct {
 	httpClient            *http.Client
 	health                *ModelHealthTracker
 	allowLocalhostForTest bool
+	stashSem              chan struct{}
+	biliAPIBase           string
+	githubAPIBase         string
+	githubRawBase         string
 }
 
 func (e *Engine) SetHub(hub *pushstream.Hub) {
@@ -38,6 +42,7 @@ func NewEngine(st *store.Store, sched TaskController) *Engine {
 		store:     st,
 		scheduler: sched,
 		health:    newModelHealthTracker(),
+		stashSem:  make(chan struct{}, 3),
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},

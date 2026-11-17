@@ -38,13 +38,16 @@ const emit = defineEmits<{
 <template>
   <!-- Interactive @Mention Autocomplete Popover -->
   <Transition
-    enter-active-class="transition duration-150 ease-out"
-    enter-from-class="opacity-0 translate-y-2 scale-95"
+    enter-active-class="transition-[opacity,transform] duration-200 ease-[var(--ease-spring)] motion-reduce:duration-100"
+    enter-from-class="opacity-0 translate-y-2 scale-95 motion-reduce:translate-y-0 motion-reduce:scale-100"
     enter-to-class="opacity-100 translate-y-0 scale-100"
+    leave-active-class="transition-[opacity,transform] duration-130 ease-[var(--ease-in-snappy)] motion-reduce:duration-75"
+    leave-from-class="opacity-100 translate-y-0 scale-100"
+    leave-to-class="opacity-0 translate-y-1.5 scale-96 motion-reduce:translate-y-0 motion-reduce:scale-100"
   >
     <div
       v-if="mentionOpen && mentionCandidates.length > 0"
-      class="max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 bg-[#090e1e]/96 backdrop-blur-2xl shadow-2xl p-1.5 flex flex-col gap-0.5 max-h-60 overflow-y-auto"
+      class="origin-bottom max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 bg-[#090e1e]/96 backdrop-blur-2xl shadow-2xl p-1.5 flex flex-col gap-0.5 max-h-60 overflow-y-auto"
     >
       <div class="px-2.5 py-1 flex items-center justify-between text-[10.5px] font-mono text-slate-400">
         <span>选择要 @点名 或临时支援的 Bot</span>
@@ -108,13 +111,16 @@ const emit = defineEmits<{
 
   <!-- Interactive /Slash Command Palette -->
   <Transition
-    enter-active-class="transition duration-150 ease-out"
-    enter-from-class="opacity-0 translate-y-2 scale-95"
+    enter-active-class="transition-[opacity,transform] duration-200 ease-[var(--ease-spring)] motion-reduce:duration-100"
+    enter-from-class="opacity-0 translate-y-2 scale-95 motion-reduce:translate-y-0 motion-reduce:scale-100"
     enter-to-class="opacity-100 translate-y-0 scale-100"
+    leave-active-class="transition-[opacity,transform] duration-130 ease-[var(--ease-in-snappy)] motion-reduce:duration-75"
+    leave-from-class="opacity-100 translate-y-0 scale-100"
+    leave-to-class="opacity-0 translate-y-1.5 scale-96 motion-reduce:translate-y-0 motion-reduce:scale-100"
   >
     <div
       v-if="slashOpen && slashCommands.length > 0"
-      class="max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 bg-[#090e1e]/96 backdrop-blur-2xl shadow-2xl p-1.5 flex flex-col gap-0.5"
+      class="origin-bottom max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 bg-[#090e1e]/96 backdrop-blur-2xl shadow-2xl p-1.5 flex flex-col gap-0.5"
     >
       <div class="px-2.5 py-1 text-[10.5px] font-mono text-slate-400">快捷斜杠指令 (Enter 执行)</div>
       <button

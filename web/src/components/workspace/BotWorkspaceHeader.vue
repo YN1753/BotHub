@@ -2,6 +2,7 @@
 import { ref, nextTick, useId, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { botStateLabel, groupModeLabel } from '../../utils/format'
+import { closePopoverWithTransition } from '../../utils/topLayer'
 import type { Bot } from '../../types/bothub'
 import BotAvatar from '../BotAvatar.vue'
 import BotGroupAvatar from '../BotGroupAvatar.vue'
@@ -56,11 +57,13 @@ function positionFallbackPopover() {
   const btn = moreBtnRef.value
   const pop = morePopoverRef.value
   if (!btn || !pop) return
-  if (window.CSS?.supports?.('position-area', 'block-end')) return
+  pop.removeAttribute('data-closing')
   const rect = btn.getBoundingClientRect()
+  const spaceBelow = window.innerHeight - rect.bottom
+  pop.setAttribute('data-origin', spaceBelow < 180 ? 'bottom' : 'top')
+  if (window.CSS?.supports?.('position-area', 'block-end')) return
   const panelWidth = Math.max(pop.offsetWidth, 184)
   const left = Math.max(8, Math.min(rect.right - panelWidth, window.innerWidth - panelWidth - 8))
-  const spaceBelow = window.innerHeight - rect.bottom
   const top = spaceBelow < 180 ? Math.max(8, rect.top - 160) : rect.bottom + 8
   pop.style.top = `${top}px`
   pop.style.left = `${left}px`
@@ -69,6 +72,7 @@ function positionFallbackPopover() {
 function onMoreBeforeToggle(e: Event) {
   const toggleEvt = e as ToggleEvent
   if (toggleEvt.newState === 'open') {
+    morePopoverRef.value?.removeAttribute('data-closing')
     nextTick(() => positionFallbackPopover())
   }
 }
@@ -79,9 +83,9 @@ function handleMoreButtonClick() {
   }
 }
 
-function closeMoreMenu() {
-  if (hasNativePopover && morePopoverRef.value?.matches(':popover-open')) {
-    morePopoverRef.value.hidePopover()
+async function closeMoreMenu() {
+  if (hasNativePopover && morePopoverRef.value) {
+    await closePopoverWithTransition(morePopoverRef.value)
   }
   moreFallbackOpen.value = false
 }
@@ -263,6 +267,19 @@ onBeforeUnmount(() => {
             </span>
             <span class="font-mono text-[10px]" :class="store.state.soundEnabled ? 'text-[#f2b880]' : 'text-slate-500'">
               {{ store.state.soundEnabled ? '开' : '关' }}
+            </span>
+          </button>
+          <button
+            type="button"
+            @click="store.toggleAmbientMotion(); closeMoreMenu()"
+            class="min-h-[44px] sm:min-h-[34px] w-full flex items-center justify-between gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
+          >
+            <span class="inline-flex items-center gap-2.5">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="10" /><polygon v-if="store.state.ambientMotionPaused" points="10 8 16 12 10 16 10 8" /><template v-else><line x1="10" y1="15" x2="10" y2="9" /><line x1="14" y1="15" x2="14" y2="9" /></template></svg>
+              <span>{{ store.state.ambientMotionPaused ? '恢复背景动效' : '暂停背景动效' }}</span>
+            </span>
+            <span class="font-mono text-[10px]" :class="!store.state.ambientMotionPaused ? 'text-[#f2b880]' : 'text-slate-500'">
+              {{ store.state.ambientMotionPaused ? '已暂停' : '运行' }}
             </span>
           </button>
           <button

@@ -176,6 +176,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v2/notes/{id}", s.requireAuth(s.handleUpdateNote))
 	mux.HandleFunc("DELETE /api/v2/notes/{id}", s.requireAuth(s.handleDeleteNote))
 
+	// Smart Stash / Capture (Links, Bilibili, GitHub & Flash Notes)
+	mux.HandleFunc("GET /api/v2/stash", s.requireAuth(s.handleListStash))
+	mux.HandleFunc("POST /api/v2/stash", s.requireAuth(s.handleCreateStash))
+	mux.HandleFunc("POST /api/v2/stash/{id}", s.requireAuth(s.handleUpdateStash))
+	mux.HandleFunc("POST /api/v2/stash/{id}/reprocess", s.requireAuth(s.handleReprocessStash))
+	mux.HandleFunc("DELETE /api/v2/stash/{id}", s.requireAuth(s.handleDeleteStash))
+
 	// System Backup & Portability
 	mux.HandleFunc("GET /api/system/export", s.requireAuth(s.handleExportBackup))
 	mux.HandleFunc("POST /api/system/import", s.requireAuth(s.handleImportBackup))

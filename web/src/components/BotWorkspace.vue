@@ -4,6 +4,7 @@ import { useAppStore, mapServerMessages, type ChatMessageUI } from '../stores/us
 import { BotHubApi } from '../api/client'
 import { formatTime, formatTimelineDivider, triggerBlobDownload } from '../utils/format'
 import { lazyPanelChunk } from '../utils/lazyComponent'
+import { resolveTabSlideTransition, type DirectionalTransitionName } from '../utils/motion'
 import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../utils/markdown'
 import type { Bot } from '../types/bothub'
 import BotAvatar from './BotAvatar.vue'
@@ -39,6 +40,23 @@ const scrollContainerRef = ref<HTMLElement | null>(null)
 const composerRef = ref<InstanceType<typeof BotChatComposer> | null>(null)
 const userScrolledUp = ref(false)
 const unreadBelowCount = ref(0)
+const botSubViewTransition = ref<DirectionalTransitionName>('vesper-slide-forward')
+const streamEnterTransition = computed(() =>
+  botSubViewTransition.value === 'vesper-slide-backward'
+    ? 'vesper-stream-backward'
+    : 'vesper-stream-forward'
+)
+
+watch(
+  () => store.state.botView,
+  (next, prev) => {
+    botSubViewTransition.value = resolveTabSlideTransition(
+      next,
+      prev || 'stream',
+      ['stream', 'routines', 'config', 'activity']
+    )
+  }
+)
 
 let abortCtrl: AbortController | null = null
 const lastPrompt = ref('')
@@ -142,6 +160,10 @@ function runQuickToolStarter(toolId: string) {
       break
     case 'manage_notes':
       store.state.workhubTab = 'notes'
+      store.state.showWorkhubModal = true
+      break
+    case 'manage_stash':
+      store.state.workhubTab = 'stash'
       store.state.showWorkhubModal = true
       break
     case 'manage_assets':
@@ -510,6 +532,7 @@ async function sendPrompt(overrideText?: string) {
     replyToId: quote?.serverId,
     replyPreview: quote?.preview,
     statusText: '已发送',
+    isLiveNew: true,
   })
 
   const createTurn = (bId: string, bName: string, style: string, roleTitle = '', isTempGuest = false): ChatMessageUI => {
@@ -529,6 +552,7 @@ async function sendPrompt(overrideText?: string) {
       isTempGuest,
       statusText: '思考与生成中...',
       streaming: true,
+      isLiveNew: true,
     }
     store.state.timeline.push(turn)
     return store.state.timeline[store.state.timeline.length - 1]
@@ -600,6 +624,7 @@ async function sendPrompt(overrideText?: string) {
               reasoning: '',
               tools: [],
               statusText: '',
+              isLiveNew: true,
             }
             if (idx >= 0) store.state.timeline.splice(idx, 0, sysItem)
             else store.state.timeline.push(sysItem)
@@ -811,11 +836,7 @@ async function clearTimeline() {
 
     <template v-else>
     <!-- View 1: Persistent Stream -->
-    <Transition
-      enter-active-class="transition duration-200 ease-out"
-      enter-from-class="opacity-0 translate-y-1.5"
-      enter-to-class="opacity-100 translate-y-0"
-    >
+    <Transition :name="streamEnterTransition">
       <div v-show="store.state.botView === 'stream'" class="flex-1 min-h-0 flex flex-col">
         <BotThreadBar v-if="bot" :bot="bot" @carry-summary="onCarryThreadSummary" />
 
@@ -830,32 +851,41 @@ async function clearTimeline() {
         />
 
         <!-- Pinned Group Announcement Banner (QQ/WeChat style) -->
-        <div
-          v-if="isGroupBot && bot?.announcement && !announcementDismissed"
-          class="px-4 md:px-6 py-2 border-b border-[#f2b880]/15 bg-[#f2b880]/[0.05] flex items-center justify-between gap-3 shrink-0"
+        <Transition
+          enter-active-class="transition-[opacity,transform] duration-180 ease-[var(--ease-snappy)] motion-reduce:duration-100"
+          enter-from-class="opacity-0 -translate-y-1.5 motion-reduce:translate-y-0"
+          enter-to-class="opacity-100 translate-y-0"
+          leave-active-class="transition-[opacity,transform] duration-130 ease-[var(--ease-in-snappy)] motion-reduce:duration-75"
+          leave-from-class="opacity-100 translate-y-0"
+          leave-to-class="opacity-0 -translate-y-1.5 motion-reduce:translate-y-0"
         >
-          <button
-            type="button"
-            @click="store.state.showGroupDrawer = true"
-            class="flex items-center gap-2 min-w-0 text-left text-xs text-slate-300 hover:text-white cursor-pointer"
+          <div
+            v-if="isGroupBot && bot?.announcement && !announcementDismissed"
+            class="px-4 md:px-6 py-2 border-b border-[#f2b880]/15 bg-[#f2b880]/[0.05] flex items-center justify-between gap-3 shrink-0"
           >
-            <span class="px-1.5 py-0.5 rounded bg-[#f2b880]/20 text-[#f2b880] font-mono text-[10px] font-semibold shrink-0">
-              群公告
-            </span>
-            <span class="truncate">{{ bot.announcement }}</span>
-          </button>
-          <button
-            type="button"
-            aria-label="暂时收起群公告"
-            @click="announcementDismissed = true"
-            class="w-6 h-6 rounded-full inline-flex items-center justify-center text-slate-500 hover:text-white cursor-pointer shrink-0"
-          >
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
+            <button
+              type="button"
+              @click="store.state.showGroupDrawer = true"
+              class="flex items-center gap-2 min-w-0 text-left text-xs text-slate-300 hover:text-white cursor-pointer"
+            >
+              <span class="px-1.5 py-0.5 rounded bg-[#f2b880]/20 text-[#f2b880] font-mono text-[10px] font-semibold shrink-0">
+                群公告
+              </span>
+              <span class="truncate">{{ bot.announcement }}</span>
+            </button>
+            <button
+              type="button"
+              aria-label="暂时收起群公告"
+              @click="announcementDismissed = true"
+              class="w-6 h-6 rounded-full inline-flex items-center justify-center text-slate-500 hover:text-white cursor-pointer shrink-0"
+            >
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </Transition>
 
         <div class="relative flex-1 min-h-0 flex flex-col">
           <div
@@ -887,7 +917,7 @@ async function clearTimeline() {
               <!-- QQ/WeChat Centered System Dynamic Pill (Invite / Remove / Adhoc / Context Sync) -->
               <div
                 v-if="m.role === 'system' || m.msgKind === 'system'"
-                class="msg-enter max-w-[680px] mx-auto flex justify-center my-0.5"
+                :class="['max-w-[680px] mx-auto flex justify-center my-0.5', m.isLiveNew ? 'msg-enter' : '']"
               >
                 <div class="px-3.5 py-1 rounded-2xl border border-[#fff8ee]/8 bg-[#fff8ee]/[0.04] text-[11.5px] text-slate-400 text-center whitespace-pre-line leading-relaxed">
                   {{ m.content }}
@@ -899,7 +929,8 @@ async function clearTimeline() {
                 v-else-if="m.role === 'user'"
                 :data-msg-id="m.localId"
                 :class="[
-                  'msg-enter reveal-host max-w-[820px] w-full mx-auto flex flex-col items-end gap-1 rounded-2xl transition-shadow',
+                  'reveal-host max-w-[820px] w-full mx-auto flex flex-col items-end gap-1 rounded-2xl transition-shadow',
+                  m.isLiveNew ? 'msg-enter-user' : '',
                   shouldDeferMessageRender(idx) ? 'msg-deferred-user' : '',
                   focusedMatchId === m.localId ? 'ring-1 ring-[#f2b880]/70 p-1' : ''
                 ]"
@@ -979,7 +1010,8 @@ async function clearTimeline() {
                 v-else
                 :data-msg-id="m.localId"
                 :class="[
-                  'msg-enter reveal-host max-w-[820px] w-full mx-auto rounded-2xl transition-shadow',
+                  'reveal-host max-w-[820px] w-full mx-auto rounded-2xl transition-shadow',
+                  m.isLiveNew ? 'msg-enter-bot' : '',
                   shouldDeferMessageRender(idx) ? 'msg-deferred-bot' : '',
                   focusedMatchId === m.localId ? 'ring-1 ring-[#f2b880]/70 bg-[#f2b880]/[0.04] px-2.5 py-1.5' : ''
                 ]"
@@ -1075,7 +1107,7 @@ async function clearTimeline() {
                   <BotToolTrail :tools="m.tools" @copy="copyMessageContent" />
 
                   <!-- Markdown Body -->
-                  <div v-if="m.content" v-html="renderSafeMarkdown(m.content)" />
+                  <div v-if="m.content" :class="m.streaming ? 'md-streaming' : ''" v-html="renderSafeMarkdown(m.content)" />
                   <div v-else-if="m.errorText" class="flex items-center justify-between gap-2 flex-wrap text-sm text-rose-400">
                     <span>[调用失败] {{ m.errorText }}</span>
                     <button
@@ -1233,14 +1265,12 @@ async function clearTimeline() {
       </div>
     </Transition>
 
-    <!-- View 2: Bot Routines -->
-    <BotRoutinesTab v-if="store.state.botView === 'routines'" />
-
-    <!-- View 3: Bot Profile, Tools & Scoped Memories -->
-    <BotConfigTab v-else-if="store.state.botView === 'config'" />
-
-    <!-- View 4: Activity Pulse -->
-    <BotActivityTab v-else-if="store.state.botView === 'activity'" />
+    <!-- Secondary Views: Directional Spatial Transitions -->
+    <Transition :name="botSubViewTransition" mode="out-in">
+      <BotRoutinesTab v-if="store.state.botView === 'routines'" key="routines" />
+      <BotConfigTab v-else-if="store.state.botView === 'config'" key="config" />
+      <BotActivityTab v-else-if="store.state.botView === 'activity'" key="activity" />
+    </Transition>
     </template>
 
     <GroupDrawer />

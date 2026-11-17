@@ -84,14 +84,14 @@ function carrySummaryToNewThread() {
 <template>
   <!-- Per-Bot / Per-Group Scoped Topic Threads Bar -->
   <div
-    class="px-4 md:px-6 py-1.5 border-b border-[#fff8ee]/8 bg-[#050811]/75 flex items-center gap-1.5 overflow-x-auto shrink-0 no-scrollbar"
+    class="chip-rail px-4 md:px-6 py-1.5 border-b border-[#fff8ee]/8 bg-[#050811]/75 flex items-center gap-1.5 overflow-x-auto shrink-0 no-scrollbar"
   >
     <span class="text-[10.5px] font-mono text-slate-500 shrink-0 mr-1">话题</span>
     <button
       type="button"
       @click="store.switchThread('')"
       :class="[
-        'px-2.5 py-1 rounded-lg text-[11px] whitespace-nowrap cursor-pointer transition-colors border',
+        'snap-chip px-2.5 py-1 rounded-lg text-[11px] whitespace-nowrap cursor-pointer transition-colors border',
         !store.state.activeThreadId
           ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f7cba0] font-medium'
           : 'border-[#fff8ee]/10 bg-transparent text-slate-400 hover:text-slate-200',
@@ -103,7 +103,7 @@ function carrySummaryToNewThread() {
     <div
       v-for="th in store.state.botThreads"
       :key="th.id"
-      class="inline-flex items-center gap-1 shrink-0"
+      class="snap-chip inline-flex items-center gap-1 shrink-0"
     >
       <input
         v-if="renamingThreadId === th.id"
@@ -180,42 +180,51 @@ function carrySummaryToNewThread() {
   </div>
 
   <!-- Active Thread Summary Pill Banner -->
-  <div
-    v-if="activeThreadObj?.summary"
-    class="px-4 md:px-6 py-1.5 border-b border-emerald-400/15 bg-emerald-500/[0.06] flex items-start justify-between gap-2 text-[11px] shrink-0"
+  <Transition
+    enter-active-class="transition-[opacity,transform] duration-180 ease-[var(--ease-snappy)] motion-reduce:duration-100"
+    enter-from-class="opacity-0 -translate-y-1.5 motion-reduce:translate-y-0"
+    enter-to-class="opacity-100 translate-y-0"
+    leave-active-class="transition-[opacity,transform] duration-120 ease-in motion-reduce:duration-75"
+    leave-from-class="opacity-100 translate-y-0"
+    leave-to-class="opacity-0 -translate-y-1 motion-reduce:translate-y-0"
   >
-    <button
-      type="button"
-      @click="summaryExpanded = !summaryExpanded"
-      class="flex items-start gap-1.5 min-w-0 flex-1 text-left cursor-pointer group"
+    <div
+      v-if="activeThreadObj?.summary"
+      class="px-4 md:px-6 py-1.5 border-b border-emerald-400/15 bg-emerald-500/[0.06] flex items-start justify-between gap-2 text-[11px] shrink-0"
     >
-      <span class="px-1.5 py-0.5 rounded bg-emerald-400/15 text-emerald-300 font-mono text-[10px] shrink-0">
-        前情提要
-      </span>
-      <span
-        :class="[
-          'text-slate-300 group-hover:text-white transition-colors',
-          summaryExpanded ? 'whitespace-pre-wrap' : 'truncate',
-        ]"
-      >
-        {{ activeThreadObj.summary }}
-      </span>
-    </button>
-    <div class="flex items-center gap-1.5 shrink-0">
       <button
         type="button"
-        @click="saveThreadSummaryToNote"
-        class="px-2 py-0.5 rounded border border-[#fff8ee]/12 text-[10.5px] text-slate-300 hover:text-white hover:border-[#fff8ee]/30 cursor-pointer"
+        @click="summaryExpanded = !summaryExpanded"
+        class="flex items-start gap-1.5 min-w-0 flex-1 text-left cursor-pointer group"
       >
-        存成文档
+        <span class="px-1.5 py-0.5 rounded bg-emerald-400/15 text-emerald-300 font-mono text-[10px] shrink-0">
+          前情提要
+        </span>
+        <span
+          :class="[
+            'text-slate-300 group-hover:text-white transition-colors',
+            summaryExpanded ? 'whitespace-pre-wrap' : 'truncate',
+          ]"
+        >
+          {{ activeThreadObj.summary }}
+        </span>
       </button>
-      <button
-        type="button"
-        @click="carrySummaryToNewThread"
-        class="px-2 py-0.5 rounded border border-emerald-400/30 text-[10.5px] text-emerald-300 hover:bg-emerald-400/15 cursor-pointer"
-      >
-        带摘要续开
-      </button>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button
+          type="button"
+          @click="saveThreadSummaryToNote"
+          class="px-2 py-0.5 rounded border border-[#fff8ee]/12 text-[10.5px] text-slate-300 hover:text-white hover:border-[#fff8ee]/30 cursor-pointer"
+        >
+          存成文档
+        </button>
+        <button
+          type="button"
+          @click="carrySummaryToNewThread"
+          class="px-2 py-0.5 rounded border border-emerald-400/30 text-[10.5px] text-emerald-300 hover:bg-emerald-400/15 cursor-pointer"
+        >
+          带摘要续开
+        </button>
+      </div>
     </div>
-  </div>
+  </Transition>
 </template>

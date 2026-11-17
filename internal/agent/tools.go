@@ -462,6 +462,76 @@ func BuiltinTools() []ToolDefinition {
 		{
 			Type: "function",
 			Function: ToolFunction{
+				Name:        "manage_stash",
+				Description: "管理与检索用户的「智能收藏与闪念匣（Smart Stash）」。支持 capture（秒收网页链接、B站分享文案、GitHub仓库或随手文字闪念并触发异步AI干货提炼）、search（基于全文检索引擎搜之前收藏过的文章/视频/闪念）、get（读取单条完整要点与正文快照）、update（修改标题/批注/标签/置顶/归档/标记已读）、delete（删除）。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"action": map[string]any{
+							"type":        "string",
+							"enum":        []string{"capture", "search", "get", "update", "delete"},
+							"description": "操作类型：capture | search | get | update | delete",
+						},
+						"id": map[string]any{
+							"type":        "string",
+							"description": "收藏条目 ID（get / update / delete 时使用）",
+						},
+						"raw_input": map[string]any{
+							"type":        "string",
+							"description": "当 action=capture 时必填：原始链接、手机端带标题前缀分享文案或纯文字闪念",
+						},
+						"user_note": map[string]any{
+							"type":        "string",
+							"description": "可选：附带的个人批注或想法备注",
+						},
+						"query": map[string]any{
+							"type":        "string",
+							"description": "当 action=search 时可选：中英文全文检索关键词（支持长短词召回）",
+						},
+						"filter": map[string]any{
+							"type":        "string",
+							"description": "可选：筛选视图 unread | all | pinned | note | archived",
+						},
+						"tag": map[string]any{
+							"type":        "string",
+							"description": "可选：按单个标签精确过滤",
+						},
+						"kind": map[string]any{
+							"type":        "string",
+							"description": "可选：按来源类型过滤 link | bilibili | github | note",
+						},
+						"title": map[string]any{
+							"type":        "string",
+							"description": "当 action=update 时可选：修改后的标题",
+						},
+						"tags": map[string]any{
+							"type":        "string",
+							"description": "可选：逗号分隔分类标签，如 AI,架构,Bilibili",
+						},
+						"status": map[string]any{
+							"type":        "string",
+							"description": "当 action=update 时可选：ready | archived",
+						},
+						"pinned": map[string]any{
+							"type":        "boolean",
+							"description": "当 action=update 时可选：是否置顶",
+						},
+						"mark_read": map[string]any{
+							"type":        "boolean",
+							"description": "当 action=update 时可选：设为 true 则增加已读计数",
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "当 action=search 时返回最大条数（默认 20，最大 50）",
+						},
+					},
+					"required": []string{"action"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: ToolFunction{
 				Name:        "send_notification",
 				Description: "主动向用户收件箱与桌面推送一条重要卡片通知（支持 high 高优先级提醒），适合在巡检异常、耗时分析完成或紧急提醒时使用。",
 				Parameters: map[string]any{
@@ -685,6 +755,8 @@ func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) 
 			out, err = e.toolManageTodos(toolCtx, cleanArgs)
 		case "manage_notes":
 			out, err = e.toolManageNotes(toolCtx, cleanArgs)
+		case "manage_stash":
+			out, err = e.toolManageStash(toolCtx, cleanArgs)
 		case "send_notification":
 			out, err = e.toolSendNotification(toolCtx, cleanArgs)
 		case "consult_bot":

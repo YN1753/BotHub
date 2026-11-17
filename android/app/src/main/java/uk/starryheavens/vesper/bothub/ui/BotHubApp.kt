@@ -23,13 +23,17 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -77,6 +81,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.Call
 import uk.starryheavens.vesper.bothub.data.AgentSessionSummary
@@ -85,6 +90,7 @@ import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.NotificationItem
+import uk.starryheavens.vesper.bothub.data.StashItemUi
 import uk.starryheavens.vesper.bothub.data.TaskItem
 import uk.starryheavens.vesper.bothub.sync.RealtimePushService
 
@@ -105,7 +111,9 @@ fun BotHubApp(
     prefs: BotHubPrefs,
     api: BotHubApiClient,
     sharedText: String?,
-    onSharedTextConsumed: () -> Unit
+    onSharedTextConsumed: () -> Unit,
+    requestedTab: Int? = null,
+    onRequestedTabConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -132,10 +140,25 @@ fun BotHubApp(
     var activeStreamCall by remember { mutableStateOf<Call?>(null) }
     val chatMessages = remember { mutableStateListOf<ChatTurnUi>() }
 
-    // Inbox & Hub State (Cold-start loads offline cache immediately)
+    // Inbox, Stash & Hub State (Cold-start loads offline cache immediately)
     var notifications by remember { mutableStateOf(prefs.loadCachedNotifications()) }
+    var stashItems by remember { mutableStateOf<List<StashItemUi>>(emptyList()) }
+    var stashQuery by remember { mutableStateOf("") }
+    var stashFilter by remember { mutableStateOf("unread") }
+    var stashLoading by remember { mutableStateOf(false) }
     var dashboard by remember { mutableStateOf<DashboardSnapshot?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
+
+    fun refreshStash(queryOverride: String = stashQuery, filterOverride: String = stashFilter) {
+        if (prefs.bearerToken.isEmpty()) return
+        scope.launch {
+            stashLoading = true
+            api.fetchStashItems(query = queryOverride, filter = filterOverride, limit = 80).onSuccess { items ->
+                stashItems = items
+            }
+            stashLoading = false
+        }
+    }
 
     fun loadBotTimeline(botId: String) {
         if (isStreaming || prefs.bearerToken.isEmpty()) return
@@ -191,6 +214,9 @@ fun BotHubApp(
             }
             api.fetchAgentSessions().onSuccess { sess ->
                 agentSessions = sess
+            }
+            api.fetchStashItems(query = stashQuery, filter = stashFilter, limit = 80).onSuccess { items ->
+                stashItems = items
             }
             isRefreshing = false
         }
@@ -302,7 +328,7 @@ fun BotHubApp(
         refreshAll()
     }
 
-    // Handle Android system share intent (ACTION_SEND -> Vesper DeepSeek summary)
+    // Handle Android system share / deep-chat forwarding intent
     LaunchedEffect(sharedText) {
         if (!sharedText.isNullOrBlank()) {
             selectedTab = 0
@@ -312,7 +338,23 @@ fun BotHubApp(
         }
     }
 
+    LaunchedEffect(requestedTab) {
+        if (requestedTab != null && requestedTab in 0..3) {
+            selectedTab = requestedTab
+            onRequestedTabConsumed()
+        }
+    }
+
+    LaunchedEffect(stashQuery, stashFilter) {
+        if (prefs.bearerToken.isEmpty()) return@LaunchedEffect
+        if (stashQuery.isNotBlank()) {
+            delay(240L)
+        }
+        refreshStash(stashQuery, stashFilter)
+    }
+
     val unreadCount = notifications.count { it.readAt.isEmpty() }
+    val unreadStashCount = stashItems.count { it.status != "archived" && it.readCount == 0 }
 
     Scaffold(
         modifier = Modifier
@@ -366,7 +408,7 @@ fun BotHubApp(
                         selectedTab = 0
                     },
                     icon = { Icon(Icons.Default.ChatBubbleOutline, contentDescription = "智能中枢对话") },
-                    label = { Text("对话 (Agent)") }
+                    label = { Text("对话") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 1,
@@ -386,17 +428,37 @@ fun BotHubApp(
                             Icon(Icons.Default.Inbox, contentDescription = "原生情报收件箱")
                         }
                     },
-                    label = { Text("情报箱 (Inbox)") }
+                    label = { Text("情报箱") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == 2,
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         selectedTab = 2
+                        refreshStash()
+                    },
+                    icon = {
+                        BadgedBox(
+                            badge = {
+                                if (unreadStashCount > 0) {
+                                    Badge { Text(unreadStashCount.toString()) }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.BookmarkBorder, contentDescription = "智能收藏与闪念匣")
+                        }
+                    },
+                    label = { Text("收藏匣") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 3,
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        selectedTab = 3
                         refreshAll()
                     },
                     icon = { Icon(Icons.Default.Dns, contentDescription = "资产与调度中枢") },
-                    label = { Text("中枢 (Hub)") }
+                    label = { Text("中枢") }
                 )
             }
         }
@@ -476,7 +538,81 @@ fun BotHubApp(
                 }
             )
 
-            2 -> HubTabScreen(
+            2 -> StashTabScreen(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                items = stashItems,
+                query = stashQuery,
+                activeFilter = stashFilter,
+                loading = stashLoading,
+                onQueryChange = { stashQuery = it },
+                onFilterChange = { stashFilter = it },
+                onCapture = { rawInput, userNote ->
+                    scope.launch {
+                        api.createStashItem(rawInput, userNote).onSuccess { (_, dedup) ->
+                            snackbarHostState.showSnackbar(
+                                if (dedup) "该链接已在收藏匣，已合并批注" else "已收入收藏匣，后台正提炼要点"
+                            )
+                            refreshStash()
+                        }.onFailure { err ->
+                            snackbarHostState.showSnackbar("收藏失败: ${err.message}")
+                        }
+                    }
+                },
+                onOpenUrl = { item ->
+                    if (item.url.isNotBlank()) {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.url)))
+                        }
+                    }
+                    scope.launch {
+                        api.updateStashItem(item.id, markRead = true)
+                        refreshStash()
+                    }
+                },
+                onTogglePin = { item ->
+                    scope.launch {
+                        api.updateStashItem(item.id, pinned = !item.pinned).onSuccess {
+                            refreshStash()
+                        }
+                    }
+                },
+                onReprocess = { item ->
+                    scope.launch {
+                        api.reprocessStashItem(item.id).onSuccess {
+                            snackbarHostState.showSnackbar("已重新排入 AI 提炼队列")
+                            refreshStash()
+                        }.onFailure { err ->
+                            snackbarHostState.showSnackbar("重提炼失败: ${err.message}")
+                        }
+                    }
+                },
+                onDelete = { item ->
+                    scope.launch {
+                        api.deleteStashItem(item.id).onSuccess {
+                            snackbarHostState.showSnackbar("已删除收藏条目")
+                            refreshStash()
+                        }
+                    }
+                },
+                onAskAi = { item ->
+                    selectedTab = 0
+                    val summaryBlock = buildString {
+                        append("请结合我收藏匣中的这条内容继续深入分析：\n")
+                        append("标题：${item.title.ifEmpty { item.rawInput.take(60) }}\n")
+                        if (item.url.isNotEmpty()) append("链接：${item.url}\n")
+                        if (item.aiTldr.isNotEmpty()) append("AI 结论：${item.aiTldr}\n")
+                        if (item.points.isNotEmpty()) {
+                            append("核心要点：\n")
+                            item.points.forEach { pt -> append("- $pt\n") }
+                        }
+                    }
+                    sendAgentPrompt(summaryBlock)
+                }
+            )
+
+            3 -> HubTabScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -598,6 +734,7 @@ fun BotHubApp(
         var urlInput by remember { mutableStateOf(prefs.serverUrl) }
         var passOrTokenInput by remember { mutableStateOf(prefs.bearerToken) }
         var serviceOn by remember { mutableStateOf(prefs.realtimeServiceEnabled) }
+        var zeroClickOn by remember { mutableStateOf(prefs.zeroClickCaptureEnabled) }
         var connecting by remember { mutableStateOf(false) }
 
         ModalBottomSheet(
@@ -650,6 +787,19 @@ fun BotHubApp(
                                 } else {
                                     context.stopService(svcIntent)
                                 }
+                            }
+                        )
+                    }
+                )
+                ListItem(
+                    headlineContent = { Text("系统分享零点击秒收") },
+                    supportingContent = { Text("开启后在任意应用点击系统分享将自动收入收藏匣并立即返回原应用") },
+                    trailingContent = {
+                        Switch(
+                            checked = zeroClickOn,
+                            onCheckedChange = { checked ->
+                                zeroClickOn = checked
+                                prefs.zeroClickCaptureEnabled = checked
                             }
                         )
                     }
@@ -870,8 +1020,8 @@ private fun AgentTabScreen(
                 )
             }
             val models = listOf(
-                "deepseek-flash" to "Flash 主力",
-                "deepseek-v4-pro" to "V4 Pro 深度"
+                "deepseek-flash" to "主力引擎",
+                "free-pool" to "免费模型池"
             )
             items(models) { (id, label) ->
                 FilterChip(
@@ -1346,6 +1496,319 @@ private fun MetricMiniCard(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
+        }
+    }
+}
+
+@Composable
+private fun StashTabScreen(
+    modifier: Modifier = Modifier,
+    items: List<StashItemUi>,
+    query: String,
+    activeFilter: String,
+    loading: Boolean,
+    onQueryChange: (String) -> Unit,
+    onFilterChange: (String) -> Unit,
+    onCapture: (String, String) -> Unit,
+    onOpenUrl: (StashItemUi) -> Unit,
+    onTogglePin: (StashItemUi) -> Unit,
+    onReprocess: (StashItemUi) -> Unit,
+    onDelete: (StashItemUi) -> Unit,
+    onAskAi: (StashItemUi) -> Unit
+) {
+    var captureInput by remember { mutableStateOf("") }
+    var captureNote by remember { mutableStateOf("") }
+    var showCaptureBar by remember { mutableStateOf(false) }
+
+    val filters = listOf(
+        "unread" to "未读干货",
+        "all" to "全部",
+        "pinned" to "置顶",
+        "note" to "纯闪念",
+        "archived" to "已归档"
+    )
+
+    Column(modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                placeholder = { Text("检索收藏标题 / AI 结论 / 正文...") },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedButton(
+                onClick = { showCaptureBar = !showCaptureBar },
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.sizeIn(minHeight = 48.dp)
+            ) {
+                Text(if (showCaptureBar) "收起" else "+ 秒收")
+            }
+        }
+
+        if (showCaptureBar) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = captureInput,
+                        onValueChange = { captureInput = it },
+                        placeholder = { Text("粘贴链接、B站分享文案或输入闪念...") },
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = captureNote,
+                            onValueChange = { captureNote = it },
+                            placeholder = { Text("附注 (可选)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = {
+                                val clean = captureInput.trim()
+                                if (clean.isNotEmpty()) {
+                                    onCapture(clean, captureNote.trim())
+                                    captureInput = ""
+                                    captureNote = ""
+                                    showCaptureBar = false
+                                }
+                            },
+                            enabled = captureInput.isNotBlank(),
+                            modifier = Modifier.sizeIn(minHeight = 48.dp)
+                        ) {
+                            Text("投喂")
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            items(filters) { (fid, label) ->
+                FilterChip(
+                    selected = activeFilter == fid,
+                    onClick = { onFilterChange(fid) },
+                    label = { Text(label) },
+                    modifier = Modifier.sizeIn(minHeight = 48.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(bottom = 16.dp)
+        ) {
+            if (items.isEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (loading) {
+                                "正在同步收藏与闪念匣..."
+                            } else if (query.isNotBlank()) {
+                                "未检索到匹配的收藏条目"
+                            } else {
+                                "当前视图暂无收藏条目。在任意 App 点击「系统分享 -> Vesper BotHub」即可半屏无感秒收。"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(20.dp)
+                        )
+                    }
+                }
+            }
+
+            items(items, key = { it.id }) { item ->
+                var expanded by remember { mutableStateOf(false) }
+                val sourceBadge = when (item.kind) {
+                    "bilibili" -> "Bilibili"
+                    "github" -> "GitHub"
+                    "note" -> "闪念"
+                    else -> "Web"
+                }
+
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (item.readCount == 0 && item.status != "archived") {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        }
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSize()
+                        .clickable { expanded = !expanded }
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = buildString {
+                                    append("[$sourceBadge]")
+                                    if (item.pinned) append(" [置顶]")
+                                    if (item.status == "processing") append(" [AI 提炼中]")
+                                    if (item.domain.isNotEmpty()) append(" · ${item.domain}")
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = item.createdAt.take(16),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Text(
+                            text = item.title.ifEmpty { item.rawInput.take(72) },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        if (item.aiTldr.isNotEmpty()) {
+                            Text(
+                                text = item.aiTldr,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        } else if (item.status == "processing") {
+                            Text(
+                                text = "后台正在抓取网页快照并提炼核心结论...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else if (item.errorMsg.isNotEmpty()) {
+                            Text(
+                                text = item.errorMsg,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+
+                        if (item.tags.isNotEmpty()) {
+                            Text(
+                                text = "标签: ${item.tags}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        if (expanded) {
+                            if (item.points.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "AI 干货要点",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                                item.points.forEach { pt ->
+                                    Text(
+                                        text = "- $pt",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                            if (item.userNote.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "个人批注: ${item.userNote}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                item {
+                                    Button(
+                                        onClick = { onOpenUrl(item) },
+                                        modifier = Modifier.sizeIn(minHeight = 48.dp)
+                                    ) {
+                                        if (item.url.isNotEmpty()) {
+                                            Icon(Icons.Default.OpenInNew, contentDescription = null)
+                                            Text(" 打开原链")
+                                        } else {
+                                            Text("标为已阅")
+                                        }
+                                    }
+                                }
+                                item {
+                                    OutlinedButton(
+                                        onClick = { onAskAi(item) },
+                                        modifier = Modifier.sizeIn(minHeight = 48.dp)
+                                    ) {
+                                        Text("AI 深聊")
+                                    }
+                                }
+                                item {
+                                    OutlinedButton(
+                                        onClick = { onTogglePin(item) },
+                                        modifier = Modifier.sizeIn(minHeight = 48.dp)
+                                    ) {
+                                        Text(if (item.pinned) "取消置顶" else "置顶")
+                                    }
+                                }
+                                item {
+                                    OutlinedButton(
+                                        onClick = { onReprocess(item) },
+                                        modifier = Modifier.sizeIn(minHeight = 48.dp)
+                                    ) {
+                                        Text("重提炼")
+                                    }
+                                }
+                                item {
+                                    OutlinedButton(
+                                        onClick = { onDelete(item) },
+                                        modifier = Modifier.sizeIn(minHeight = 48.dp)
+                                    ) {
+                                        Icon(Icons.Default.DeleteOutline, contentDescription = "删除")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
