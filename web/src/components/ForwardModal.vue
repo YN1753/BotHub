@@ -55,12 +55,13 @@ async function submitForward(jumpAfter: boolean) {
       content: payload.content,
       note: note.value.trim(),
     })
-    const targetName = store.state.bots.find((b) => b.id === selectedId.value)?.name || selectedId.value
+    const targetId = selectedId.value
+    const targetName = store.state.bots.find((b) => b.id === targetId)?.name || targetId
     closeModal()
     store.notify(`已转发至「${targetName}」`)
-    await store.loadDashboard(false)
+    void store.refreshWorkspaceSlices(['bots'])
     if (jumpAfter) {
-      await store.jumpToBot(selectedId.value)
+      await store.jumpToBot(targetId)
     }
   } catch (err: any) {
     store.notify(err.message || '转发失败')

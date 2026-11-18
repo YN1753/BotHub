@@ -427,6 +427,7 @@ export function useAppStore() {
             state.stats.sent_pushes = Number(data.stats.sent_pushes) || 0
           }
           if (data.model_health !== undefined && data.model_health) state.modelHealth = data.model_health
+          saveFastBootSnapshot()
         })
         .catch(() => {
           return loadDashboard(false)

@@ -77,15 +77,18 @@ async function askBotAnalyze(n: { id: number; source: string; title: string; sum
 }
 
 async function convertInboxToTodo(n: { id: number; title: string; summary: string; markdown: string; priority: string }) {
-  await markRead(n.id)
+  void markRead(n.id)
   try {
-    await BotHubApi.createTodo({
+    const res = await BotHubApi.createTodo({
       title: n.title,
       notes: (n.summary || n.markdown || '').slice(0, 260),
       priority: n.priority === 'high' ? 'high' : 'normal',
       status: 'pending',
     })
-    await store.loadDashboard(false)
+    if (res?.todo) {
+      store.state.todos = [res.todo, ...store.state.todos.filter((x) => x.id !== res.todo.id)]
+    }
+    void store.refreshWorkspaceSlices(['todos'])
     store.notify('已转入个人待办清单')
   } catch (err: any) {
     store.notify(err.message || '转待办失败')
@@ -93,14 +96,17 @@ async function convertInboxToTodo(n: { id: number; title: string; summary: strin
 }
 
 async function saveInboxToNote(n: { id: number; source: string; title: string; summary: string; markdown: string }) {
-  await markRead(n.id)
+  void markRead(n.id)
   try {
-    await BotHubApi.createNote({
+    const res = await BotHubApi.createNote({
       title: n.title,
       category: n.source || 'inbox',
       content: n.markdown || n.summary || n.title,
     })
-    await store.loadDashboard(false)
+    if (res?.note) {
+      store.state.notes = [res.note, ...store.state.notes.filter((x) => x.id !== res.note.id)]
+    }
+    void store.refreshWorkspaceSlices(['notes'])
     store.notify(`已归档至工作文档《${n.title}》`)
   } catch (err: any) {
     store.notify(err.message || '存文档失败')
@@ -110,28 +116,34 @@ async function saveInboxToNote(n: { id: number; source: string; title: string; s
 async function markRead(id: number) {
   const item = store.state.notifications.find((n) => n.id === id)
   if (!item || item.read_at) return
-  await BotHubApi.markNotificationRead(id).catch(() => {})
   item.read_at = new Date().toISOString()
+  await BotHubApi.markNotificationRead(id).catch(() => {})
 }
 
 async function markAllRead() {
-  await BotHubApi.markAllNotificationsRead()
   const now = new Date().toISOString()
   store.state.notifications.forEach((n) => {
     if (!n.read_at) n.read_at = now
   })
   store.notify('全部情报已标记为已读')
+  await BotHubApi.markAllNotificationsRead().catch(() => {})
 }
 
 async function clearReadItems() {
-  const readCount = store.state.notifications.filter((n) => !!n.read_at).length
+  const prev = [...store.state.notifications]
+  const readCount = prev.filter((n) => !!n.read_at).length
   if (readCount === 0) {
     store.notify('当前没有可清理的已读情报')
     return
   }
-  const res = await BotHubApi.clearReadNotifications()
-  store.state.notifications = store.state.notifications.filter((n) => !n.read_at)
-  store.notify(`已清理 ${res.deleted || readCount} 条已读情报`)
+  store.state.notifications = prev.filter((n) => !n.read_at)
+  store.notify(`已清理 ${readCount} 条已读情报`)
+  try {
+    await BotHubApi.clearReadNotifications()
+  } catch {
+    store.state.notifications = prev
+    store.notify('清理失败')
+  }
 }
 
 async function toggleDesktopNotify() {

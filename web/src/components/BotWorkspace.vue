@@ -136,14 +136,36 @@ function jumpSearchMatch(delta: number) {
 }
 
 watch(chatSearchMatches, (list) => {
-  chatSearchCursor.value = 0
   if (list.length > 0) {
+    const latestIdx = list.length - 1
+    chatSearchCursor.value = latestIdx
     nextTick(() => {
-      const el = scrollContainerRef.value?.querySelector(`[data-msg-id="${CSS.escape(list[0])}"]`)
+      const el = scrollContainerRef.value?.querySelector(`[data-msg-id="${CSS.escape(list[latestIdx])}"]`)
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     })
+  } else {
+    chatSearchCursor.value = 0
   }
 })
+
+function handleSelectedModelChange(nextModel: string) {
+  selectedModel.value = nextModel
+  const b = bot.value
+  if (b) {
+    const serverModel = nextModel === 'primary' ? 'deepseek-flash' : nextModel
+    b.model = serverModel
+    void BotHubApi.updateBot(b.id, { model: serverModel }).catch(() => {})
+  }
+}
+
+function handleEnableThinkingChange(nextEnabled: boolean) {
+  enableThinking.value = nextEnabled
+  const b = bot.value
+  if (b) {
+    b.enable_thinking = nextEnabled
+    void BotHubApi.updateBot(b.id, { enable_thinking: nextEnabled }).catch(() => {})
+  }
+}
 
 function findPrecedingUserPrompt(idx: number): string {
   for (let i = idx - 1; i >= 0; i--) {
@@ -725,8 +747,8 @@ async function clearTimeline() {
             ref="composerRef"
             :class="isStreamEmpty ? 'mb-auto' : ''"
             v-model:input-prompt="inputPrompt"
-            v-model:selected-model="selectedModel"
-            v-model:enable-thinking="enableThinking"
+            :selected-model="selectedModel"
+            :enable-thinking="enableThinking"
             v-model:reply-target="replyTarget"
             :stream-status="streamStatus"
             :relay-steps="relaySteps"
@@ -735,6 +757,8 @@ async function clearTimeline() {
             :last-prompt="lastPrompt"
             :centered-stage="isStreamEmpty"
             :starter-chips="starterChips"
+            @update:selected-model="handleSelectedModelChange"
+            @update:enable-thinking="handleEnableThinkingChange"
             @submit-prompt="sendPrompt"
             @stop-stream="stopStream"
             @clear-timeline="clearTimeline"

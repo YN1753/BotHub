@@ -135,7 +135,7 @@ async function inviteMember(memberBot: Bot) {
       })
     }
     store.notify(`已邀请「${memberBot.name}」加入群聊`)
-    await store.loadDashboard(false)
+    void store.refreshWorkspaceSlices(['bots'])
   } catch (err: any) {
     store.notify(err.message)
   } finally {
@@ -174,7 +174,7 @@ async function removeMember(memberBot: Bot) {
       })
     }
     store.notify(`已将「${memberBot.name}」移出群聊`)
-    await store.loadDashboard(false)
+    void store.refreshWorkspaceSlices(['bots'])
   } catch (err: any) {
     store.notify(err.message)
   } finally {
@@ -197,8 +197,8 @@ async function saveGroupMeta() {
       bot.value.group_mode = res.bot.group_mode
     }
     store.notify('群聊设置与公告已保存')
-    await store.loadDashboard(false)
-    await store.selectBot(bot.value.id)
+    void store.refreshWorkspaceSlices(['bots'])
+    void store.selectBot(bot.value.id)
   } catch (err: any) {
     store.notify(err.message)
   } finally {
@@ -227,10 +227,11 @@ async function launchAdhocGroup() {
     })
     store.notify(`已拉起群聊「${res.bot.name}」`)
     closeDrawer()
-    await store.loadDashboard(false)
-    if (res.bot?.id) {
-      await store.selectBot(res.bot.id)
+    if (res.bot) {
+      store.state.bots = [res.bot, ...store.state.bots.filter((b) => b.id !== res.bot.id)]
+      void store.selectBot(res.bot.id)
     }
+    void store.refreshWorkspaceSlices(['bots'])
   } catch (err: any) {
     store.notify(err.message)
   } finally {
@@ -272,13 +273,15 @@ async function handleCreateFreshThread() {
 async function handleDisbandGroup() {
   if (!bot.value) return
   if (!window.confirm(`确定解散群聊 [${bot.value.name}] 吗？群消息记录将被清除。`)) return
-  await BotHubApi.deleteBot(bot.value.id)
-  store.notify('群聊已解散')
+  const disbandedId = bot.value.id
+  store.state.bots = store.state.bots.filter((b) => b.id !== disbandedId)
   closeDrawer()
-  await store.loadDashboard(false)
+  store.notify('群聊已解散')
   if (store.state.bots.length > 0) {
-    await store.selectBot(store.state.bots[0].id)
+    void store.selectBot(store.state.bots[0].id)
   }
+  await BotHubApi.deleteBot(disbandedId)
+  void store.refreshWorkspaceSlices(['bots'])
 }
 </script>
 

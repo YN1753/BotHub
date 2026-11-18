@@ -243,27 +243,45 @@ async function handleCapture() {
   }
 }
 
+async function pasteFromClipboard() {
+  try {
+    const text = (await navigator.clipboard?.readText())?.trim() || ''
+    if (!text) {
+      store.notify('剪贴板为空')
+      return
+    }
+    rawInput.value = text
+    nextTick(() => captureInputRef.value?.focus())
+  } catch {
+    store.notify('浏览器未授权读取剪贴板，请直接 Ctrl/Cmd+V 粘贴')
+  }
+}
+
 async function openSourceAndMarkRead(item: StashItem) {
   if (item.url) {
     window.open(item.url, '_blank', 'noopener,noreferrer')
   }
+  item.read_count = (item.read_count || 0) + 1
   try {
     await BotHubApi.updateStash(item.id, { mark_read: true })
-    await store.refreshWorkspaceSlices(['stash'])
-    if (needsRemoteQuery.value) await fetchFilteredStash()
+    void store.refreshWorkspaceSlices(['stash'])
+    if (needsRemoteQuery.value) void fetchFilteredStash()
   } catch {
     // ignore background counter error
   }
 }
 
 async function togglePin(item: StashItem) {
+  const prevPin = item.pinned
+  const nextPin = !prevPin
+  item.pinned = nextPin
+  store.notify(nextPin ? '已置顶该条收藏' : '已取消置顶')
   try {
-    const nextPin = !item.pinned
     await BotHubApi.updateStash(item.id, { pinned: nextPin })
-    await store.refreshWorkspaceSlices(['stash'])
-    if (needsRemoteQuery.value) await fetchFilteredStash()
-    store.notify(nextPin ? '已置顶该条收藏' : '已取消置顶')
+    void store.refreshWorkspaceSlices(['stash'])
+    if (needsRemoteQuery.value) void fetchFilteredStash()
   } catch (err: any) {
+    item.pinned = prevPin
     store.notify(err.message || '置顶操作失败')
   }
 }
@@ -319,26 +337,37 @@ async function triggerReprocess(item: StashItem) {
 }
 
 async function toggleArchive(item: StashItem) {
-  const nextStatus = item.status === 'archived' ? 'ready' : 'archived'
+  const prevStatus = item.status
+  const nextStatus = prevStatus === 'archived' ? 'ready' : 'archived'
+  item.status = nextStatus
+  store.notify(nextStatus === 'archived' ? '已归档收纳' : '已恢复至活跃收藏匣')
   try {
     await BotHubApi.updateStash(item.id, { status: nextStatus })
-    await store.refreshWorkspaceSlices(['stash'])
-    if (needsRemoteQuery.value) await fetchFilteredStash()
-    store.notify(nextStatus === 'archived' ? '已归档收纳' : '已恢复至活跃收藏匣')
+    void store.refreshWorkspaceSlices(['stash'])
+    if (needsRemoteQuery.value) void fetchFilteredStash()
   } catch (err: any) {
+    item.status = prevStatus
     store.notify(err.message || '归档状态更新失败')
   }
 }
 
 async function removeStash(item: StashItem) {
   if (!window.confirm(`确定彻底删除「${item.title || '该条收藏'}」吗？`)) return
+  const prevStash = [...store.state.stash]
+  const prevRemote = remoteItems.value ? [...remoteItems.value] : null
+  store.state.stash = store.state.stash.filter((x) => x.id !== item.id)
+  if (remoteItems.value) {
+    remoteItems.value = remoteItems.value.filter((x) => x.id !== item.id)
+  }
+  if (editingId.value === item.id) editingId.value = null
+  store.notify('已删除收藏条目')
   try {
     await BotHubApi.deleteStash(item.id)
-    if (editingId.value === item.id) editingId.value = null
-    await store.refreshWorkspaceSlices(['stash'])
-    if (needsRemoteQuery.value) await fetchFilteredStash()
-    store.notify('已删除收藏条目')
+    void store.refreshWorkspaceSlices(['stash'])
+    if (needsRemoteQuery.value) void fetchFilteredStash()
   } catch (err: any) {
+    store.state.stash = prevStash
+    if (prevRemote !== null) remoteItems.value = prevRemote
     store.notify(err.message || '删除收藏失败')
   }
 }
@@ -353,17 +382,22 @@ function startEdit(item: StashItem) {
 async function saveEdit(item: StashItem) {
   if (savingEdit.value) return
   savingEdit.value = true
+  const snapshot = { title: item.title, user_note: item.user_note, tags: item.tags }
+  item.title = editTitle.value.trim()
+  item.user_note = editUserNote.value.trim()
+  item.tags = editTags.value.trim()
+  editingId.value = null
   try {
     await BotHubApi.updateStash(item.id, {
-      title: editTitle.value.trim(),
-      user_note: editUserNote.value.trim(),
-      tags: editTags.value.trim(),
+      title: item.title,
+      user_note: item.user_note,
+      tags: item.tags,
     })
-    editingId.value = null
-    await store.refreshWorkspaceSlices(['stash'])
-    if (needsRemoteQuery.value) await fetchFilteredStash()
+    void store.refreshWorkspaceSlices(['stash'])
+    if (needsRemoteQuery.value) void fetchFilteredStash()
     store.notify('收藏信息已更新')
   } catch (err: any) {
+    Object.assign(item, snapshot)
     store.notify(err.message || '更新失败')
   } finally {
     savingEdit.value = false
@@ -387,6 +421,13 @@ async function saveEdit(item: StashItem) {
             class="w-full min-h-[38px] max-h-28 [field-sizing:content] resize-none rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60 leading-relaxed"
           ></textarea>
         </div>
+        <button
+          type="button"
+          @click="pasteFromClipboard"
+          class="min-h-[38px] px-2.5 rounded-xl border border-[#f2b880]/30 bg-[#f2b880]/10 text-[11px] text-[#f7cba0] hover:bg-[#f2b880]/20 cursor-pointer shrink-0"
+        >
+          粘贴
+        </button>
         <button
           type="button"
           :aria-pressed="showNoteField || Boolean(userNoteInput)"

@@ -105,7 +105,13 @@ async function handleSaveNote() {
     }
     editingNote.value = false
     selectedNoteId.value = saved.id
-    await store.refreshWorkspaceSlices(['notes'])
+    const existingIdx = store.state.notes.findIndex((x) => x.id === saved.id)
+    if (existingIdx >= 0) {
+      store.state.notes.splice(existingIdx, 1, saved)
+    } else {
+      store.state.notes = [saved, ...store.state.notes]
+    }
+    void store.refreshWorkspaceSlices(['notes'])
     store.notify('工作文档已保存')
   } catch (err: any) {
     store.notify(err.message || '保存文档失败')
@@ -116,13 +122,16 @@ async function handleSaveNote() {
 
 async function removeNote(id: string) {
   if (!window.confirm('确定删除这份工作文档吗？')) return
+  const prevNotes = [...store.state.notes]
+  store.state.notes = store.state.notes.filter((x) => x.id !== id)
+  if (selectedNoteId.value === id) selectedNoteId.value = ''
+  editingNote.value = false
+  store.notify('工作文档已删除')
   try {
     await BotHubApi.deleteNote(id)
-    if (selectedNoteId.value === id) selectedNoteId.value = ''
-    editingNote.value = false
-    await store.refreshWorkspaceSlices(['notes'])
-    store.notify('工作文档已删除')
+    void store.refreshWorkspaceSlices(['notes'])
   } catch (err: any) {
+    store.state.notes = prevNotes
     store.notify(err.message || '删除文档失败')
   }
 }

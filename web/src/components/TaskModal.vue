@@ -223,7 +223,7 @@ async function handleSubmit() {
       store.notify('任务配置已更新')
     }
     closeModal()
-    await store.loadDashboard(false)
+    void store.refreshWorkspaceSlices(['tasks'])
   } catch (err: any) {
     store.notify(err.message)
   } finally {
@@ -234,10 +234,12 @@ async function handleSubmit() {
 async function handleDelete() {
   if (isNew.value || !id.value) return
   if (!window.confirm(`确定删除调度任务 [${name.value}] 吗？`)) return
-  await BotHubApi.deleteTask(id.value)
-  store.notify('任务已删除')
+  const targetId = id.value
+  store.state.tasks = store.state.tasks.filter((t) => t.id !== targetId)
   closeModal()
-  await store.loadDashboard(false)
+  store.notify('任务已删除')
+  await BotHubApi.deleteTask(targetId)
+  void store.refreshWorkspaceSlices(['tasks'])
 }
 </script>
 

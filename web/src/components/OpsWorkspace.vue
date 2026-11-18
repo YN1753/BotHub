@@ -27,6 +27,7 @@ const sortByUrgency = ref(false)
 const taskSearch = ref('')
 const taskStatusFilter = ref<'all' | 'enabled' | 'paused'>('all')
 const syncing = ref(false)
+const runningTaskId = ref('')
 const assetGridRef = ref<HTMLElement | null>(null)
 const taskGridRef = ref<HTMLElement | null>(null)
 const taskSectionRef = ref<HTMLElement | null>(null)
@@ -175,7 +176,7 @@ async function handleSyncAssets() {
   try {
     const res = await BotHubApi.syncAssets()
     store.notify(res.summary || '资产嗅探同步完成')
-    await store.loadDashboard(false)
+    void store.refreshWorkspaceSlices(['assets'])
   } catch (err: any) {
     store.notify(err.message)
   } finally {
@@ -226,21 +227,29 @@ function exportAssetsCsv() {
 }
 
 async function runTaskNow(id: string) {
+  if (runningTaskId.value) return
+  runningTaskId.value = id
   try {
     const res = await BotHubApi.runTask(id)
     store.notify(res.summary || '执行完成')
-    await store.loadDashboard(false)
+    void store.refreshWorkspaceSlices(['tasks', 'notifications', 'bots'])
   } catch (err: any) {
     store.notify(err.message)
+  } finally {
+    runningTaskId.value = ''
   }
 }
 
 async function toggleTaskEnabled(id: string, enabled: boolean) {
+  const target = store.state.tasks.find((t) => t.id === id)
+  const nextEnabled = !enabled
+  if (target) target.enabled = nextEnabled
+  store.notify(nextEnabled ? '任务已启用' : '任务已暂停')
   try {
-    await BotHubApi.updateTask(id, { enabled: !enabled })
-    store.notify(!enabled ? '任务已启用' : '任务已暂停')
-    await store.loadDashboard(false)
+    await BotHubApi.updateTask(id, { enabled: nextEnabled })
+    void store.refreshWorkspaceSlices(['tasks'])
   } catch (err: any) {
+    if (target) target.enabled = enabled
     store.notify(err.message)
   }
 }
@@ -618,10 +627,11 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
+                    :disabled="runningTaskId === t.id"
                     @click="runTaskNow(t.id)"
-                    class="btn-tactile-gold min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-xl text-xs cursor-pointer"
+                    class="btn-tactile-gold min-h-[44px] sm:min-h-[32px] px-3 py-1.5 rounded-xl text-xs cursor-pointer disabled:opacity-60"
                   >
-                    立即执行
+                    {{ runningTaskId === t.id ? '执行中...' : '立即执行' }}
                   </button>
                   <button
                     type="button"

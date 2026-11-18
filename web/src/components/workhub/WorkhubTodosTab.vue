@@ -125,22 +125,32 @@ watch(
 )
 
 async function handleAddTodo() {
-  if (!newTodoTitle.value.trim() || savingTodo.value) return
+  const cleanTitle = newTodoTitle.value.trim()
+  if (!cleanTitle || savingTodo.value) return
+  const prio = newTodoPriority.value
+  const due = newTodoDueAt.value.trim()
+  const botId = newTodoBotId.value
   savingTodo.value = true
+  newTodoTitle.value = ''
+  newTodoDueAt.value = ''
+  newTodoPriority.value = 'normal'
   try {
-    await BotHubApi.createTodo({
-      title: newTodoTitle.value.trim(),
-      priority: newTodoPriority.value,
-      due_at: newTodoDueAt.value.trim(),
-      bot_id: newTodoBotId.value,
+    const res = await BotHubApi.createTodo({
+      title: cleanTitle,
+      priority: prio,
+      due_at: due,
+      bot_id: botId,
       status: 'pending',
     })
-    newTodoTitle.value = ''
-    newTodoDueAt.value = ''
-    newTodoPriority.value = 'normal'
-    await store.loadDashboard(false)
+    if (res?.todo) {
+      store.state.todos = [res.todo, ...store.state.todos.filter((x) => x.id !== res.todo.id)]
+    }
+    void store.refreshWorkspaceSlices(['todos'])
     store.notify('待办已添加至个人行动清单')
   } catch (err: any) {
+    newTodoTitle.value = cleanTitle
+    newTodoDueAt.value = due
+    newTodoPriority.value = prio
     store.notify(err.message || '添加待办失败')
   } finally {
     savingTodo.value = false
@@ -157,59 +167,84 @@ function startEditTodo(t: TodoItem) {
 }
 
 async function saveEditTodo(t: TodoItem) {
-  if (!editTodoTitle.value.trim()) return
+  const cleanTitle = editTodoTitle.value.trim()
+  if (!cleanTitle) return
+  const snapshot = { ...t }
+  t.title = cleanTitle
+  t.notes = editTodoNotes.value.trim()
+  t.priority = editTodoPriority.value
+  t.due_at = editTodoDueAt.value.trim()
+  t.bot_id = editTodoBotId.value
+  editingTodoId.value = null
   try {
     await BotHubApi.updateTodo(t.id, {
-      title: editTodoTitle.value.trim(),
-      notes: editTodoNotes.value.trim(),
-      priority: editTodoPriority.value,
-      due_at: editTodoDueAt.value.trim(),
-      bot_id: editTodoBotId.value,
+      title: t.title,
+      notes: t.notes,
+      priority: t.priority,
+      due_at: t.due_at,
+      bot_id: t.bot_id,
     })
-    editingTodoId.value = null
-    await store.loadDashboard(false)
+    void store.refreshWorkspaceSlices(['todos'])
     store.notify('待办已更新')
   } catch (err: any) {
+    Object.assign(t, snapshot)
     store.notify(err.message || '更新待办失败')
   }
 }
 
 async function toggleTodoDone(t: TodoItem) {
-  const nextStatus = t.status === 'done' ? 'pending' : 'done'
+  const prevStatus = t.status
+  const nextStatus = prevStatus === 'done' ? 'pending' : 'done'
+  t.status = nextStatus
   try {
     await BotHubApi.updateTodo(t.id, { status: nextStatus })
-    await store.loadDashboard(false)
+    void store.refreshWorkspaceSlices(['todos'])
   } catch (err: any) {
+    t.status = prevStatus
     store.notify(err.message || '更新状态失败')
   }
 }
 
 async function cycleTodoProgress(t: TodoItem) {
-  const next = t.status === 'pending' ? 'doing' : t.status === 'doing' ? 'done' : 'pending'
+  const prevStatus = t.status
+  const next = prevStatus === 'pending' ? 'doing' : prevStatus === 'doing' ? 'done' : 'pending'
+  t.status = next
   try {
     await BotHubApi.updateTodo(t.id, { status: next })
-    await store.loadDashboard(false)
+    void store.refreshWorkspaceSlices(['todos'])
   } catch (err: any) {
+    t.status = prevStatus
     store.notify(err.message || '更新状态失败')
   }
 }
 
 async function removeTodo(id: string) {
+  const prevList = [...store.state.todos]
+  store.state.todos = store.state.todos.filter((t) => t.id !== id)
+  if (editingTodoId.value === id) editingTodoId.value = null
   try {
     await BotHubApi.deleteTodo(id)
-    if (editingTodoId.value === id) editingTodoId.value = null
-    await store.loadDashboard(false)
+    void store.refreshWorkspaceSlices(['todos'])
   } catch (err: any) {
+    store.state.todos = prevList
     store.notify(err.message || '删除失败')
   }
 }
 
 async function clearDoneTodos() {
+  const prevList = [...store.state.todos]
+  const doneCount = prevList.filter((t) => t.status === 'done').length
+  if (doneCount === 0) {
+    store.notify('暂无已完成待办可清理')
+    return
+  }
+  store.state.todos = prevList.filter((t) => t.status !== 'done')
   try {
     const res = await BotHubApi.clearDoneTodos()
-    await store.loadDashboard(false)
-    store.notify(res.removed > 0 ? `已清理 ${res.removed} 项已完成待办` : '暂无已完成待办可清理')
+    void store.refreshWorkspaceSlices(['todos'])
+    store.notify(`已清理 ${res.removed || doneCount} 项已完成待办`)
   } catch (err: any) {
+    store.state.todos = prevList
     store.notify(err.message || '清理失败')
   }
 }

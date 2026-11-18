@@ -22,8 +22,8 @@ async function runRoutine(taskId: string) {
   try {
     const res = await BotHubApi.runTask(taskId)
     store.notify(res.summary || '执行完成')
-    await store.loadDashboard(false)
-    await store.selectBot(store.state.activeBotId)
+    void store.refreshWorkspaceSlices(['tasks', 'bots', 'notifications'])
+    void store.selectBot(store.state.activeBotId)
   } catch (err: any) {
     store.notify(err.message)
   } finally {
@@ -32,11 +32,15 @@ async function runRoutine(taskId: string) {
 }
 
 async function toggleRoutineEnabled(taskId: string, enabled: boolean) {
+  const target = store.state.tasks.find((t) => t.id === taskId)
+  const nextEnabled = !enabled
+  if (target) target.enabled = nextEnabled
+  store.notify(nextEnabled ? '例程已启用' : '例程已暂停')
   try {
-    await BotHubApi.updateTask(taskId, { enabled: !enabled })
-    store.notify(!enabled ? '例程已启用' : '例程已暂停')
-    await store.loadDashboard(false)
+    await BotHubApi.updateTask(taskId, { enabled: nextEnabled })
+    void store.refreshWorkspaceSlices(['tasks'])
   } catch (err: any) {
+    if (target) target.enabled = enabled
     store.notify(err.message)
   }
 }

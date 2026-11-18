@@ -274,10 +274,11 @@ async function handleSubmit() {
       groupAnnouncement.value = ''
       groupMode.value = 'smart'
       closeModal()
-      await store.loadDashboard(false)
-      if (res.bot?.id) {
-        await store.selectBot(res.bot.id)
+      if (res.bot) {
+        store.state.bots = [res.bot, ...store.state.bots.filter((b) => b.id !== res.bot.id)]
+        void store.selectBot(res.bot.id)
       }
+      void store.refreshWorkspaceSlices(['bots'])
     } catch (err: any) {
       store.notify(err.message)
     } finally {
@@ -315,10 +316,11 @@ async function handleSubmit() {
     systemPrompt.value = ''
     selectedSkillIds.value = []
     closeModal()
-    await store.loadDashboard(false)
-    if (res.bot?.id) {
-      await store.selectBot(res.bot.id)
+    if (res.bot) {
+      store.state.bots = [res.bot, ...store.state.bots.filter((b) => b.id !== res.bot.id)]
+      void store.selectBot(res.bot.id)
     }
+    void store.refreshWorkspaceSlices(['bots'])
   } catch (err: any) {
     store.notify(err.message)
   } finally {
