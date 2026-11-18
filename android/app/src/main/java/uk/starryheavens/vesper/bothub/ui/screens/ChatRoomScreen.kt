@@ -53,11 +53,16 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -66,8 +71,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,6 +81,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -86,6 +90,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
@@ -93,7 +99,10 @@ import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
 import uk.starryheavens.vesper.bothub.ui.components.FloatingGlassPopover
 import uk.starryheavens.vesper.bothub.ui.components.GlassMenuAction
 import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
+import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
+import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
 import uk.starryheavens.vesper.bothub.ui.components.RichMarkdownText
+import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
 import uk.starryheavens.vesper.bothub.ui.components.SpecularHairline
 import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
 import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
@@ -108,7 +117,7 @@ private data class PlusActionTile(
     val onClick: () -> Unit
 )
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ChatRoomScreen(
     activeBot: BotItem?,
@@ -126,6 +135,8 @@ fun ChatRoomScreen(
     onModelChange: (String) -> Unit,
     onThinkingChange: (Boolean) -> Unit,
     onCopyText: (String) -> Unit,
+    onDeleteTurn: (ChatTurnUi) -> Unit = {},
+    onForwardMessage: (BotItem, String, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
     onOpenChatInfo: () -> Unit,
     onOpenBotProfile: (BotItem) -> Unit,
     onInviteToGroup: () -> Unit,
@@ -135,11 +146,13 @@ fun ChatRoomScreen(
     BackHandler(onBack = onBack)
 
     val haptics = LocalHapticFeedback.current
+    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var showPlusDrawer by remember { mutableStateOf(false) }
     var composerFocused by remember { mutableStateOf(false) }
     var quoteTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var forwardPayload by remember { mutableStateOf<Pair<String, String>?>(null) }
     var dismissAnnouncement by remember(activeBot?.id) { mutableStateOf(false) }
 
     val isGroup = activeBot?.isGroup == true
@@ -187,6 +200,12 @@ fun ChatRoomScreen(
     LaunchedEffect(composerFocused) {
         if (composerFocused) {
             showPlusDrawer = false
+        }
+    }
+
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress && composerFocused && !isNearBottom) {
+            focusManager.clearFocus()
         }
     }
 
@@ -379,6 +398,7 @@ fun ChatRoomScreen(
                         indication = null
                     ) {
                         if (showPlusDrawer) showPlusDrawer = false
+                        if (composerFocused) focusManager.clearFocus()
                     },
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
@@ -522,6 +542,18 @@ fun ChatRoomScreen(
                                         icon = Icons.Default.FormatQuote,
                                         iconTint = Color(0xFFA5B4FC),
                                         onClick = { quoteTarget = "我" to msg.content }
+                                    ),
+                                    GlassMenuAction(
+                                        label = "转发",
+                                        icon = Icons.Default.Share,
+                                        iconTint = Color(0xFF34D399),
+                                        onClick = { forwardPayload = "我" to msg.content }
+                                    ),
+                                    GlassMenuAction(
+                                        label = "删除",
+                                        icon = Icons.Outlined.DeleteOutline,
+                                        iconTint = Color(0xFFFB7185),
+                                        onClick = { onDeleteTurn(msg) }
                                     )
                                 )
                             )
@@ -852,6 +884,21 @@ fun ChatRoomScreen(
                                                 val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
                                                 quoteTarget = sender to msg.content
                                             }
+                                        ),
+                                        GlassMenuAction(
+                                            label = "转发",
+                                            icon = Icons.Default.Share,
+                                            iconTint = Color(0xFF34D399),
+                                            onClick = {
+                                                val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
+                                                forwardPayload = sender to msg.content
+                                            }
+                                        ),
+                                        GlassMenuAction(
+                                            label = "删除",
+                                            icon = Icons.Outlined.DeleteOutline,
+                                            iconTint = Color(0xFFFB7185),
+                                            onClick = { onDeleteTurn(msg) }
                                         )
                                     )
                                 )
@@ -1182,6 +1229,133 @@ fun ChatRoomScreen(
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+
+    forwardPayload?.let { (senderName, bodyContent) ->
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        var selectedBotId by remember(allBots, activeBot?.id) {
+            mutableStateOf(
+                allBots.firstOrNull { it.id != activeBot?.id }?.id
+                    ?: allBots.firstOrNull()?.id.orEmpty()
+            )
+        }
+        var attachNote by remember { mutableStateOf("") }
+
+        ModalBottomSheet(
+            onDismissRequest = { forwardPayload = null },
+            sheetState = sheetState,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            containerColor = Color(0xFF080D1B),
+            tonalElevation = 0.dp,
+            dragHandle = { ObsidianSheetDragHandle() }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "转发消息",
+                    fontSize = 17.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFFF8EE)
+                )
+
+                SpecularGlassCard(
+                    cornerRadius = 15.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "$senderName: ${bodyContent.replace('\n', ' ').take(100)}",
+                        fontSize = 12.5.sp,
+                        color = Color(0xFF94A3B8),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                    )
+                }
+
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(allBots, key = { "fwd_${it.id}" }) { candidate ->
+                        val chosen = candidate.id == selectedBotId
+                        Column(
+                            modifier = Modifier
+                                .widthIn(min = 64.dp, max = 76.dp)
+                                .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                    selectedBotId = candidate.id
+                                }
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (chosen) Color(0x28F2B880) else Color(0xAA0E1529))
+                                .border(
+                                    0.85.dp,
+                                    if (chosen) Color(0x80F2B880) else Color(0x1EFFF8EE),
+                                    RoundedCornerShape(14.dp)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            SpiritSquircleAvatar(
+                                bot = candidate,
+                                allBots = allBots,
+                                containerSize = 40.dp,
+                                cornerRadius = 12.dp
+                            )
+                            Text(
+                                text = candidate.name,
+                                fontSize = 11.sp,
+                                fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (chosen) Color(0xFFFFE2BE) else Color(0xFFCBD5E1),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                ObsidianGlassInput(
+                    value = attachNote,
+                    onValueChange = { attachNote = it },
+                    placeholder = "附言 (可选)",
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    val targetBot = allBots.find { it.id == selectedBotId }
+                    TactileSecondaryButton(
+                        text = "仅转发",
+                        enabled = targetBot != null,
+                        minHeight = 45.dp,
+                        onClick = {
+                            if (targetBot != null) {
+                                onForwardMessage(targetBot, senderName, bodyContent, attachNote, false)
+                                forwardPayload = null
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    TactilePrimaryButton(
+                        text = "转发并进入",
+                        enabled = targetBot != null,
+                        minHeight = 45.dp,
+                        onClick = {
+                            if (targetBot != null) {
+                                onForwardMessage(targetBot, senderName, bodyContent, attachNote, true)
+                                forwardPayload = null
+                            }
+                        },
+                        modifier = Modifier.weight(1.25f)
+                    )
                 }
             }
         }

@@ -182,6 +182,8 @@ fun BotHubApp(
                                 clipboard.setText(AnnotatedString(txt))
                                 viewModel.showMessage("已复制")
                             },
+                            onDeleteTurn = viewModel::deleteChatTurn,
+                            onForwardMessage = viewModel::forwardMessageToBot,
                             onOpenChatInfo = { showChatInfoSheet = true },
                             onOpenBotProfile = viewModel::openBotProfile,
                             onInviteToGroup = {
@@ -205,6 +207,7 @@ fun BotHubApp(
                             onBack = viewModel::closeServiceFeed,
                             onSelectNotification = viewModel::selectNotification,
                             onMarkAllRead = viewModel::markAllNotificationsRead,
+                            onClearRead = viewModel::clearReadNotifications,
                             onRefresh = { viewModel.refreshAll(silent = false) }
                         )
                     }

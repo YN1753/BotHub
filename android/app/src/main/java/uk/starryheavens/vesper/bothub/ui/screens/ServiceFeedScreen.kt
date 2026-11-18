@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
@@ -49,12 +50,14 @@ fun ServiceFeedScreen(
     onBack: () -> Unit,
     onSelectNotification: (NotificationItem) -> Unit,
     onMarkAllRead: () -> Unit,
+    onClearRead: () -> Unit = {},
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BackHandler(onBack = onBack)
 
     val unreadCount = remember(notifications) { notifications.count { it.isUnread } }
+    val hasReadItems = remember(notifications) { notifications.any { !it.isUnread } }
 
     Column(
         modifier = modifier
@@ -124,6 +127,15 @@ fun ServiceFeedScreen(
                         minHeight = 34.dp,
                         contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
                         onClick = onMarkAllRead
+                    )
+                } else if (hasReadItems) {
+                    TactileSecondaryButton(
+                        text = "清理已读",
+                        leadingIcon = Icons.Default.DeleteSweep,
+                        cornerRadius = 999.dp,
+                        minHeight = 34.dp,
+                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
+                        onClick = onClearRead
                     )
                 } else {
                     Box(

@@ -101,18 +101,12 @@ fun InboxTabScreen(
                     ) {
                         Column(
                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = if (filterMode == "unread") "全部情报均已阅毕" else "暂无推送记录",
+                                text = if (filterMode == "unread") "暂无未读通知" else "暂无通知",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFFFF8EE)
-                            )
-                            Text(
-                                text = "晨间简报、技术雷达、资产临期与哪吒探针告警将实时同步至此",
-                                style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFF94A3B8),
                                 textAlign = TextAlign.Center
                             )

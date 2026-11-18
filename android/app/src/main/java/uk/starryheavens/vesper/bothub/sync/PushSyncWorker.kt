@@ -29,11 +29,20 @@ class PushSyncWorker(
 
         return api.fetchNotifications(afterId = lastId, limit = 30).fold(
             onSuccess = { items ->
-                for (item in items) {
-                    if (lastId > 0L && item.isUnread) {
-                        NotificationHelper.showNotification(applicationContext, item)
+                if (items.isNotEmpty()) {
+                    for (item in items) {
+                        if (lastId > 0L && item.isUnread) {
+                            NotificationHelper.showNotification(applicationContext, item)
+                        }
+                        prefs.advanceLastEventId(item.id)
                     }
-                    prefs.advanceLastEventId(item.id)
+                    val existing = prefs.loadCachedNotifications()
+                    val byId = existing.associateBy { it.id }.toMutableMap()
+                    for (item in items) {
+                        byId[item.id] = item
+                    }
+                    val merged = byId.values.sortedByDescending { it.id }.take(60)
+                    prefs.saveCachedNotifications(merged)
                 }
                 Result.success()
             },

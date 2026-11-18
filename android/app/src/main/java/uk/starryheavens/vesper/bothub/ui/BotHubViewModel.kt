@@ -649,6 +649,53 @@ class BotHubViewModel(
         }
     }
 
+    fun deleteChatTurn(turn: ChatTurnUi) {
+        if (isStreaming) return
+        val targetBotId = activeBotId
+        chatMessages.removeAll { it.id == turn.id }
+        if (sessionId.isEmpty() && targetBotId.isNotBlank()) {
+            val updated = chatMessages.toList()
+            timelineCache[targetBotId] = updated
+            prefs.saveCachedBotMessages(targetBotId, updated)
+        }
+        showMessage("已删除")
+        if (turn.id.startsWith("botmsg_") && targetBotId.isNotBlank()) {
+            val serverMsgId = turn.id.removePrefix("botmsg_").toLongOrNull() ?: 0L
+            if (serverMsgId > 0L) {
+                viewModelScope.launch {
+                    api.deleteBotMessage(targetBotId, serverMsgId)
+                }
+            }
+        }
+    }
+
+    fun forwardMessageToBot(
+        targetBot: BotItem,
+        fromName: String,
+        content: String,
+        note: String,
+        jumpToTarget: Boolean
+    ) {
+        viewModelScope.launch {
+            api.forwardBotMessage(
+                targetBotId = targetBot.id,
+                fromName = fromName,
+                content = content,
+                note = note
+            ).onSuccess {
+                timelineCache.remove(targetBot.id)
+                showMessage("已转发至「${targetBot.name}」")
+                if (jumpToTarget) {
+                    openChatRoom(targetBot.id)
+                } else {
+                    refreshAll(silent = true)
+                }
+            }.onFailure { err ->
+                showMessage(err.message ?: "转发失败")
+            }
+        }
+    }
+
     fun createNewFriend(
         name: String,
         roleTitle: String,
@@ -1011,6 +1058,23 @@ class BotHubViewModel(
         viewModelScope.launch {
             api.markAllNotificationsRead()
             refreshAll(silent = true)
+        }
+    }
+
+    fun clearReadNotifications() {
+        val prev = notifications
+        val remaining = notifications.filter { it.isUnread }
+        notifications = remaining
+        prefs.saveCachedNotifications(remaining)
+        showMessage("已清理已读通知")
+        viewModelScope.launch {
+            api.clearReadNotifications().onSuccess {
+                refreshAll(silent = true)
+            }.onFailure { err ->
+                notifications = prev
+                prefs.saveCachedNotifications(prev)
+                showMessage(err.message ?: "清理失败")
+            }
         }
     }
 

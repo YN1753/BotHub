@@ -121,21 +121,21 @@ fun BiometricLockScreen(
             )
             Spacer(modifier = Modifier.height(18.dp))
             Text(
-                text = "BotHub 生物识别保护",
+                text = "应用已锁定",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFFFFF8EE)
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "后台实时通知常驻运行中，刷脸或按指纹即可进入工作台",
+                text = "请验证面容或指纹",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF8C9BB5),
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(24.dp))
             TactilePrimaryButton(
-                text = "无感面容 / 指纹解锁",
+                text = "面容或指纹解锁",
                 minHeight = 48.dp,
                 onClick = { triggerBiometricUnlock() },
                 modifier = Modifier.fillMaxWidth()

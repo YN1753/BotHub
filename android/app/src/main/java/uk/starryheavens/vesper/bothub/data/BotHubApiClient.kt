@@ -273,6 +273,15 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun clearReadNotifications(): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/notifications/clear-read")
+                .post(emptyJsonBody)
+                .build()
+            executeUnit(req, "清理已读通知失败")
+        }
+    }
+
     suspend fun fetchDashboard(): Result<DashboardSnapshot> = withContext(Dispatchers.IO) {
         runCatching {
             val req = requestBuilder("/api/dashboard").get().build()
@@ -400,6 +409,34 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .delete()
                 .build()
             executeUnit(req, "清空聊天记录失败")
+        }
+    }
+
+    suspend fun deleteBotMessage(botId: String, msgId: Long): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/bots/$botId/messages/$msgId")
+                .delete()
+                .build()
+            executeUnit(req, "删除消息失败")
+        }
+    }
+
+    suspend fun forwardBotMessage(
+        targetBotId: String,
+        fromName: String,
+        content: String,
+        note: String = ""
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("from_name", fromName.trim())
+                .put("content", content.trim())
+                .put("note", note.trim())
+                .toString()
+            val req = requestBuilder("/api/v2/bots/$targetBotId/forward")
+                .post(jsonBody(payload))
+                .build()
+            executeUnit(req, "转发消息失败")
         }
     }
 
