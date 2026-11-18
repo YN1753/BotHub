@@ -65,6 +65,9 @@ class BotHubViewModel(
     var zeroClickCaptureEnabled by mutableStateOf(prefs.zeroClickCaptureEnabled)
         private set
 
+    var appThemeId by mutableStateOf(prefs.appThemeId)
+        private set
+
     var bots by mutableStateOf(prefs.loadCachedBots())
         private set
 
@@ -437,6 +440,12 @@ class BotHubViewModel(
     fun setZeroClickCapture(enabled: Boolean) {
         prefs.zeroClickCaptureEnabled = enabled
         zeroClickCaptureEnabled = enabled
+    }
+
+    fun setAppTheme(themeId: String) {
+        val clean = themeId.trim().ifEmpty { "obsidian" }
+        prefs.appThemeId = clean
+        appThemeId = clean
     }
 
     fun testConnectivity(urlOverride: String) {

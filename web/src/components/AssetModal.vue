@@ -311,7 +311,13 @@ async function handleSubmit() {
 
 async function handleDelete() {
   if (isNew.value || !id.value) return
-  if (!window.confirm(`确定删除资产 [${name.value}] 吗？`)) return
+  const ok = await store.openConfirm({
+    title: '删除数字资产',
+    message: `确定删除资产 [${name.value}] 吗？`,
+    confirmText: '确认删除',
+    danger: true,
+  })
+  if (!ok) return
   const targetId = id.value
   store.state.assets = store.state.assets.filter((a) => a.id !== targetId)
   closeModal()

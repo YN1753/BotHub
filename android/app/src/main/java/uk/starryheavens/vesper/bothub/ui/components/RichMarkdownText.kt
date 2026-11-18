@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 private sealed interface MdBlock {
     data class Heading(val level: Int, val text: String) : MdBlock
@@ -224,15 +225,16 @@ private fun parseInlineMarkdownCached(
     linkColor: Color,
     boldColor: Color
 ): AnnotatedString {
+    val cacheKey = "${boldColor.value}_${linkColor.value}|$text"
     if (text.length <= 4_096) {
         synchronized(inlineAnnotatedCache) {
-            inlineAnnotatedCache.get(text)?.let { return it }
+            inlineAnnotatedCache.get(cacheKey)?.let { return it }
         }
     }
     val built = parseInlineMarkdown(text, codeBg, codeFg, linkColor, boldColor)
     if (text.length <= 4_096) {
         synchronized(inlineAnnotatedCache) {
-            inlineAnnotatedCache.put(text, built)
+            inlineAnnotatedCache.put(cacheKey, built)
         }
     }
     return built
@@ -368,15 +370,16 @@ private fun AnnotatedString.Builder.appendInlineTokens(
 fun RichMarkdownText(
     markdown: String,
     modifier: Modifier = Modifier,
-    textColor: Color = MaterialTheme.colorScheme.onSurface
+    textColor: Color = BotHubThemeTokens.textPrimary
 ) {
+    val theme = BotHubThemeTokens
     val blocks = remember(markdown) { parseMarkdownBlocksCached(markdown) }
     val uriHandler = LocalUriHandler.current
     val clipboard = LocalClipboardManager.current
-    val codeBg = Color(0xFF151E38)
-    val codeFg = Color(0xFFFFE2BE)
-    val linkColor = Color(0xFFF2B880)
-    val boldColor = Color(0xFFFFF8EE)
+    val codeBg = theme.codeInlineBg
+    val codeFg = if (theme.isLight) theme.accentDeep else theme.accentLight
+    val linkColor = theme.accent
+    val boldColor = theme.textPrimary
 
     Column(
         modifier = modifier,
@@ -402,19 +405,19 @@ fun RichMarkdownText(
                             lineHeight = 20.sp
                         )
                     }
-                    val annotated = remember(block.text) {
+                    val annotated = remember(block.text, theme.id) {
                         parseInlineMarkdownCached(block.text, codeBg, codeFg, linkColor, boldColor)
                     }
                     InlineLinkedText(
                         annotated = annotated,
-                        style = style.copy(color = Color(0xFFFFF8EE)),
+                        style = style.copy(color = theme.textPrimary),
                         onOpenUrl = { url -> runCatching { uriHandler.openUri(url) } },
                         modifier = Modifier.padding(top = 2.dp)
                     )
                 }
 
                 is MdBlock.Paragraph -> {
-                    val annotated = remember(block.text) {
+                    val annotated = remember(block.text, theme.id) {
                         parseInlineMarkdownCached(block.text, codeBg, codeFg, linkColor, boldColor)
                     }
                     InlineLinkedText(
@@ -429,7 +432,7 @@ fun RichMarkdownText(
                 }
 
                 is MdBlock.BulletItem -> {
-                    val annotated = remember(block.text) {
+                    val annotated = remember(block.text, theme.id) {
                         parseInlineMarkdownCached(block.text, codeBg, codeFg, linkColor, boldColor)
                     }
                     Row(
@@ -444,7 +447,7 @@ fun RichMarkdownText(
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 13.sp,
                                     lineHeight = 22.sp,
-                                    color = Color(0xFFF2B880),
+                                    color = theme.accent,
                                     platformStyle = PlatformTextStyle(includeFontPadding = false)
                                 ),
                                 modifier = Modifier
@@ -462,7 +465,7 @@ fun RichMarkdownText(
                                 Box(
                                     modifier = Modifier
                                         .size(5.dp)
-                                        .background(Color(0xFFF2B880), CircleShape)
+                                        .background(theme.accent, CircleShape)
                                 )
                             }
                         }
@@ -480,7 +483,7 @@ fun RichMarkdownText(
                 }
 
                 is MdBlock.Quote -> {
-                    val annotated = remember(block.text) {
+                    val annotated = remember(block.text, theme.id) {
                         parseInlineMarkdownCached(block.text, codeBg, codeFg, linkColor, boldColor)
                     }
                     Row(
@@ -488,7 +491,7 @@ fun RichMarkdownText(
                             .fillMaxWidth()
                             .height(IntrinsicSize.Min)
                             .background(
-                                color = Color(0x1AF2B880),
+                                color = theme.accent.copy(alpha = 0.11f),
                                 shape = RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp)
                             )
                             .padding(end = 12.dp, top = 8.dp, bottom = 8.dp)
@@ -498,7 +501,7 @@ fun RichMarkdownText(
                                 .width(3.dp)
                                 .fillMaxHeight()
                                 .background(
-                                    color = Color(0xFFF2B880),
+                                    color = theme.accent,
                                     shape = RoundedCornerShape(2.dp)
                                 )
                         )
@@ -508,7 +511,7 @@ fun RichMarkdownText(
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 13.5.sp,
                                 lineHeight = 20.sp,
-                                color = Color(0xFFD8E0F0)
+                                color = theme.textSecondary
                             ),
                             onOpenUrl = { url -> runCatching { uriHandler.openUri(url) } },
                             modifier = Modifier.weight(1f)
@@ -520,8 +523,8 @@ fun RichMarkdownText(
                     var copied by remember { mutableStateOf(false) }
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = Color(0xFF050812),
-                        border = BorderStroke(1.dp, Color(0x26FFF8EE)),
+                        color = theme.codeBlockBg,
+                        border = BorderStroke(1.dp, theme.divider),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
@@ -537,7 +540,7 @@ fun RichMarkdownText(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFFF2B880)
+                                    color = theme.accent
                                 )
                                 Surface(
                                     onClick = {
@@ -545,8 +548,8 @@ fun RichMarkdownText(
                                         copied = true
                                     },
                                     shape = RoundedCornerShape(999.dp),
-                                    color = Color(0xFF10172C),
-                                    border = BorderStroke(0.5.dp, Color(0x24FFF8EE))
+                                    color = theme.secondaryBtnTop,
+                                    border = BorderStroke(0.5.dp, theme.divider)
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
@@ -556,13 +559,13 @@ fun RichMarkdownText(
                                         Icon(
                                             Icons.Default.ContentCopy,
                                             contentDescription = "复制代码",
-                                            tint = Color(0xFF94A3B8),
+                                            tint = theme.textMuted,
                                             modifier = Modifier.size(10.dp)
                                         )
                                         Text(
                                             text = if (copied) "已复制" else "复制",
                                             fontSize = 10.sp,
-                                            color = if (copied) Color(0xFFFFE2BE) else Color(0xFF94A3B8)
+                                            color = if (copied) theme.accent else theme.textMuted
                                         )
                                     }
                                 }
@@ -573,7 +576,7 @@ fun RichMarkdownText(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 12.5.sp,
                                     lineHeight = 18.5.sp,
-                                    color = Color(0xFFE2E8F0)
+                                    color = theme.codeText
                                 )
                             }
                         }
@@ -583,8 +586,8 @@ fun RichMarkdownText(
                 is MdBlock.Table -> {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xCC090E1E),
-                        border = BorderStroke(1.dp, Color(0x24FFF8EE)),
+                        color = theme.codeBlockBg,
+                        border = BorderStroke(1.dp, theme.divider),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -598,19 +601,19 @@ fun RichMarkdownText(
                                         text = h,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFFFFE2BE),
+                                        color = theme.accent,
                                         modifier = Modifier
                                             .widthIn(min = 84.dp, max = 200.dp)
                                             .padding(end = 12.dp)
                                     )
                                 }
                             }
-                            HorizontalDivider(thickness = 0.5.dp, color = Color(0x24FFF8EE))
+                            HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
                             block.rows.forEach { row ->
                                 Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                                     block.headers.indices.forEach { colIdx ->
                                         val cellText = row.getOrNull(colIdx).orEmpty()
-                                        val cellAnnotated = remember(cellText) {
+                                        val cellAnnotated = remember(cellText, theme.id) {
                                             parseInlineMarkdownCached(cellText, codeBg, codeFg, linkColor, boldColor)
                                         }
                                         InlineLinkedText(
@@ -618,7 +621,7 @@ fun RichMarkdownText(
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 fontSize = 12.sp,
                                                 lineHeight = 17.sp,
-                                                color = Color(0xFFD8E0F0)
+                                                color = theme.textSecondary
                                             ),
                                             onOpenUrl = { url -> runCatching { uriHandler.openUri(url) } },
                                             modifier = Modifier
@@ -636,7 +639,7 @@ fun RichMarkdownText(
                     HorizontalDivider(
                         modifier = Modifier.padding(vertical = 4.dp),
                         thickness = 1.dp,
-                        color = Color(0x1FFFF8EE)
+                        color = theme.divider
                     )
                 }
             }

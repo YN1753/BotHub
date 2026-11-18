@@ -54,7 +54,7 @@ class MainActivity : FragmentActivity() {
         }
 
         setContent {
-            VesperBotHubTheme {
+            VesperBotHubTheme(themeId = prefs.appThemeId) {
                 BotHubApp(
                     prefs = prefs,
                     api = api,

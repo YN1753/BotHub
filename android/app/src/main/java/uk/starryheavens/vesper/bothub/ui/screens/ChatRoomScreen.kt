@@ -111,6 +111,7 @@ import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 private data class PlusActionTile(
     val label: String,
@@ -174,6 +175,7 @@ fun ChatRoomScreen(
         }
     }
 
+    val theme = BotHubThemeTokens
     val normalizedSearch = searchQuery.trim().lowercase()
     val searchMatchIndices = remember(messages, normalizedSearch) {
         if (normalizedSearch.isEmpty()) {
@@ -290,7 +292,7 @@ fun ChatRoomScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF050811))
+            .background(theme.bgBase)
             .imePadding()
     ) {
         // 1. Clean WeChat / QQ IM Chat Header
@@ -299,7 +301,7 @@ fun ChatRoomScreen(
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color(0xF8060913), Color(0xEB080C1A))
+                        listOf(theme.topBarTop, theme.topBarBottom)
                     )
                 )
                 .statusBarsPadding()
@@ -322,7 +324,7 @@ fun ChatRoomScreen(
                     Icon(
                         imageVector = Icons.Default.ChevronLeft,
                         contentDescription = "返回",
-                        tint = Color(0xFFFFF8EE),
+                        tint = theme.textPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                     Text(
@@ -330,7 +332,7 @@ fun ChatRoomScreen(
                         style = TextStyle(
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFFFFF8EE),
+                            color = theme.textPrimary,
                             platformStyle = NoFontPaddingStyle
                         ),
                         maxLines = 1,
@@ -362,7 +364,7 @@ fun ChatRoomScreen(
                         style = TextStyle(
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFFF8EE),
+                            color = theme.textPrimary,
                             platformStyle = NoFontPaddingStyle
                         ),
                         maxLines = 1,
@@ -374,7 +376,7 @@ fun ChatRoomScreen(
                             text = "成员协作发言中...",
                             style = TextStyle(
                                 fontSize = 10.5.sp,
-                                color = Color(0xFFFFE2BE),
+                                color = if (theme.isLight) theme.accentDeep else theme.accentLight,
                                 platformStyle = NoFontPaddingStyle
                             ),
                             maxLines = 1,
@@ -398,9 +400,12 @@ fun ChatRoomScreen(
                             .background(
                                 Brush.verticalGradient(
                                     if (showSearchBar) {
-                                        listOf(Color(0x33F2B880), Color(0x1AC88A4E))
+                                        listOf(
+                                            theme.accent.copy(alpha = 0.22f),
+                                            theme.accentDeep.copy(alpha = 0.12f)
+                                        )
                                     } else {
-                                        listOf(Color(0xFF16203C), Color(0xFF0C1224))
+                                        listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)
                                     }
                                 ),
                                 CircleShape
@@ -409,9 +414,13 @@ fun ChatRoomScreen(
                                 BorderStroke(
                                     0.85.dp,
                                     if (showSearchBar) {
-                                        specularRimBrush(Color(0x88F2B880), Color(0x33F2B880), Color.Transparent)
+                                        specularRimBrush(
+                                            theme.accent.copy(alpha = 0.55f),
+                                            theme.accent.copy(alpha = 0.22f),
+                                            Color.Transparent
+                                        )
                                     } else {
-                                        specularRimBrush(Color(0x33FFF8EE), Color(0x14FFF8EE), Color(0x06FFF8EE))
+                                        specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
                                     }
                                 ),
                                 CircleShape
@@ -421,7 +430,11 @@ fun ChatRoomScreen(
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = "查找聊天内容",
-                            tint = if (showSearchBar) Color(0xFFFFE2BE) else Color(0xFFCBD5E1),
+                            tint = if (showSearchBar) {
+                                if (theme.isLight) theme.accentDeep else theme.accentLight
+                            } else {
+                                theme.textSecondary
+                            },
                             modifier = Modifier.size(17.dp)
                         )
                     }
@@ -432,13 +445,13 @@ fun ChatRoomScreen(
                             .tactileClickable(pressedScale = 0.92f, hapticOnTap = true, onClick = onOpenChatInfo)
                             .clip(CircleShape)
                             .background(
-                                Brush.verticalGradient(listOf(Color(0xFF16203C), Color(0xFF0C1224))),
+                                Brush.verticalGradient(listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)),
                                 CircleShape
                             )
                             .border(
                                 BorderStroke(
                                     0.85.dp,
-                                    specularRimBrush(Color(0x33FFF8EE), Color(0x14FFF8EE), Color(0x06FFF8EE))
+                                    specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
                                 ),
                                 CircleShape
                             ),
@@ -447,7 +460,7 @@ fun ChatRoomScreen(
                         Icon(
                             imageVector = Icons.Default.MoreHoriz,
                             contentDescription = "聊天详情",
-                            tint = Color(0xFFFFF8EE),
+                            tint = theme.textPrimary,
                             modifier = Modifier.size(19.dp)
                         )
                     }
@@ -464,8 +477,8 @@ fun ChatRoomScreen(
                         .fillMaxWidth()
                         .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xF00B1124))
-                        .border(0.85.dp, Color(0x45F2B880), RoundedCornerShape(14.dp))
+                        .background(theme.inputTop)
+                        .border(0.85.dp, theme.accent.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
                         .padding(horizontal = 12.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -473,7 +486,7 @@ fun ChatRoomScreen(
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = null,
-                        tint = Color(0xFFF2B880),
+                        tint = theme.accent,
                         modifier = Modifier.size(16.dp)
                     )
                     BasicTextField(
@@ -481,10 +494,10 @@ fun ChatRoomScreen(
                         onValueChange = { searchQuery = it },
                         singleLine = true,
                         textStyle = TextStyle(
-                            color = Color(0xFFFFF8EE),
+                            color = theme.textPrimary,
                             fontSize = 13.5.sp
                         ),
-                        cursorBrush = SolidColor(Color(0xFFF2B880)),
+                        cursorBrush = SolidColor(theme.accent),
                         modifier = Modifier.weight(1f),
                         decorationBox = { inner ->
                             Box(contentAlignment = Alignment.CenterStart) {
@@ -492,7 +505,7 @@ fun ChatRoomScreen(
                                     Text(
                                         text = "查找聊天内容...",
                                         fontSize = 13.sp,
-                                        color = Color(0xFF64748B),
+                                        color = theme.textMuted,
                                         maxLines = 1,
                                         softWrap = false
                                     )
@@ -510,7 +523,11 @@ fun ChatRoomScreen(
                             },
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
-                            color = if (searchMatchIndices.isEmpty()) Color(0xFFFDA4AF) else Color(0xFFFFE2BE),
+                            color = if (searchMatchIndices.isEmpty()) {
+                                if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFDA4AF)
+                            } else {
+                                if (theme.isLight) theme.accentDeep else theme.accentLight
+                            },
                             maxLines = 1,
                             softWrap = false
                         )
@@ -518,7 +535,7 @@ fun ChatRoomScreen(
                             Icon(
                                 imageVector = Icons.Default.KeyboardArrowUp,
                                 contentDescription = "上一条",
-                                tint = Color(0xFFCBD5E1),
+                                tint = theme.textSecondary,
                                 modifier = Modifier
                                     .size(20.dp)
                                     .clickable {
@@ -532,7 +549,7 @@ fun ChatRoomScreen(
                             Icon(
                                 imageVector = Icons.Default.KeyboardArrowDown,
                                 contentDescription = "下一条",
-                                tint = Color(0xFFCBD5E1),
+                                tint = theme.textSecondary,
                                 modifier = Modifier
                                     .size(20.dp)
                                     .clickable {
@@ -544,7 +561,7 @@ fun ChatRoomScreen(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "关闭搜索",
-                        tint = Color(0xFF94A3B8),
+                        tint = theme.textMuted,
                         modifier = Modifier
                             .size(17.dp)
                             .clickable {
@@ -563,21 +580,21 @@ fun ChatRoomScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xEB0C1327))
+                    .background(theme.cardTop)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 CrispTagPill(
                     text = "群公告",
-                    bgColor = Color(0x2CF2B880),
-                    borderColor = Color(0x52F2B880),
-                    textColor = Color(0xFFFFE2BE)
+                    bgColor = theme.accent.copy(alpha = 0.18f),
+                    borderColor = theme.accent.copy(alpha = 0.36f),
+                    textColor = if (theme.isLight) theme.accentDeep else theme.accentLight
                 )
                 Text(
                     text = activeBot?.announcement.orEmpty(),
                     fontSize = 12.sp,
-                    color = Color(0xFFCBD5E1),
+                    color = theme.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -585,13 +602,13 @@ fun ChatRoomScreen(
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "收起公告",
-                    tint = Color(0xFF64748B),
+                    tint = theme.textMuted,
                     modifier = Modifier
                         .size(16.dp)
                         .clickable { dismissAnnouncement = true }
                 )
             }
-            HorizontalDivider(thickness = 0.5.dp, color = Color(0x14FFF8EE))
+            HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
         }
 
         // 3. IM Message Bubble Stream + Floating Scroll-to-Bottom Pill
@@ -636,7 +653,7 @@ fun ChatRoomScreen(
                             text = activeBot?.name ?: "AI 好友",
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFFF8EE),
+                            color = theme.textPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -645,7 +662,7 @@ fun ChatRoomScreen(
                             Text(
                                 text = desc,
                                 fontSize = 12.5.sp,
-                                color = Color(0xFF8C9BB5),
+                                color = theme.textSecondary,
                                 textAlign = TextAlign.Center,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
@@ -668,14 +685,14 @@ fun ChatRoomScreen(
                                 modifier = Modifier
                                     .widthIn(max = 310.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0x990D1428))
+                                    .background(theme.cardTop)
                                     .padding(horizontal = 12.dp, vertical = 5.dp)
                             ) {
                                 Text(
                                     text = msg.content,
                                     fontSize = 11.5.sp,
                                     lineHeight = 16.sp,
-                                    color = Color(0xFF8C9BB5),
+                                    color = theme.textSecondary,
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -700,11 +717,15 @@ fun ChatRoomScreen(
                             Box(
                                 modifier = Modifier
                                     .widthIn(max = 304.dp)
-                                    .shadow(4.dp, userShape, ambientColor = Color(0x66000000))
+                                    .shadow(
+                                        4.dp,
+                                        userShape,
+                                        ambientColor = Color.Black.copy(alpha = if (theme.isLight) 0.14f else 0.40f)
+                                    )
                                     .clip(userShape)
                                     .background(
                                         Brush.verticalGradient(
-                                            listOf(Color(0xFF3A281C), Color(0xFF241812))
+                                            listOf(theme.userBubbleTop, theme.userBubbleBottom)
                                         ),
                                         userShape
                                     )
@@ -712,14 +733,14 @@ fun ChatRoomScreen(
                                         BorderStroke(
                                             if (isActiveHit) 1.5.dp else 0.85.dp,
                                             if (isActiveHit) {
-                                                SolidColor(Color(0xFFF6C692))
+                                                SolidColor(theme.accentLight)
                                             } else if (isSearchHit) {
-                                                SolidColor(Color(0x99F2B880))
+                                                SolidColor(theme.accent.copy(alpha = 0.65f))
                                             } else {
                                                 specularRimBrush(
-                                                    Color(0x78F2B880),
-                                                    Color(0x2CF2B880),
-                                                    Color(0x12F2B880)
+                                                    theme.accent.copy(alpha = 0.45f),
+                                                    theme.accent.copy(alpha = 0.18f),
+                                                    theme.accent.copy(alpha = 0.08f)
                                                 )
                                             }
                                         ),
@@ -740,7 +761,7 @@ fun ChatRoomScreen(
                                         fontSize = 14.5.sp,
                                         lineHeight = 21.sp
                                     ),
-                                    color = Color(0xFFFFF8EE)
+                                    color = theme.textPrimary
                                 )
                             }
 
@@ -753,25 +774,25 @@ fun ChatRoomScreen(
                                     GlassMenuAction(
                                         label = "复制",
                                         icon = Icons.Default.ContentCopy,
-                                        iconTint = Color(0xFFFFE2BE),
+                                        iconTint = if (theme.isLight) theme.accentDeep else theme.accentLight,
                                         onClick = { onCopyText(msg.content) }
                                     ),
                                     GlassMenuAction(
                                         label = "引用",
                                         icon = Icons.Default.FormatQuote,
-                                        iconTint = Color(0xFFA5B4FC),
+                                        iconTint = if (theme.isLight) Color(0xFF4F46E5) else Color(0xFFA5B4FC),
                                         onClick = { quoteTarget = "我" to msg.content }
                                     ),
                                     GlassMenuAction(
                                         label = "转发",
                                         icon = Icons.Default.Share,
-                                        iconTint = Color(0xFF34D399),
+                                        iconTint = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399),
                                         onClick = { forwardPayload = "我" to msg.content }
                                     ),
                                     GlassMenuAction(
                                         label = "删除",
                                         icon = Icons.Outlined.DeleteOutline,
-                                        iconTint = Color(0xFFFB7185),
+                                        iconTint = if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185),
                                         onClick = { onDeleteTurn(msg) }
                                     )
                                 )
@@ -834,18 +855,19 @@ fun ChatRoomScreen(
                                                 text = msg.persona.ifEmpty { speakerBot?.name ?: "AI" },
                                                 fontSize = 11.5.sp,
                                                 fontWeight = FontWeight.Medium,
-                                                color = Color(0xFF8C9BB5),
+                                                color = theme.textSecondary,
                                                 maxLines = 1,
                                                 softWrap = false,
                                                 overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier.weight(1f, fill = false)
                                             )
                                             if (msg.msgKind == "routine") {
+                                                val warnTint = if (theme.isLight) Color(0xFFB45309) else Color(0xFFFDE68A)
                                                 CrispTagPill(
                                                     text = "提醒",
-                                                    bgColor = Color(0x28FBBF24),
-                                                    borderColor = Color(0x52FBBF24),
-                                                    textColor = Color(0xFFFDE68A)
+                                                    bgColor = Color(0xFFFBBF24).copy(alpha = 0.16f),
+                                                    borderColor = Color(0xFFFBBF24).copy(alpha = 0.34f),
+                                                    textColor = warnTint
                                                 )
                                             }
                                         }
@@ -854,11 +876,15 @@ fun ChatRoomScreen(
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .shadow(5.dp, aiShape, ambientColor = Color(0x77000000))
+                                            .shadow(
+                                                5.dp,
+                                                aiShape,
+                                                ambientColor = Color.Black.copy(alpha = if (theme.isLight) 0.12f else 0.45f)
+                                            )
                                             .clip(aiShape)
                                             .background(
                                                 Brush.verticalGradient(
-                                                    listOf(Color(0xF0141D37), Color(0xF00B1021))
+                                                    listOf(theme.aiBubbleTop, theme.aiBubbleBottom)
                                                 ),
                                                 aiShape
                                             )
@@ -866,14 +892,14 @@ fun ChatRoomScreen(
                                                 BorderStroke(
                                                     if (isActiveHit) 1.5.dp else 0.85.dp,
                                                     if (isActiveHit) {
-                                                        SolidColor(Color(0xFFF6C692))
+                                                        SolidColor(theme.accentLight)
                                                     } else if (isSearchHit) {
-                                                        SolidColor(Color(0x99F2B880))
+                                                        SolidColor(theme.accent.copy(alpha = 0.65f))
                                                     } else {
                                                         specularRimBrush(
-                                                            Color(0x36FFF8EE),
-                                                            Color(0x14FFF8EE),
-                                                            Color(0x06FFF8EE)
+                                                            theme.rimHighlight,
+                                                            theme.rimMid,
+                                                            theme.rimSubtle
                                                         )
                                                     }
                                                 ),
@@ -897,8 +923,8 @@ fun ChatRoomScreen(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .clip(rShape)
-                                                    .background(Color(0xA6070B16), rShape)
-                                                    .border(0.7.dp, Color(0x2CF2B880), rShape)
+                                                    .background(theme.codeBlockBg, rShape)
+                                                    .border(0.7.dp, theme.accent.copy(alpha = 0.20f), rShape)
                                                     .clickable { expandReasoning = !expandReasoning }
                                                     .padding(horizontal = 10.dp, vertical = 6.dp)
                                             ) {
@@ -909,13 +935,13 @@ fun ChatRoomScreen(
                                                     Icon(
                                                         imageVector = if (expandReasoning) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
                                                         contentDescription = null,
-                                                        tint = Color(0xFFFBBF24),
+                                                        tint = if (theme.isLight) theme.accentDeep else Color(0xFFFBBF24),
                                                         modifier = Modifier.size(14.dp)
                                                     )
                                                     Text(
                                                         text = "思考过程",
                                                         fontSize = 11.sp,
-                                                        color = Color(0xFFFDE68A),
+                                                        color = if (theme.isLight) theme.accentDeep else Color(0xFFFDE68A),
                                                         maxLines = 1,
                                                         softWrap = false
                                                     )
@@ -930,7 +956,7 @@ fun ChatRoomScreen(
                                                         fontFamily = FontFamily.Monospace,
                                                         fontSize = 11.5.sp,
                                                         lineHeight = 17.5.sp,
-                                                        color = Color(0xFF94A3B8),
+                                                        color = theme.textSecondary,
                                                         modifier = Modifier.padding(top = 5.dp)
                                                     )
                                                 }
@@ -938,14 +964,16 @@ fun ChatRoomScreen(
                                         }
 
                                         if (msg.tools.isNotEmpty()) {
+                                            val toolOk = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
+                                            val toolText = if (theme.isLight) Color(0xFF065F46) else Color(0xFFA7F3D0)
                                             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 items(msg.tools) { tLabel ->
                                                     val tShape = RoundedCornerShape(999.dp)
                                                     Row(
                                                         modifier = Modifier
                                                             .clip(tShape)
-                                                            .background(Color(0xCC091322), tShape)
-                                                            .border(0.7.dp, Color(0x3D34D399), tShape)
+                                                            .background(theme.codeInlineBg, tShape)
+                                                            .border(0.7.dp, toolOk.copy(alpha = 0.28f), tShape)
                                                             .padding(horizontal = 8.dp, vertical = 3.5.dp),
                                                         verticalAlignment = Alignment.CenterVertically,
                                                         horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -953,13 +981,13 @@ fun ChatRoomScreen(
                                                         Box(
                                                             modifier = Modifier
                                                                 .size(5.dp)
-                                                                .background(Color(0xFF34D399), CircleShape)
+                                                                .background(toolOk, CircleShape)
                                                         )
                                                         Text(
                                                             text = tLabel,
                                                             fontFamily = FontFamily.Monospace,
                                                             fontSize = 10.5.sp,
-                                                            color = Color(0xFFA7F3D0),
+                                                            color = toolText,
                                                             maxLines = 1,
                                                             softWrap = false
                                                         )
@@ -982,12 +1010,12 @@ fun ChatRoomScreen(
                                                 Box(
                                                     modifier = Modifier
                                                         .size(6.dp)
-                                                        .background(Color(0xFFF2B880), CircleShape)
+                                                        .background(theme.accent, CircleShape)
                                                 )
                                                 Text(
                                                     text = "正在输入...",
                                                     fontSize = 12.5.sp,
-                                                    color = Color(0xFF94A3B8)
+                                                    color = theme.textSecondary
                                                 )
                                             }
                                         }
@@ -1025,14 +1053,14 @@ fun ChatRoomScreen(
                                                         Icon(
                                                             imageVector = Icons.Default.Refresh,
                                                             contentDescription = "重试",
-                                                            tint = Color(0xFFF2B880),
+                                                            tint = theme.accent,
                                                             modifier = Modifier.size(12.dp)
                                                         )
                                                         Text(
                                                             text = "重试",
                                                             fontSize = 10.5.sp,
                                                             fontWeight = FontWeight.Medium,
-                                                            color = Color(0xFFF2B880),
+                                                            color = theme.accent,
                                                             maxLines = 1,
                                                             softWrap = false
                                                         )
@@ -1051,13 +1079,13 @@ fun ChatRoomScreen(
                                                 Icon(
                                                     imageVector = Icons.Default.ContentCopy,
                                                     contentDescription = "复制",
-                                                    tint = Color(0xFF5D6D89),
+                                                    tint = theme.textMuted,
                                                     modifier = Modifier.size(11.dp)
                                                 )
                                                 Text(
                                                     text = "复制",
                                                     fontSize = 10.5.sp,
-                                                    color = Color(0xFF5D6D89),
+                                                    color = theme.textMuted,
                                                     maxLines = 1,
                                                     softWrap = false
                                                 )
@@ -1075,13 +1103,13 @@ fun ChatRoomScreen(
                                                 Icon(
                                                     imageVector = Icons.Default.FormatQuote,
                                                     contentDescription = "引用",
-                                                    tint = Color(0xFF5D6D89),
+                                                    tint = theme.textMuted,
                                                     modifier = Modifier.size(12.dp)
                                                 )
                                                 Text(
                                                     text = "引用",
                                                     fontSize = 10.5.sp,
-                                                    color = Color(0xFF5D6D89),
+                                                    color = theme.textMuted,
                                                     maxLines = 1,
                                                     softWrap = false
                                                 )
@@ -1100,13 +1128,13 @@ fun ChatRoomScreen(
                                         GlassMenuAction(
                                             label = "复制",
                                             icon = Icons.Default.ContentCopy,
-                                            iconTint = Color(0xFFFFE2BE),
+                                            iconTint = if (theme.isLight) theme.accentDeep else theme.accentLight,
                                             onClick = { onCopyText(msg.content) }
                                         ),
                                         GlassMenuAction(
                                             label = "引用",
                                             icon = Icons.Default.FormatQuote,
-                                            iconTint = Color(0xFFA5B4FC),
+                                            iconTint = if (theme.isLight) Color(0xFF4F46E5) else Color(0xFFA5B4FC),
                                             onClick = {
                                                 val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
                                                 quoteTarget = sender to msg.content
@@ -1115,7 +1143,7 @@ fun ChatRoomScreen(
                                         GlassMenuAction(
                                             label = "转发",
                                             icon = Icons.Default.Share,
-                                            iconTint = Color(0xFF34D399),
+                                            iconTint = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399),
                                             onClick = {
                                                 val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
                                                 forwardPayload = sender to msg.content
@@ -1124,7 +1152,7 @@ fun ChatRoomScreen(
                                         GlassMenuAction(
                                             label = "删除",
                                             icon = Icons.Outlined.DeleteOutline,
-                                            iconTint = Color(0xFFFB7185),
+                                            iconTint = if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185),
                                             onClick = { onDeleteTurn(msg) }
                                         )
                                     )
@@ -1148,7 +1176,11 @@ fun ChatRoomScreen(
                 val pillShape = RoundedCornerShape(999.dp)
                 Row(
                     modifier = Modifier
-                        .shadow(8.dp, pillShape, ambientColor = Color(0xAA000000))
+                        .shadow(
+                            8.dp,
+                            pillShape,
+                            ambientColor = Color.Black.copy(alpha = if (theme.isLight) 0.16f else 0.65f)
+                        )
                         .tactileClickable(pressedScale = 0.92f, hapticOnTap = true) {
                             scope.launch {
                                 if (messages.isNotEmpty()) {
@@ -1158,13 +1190,17 @@ fun ChatRoomScreen(
                         }
                         .clip(pillShape)
                         .background(
-                            Brush.verticalGradient(listOf(Color(0xF2192444), Color(0xF20D1326))),
+                            Brush.verticalGradient(listOf(theme.popoverTop, theme.popoverBottom)),
                             pillShape
                         )
                         .border(
                             BorderStroke(
                                 0.85.dp,
-                                specularRimBrush(Color(0x78F2B880), Color(0x2CF2B880), Color.Transparent)
+                                specularRimBrush(
+                                    theme.accent.copy(alpha = 0.48f),
+                                    theme.accent.copy(alpha = 0.18f),
+                                    Color.Transparent
+                                )
                             ),
                             pillShape
                         )
@@ -1175,7 +1211,7 @@ fun ChatRoomScreen(
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = "回到底部",
-                        tint = Color(0xFFFFE2BE),
+                        tint = if (theme.isLight) theme.accentDeep else theme.accentLight,
                         modifier = Modifier.size(15.dp)
                     )
                     Text(
@@ -1183,7 +1219,7 @@ fun ChatRoomScreen(
                         style = TextStyle(
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFFFF8EE),
+                            color = theme.textPrimary,
                             platformStyle = NoFontPaddingStyle
                         ),
                         maxLines = 1,
@@ -1200,7 +1236,7 @@ fun ChatRoomScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xD9080C1A))
+                    .background(theme.bottomBarTop)
             ) {
                 items(groupMembers, key = { "at_${it.id}" }) { member ->
                     val chipShape = RoundedCornerShape(999.dp)
@@ -1214,8 +1250,8 @@ fun ChatRoomScreen(
                                 }
                             }
                             .clip(chipShape)
-                            .background(Color(0xFF131B34), chipShape)
-                            .border(0.7.dp, Color(0x28FFF8EE), chipShape)
+                            .background(theme.secondaryBtnTop, chipShape)
+                            .border(0.7.dp, theme.rimMid, chipShape)
                             .padding(start = 5.dp, end = 9.dp, top = 3.dp, bottom = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -1230,7 +1266,7 @@ fun ChatRoomScreen(
                         Text(
                             text = "@${member.name}",
                             fontSize = 11.sp,
-                            color = Color(0xFFCBD5E1),
+                            color = theme.textSecondary,
                             maxLines = 1,
                             softWrap = false
                         )
@@ -1244,7 +1280,7 @@ fun ChatRoomScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xF00B1124))
+                    .background(theme.inputTop)
                     .padding(horizontal = 14.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -1252,7 +1288,7 @@ fun ChatRoomScreen(
                 Text(
                     text = "$sender: ${snippet.replace('\n', ' ')}",
                     fontSize = 11.5.sp,
-                    color = Color(0xFF94A3B8),
+                    color = theme.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
@@ -1262,7 +1298,7 @@ fun ChatRoomScreen(
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "取消引用",
-                    tint = Color(0xFF94A3B8),
+                    tint = theme.textSecondary,
                     modifier = Modifier
                         .size(16.dp)
                         .clickable { quoteTarget = null }
@@ -1276,7 +1312,7 @@ fun ChatRoomScreen(
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color(0xF5090E1E), Color(0xFA050811))
+                        listOf(theme.bottomBarTop, theme.bottomBarBottom)
                     )
                 )
                 .navigationBarsPadding()
@@ -1292,7 +1328,7 @@ fun ChatRoomScreen(
             ) {
                 val inputShape = RoundedCornerShape(20.dp)
                 val inputBorder by animateColorAsState(
-                    targetValue = if (composerFocused) Color(0x80F2B880) else Color(0x22FFF8EE),
+                    targetValue = if (composerFocused) theme.accent.copy(alpha = 0.50f) else theme.rimMid,
                     animationSpec = tween(150),
                     label = "composerBorder"
                 )
@@ -1302,7 +1338,7 @@ fun ChatRoomScreen(
                         .sizeIn(minHeight = 40.dp)
                         .clip(inputShape)
                         .background(
-                            Brush.verticalGradient(listOf(Color(0xF2070B16), Color(0xF20C1224))),
+                            Brush.verticalGradient(listOf(theme.inputTop, theme.inputBottom)),
                             inputShape
                         )
                         .border(0.9.dp, inputBorder, inputShape),
@@ -1312,11 +1348,11 @@ fun ChatRoomScreen(
                         value = inputText,
                         onValueChange = onInputChange,
                         textStyle = TextStyle(
-                            color = Color(0xFFFFF8EE),
+                            color = theme.textPrimary,
                             fontSize = 14.5.sp,
                             lineHeight = 20.sp
                         ),
-                        cursorBrush = SolidColor(Color(0xFFF2B880)),
+                        cursorBrush = SolidColor(theme.accent),
                         maxLines = 5,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1328,7 +1364,7 @@ fun ChatRoomScreen(
                                     Text(
                                         text = "发消息...",
                                         fontSize = 14.sp,
-                                        color = Color(0xFF5A6A85),
+                                        color = theme.textMuted,
                                         maxLines = 1,
                                         softWrap = false
                                     )
@@ -1349,9 +1385,12 @@ fun ChatRoomScreen(
                         .background(
                             Brush.verticalGradient(
                                 if (showPlusDrawer) {
-                                    listOf(Color(0x36F2B880), Color(0x1CC88A4E))
+                                    listOf(
+                                        theme.accent.copy(alpha = 0.22f),
+                                        theme.accentDeep.copy(alpha = 0.12f)
+                                    )
                                 } else {
-                                    listOf(Color(0xFF151E38), Color(0xFF0C1224))
+                                    listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)
                                 }
                             ),
                             CircleShape
@@ -1360,9 +1399,13 @@ fun ChatRoomScreen(
                             BorderStroke(
                                 0.85.dp,
                                 if (showPlusDrawer) {
-                                    specularRimBrush(Color(0x80F2B880), Color(0x33F2B880), Color.Transparent)
+                                    specularRimBrush(
+                                        theme.accent.copy(alpha = 0.50f),
+                                        theme.accent.copy(alpha = 0.20f),
+                                        Color.Transparent
+                                    )
                                 } else {
-                                    specularRimBrush(Color(0x2EFFF8EE), Color(0x12FFF8EE), Color.Transparent)
+                                    specularRimBrush(theme.rimMid, theme.rimSubtle, Color.Transparent)
                                 }
                             ),
                             CircleShape
@@ -1372,7 +1415,11 @@ fun ChatRoomScreen(
                     Icon(
                         imageVector = if (showPlusDrawer) Icons.Default.Close else Icons.Default.Add,
                         contentDescription = "更多功能",
-                        tint = if (showPlusDrawer) Color(0xFFFFE2BE) else Color(0xFFCBD5E1),
+                        tint = if (showPlusDrawer) {
+                            if (theme.isLight) theme.accentDeep else theme.accentLight
+                        } else {
+                            theme.textSecondary
+                        },
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -1409,21 +1456,21 @@ fun ChatRoomScreen(
                     PlusActionTile(
                         label = if (enableThinking) "思考:开" else "思考:关",
                         icon = Icons.Default.Psychology,
-                        accent = if (enableThinking) Color(0xFFF2B880) else Color(0xFF8C9BB5)
+                        accent = if (enableThinking) theme.accent else theme.textSecondary
                     ) {
                         onThinkingChange(!enableThinking)
                     },
                     PlusActionTile(
                         label = if (isPool) "免费模型" else "主力模型",
                         icon = Icons.Default.AutoAwesome,
-                        accent = Color(0xFFC084FC)
+                        accent = if (theme.isLight) Color(0xFF9333EA) else Color(0xFFC084FC)
                     ) {
                         onModelChange(if (isPool) "deepseek-flash" else "free-pool")
                     },
                     PlusActionTile(
                         label = if (isGroup) "群成员" else "拉人建群",
                         icon = Icons.Default.GroupAdd,
-                        accent = Color(0xFF38BDF8)
+                        accent = if (theme.isLight) Color(0xFF0284C7) else Color(0xFF38BDF8)
                     ) {
                         showPlusDrawer = false
                         onInviteToGroup()
@@ -1431,7 +1478,7 @@ fun ChatRoomScreen(
                     PlusActionTile(
                         label = "清空记录",
                         icon = Icons.Default.DeleteSweep,
-                        accent = Color(0xFFFB7185)
+                        accent = if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185)
                     ) {
                         showPlusDrawer = false
                         onClearHistory()
@@ -1444,7 +1491,7 @@ fun ChatRoomScreen(
                         .padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    HorizontalDivider(thickness = 0.5.dp, color = Color(0x14FFF8EE))
+                    HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -1475,7 +1522,8 @@ fun ChatRoomScreen(
             onDismissRequest = { forwardPayload = null },
             sheetState = sheetState,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            containerColor = Color(0xFF080D1B),
+            containerColor = theme.sheetBg,
+            scrimColor = theme.scrim,
             tonalElevation = 0.dp,
             dragHandle = { ObsidianSheetDragHandle() }
         ) {
@@ -1490,7 +1538,7 @@ fun ChatRoomScreen(
                     text = "转发消息",
                     fontSize = 17.5.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFF8EE)
+                    color = theme.textPrimary
                 )
 
                 SpecularGlassCard(
@@ -1500,7 +1548,7 @@ fun ChatRoomScreen(
                     Text(
                         text = "$senderName: ${bodyContent.replace('\n', ' ').take(100)}",
                         fontSize = 12.5.sp,
-                        color = Color(0xFF94A3B8),
+                        color = theme.textSecondary,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
@@ -1517,10 +1565,12 @@ fun ChatRoomScreen(
                                     selectedBotId = candidate.id
                                 }
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(if (chosen) Color(0x28F2B880) else Color(0xAA0E1529))
+                                .background(
+                                    if (chosen) theme.accent.copy(alpha = 0.16f) else theme.secondaryBtnTop
+                                )
                                 .border(
                                     0.85.dp,
-                                    if (chosen) Color(0x80F2B880) else Color(0x1EFFF8EE),
+                                    if (chosen) theme.accent.copy(alpha = 0.55f) else theme.rimMid,
                                     RoundedCornerShape(14.dp)
                                 )
                                 .padding(horizontal = 8.dp, vertical = 8.dp),
@@ -1537,7 +1587,11 @@ fun ChatRoomScreen(
                                 text = candidate.name,
                                 fontSize = 11.sp,
                                 fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (chosen) Color(0xFFFFE2BE) else Color(0xFFCBD5E1),
+                                color = if (chosen) {
+                                    if (theme.isLight) theme.accentDeep else theme.accentLight
+                                } else {
+                                    theme.textSecondary
+                                },
                                 maxLines = 1,
                                 softWrap = false,
                                 overflow = TextOverflow.Ellipsis
@@ -1594,6 +1648,7 @@ private fun PlusTrayItem(
     tile: PlusActionTile,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     val sqShape = RoundedCornerShape(16.dp)
     Column(
         modifier = modifier.tactileClickable(
@@ -1607,18 +1662,22 @@ private fun PlusTrayItem(
         Box(
             modifier = Modifier
                 .size(54.dp)
-                .shadow(4.dp, sqShape, ambientColor = Color(0x66000000))
+                .shadow(
+                    4.dp,
+                    sqShape,
+                    ambientColor = Color.Black.copy(alpha = if (theme.isLight) 0.12f else 0.40f)
+                )
                 .clip(sqShape)
                 .background(
                     Brush.verticalGradient(
                         listOf(
                             Color(
-                                red = (0x14 / 255f * 0.8f + tile.accent.red * 0.2f).coerceIn(0f, 1f),
-                                green = (0x1D / 255f * 0.8f + tile.accent.green * 0.2f).coerceIn(0f, 1f),
-                                blue = (0x36 / 255f * 0.8f + tile.accent.blue * 0.2f).coerceIn(0f, 1f),
+                                red = (theme.secondaryBtnTop.red * 0.84f + tile.accent.red * 0.16f).coerceIn(0f, 1f),
+                                green = (theme.secondaryBtnTop.green * 0.84f + tile.accent.green * 0.16f).coerceIn(0f, 1f),
+                                blue = (theme.secondaryBtnTop.blue * 0.84f + tile.accent.blue * 0.16f).coerceIn(0f, 1f),
                                 alpha = 1f
                             ),
-                            Color(0xFF0C1224)
+                            theme.secondaryBtnBottom
                         )
                     ),
                     sqShape
@@ -1629,7 +1688,7 @@ private fun PlusTrayItem(
                         specularRimBrush(
                             tile.accent.copy(alpha = 0.50f),
                             tile.accent.copy(alpha = 0.16f),
-                            Color(0x08FFFFFF)
+                            theme.rimSubtle
                         )
                     ),
                     sqShape
@@ -1648,7 +1707,7 @@ private fun PlusTrayItem(
             style = TextStyle(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color(0xFF94A3B8),
+                color = theme.textSecondary,
                 platformStyle = NoFontPaddingStyle
             ),
             maxLines = 1,

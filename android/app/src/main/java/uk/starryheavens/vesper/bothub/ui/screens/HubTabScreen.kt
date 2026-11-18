@@ -51,6 +51,7 @@ import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSegmentedControl
 import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 @Composable
 fun HubTabScreen(
@@ -70,6 +71,7 @@ fun HubTabScreen(
     onDeleteAsset: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     val assets = snapshot?.assets ?: emptyList()
     val tasks = snapshot?.tasks ?: emptyList()
     val expiringCount = snapshot?.expiringCount ?: 0
@@ -110,15 +112,15 @@ fun HubTabScreen(
                             Text(
                                 text = "共 ${assets.size} 项",
                                 fontSize = 12.5.sp,
-                                color = Color(0xFF94A3B8),
+                                color = theme.textMuted,
                                 maxLines = 1,
                                 softWrap = false
                             )
                             CrispTagPill(
                                 text = if (expiringCount > 0) "${expiringCount}项临期" else "状态正常",
-                                bgColor = if (expiringCount > 0) Color(0x26FBBF24) else Color(0x2234D399),
-                                borderColor = if (expiringCount > 0) Color(0x52FBBF24) else Color(0x4734D399),
-                                textColor = if (expiringCount > 0) Color(0xFFFDE68A) else Color(0xFFA7F3D0)
+                                bgColor = if (expiringCount > 0) Color(0x26F59E0B) else Color(0x2210B981),
+                                borderColor = if (expiringCount > 0) Color(0x52F59E0B) else Color(0x4710B981),
+                                textColor = if (expiringCount > 0) Color(0xFFD97706) else Color(0xFF10B981)
                             )
                         }
 
@@ -156,7 +158,7 @@ fun HubTabScreen(
                             Text(
                                 text = "暂无资产记录，点击右上角「添加」录入到期提醒",
                                 fontSize = 13.sp,
-                                color = Color(0xFF94A3B8),
+                                color = theme.textMuted,
                                 modifier = Modifier.padding(16.dp)
                             )
                         }
@@ -167,10 +169,10 @@ fun HubTabScreen(
                     val isPermanent = asset.dueDate.startsWith("2099") || asset.daysLeft > 3650
                     val isMultiYear = !isPermanent && asset.daysLeft > 365
                     val barColor = when {
-                        isPermanent || isMultiYear -> Color(0xFF34D399)
-                        asset.daysLeft <= 7 -> Color(0xFFFB7185)
-                        asset.daysLeft <= 30 -> Color(0xFFFBBF24)
-                        else -> Color(0xFFF2B880)
+                        isPermanent || isMultiYear -> Color(0xFF10B981)
+                        asset.daysLeft <= 7 -> Color(0xFFF43F5E)
+                        asset.daysLeft <= 30 -> Color(0xFFF59E0B)
+                        else -> theme.accent
                     }
                     val progressFraction = when {
                         isPermanent -> 1f
@@ -200,7 +202,7 @@ fun HubTabScreen(
                                     text = asset.name,
                                     fontSize = 14.5.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFFFFF8EE),
+                                    color = theme.textPrimary,
                                     maxLines = 1,
                                     softWrap = false,
                                     overflow = TextOverflow.Ellipsis,
@@ -227,7 +229,7 @@ fun HubTabScreen(
                                         .joinToString(" · ")
                                         .ifEmpty { "点击编辑详情" },
                                     fontSize = 12.sp,
-                                    color = Color(0xFF8C9BB5),
+                                    color = theme.textMuted,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier
@@ -239,7 +241,7 @@ fun HubTabScreen(
                                         text = asset.dueDate.take(10),
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
-                                        color = Color(0xFF5D6D89),
+                                        color = theme.textMuted,
                                         maxLines = 1,
                                         softWrap = false
                                     )
@@ -251,7 +253,7 @@ fun HubTabScreen(
                                     .fillMaxWidth()
                                     .height(3.dp)
                                     .clip(RoundedCornerShape(999.dp))
-                                    .background(Color(0xFF141C34))
+                                    .background(theme.inputTop)
                             ) {
                                 Box(
                                     modifier = Modifier
@@ -278,7 +280,7 @@ fun HubTabScreen(
                             Text(
                                 text = "暂无定时任务",
                                 fontSize = 13.sp,
-                                color = Color(0xFF94A3B8),
+                                color = theme.textMuted,
                                 modifier = Modifier.padding(16.dp)
                             )
                         }
@@ -303,7 +305,7 @@ fun HubTabScreen(
                                     text = task.name,
                                     fontSize = 14.5.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = if (task.enabled) Color(0xFFFFF8EE) else Color(0xFF8C9BB5),
+                                    color = if (task.enabled) theme.textPrimary else theme.textMuted,
                                     maxLines = 1,
                                     softWrap = false,
                                     overflow = TextOverflow.Ellipsis,
@@ -326,7 +328,7 @@ fun HubTabScreen(
                                     text = task.formattedSchedule(),
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 11.5.sp,
-                                    color = Color(0xFF8C9BB5),
+                                    color = theme.textMuted,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier
@@ -384,6 +386,7 @@ private fun AssetEditorSheet(
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit
 ) {
+    val theme = BotHubThemeTokens
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var name by remember(asset) { mutableStateOf(asset?.name.orEmpty()) }
     var category by remember(asset) { mutableStateOf(asset?.category?.ifBlank { "compute" } ?: "compute") }
@@ -402,7 +405,8 @@ private fun AssetEditorSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = Color(0xFF080D1B),
+        containerColor = theme.sheetBg,
+        scrimColor = theme.scrim,
         tonalElevation = 0.dp,
         dragHandle = { ObsidianSheetDragHandle() }
     ) {
@@ -418,7 +422,7 @@ private fun AssetEditorSheet(
                 text = if (asset == null) "添加资产" else "编辑资产",
                 fontSize = 17.5.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFFFF8EE)
+                color = theme.textPrimary
             )
 
             Row(
@@ -491,7 +495,7 @@ private fun AssetEditorSheet(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("自动续费", fontSize = 14.sp, color = Color(0xFFFFF8EE))
+                    Text("自动续费", fontSize = 14.sp, color = theme.textPrimary)
                     TactileToggle(
                         checked = autoRenew,
                         onCheckedChange = { autoRenew = it }

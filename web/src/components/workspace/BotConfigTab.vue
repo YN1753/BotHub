@@ -165,7 +165,13 @@ async function saveBotProfile() {
 
 async function deleteCustomBot() {
   if (!bot.value) return
-  if (!window.confirm(`确定删除 [${bot.value.name}] 吗？其专属聊天流将一并移除。`)) return
+  const ok = await store.openConfirm({
+    title: '删除 Bot',
+    message: `确定删除 [${bot.value.name}] 吗？其专属聊天流将一并移除。`,
+    confirmText: '确认删除',
+    danger: true,
+  })
+  if (!ok) return
   await BotHubApi.deleteBot(bot.value.id)
   store.notify(`已删除「${bot.value.name}」`)
   await store.loadDashboard(false)

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
+import { useAppTheme, getResolvedThemeMeta } from '../utils/theme'
 
 const store = useAppStore()
+const { themeId } = useAppTheme()
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let rafId = 0
 
@@ -64,6 +66,8 @@ onMounted(() => {
 
   const renderFrame = (dtSec: number, nowMs: number) => {
     ctx.clearRect(0, 0, w, h)
+    const themeMeta = getResolvedThemeMeta(themeId.value)
+    const alphaScale = themeMeta.isLightPreview ? 0.28 : 1
     for (const s of stars) {
       if (dtSec > 0) {
         s.x += s.vx * dtSec
@@ -74,10 +78,10 @@ onMounted(() => {
         if (s.y > h) s.y = 0
       }
       const twinkle = dtSec > 0 ? Math.sin(nowMs * 0.0009 + s.phase) * 0.09 : 0
-      const alpha = Math.max(0.08, Math.min(0.75, s.baseA + twinkle))
+      const alpha = Math.max(0.05, Math.min(0.75, s.baseA + twinkle)) * alphaScale
       ctx.beginPath()
       ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2)
-      ctx.fillStyle = `rgba(255, 238, 214, ${alpha})`
+      ctx.fillStyle = `rgba(${themeMeta.starRgb}, ${alpha})`
       ctx.fill()
     }
   }
@@ -133,8 +137,11 @@ onMounted(() => {
   }
 
   const stopWatch = watch(
-    () => store.state.ambientMotionPaused,
-    () => syncLoop()
+    () => [store.state.ambientMotionPaused, themeId.value] as const,
+    () => {
+      renderFrame(0, 0)
+      syncLoop()
+    }
   )
 
   resize()
@@ -158,18 +165,18 @@ onMounted(() => {
 
 <template>
   <div aria-hidden="true" class="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-    <!-- Ambient Atmospheric Aurora Light Pools (gives glass surfaces real color depth to refract) -->
+    <!-- Ambient Atmospheric Aurora Light Pools (follows active theme CSS tokens) -->
     <div
-      class="absolute -top-32 -left-24 w-[38rem] h-[30rem] rounded-full opacity-55 blur-[110px]"
-      style="background: radial-gradient(circle, rgba(99, 102, 241, 0.28) 0%, rgba(56, 189, 248, 0.1) 48%, transparent 72%)"
+      class="absolute -top-32 -left-24 w-[38rem] h-[30rem] rounded-full opacity-75 blur-[110px]"
+      style="background: radial-gradient(circle, var(--bg-glow-2) 0%, transparent 72%)"
     />
     <div
-      class="absolute -top-24 right-[-6rem] w-[34rem] h-[28rem] rounded-full opacity-50 blur-[105px]"
-      style="background: radial-gradient(circle, rgba(242, 184, 128, 0.24) 0%, rgba(251, 113, 133, 0.08) 52%, transparent 74%)"
+      class="absolute -top-24 right-[-6rem] w-[34rem] h-[28rem] rounded-full opacity-70 blur-[105px]"
+      style="background: radial-gradient(circle, var(--bg-glow-1) 0%, transparent 74%)"
     />
     <div
-      class="absolute -bottom-36 left-1/3 w-[42rem] h-[28rem] rounded-full opacity-40 blur-[120px]"
-      style="background: radial-gradient(circle, rgba(52, 211, 153, 0.14) 0%, rgba(56, 189, 248, 0.08) 50%, transparent 74%)"
+      class="absolute -bottom-36 left-1/3 w-[42rem] h-[28rem] rounded-full opacity-55 blur-[120px]"
+      style="background: radial-gradient(circle, rgba(var(--accent-rgb), 0.14) 0%, transparent 74%)"
     />
     <canvas ref="canvasRef" class="absolute inset-0 opacity-85" />
   </div>

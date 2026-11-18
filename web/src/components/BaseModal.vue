@@ -131,7 +131,7 @@ onBeforeUnmount(() => {
 
       <div
         class="flex items-start justify-between gap-3 px-4 sm:px-5 pt-4 pb-3.5 border-b border-[#fff8ee]/10 shrink-0"
-        style="background: radial-gradient(85% 140% at 12% 0%, rgba(242, 184, 128, 0.1) 0%, transparent 62%), rgba(10, 14, 28, 0.72)"
+        style="background: radial-gradient(85% 140% at 12% 0%, rgba(var(--accent-rgb), 0.1) 0%, transparent 62%), var(--surface-dialog-header)"
       >
         <div class="min-w-0">
           <h3 :id="titleId" class="text-base sm:text-lg font-semibold text-white tracking-tight">

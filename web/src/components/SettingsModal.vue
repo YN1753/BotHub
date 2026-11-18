@@ -5,6 +5,7 @@ import { BotHubApi } from '../api/client'
 import { lazyPanelChunk } from '../utils/lazyComponent'
 import { resolveTabSlideTransition, type DirectionalTransitionName } from '../utils/motion'
 import { checkPasskeyCapabilities, registerPasskeyCeremony } from '../utils/passkey'
+import { useAppTheme } from '../utils/theme'
 import type { ModelPoolEntry, UpstreamModelCheck } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -14,6 +15,7 @@ const SettingsSecurityTab = lazyPanelChunk(() => import('./settings/SettingsSecu
 const ModelPoolSection = lazyPanelChunk(() => import('./settings/ModelPoolSection.vue'))
 
 const store = useAppStore()
+const { themeId, themeOptions, setAppTheme } = useAppTheme()
 const activeTab = ref<'ai' | 'push' | 'integrations' | 'security'>('ai')
 const settingsTabTransition = ref<DirectionalTransitionName>('vesper-slide-forward')
 
@@ -322,7 +324,36 @@ async function handleQuickCreatePasskey() {
     max-width="2xl"
     @close="closeModal"
   >
-    <div class="border-b border-[#fff8ee]/10 pb-3 shrink-0">
+    <div class="border-b border-[#fff8ee]/10 pb-3 shrink-0 flex flex-col gap-2.5">
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <span class="text-[11px] font-medium text-slate-400 shrink-0">界面主题 · 弹窗统一换肤</span>
+        <div class="flex items-center gap-1.5 flex-wrap" role="radiogroup" aria-label="界面外观主题">
+          <button
+            v-for="opt in themeOptions"
+            :key="opt.id"
+            type="button"
+            role="radio"
+            :aria-checked="themeId === opt.id"
+            :title="opt.desc"
+            @click="setAppTheme(opt.id)"
+            :class="[
+              'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition cursor-pointer',
+              themeId === opt.id
+                ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
+                : 'border-[#fff8ee]/12 text-slate-300 hover:border-[#f2b880]/35'
+            ]"
+          >
+            <span
+              class="w-3 h-3 rounded-full border border-white/25 inline-flex items-center justify-center shrink-0"
+              :style="{ backgroundColor: opt.swatchBg }"
+              aria-hidden="true"
+            >
+              <span class="w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: opt.swatchAccent }" />
+            </span>
+            <span>{{ opt.label }}</span>
+          </button>
+        </div>
+      </div>
       <SegmentedTabs v-model="activeTab" :items="SETTINGS_TABS" aria-label="系统设置分类" />
     </div>
 

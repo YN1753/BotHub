@@ -21,7 +21,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -44,6 +43,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +62,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -84,8 +84,11 @@ import androidx.compose.ui.window.PopupProperties
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.GrokBotGroupCluster
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 val NoFontPaddingStyle = PlatformTextStyle(includeFontPadding = false)
+
+private val UnsetColor = Color.Unspecified
 
 /**
  * Spring-physics tactile press modifier without ugly rectangular stock ripple.
@@ -174,44 +177,47 @@ fun specularRimBrush(
 )
 
 /**
- * Multi-stop vertical glass card with directional top-left specular catchlight and ambient depth.
+ * Multi-stop vertical glass card with directional top-left specular catchlight and theme-unified depth.
  */
 @Composable
 fun SpecularGlassCard(
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 18.dp,
-    topColor: Color = Color(0xEB131B34),
-    bottomColor: Color = Color(0xEB0A0F1F),
+    topColor: Color = UnsetColor,
+    bottomColor: Color = UnsetColor,
     accentTint: Color? = null,
     elevation: Dp = 6.dp,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val theme = BotHubThemeTokens
+    val resolvedTop = if (topColor != UnsetColor) topColor else theme.cardTop
+    val resolvedBottom = if (bottomColor != UnsetColor) bottomColor else theme.cardBottom
     val shape = RoundedCornerShape(cornerRadius)
-    val rim = remember(accentTint) {
+    val rim = remember(accentTint, theme.id) {
         if (accentTint != null) {
             specularRimBrush(
-                highlight = accentTint.copy(alpha = 0.52f),
+                highlight = accentTint.copy(alpha = if (theme.isLight) 0.42f else 0.52f),
                 mid = accentTint.copy(alpha = 0.16f),
-                shadow = Color(0x0AFFF8EE)
+                shadow = theme.rimSubtle
             )
         } else {
-            specularRimBrush()
+            specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
         }
     }
-    val bgBrush = remember(topColor, bottomColor, accentTint) {
+    val bgBrush = remember(resolvedTop, resolvedBottom, accentTint) {
         val effectiveTop = if (accentTint != null) {
             Color(
-                red = (topColor.red * 0.86f + accentTint.red * 0.14f).coerceIn(0f, 1f),
-                green = (topColor.green * 0.86f + accentTint.green * 0.14f).coerceIn(0f, 1f),
-                blue = (topColor.blue * 0.86f + accentTint.blue * 0.14f).coerceIn(0f, 1f),
-                alpha = topColor.alpha
+                red = (resolvedTop.red * 0.88f + accentTint.red * 0.12f).coerceIn(0f, 1f),
+                green = (resolvedTop.green * 0.88f + accentTint.green * 0.12f).coerceIn(0f, 1f),
+                blue = (resolvedTop.blue * 0.88f + accentTint.blue * 0.12f).coerceIn(0f, 1f),
+                alpha = resolvedTop.alpha
             )
         } else {
-            topColor
+            resolvedTop
         }
-        Brush.verticalGradient(listOf(effectiveTop, bottomColor))
+        Brush.verticalGradient(listOf(effectiveTop, resolvedBottom))
     }
 
     val interactiveMod = if (onClick != null) {
@@ -224,14 +230,17 @@ fun SpecularGlassCard(
         Modifier
     }
 
+    val ambientShadow = if (theme.isLight) Color(0x1C0F172A) else Color(0x99000000)
+    val spotShadow = if (theme.isLight) Color(0x280F172A) else Color(0xAA000000)
+
     Column(
         modifier = modifier
             .then(interactiveMod)
             .shadow(
-                elevation = elevation,
+                elevation = if (theme.isLight) (elevation * 0.65f) else elevation,
                 shape = shape,
-                ambientColor = Color(0x99000000),
-                spotColor = Color(0xAA000000)
+                ambientColor = ambientShadow,
+                spotColor = spotShadow
             )
             .clip(shape)
             .background(bgBrush, shape)
@@ -241,7 +250,7 @@ fun SpecularGlassCard(
 }
 
 /**
- * Bespoke Champagne-Gold Jewel Primary Button (replaces flat stock M3 Button).
+ * Theme-Adaptive Jewel Primary Button.
  */
 @Composable
 fun TactilePrimaryButton(
@@ -254,38 +263,39 @@ fun TactilePrimaryButton(
     minHeight: Dp = 46.dp,
     contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
 ) {
+    val theme = BotHubThemeTokens
     val shape = RoundedCornerShape(cornerRadius)
-    val fillBrush = remember(enabled) {
+    val fillBrush = remember(enabled, theme.id) {
         if (enabled) {
-            Brush.verticalGradient(
-                colors = listOf(
-                    Color(0xFFFCE0C0),
-                    Color(0xFFF2B880),
-                    Color(0xFFE09A58)
+            if (theme.isLight) {
+                Brush.verticalGradient(
+                    colors = listOf(theme.accent, theme.accentDeep)
                 )
-            )
+            } else {
+                Brush.verticalGradient(
+                    colors = listOf(theme.accentLight, theme.accent, theme.accentDeep)
+                )
+            }
         } else {
             Brush.verticalGradient(
-                colors = listOf(
-                    Color(0xFF283048),
-                    Color(0xFF1B2236)
-                )
+                colors = listOf(theme.inputTop, theme.inputBottom)
             )
         }
     }
-    val borderBrush = remember(enabled) {
+    val borderBrush = remember(enabled, theme.id) {
         if (enabled) {
             Brush.verticalGradient(
                 colors = listOf(
-                    Color(0x99FFFFFF),
-                    Color(0x24FFF8EE),
-                    Color(0x337A481D)
+                    Color(0x80FFFFFF),
+                    theme.accent.copy(alpha = 0.35f),
+                    theme.accentDeep.copy(alpha = 0.45f)
                 )
             )
         } else {
-            SolidColor(Color(0x1FFFF8EE))
+            SolidColor(theme.divider)
         }
     }
+    val fgColor = if (enabled) theme.onAccent else theme.textMuted
 
     Box(
         modifier = modifier
@@ -297,10 +307,10 @@ fun TactilePrimaryButton(
                 onClick = onClick
             )
             .shadow(
-                elevation = if (enabled) 8.dp else 0.dp,
+                elevation = if (enabled) (if (theme.isLight) 4.dp else 8.dp) else 0.dp,
                 shape = shape,
-                ambientColor = Color(0x55F2B880),
-                spotColor = Color(0x66F2B880)
+                ambientColor = theme.accent.copy(alpha = 0.35f),
+                spotColor = theme.accent.copy(alpha = 0.42f)
             )
             .clip(shape)
             .background(fillBrush, shape)
@@ -316,7 +326,7 @@ fun TactilePrimaryButton(
                 Icon(
                     imageVector = leadingIcon,
                     contentDescription = null,
-                    tint = if (enabled) Color(0xFF130E0A) else Color(0xFF64748B),
+                    tint = fgColor,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -325,7 +335,7 @@ fun TactilePrimaryButton(
                 style = TextStyle(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (enabled) Color(0xFF130E0A) else Color(0xFF64748B),
+                    color = fgColor,
                     platformStyle = NoFontPaddingStyle
                 ),
                 maxLines = 1,
@@ -337,7 +347,7 @@ fun TactilePrimaryButton(
 }
 
 /**
- * Bespoke Specular Slate / Ruby Secondary Button (replaces stock OutlinedButton / flat Surface buttons).
+ * Theme-Adaptive Specular Secondary Button.
  */
 @Composable
 fun TactileSecondaryButton(
@@ -352,26 +362,41 @@ fun TactileSecondaryButton(
     minHeight: Dp = 44.dp,
     contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 9.dp)
 ) {
+    val theme = BotHubThemeTokens
     val shape = RoundedCornerShape(cornerRadius)
-    val bgBrush = remember(danger, accent) {
+    val bgBrush = remember(danger, accent, theme.id) {
         when {
-            danger -> Brush.verticalGradient(listOf(Color(0x30F43F5E), Color(0x18BE123C)))
-            accent -> Brush.verticalGradient(listOf(Color(0x2EF2B880), Color(0x18C68850)))
-            else -> Brush.verticalGradient(listOf(Color(0xFF182240), Color(0xFF0E1529)))
+            danger -> Brush.verticalGradient(
+                listOf(
+                    Color(0xFFF43F5E).copy(alpha = if (theme.isLight) 0.12f else 0.22f),
+                    Color(0xFFBE123C).copy(alpha = if (theme.isLight) 0.06f else 0.12f)
+                )
+            )
+            accent -> Brush.verticalGradient(
+                listOf(
+                    theme.accent.copy(alpha = if (theme.isLight) 0.14f else 0.20f),
+                    theme.accentDeep.copy(alpha = if (theme.isLight) 0.08f else 0.11f)
+                )
+            )
+            else -> Brush.verticalGradient(listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom))
         }
     }
-    val rim = remember(danger, accent) {
+    val rim = remember(danger, accent, theme.id) {
         when {
             danger -> specularRimBrush(Color(0x70FB7185), Color(0x30FB7185), Color(0x14FB7185))
-            accent -> specularRimBrush(Color(0x78F2B880), Color(0x30F2B880), Color(0x14F2B880))
-            else -> specularRimBrush(Color(0x38FFF8EE), Color(0x16FFF8EE), Color(0x08FFF8EE))
+            accent -> specularRimBrush(
+                theme.accent.copy(alpha = 0.50f),
+                theme.accent.copy(alpha = 0.22f),
+                theme.accent.copy(alpha = 0.08f)
+            )
+            else -> specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
         }
     }
     val fgColor = when {
-        !enabled -> Color(0xFF64748B)
-        danger -> Color(0xFFFDA4AF)
-        accent -> Color(0xFFFFE4C4)
-        else -> Color(0xFFE6ECF8)
+        !enabled -> theme.textMuted
+        danger -> if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFDA4AF)
+        accent -> if (theme.isLight) theme.accentDeep else theme.accentLight
+        else -> theme.textPrimary
     }
 
     Box(
@@ -417,7 +442,7 @@ fun TactileSecondaryButton(
 }
 
 /**
- * Custom 46x26dp iOS / WeChat Sliding Capsule Toggle (replaces bulky stock M3 Switch everywhere).
+ * Custom 46x26dp Sliding Capsule Toggle.
  */
 @Composable
 fun TactileToggle(
@@ -426,6 +451,7 @@ fun TactileToggle(
     enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     val haptics = LocalHapticFeedback.current
     val thumbOffset by animateDpAsState(
         targetValue = if (checked) 20.dp else 0.dp,
@@ -436,17 +462,17 @@ fun TactileToggle(
         label = "toggleThumbOffset"
     )
     val trackTop by animateColorAsState(
-        targetValue = if (checked) Color(0xFFF6C692) else Color(0xFF12192E),
+        targetValue = if (checked) theme.accent else theme.inputTop,
         animationSpec = tween(180),
         label = "toggleTrackTop"
     )
     val trackBottom by animateColorAsState(
-        targetValue = if (checked) Color(0xFFDF9855) else Color(0xFF0A0F1E),
+        targetValue = if (checked) theme.accentDeep else theme.inputBottom,
         animationSpec = tween(180),
         label = "toggleTrackBottom"
     )
     val borderColor by animateColorAsState(
-        targetValue = if (checked) Color(0x66FFE8CC) else Color(0x28FFF8EE),
+        targetValue = if (checked) theme.accent.copy(alpha = 0.55f) else theme.rimHighlight,
         animationSpec = tween(180),
         label = "toggleBorder"
     )
@@ -484,16 +510,12 @@ fun TactileToggle(
                 .shadow(
                     elevation = 3.dp,
                     shape = CircleShape,
-                    ambientColor = Color(0x88000000),
-                    spotColor = Color(0xAA000000)
+                    ambientColor = Color(0x55000000),
+                    spotColor = Color(0x77000000)
                 )
                 .background(
                     brush = Brush.verticalGradient(
-                        colors = if (checked) {
-                            listOf(Color(0xFFFFFFFF), Color(0xFFFFF4E6))
-                        } else {
-                            listOf(Color(0xFFE2E8F0), Color(0xFF94A3B8))
-                        }
+                        colors = listOf(Color(0xFFFFFFFF), Color(0xFFF1F5F9))
                     ),
                     shape = CircleShape
                 )
@@ -502,7 +524,7 @@ fun TactileToggle(
 }
 
 /**
- * Recessed Pill Search Bar (WeChat / QQ / Telegram inset dark search capsule).
+ * Recessed Pill Search Bar.
  */
 @Composable
 fun RecessedSearchBar(
@@ -511,10 +533,11 @@ fun RecessedSearchBar(
     placeholder: String,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(13.dp)
     val borderColor by animateColorAsState(
-        targetValue = if (focused) Color(0x66F2B880) else Color(0x16FFF8EE),
+        targetValue = if (focused) theme.accent.copy(alpha = 0.65f) else theme.divider,
         animationSpec = tween(150),
         label = "searchBorder"
     )
@@ -525,9 +548,7 @@ fun RecessedSearchBar(
             .sizeIn(minHeight = 38.dp)
             .clip(shape)
             .background(
-                Brush.verticalGradient(
-                    listOf(Color(0xEB070B16), Color(0xEB0C1224))
-                ),
+                Brush.verticalGradient(listOf(theme.inputTop, theme.inputBottom)),
                 shape
             )
             .border(0.8.dp, borderColor, shape)
@@ -542,7 +563,7 @@ fun RecessedSearchBar(
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = null,
-                tint = if (focused) Color(0xFFF2B880) else Color(0xFF64748B),
+                tint = if (focused) theme.accent else theme.textMuted,
                 modifier = Modifier.size(16.dp)
             )
             BasicTextField(
@@ -550,11 +571,11 @@ fun RecessedSearchBar(
                 onValueChange = onValueChange,
                 singleLine = true,
                 textStyle = TextStyle(
-                    color = Color(0xFFFFF8EE),
+                    color = theme.textPrimary,
                     fontSize = 13.5.sp,
                     platformStyle = NoFontPaddingStyle
                 ),
-                cursorBrush = SolidColor(Color(0xFFF2B880)),
+                cursorBrush = SolidColor(theme.accent),
                 modifier = Modifier
                     .weight(1f)
                     .onFocusChanged { focused = it.isFocused },
@@ -565,7 +586,7 @@ fun RecessedSearchBar(
                                 text = placeholder,
                                 style = TextStyle(
                                     fontSize = 13.sp,
-                                    color = Color(0xFF5A6A85),
+                                    color = theme.textMuted,
                                     platformStyle = NoFontPaddingStyle
                                 ),
                                 maxLines = 1,
@@ -581,14 +602,14 @@ fun RecessedSearchBar(
                     modifier = Modifier
                         .size(18.dp)
                         .clip(CircleShape)
-                        .background(Color(0x26FFFFFF))
+                        .background(theme.textMuted.copy(alpha = 0.22f))
                         .clickable { onValueChange("") },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "清空",
-                        tint = Color(0xFFCBD5E1),
+                        tint = theme.textPrimary,
                         modifier = Modifier.size(11.dp)
                     )
                 }
@@ -598,7 +619,7 @@ fun RecessedSearchBar(
 }
 
 /**
- * Spirit-tinted Duotone Squircle Avatar (replaces dark gray wire-bordered avatar boxes).
+ * Spirit-tinted Duotone Squircle Avatar.
  */
 @Composable
 fun SpiritSquircleAvatar(
@@ -614,22 +635,39 @@ fun SpiritSquircleAvatar(
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     val styleRaw = (avatarStyleOverride ?: bot?.avatarStyle ?: "butler:gold").lowercase()
     val isGroup = bot?.isGroup == true
 
-    val (bgTop, bgBottom, rimAccent) = remember(styleRaw, isGroup) {
-        when {
-            isGroup -> Triple(Color(0xFF1A203D), Color(0xFF0E1326), Color(0x4DF2B880))
-            styleRaw.contains("emerald") || styleRaw.contains("radar") ->
-                Triple(Color(0xFF112928), Color(0xFF0A1719), Color(0x4734D399))
-            styleRaw.contains("indigo") || styleRaw.contains("sentinel") || styleRaw.contains("cyan") ->
-                Triple(Color(0xFF162142), Color(0xFF0C1226), Color(0x47818CF8))
-            styleRaw.contains("violet") || styleRaw.contains("swarm") ->
-                Triple(Color(0xFF23183E), Color(0xFF120D24), Color(0x47C084FC))
-            styleRaw.contains("rose") || styleRaw.contains("critic") || styleRaw.contains("amber") ->
-                Triple(Color(0xFF2B1920), Color(0xFF150D13), Color(0x47FB7185))
-            else ->
-                Triple(Color(0xFF261D18), Color(0xFF130F12), Color(0x4DF2B880))
+    val (bgTop, bgBottom, rimAccent) = remember(styleRaw, isGroup, theme.isLight) {
+        if (theme.isLight) {
+            when {
+                isGroup -> Triple(Color(0xFFEEF2FF), Color(0xFFE0E7FF), Color(0x476366F1))
+                styleRaw.contains("emerald") || styleRaw.contains("radar") ->
+                    Triple(Color(0xFFECFDF5), Color(0xFFD1FAE5), Color(0x4710B981))
+                styleRaw.contains("indigo") || styleRaw.contains("sentinel") || styleRaw.contains("cyan") ->
+                    Triple(Color(0xFFEFF6FF), Color(0xFFDBEAFE), Color(0x473B82F6))
+                styleRaw.contains("violet") || styleRaw.contains("swarm") ->
+                    Triple(Color(0xFFF5F3FF), Color(0xFFEDE9FE), Color(0x478B5CF6))
+                styleRaw.contains("rose") || styleRaw.contains("critic") || styleRaw.contains("amber") ->
+                    Triple(Color(0xFFFFF1F2), Color(0xFFFFE4E6), Color(0x47F43F5E))
+                else ->
+                    Triple(Color(0xFFFFFBEB), Color(0xFFFEF3C7), Color(0x47D97706))
+            }
+        } else {
+            when {
+                isGroup -> Triple(Color(0xFF1A203D), Color(0xFF0E1326), Color(0x4DF2B880))
+                styleRaw.contains("emerald") || styleRaw.contains("radar") ->
+                    Triple(Color(0xFF112928), Color(0xFF0A1719), Color(0x4734D399))
+                styleRaw.contains("indigo") || styleRaw.contains("sentinel") || styleRaw.contains("cyan") ->
+                    Triple(Color(0xFF162142), Color(0xFF0C1226), Color(0x47818CF8))
+                styleRaw.contains("violet") || styleRaw.contains("swarm") ->
+                    Triple(Color(0xFF23183E), Color(0xFF120D24), Color(0x47C084FC))
+                styleRaw.contains("rose") || styleRaw.contains("critic") || styleRaw.contains("amber") ->
+                    Triple(Color(0xFF2B1920), Color(0xFF150D13), Color(0x47FB7185))
+                else ->
+                    Triple(Color(0xFF261D18), Color(0xFF130F12), Color(0x4DF2B880))
+            }
         }
     }
 
@@ -647,17 +685,17 @@ fun SpiritSquircleAvatar(
                 .fillMaxSize()
                 .then(clickMod)
                 .shadow(
-                    elevation = 4.dp,
+                    elevation = if (theme.isLight) 2.dp else 4.dp,
                     shape = shape,
-                    ambientColor = Color(0x77000000),
-                    spotColor = Color(0x88000000)
+                    ambientColor = if (theme.isLight) Color(0x220F172A) else Color(0x77000000),
+                    spotColor = if (theme.isLight) Color(0x2A0F172A) else Color(0x88000000)
                 )
                 .clip(shape)
                 .background(Brush.verticalGradient(listOf(bgTop, bgBottom)), shape)
                 .border(
                     BorderStroke(
                         0.75.dp,
-                        specularRimBrush(rimAccent, rimAccent.copy(alpha = 0.14f), Color(0x08FFFFFF))
+                        specularRimBrush(rimAccent, rimAccent.copy(alpha = 0.14f), theme.rimSubtle)
                     ),
                     shape
                 ),
@@ -684,17 +722,17 @@ fun SpiritSquircleAvatar(
 
         if (showPresenceDot && !isGroup) {
             val dotColor = when (state) {
-                "working" -> Color(0xFFF2B880)
+                "working" -> theme.accent
                 "thinking" -> Color(0xFFFBBF24)
                 "blocked" -> Color(0xFFFB7185)
-                else -> Color(0xFF34D399)
+                else -> Color(0xFF10B981)
             }
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .offset(x = 2.dp, y = 2.dp)
                     .size(12.dp)
-                    .background(Color(0xFF050811), CircleShape)
+                    .background(theme.bgBase, CircleShape)
                     .padding(2.dp)
                     .background(dotColor, CircleShape)
             )
@@ -703,7 +741,7 @@ fun SpiritSquircleAvatar(
 }
 
 /**
- * Unread Red/Champagne Pill Badge immune to OEM handwritten font vertical stretching.
+ * Unread Red/Accent Pill Badge immune to OEM handwritten font vertical stretching.
  */
 @Composable
 fun CrispUnreadBadge(
@@ -740,22 +778,26 @@ fun CrispUnreadBadge(
 }
 
 /**
- * Bulletproof non-wrapping micro tag pill (never squeezes vertically into 1-char columns).
+ * Bulletproof non-wrapping micro tag pill.
  */
 @Composable
 fun CrispTagPill(
     text: String,
-    bgColor: Color = Color(0x16FFFFFF),
-    borderColor: Color = Color(0x24FFF8EE),
-    textColor: Color = Color(0xFF94A3B8),
+    bgColor: Color = UnsetColor,
+    borderColor: Color = UnsetColor,
+    textColor: Color = UnsetColor,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
+    val resolvedBg = if (bgColor != UnsetColor) bgColor else theme.accent.copy(alpha = 0.14f)
+    val resolvedBorder = if (borderColor != UnsetColor) borderColor else theme.accent.copy(alpha = 0.36f)
+    val resolvedText = if (textColor != UnsetColor) textColor else (if (theme.isLight) theme.accentDeep else theme.accentLight)
     val shape = RoundedCornerShape(5.dp)
     Box(
         modifier = modifier
             .clip(shape)
-            .background(bgColor, shape)
-            .border(0.5.dp, borderColor, shape)
+            .background(resolvedBg, shape)
+            .border(0.5.dp, resolvedBorder, shape)
             .padding(horizontal = 5.5.dp, vertical = 1.5.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -764,7 +806,7 @@ fun CrispTagPill(
             style = TextStyle(
                 fontSize = 9.5.sp,
                 fontWeight = FontWeight.Medium,
-                color = textColor,
+                color = resolvedText,
                 platformStyle = NoFontPaddingStyle
             ),
             maxLines = 1,
@@ -776,13 +818,13 @@ fun CrispTagPill(
 data class GlassMenuAction(
     val label: String,
     val icon: ImageVector? = null,
-    val iconTint: Color = Color(0xFFFFE2BE),
+    val iconTint: Color = UnsetColor,
     val danger: Boolean = false,
     val onClick: () -> Unit
 )
 
 /**
- * Custom Floating Rounded Specular Glass Popover (replaces stock rectangular M3 DropdownMenu).
+ * Theme-Unified Floating Rounded Specular Glass Popover (replaces rectangular stock M3 DropdownMenu).
  */
 @Composable
 fun FloatingGlassPopover(
@@ -795,6 +837,7 @@ fun FloatingGlassPopover(
 ) {
     if (!expanded) return
 
+    val theme = BotHubThemeTokens
     val density = LocalDensity.current
     val pxOffset = remember(density, offsetX, offsetY) {
         with(density) { IntOffset(offsetX.roundToPx(), offsetY.roundToPx()) }
@@ -825,28 +868,37 @@ fun FloatingGlassPopover(
                     .padding(horizontal = 8.dp, vertical = 4.dp)
                     .widthIn(min = 172.dp, max = 224.dp)
                     .shadow(
-                        elevation = 18.dp,
+                        elevation = if (theme.isLight) 10.dp else 18.dp,
                         shape = shape,
-                        ambientColor = Color(0xDD000000),
-                        spotColor = Color(0xEE000000)
+                        ambientColor = if (theme.isLight) Color(0x330F172A) else Color(0xDD000000),
+                        spotColor = if (theme.isLight) Color(0x400F172A) else Color(0xEE000000)
                     )
                     .clip(shape)
                     .background(
-                        Brush.verticalGradient(
-                            listOf(Color(0xFA16203D), Color(0xFA0C1225))
-                        ),
+                        Brush.verticalGradient(listOf(theme.popoverTop, theme.popoverBottom)),
                         shape
                     )
                     .border(
                         BorderStroke(
                             0.9.dp,
-                            specularRimBrush(Color(0x4DFFF8EE), Color(0x1CFFF8EE), Color(0x0AFFF8EE))
+                            specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
                         ),
                         shape
                     )
                     .padding(vertical = 5.dp)
             ) {
                 items.forEachIndexed { idx, action ->
+                    val effectiveTint = when {
+                        action.danger -> if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFB7185)
+                        action.iconTint != UnsetColor -> {
+                            if (theme.isLight && action.iconTint.luminanceApprox() > 0.72f) {
+                                theme.accent
+                            } else {
+                                action.iconTint
+                            }
+                        }
+                        else -> theme.accent
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -863,13 +915,13 @@ fun FloatingGlassPopover(
                                 modifier = Modifier
                                     .size(26.dp)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(action.iconTint.copy(alpha = 0.14f)),
+                                    .background(effectiveTint.copy(alpha = 0.14f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = action.icon,
                                     contentDescription = null,
-                                    tint = if (action.danger) Color(0xFFFB7185) else action.iconTint,
+                                    tint = effectiveTint,
                                     modifier = Modifier.size(15.dp)
                                 )
                             }
@@ -879,7 +931,7 @@ fun FloatingGlassPopover(
                             style = TextStyle(
                                 fontSize = 13.5.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = if (action.danger) Color(0xFFFDA4AF) else Color(0xFFFFF8EE),
+                                color = if (action.danger) effectiveTint else theme.textPrimary,
                                 platformStyle = NoFontPaddingStyle
                             ),
                             maxLines = 1,
@@ -890,7 +942,7 @@ fun FloatingGlassPopover(
                     if (idx < items.lastIndex) {
                         HorizontalDivider(
                             thickness = 0.5.dp,
-                            color = Color(0x18FFF8EE),
+                            color = theme.divider,
                             modifier = Modifier.padding(
                                 start = if (action.icon != null) 52.dp else 14.dp,
                                 end = 14.dp
@@ -903,8 +955,79 @@ fun FloatingGlassPopover(
     }
 }
 
+private fun Color.luminanceApprox(): Float = 0.299f * red + 0.587f * green + 0.114f * blue
+
 /**
- * Tactile Filter Pill Chip with smooth specular selection state.
+ * Theme-Unified Floating Glass Snackbar Host (replaces stark white Material 3 stock Snackbar).
+ */
+@Composable
+fun BotHubSnackbarHost(
+    hostState: SnackbarHostState,
+    modifier: Modifier = Modifier
+) {
+    val theme = BotHubThemeTokens
+    SnackbarHost(
+        hostState = hostState,
+        modifier = modifier
+    ) { data ->
+        val msg = data.visuals.message
+        val isError = msg.contains("失败") || msg.contains("异常") || msg.contains("错误") || msg.contains("无效")
+        val statusColor = if (isError) Color(0xFFF43F5E) else theme.accent
+        val shape = RoundedCornerShape(16.dp)
+
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 18.dp, vertical = 10.dp)
+                .shadow(
+                    elevation = if (theme.isLight) 8.dp else 14.dp,
+                    shape = shape,
+                    ambientColor = if (theme.isLight) Color(0x2E0F172A) else Color(0xCC000000),
+                    spotColor = if (theme.isLight) Color(0x380F172A) else Color(0xDD000000)
+                )
+                .clip(shape)
+                .background(
+                    Brush.verticalGradient(listOf(theme.popoverTop, theme.popoverBottom)),
+                    shape
+                )
+                .border(
+                    BorderStroke(
+                        0.9.dp,
+                        specularRimBrush(
+                            statusColor.copy(alpha = 0.55f),
+                            theme.rimMid,
+                            theme.rimSubtle
+                        )
+                    ),
+                    shape
+                )
+                .clickable { data.dismiss() }
+                .padding(horizontal = 15.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .background(statusColor, CircleShape)
+            )
+            Text(
+                text = msg,
+                style = TextStyle(
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = theme.textPrimary,
+                    platformStyle = NoFontPaddingStyle
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+        }
+    }
+}
+
+/**
+ * Tactile Filter Pill Chip with theme-adaptive selection state.
  */
 @Composable
 fun TactileFilterChip(
@@ -913,20 +1036,35 @@ fun TactileFilterChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     val shape = RoundedCornerShape(999.dp)
-    val bgBrush = remember(selected) {
+    val bgBrush = remember(selected, theme.id) {
         if (selected) {
-            Brush.verticalGradient(listOf(Color(0x36F2B880), Color(0x1CC88A4E)))
+            Brush.verticalGradient(
+                listOf(
+                    theme.accent.copy(alpha = if (theme.isLight) 0.16f else 0.22f),
+                    theme.accentDeep.copy(alpha = if (theme.isLight) 0.08f else 0.12f)
+                )
+            )
         } else {
-            Brush.verticalGradient(listOf(Color(0xCC111930), Color(0xCC0A0F1E)))
+            Brush.verticalGradient(listOf(theme.cardTop, theme.cardBottom))
         }
     }
-    val rim = remember(selected) {
+    val rim = remember(selected, theme.id) {
         if (selected) {
-            specularRimBrush(Color(0x88F2B880), Color(0x40F2B880), Color(0x1AF2B880))
+            specularRimBrush(
+                theme.accent.copy(alpha = 0.58f),
+                theme.accent.copy(alpha = 0.26f),
+                theme.accent.copy(alpha = 0.10f)
+            )
         } else {
-            specularRimBrush(Color(0x28FFF8EE), Color(0x10FFF8EE), Color(0x06FFF8EE))
+            specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
         }
+    }
+    val fgColor = if (selected) {
+        if (theme.isLight) theme.accentDeep else theme.accentLight
+    } else {
+        theme.textMuted
     }
 
     Box(
@@ -944,7 +1082,7 @@ fun TactileFilterChip(
             style = TextStyle(
                 fontSize = 12.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                color = if (selected) Color(0xFFFFE4C4) else Color(0xFF94A3B8),
+                color = fgColor,
                 platformStyle = NoFontPaddingStyle
             ),
             maxLines = 1,
@@ -958,6 +1096,7 @@ fun TactileFilterChip(
  */
 @Composable
 fun SpecularHairline(modifier: Modifier = Modifier) {
+    val theme = BotHubThemeTokens
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -966,9 +1105,9 @@ fun SpecularHairline(modifier: Modifier = Modifier) {
                 drawRect(
                     brush = Brush.horizontalGradient(
                         listOf(
-                            Color(0x05FFF8EE),
-                            Color(0x26FFF8EE),
-                            Color(0x05FFF8EE)
+                            theme.divider.copy(alpha = 0.25f),
+                            theme.divider,
+                            theme.divider.copy(alpha = 0.25f)
                         )
                     )
                 )
@@ -977,7 +1116,7 @@ fun SpecularHairline(modifier: Modifier = Modifier) {
 }
 
 /**
- * Recessed Obsidian Capsule Segmented Control with spring-physics tactile pill indicator.
+ * Recessed Capsule Segmented Control with theme-adaptive indicator.
  */
 @Composable
 fun TactileSegmentedControl(
@@ -986,6 +1125,7 @@ fun TactileSegmentedControl(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     val outerShape = RoundedCornerShape(14.dp)
     val pillShape = RoundedCornerShape(11.dp)
 
@@ -993,11 +1133,11 @@ fun TactileSegmentedControl(
         modifier = modifier
             .fillMaxWidth()
             .clip(outerShape)
-            .background(Color(0xE6080D1B), outerShape)
+            .background(theme.inputTop, outerShape)
             .border(
                 BorderStroke(
                     0.85.dp,
-                    specularRimBrush(Color(0x24FFF8EE), Color(0x0EFFF8EE), Color.Transparent)
+                    specularRimBrush(theme.rimHighlight, theme.rimMid, Color.Transparent)
                 ),
                 outerShape
             )
@@ -1007,7 +1147,7 @@ fun TactileSegmentedControl(
         options.forEachIndexed { idx, label ->
             val selected = idx == selectedIndex
             val textColor by animateColorAsState(
-                targetValue = if (selected) Color(0xFFFFF8EE) else Color(0xFF8C9BB5),
+                targetValue = if (selected) theme.textPrimary else theme.textMuted,
                 animationSpec = tween(140),
                 label = "segTextColor"
             )
@@ -1026,7 +1166,7 @@ fun TactileSegmentedControl(
                             Modifier
                                 .background(
                                     Brush.verticalGradient(
-                                        listOf(Color(0xFF1F2B4D), Color(0xFF131B34))
+                                        listOf(theme.popoverTop, theme.popoverBottom)
                                     ),
                                     pillShape
                                 )
@@ -1034,9 +1174,9 @@ fun TactileSegmentedControl(
                                     BorderStroke(
                                         0.85.dp,
                                         specularRimBrush(
-                                            Color(0x70F2B880),
-                                            Color(0x28F2B880),
-                                            Color(0x0AFFF8EE)
+                                            theme.accent.copy(alpha = 0.48f),
+                                            theme.accent.copy(alpha = 0.18f),
+                                            theme.rimSubtle
                                         )
                                     ),
                                     pillShape

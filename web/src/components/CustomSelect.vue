@@ -226,8 +226,8 @@ onBeforeUnmount(() => {
             opt.value === modelValue
               ? 'bg-[#f2b880]/20 text-[#f2b880] font-medium'
               : idx === highlightedIndex
-                ? 'bg-white/8 text-white'
-                : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                ? 'bg-slate-500/15 text-white'
+                : 'text-slate-300 hover:bg-slate-500/10 hover:text-white'
           ]"
         >
           <span class="truncate">{{ opt.label }}</span>

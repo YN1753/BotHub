@@ -2,7 +2,6 @@ package uk.starryheavens.vesper.bothub
 
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -33,15 +32,12 @@ class QuickCaptureActivity : ComponentActivity() {
         val api = BotHubApiClient(prefs)
 
         setContent {
-            VesperBotHubTheme(dynamicColor = false) {
+            VesperBotHubTheme(themeId = prefs.appThemeId, dynamicColor = false) {
                 QuickCaptureSheet(
                     rawShared = rawShared,
                     prefs = prefs,
                     api = api,
-                    onSaved = { msg ->
-                        Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).show()
-                        finish()
-                    },
+                    onSaved = { finish() },
                     onForwardDeepChat = { note ->
                         val merged = if (note.isBlank()) rawShared else "$rawShared\n\n附注：$note"
                         startActivity(

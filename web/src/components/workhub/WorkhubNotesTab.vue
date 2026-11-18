@@ -121,7 +121,13 @@ async function handleSaveNote() {
 }
 
 async function removeNote(id: string) {
-  if (!window.confirm('确定删除这份工作文档吗？')) return
+  const ok = await store.openConfirm({
+    title: '删除工作文档',
+    message: '确定删除这份工作文档吗？删除后将无法恢复。',
+    confirmText: '删除文档',
+    danger: true,
+  })
+  if (!ok) return
   const prevNotes = [...store.state.notes]
   store.state.notes = store.state.notes.filter((x) => x.id !== id)
   if (selectedNoteId.value === id) selectedNoteId.value = ''

@@ -116,6 +116,10 @@ class BotHubPrefs(context: Context) {
         get() = prefs.getBoolean("zero_click_capture_enabled", false)
         set(value) = prefs.edit().putBoolean("zero_click_capture_enabled", value).apply()
 
+    var appThemeId: String
+        get() = prefs.getString("app_theme_id", "obsidian") ?: "obsidian"
+        set(value) = prefs.edit().putString("app_theme_id", value.trim().ifEmpty { "obsidian" }).apply()
+
     fun advanceLastEventId(candidateId: Long) {
         if (candidateId > lastEventId) {
             lastEventId = candidateId

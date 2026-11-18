@@ -141,7 +141,13 @@ async function handleCreatePasskey() {
 }
 
 async function handleRenamePasskey(item: PasskeyCredentialItem) {
-  const next = window.prompt('修改通行密钥备注名称：', item.name)
+  const next = await store.openPrompt({
+    title: '重命名通行密钥',
+    message: '请输入新的通行密钥备注名称：',
+    defaultValue: item.name,
+    placeholder: '例如：MacBook Pro / iPhone',
+    confirmText: '保存名称',
+  })
   if (!next || next.trim() === item.name) return
   try {
     await BotHubApi.renamePasskey(item.id, next.trim())
@@ -153,7 +159,13 @@ async function handleRenamePasskey(item: PasskeyCredentialItem) {
 }
 
 async function handleDeletePasskey(item: PasskeyCredentialItem) {
-  if (!window.confirm(`确定移除通行密钥「${item.name}」吗？`)) return
+  const ok = await store.openConfirm({
+    title: '移除通行密钥',
+    message: `确定移除通行密钥「${item.name}」吗？`,
+    confirmText: '移除密钥',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await BotHubApi.deletePasskey(item.id)
     store.notify('已移除通行密钥并同步更新设备密码库')
@@ -178,7 +190,13 @@ async function handleUpdatePassword() {
 }
 
 async function handleRotateToken() {
-  if (!window.confirm('确定轮换底层推送凭证吗？轮换后已连接手机需重新一键绑定。')) return
+  const ok = await store.openConfirm({
+    title: '轮换推送凭证',
+    message: '确定轮换底层推送凭证吗？轮换后已连接手机需重新一键绑定。',
+    confirmText: '确认轮换',
+    danger: true,
+  })
+  if (!ok) return
   try {
     const res = await BotHubApi.rotateAppToken()
     store.notify(res.message || '已轮换底层推送凭证，旧设备连接已断开')
@@ -213,7 +231,13 @@ async function handleExportBackup(maskSecrets = false) {
 
 async function handleRevokeOtherDevices() {
   if (revokingDevices.value) return
-  if (!window.confirm('确定吊销除当前浏览器外所有已登录设备（含 30 天会话）吗？')) return
+  const ok = await store.openConfirm({
+    title: '吊销其他已登录设备',
+    message: '确定吊销除当前浏览器外所有已登录设备（含 30 天会话）吗？',
+    confirmText: '确认吊销',
+    danger: true,
+  })
+  if (!ok) return
   revokingDevices.value = true
   try {
     await store.logoutAllOtherDevices()
@@ -231,7 +255,13 @@ async function copyBuildDiagnostic() {
 }
 
 async function handleLogout() {
-  if (!window.confirm('确定退出当前 BotHub 控制台会话吗？')) return
+  const ok = await store.openConfirm({
+    title: '退出控制台会话',
+    message: '确定退出当前 BotHub 控制台会话吗？',
+    confirmText: '退出登录',
+    danger: true,
+  })
+  if (!ok) return
   emit('close')
   await store.logout()
 }
@@ -256,7 +286,13 @@ async function handleImportBackup(e: Event) {
       `${Array.isArray(parsed.agent_memories) ? parsed.agent_memories.length : 0} 条记忆`,
       `${parsed.configs && typeof parsed.configs === 'object' ? Object.keys(parsed.configs).length : 0} 项配置`,
     ].join(' · ')
-    if (!window.confirm(`确定导入备份并覆盖恢复当前工作台数据吗？\n\n备份内容：${summaryParts}`)) return
+    const ok = await store.openConfirm({
+      title: '导入并覆盖恢复备份',
+      message: `确定导入备份并覆盖恢复当前工作台数据吗？\n\n备份内容：${summaryParts}`,
+      confirmText: '覆盖恢复',
+      danger: true,
+    })
+    if (!ok) return
     const res = await BotHubApi.importBackup(parsed)
     store.notify(res.message || '备份导入恢复成功')
     await store.loadDashboard(false)

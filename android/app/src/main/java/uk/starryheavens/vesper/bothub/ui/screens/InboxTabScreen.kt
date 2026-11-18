@@ -39,6 +39,7 @@ import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
 import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
 import uk.starryheavens.vesper.bothub.ui.components.TactileFilterChip
 import uk.starryheavens.vesper.bothub.ui.components.formatModuleBadge
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 private fun formatShortTimestamp(raw: String): String {
     val clean = raw.trim()
@@ -52,6 +53,7 @@ fun InboxTabScreen(
     onMarkAllRead: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     var filterMode by remember { mutableStateOf("all") }
 
     val filtered = remember(notifications, filterMode) {
@@ -107,7 +109,7 @@ fun InboxTabScreen(
                                 text = if (filterMode == "unread") "暂无未读通知" else "暂无通知",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF94A3B8),
+                                color = theme.textMuted,
                                 textAlign = TextAlign.Center
                             )
                         }
@@ -123,8 +125,8 @@ fun InboxTabScreen(
 
                 SpecularGlassCard(
                     cornerRadius = 18.dp,
-                    topColor = if (unread) Color(0xF0151F3B) else Color(0xD90E1428),
-                    bottomColor = if (unread) Color(0xF00C1224) else Color(0xD9090D1A),
+                    topColor = if (unread) theme.cardUnreadTop else theme.cardTop,
+                    bottomColor = if (unread) theme.cardUnreadBottom else theme.cardBottom,
                     accentTint = when {
                         unread && isHighPriority -> Color(0xFFFB7185)
                         unread -> badgeColor
@@ -151,7 +153,7 @@ fun InboxTabScreen(
                                         modifier = Modifier
                                             .size(6.5.dp)
                                             .background(
-                                                color = if (isHighPriority) Color(0xFFFB7185) else Color(0xFFF2B880),
+                                                color = if (isHighPriority) Color(0xFFFB7185) else theme.accent,
                                                 shape = CircleShape
                                             )
                                     )
@@ -181,7 +183,7 @@ fun InboxTabScreen(
                                 text = formatShortTimestamp(item.createdAt),
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
-                                color = Color(0xFF5D6D89),
+                                color = theme.textMuted,
                                 maxLines = 1,
                                 softWrap = false
                             )
@@ -191,7 +193,7 @@ fun InboxTabScreen(
                             text = item.title,
                             fontSize = 15.sp,
                             fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (unread) Color(0xFFFFF8EE) else Color(0xFFD8E0F0),
+                            color = if (unread) theme.textPrimary else theme.textSecondary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -202,7 +204,7 @@ fun InboxTabScreen(
                                 text = preview,
                                 fontSize = 13.sp,
                                 lineHeight = 19.sp,
-                                color = Color(0xFF8C9BB5),
+                                color = theme.textMuted,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )

@@ -554,7 +554,13 @@ function exportTimelineMarkdown() {
 
 async function clearTimeline() {
   if (store.state.isStreaming || !bot.value) return
-  if (!window.confirm(`确定清空 [${bot.value.name}] 的对话时间线吗？`)) return
+  const ok = await store.openConfirm({
+    title: '清空对话时间线',
+    message: `确定清空 [${bot.value.name}] 的对话时间线吗？`,
+    confirmText: '确认清空',
+    danger: true,
+  })
+  if (!ok) return
   await store.clearActiveBotTimeline()
 }
 </script>

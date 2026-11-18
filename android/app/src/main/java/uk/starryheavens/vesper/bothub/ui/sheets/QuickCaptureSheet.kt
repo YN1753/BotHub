@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
@@ -51,6 +54,7 @@ import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.ZeroClickCaptureRow
 import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 @Composable
 fun QuickCaptureSheet(
@@ -63,11 +67,13 @@ fun QuickCaptureSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     val scope = rememberCoroutineScope()
     val preview = remember(rawShared) { ShareTextParser.parse(rawShared) }
     var noteInput by remember { mutableStateOf("") }
     var zeroClick by remember { mutableStateOf(prefs.zeroClickCaptureEnabled) }
     var saving by remember { mutableStateOf(false) }
+    var savedMsg by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf("") }
 
     var hasToken by remember { mutableStateOf(prefs.isLikelyPaired) }
@@ -84,6 +90,8 @@ fun QuickCaptureSheet(
                     } else {
                         "已秒收入收藏匣，后台正异步提炼要点"
                     }
+                    savedMsg = toastText
+                    delay(460L)
                     onSaved(toastText)
                 },
                 onFailure = { err ->
@@ -124,8 +132,8 @@ fun QuickCaptureSheet(
                     onClick = {}
                 ),
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            color = Color(0xFF080D1B),
-            border = BorderStroke(0.9.dp, specularRimBrush(Color(0x38FFF8EE), Color(0x14FFF8EE), Color.Transparent)),
+            color = theme.sheetBg,
+            border = BorderStroke(0.9.dp, specularRimBrush(theme.rimHighlight, theme.rimMid, Color.Transparent)),
             tonalElevation = 0.dp
         ) {
             Column(
@@ -140,7 +148,7 @@ fun QuickCaptureSheet(
                     modifier = Modifier
                         .width(38.dp)
                         .height(4.dp)
-                        .background(Color(0x5CCBD5E1), RoundedCornerShape(999.dp))
+                        .background(theme.textMuted.copy(alpha = 0.42f), RoundedCornerShape(999.dp))
                         .align(Alignment.CenterHorizontally)
                 )
 
@@ -173,7 +181,7 @@ fun QuickCaptureSheet(
                             text = "快速收藏",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFFF8EE),
+                            color = theme.textPrimary,
                             maxLines = 1,
                             softWrap = false,
                             overflow = TextOverflow.Ellipsis,
@@ -183,8 +191,8 @@ fun QuickCaptureSheet(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0x24F2B880))
-                            .border(0.5.dp, Color(0x5CF2B880), RoundedCornerShape(8.dp))
+                            .background(theme.accent.copy(alpha = 0.14f))
+                            .border(0.5.dp, theme.accent.copy(alpha = 0.38f), RoundedCornerShape(8.dp))
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
@@ -192,12 +200,38 @@ fun QuickCaptureSheet(
                             style = TextStyle(
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = Color(0xFFFFE2BE),
+                                color = if (theme.isLight) theme.accentDeep else theme.accentLight,
                                 platformStyle = NoFontPaddingStyle
                             ),
                             maxLines = 1,
                             softWrap = false
                         )
+                    }
+                }
+
+                if (savedMsg.isNotEmpty()) {
+                    SpecularGlassCard(
+                        cornerRadius = 14.dp,
+                        accentTint = Color(0xFF10B981),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .background(Color(0xFF10B981), CircleShape)
+                            )
+                            Text(
+                                text = savedMsg,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = theme.textPrimary
+                            )
+                        }
                     }
                 }
 
@@ -213,7 +247,7 @@ fun QuickCaptureSheet(
                             text = preview.candidateTitle,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFFFFF8EE),
+                            color = theme.textPrimary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -222,7 +256,7 @@ fun QuickCaptureSheet(
                                 text = preview.extractedUrl,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
-                                color = Color(0xFFA5B4FC),
+                                color = theme.accent,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -234,7 +268,7 @@ fun QuickCaptureSheet(
                     Text(
                         text = "尚未配置服务端连接，请先打开主程序一键绑定。",
                         fontSize = 13.sp,
-                        color = Color(0xFFFFE2BE)
+                        color = theme.textSecondary
                     )
                     TactilePrimaryButton(
                         text = "打开 BotHub 一键绑定",
@@ -267,7 +301,7 @@ fun QuickCaptureSheet(
                         Text(
                             text = errorMsg,
                             fontSize = 12.sp,
-                            color = Color(0xFFFDA4AF)
+                            color = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFDA4AF)
                         )
                     }
 

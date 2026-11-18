@@ -233,7 +233,13 @@ async function handleSubmit() {
 
 async function handleDelete() {
   if (isNew.value || !id.value) return
-  if (!window.confirm(`确定删除调度任务 [${name.value}] 吗？`)) return
+  const ok = await store.openConfirm({
+    title: '删除调度任务',
+    message: `确定删除调度任务 [${name.value}] 吗？`,
+    confirmText: '确认删除',
+    danger: true,
+  })
+  if (!ok) return
   const targetId = id.value
   store.state.tasks = store.state.tasks.filter((t) => t.id !== targetId)
   closeModal()

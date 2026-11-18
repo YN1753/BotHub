@@ -30,6 +30,35 @@ export { mapServerMessages, type ChatMessageUI }
 export type MainWorkspace = 'bots' | 'ops'
 export type BotSubView = 'stream' | 'routines' | 'config' | 'activity'
 
+export interface AppDialogRequest {
+  id: number
+  kind: 'confirm' | 'prompt'
+  title: string
+  message: string
+  confirmText?: string
+  cancelText?: string
+  danger?: boolean
+  defaultValue?: string
+  placeholder?: string
+}
+
+export interface ConfirmDialogOptions {
+  title?: string
+  message: string
+  confirmText?: string
+  cancelText?: string
+  danger?: boolean
+}
+
+export interface PromptDialogOptions {
+  title?: string
+  message: string
+  defaultValue?: string
+  placeholder?: string
+  confirmText?: string
+  cancelText?: string
+}
+
 const TOAST_DURATION_MS = 3200
 const FASTBOOT_STORAGE_KEY = 'bothub_fastboot_v1'
 
@@ -138,10 +167,61 @@ const state = reactive({
   editingAsset: undefined as Asset | null | undefined, // undefined = closed, null = new
   editingTask: undefined as Task | Partial<Task> | null | undefined,
 
-  // Toast
+  // Toast & Dialog
   toastMessage: '',
   toastSeq: 0,
+  dialogRequest: null as AppDialogRequest | null,
 })
+
+let dialogSeq = 0
+let activeDialogResolve: ((result: boolean | string | null) => void) | null = null
+
+function openConfirm(opts: string | ConfirmDialogOptions): Promise<boolean> {
+  const normalized: ConfirmDialogOptions = typeof opts === 'string' ? { message: opts } : opts
+  if (activeDialogResolve) {
+    activeDialogResolve(false)
+    activeDialogResolve = null
+  }
+  return new Promise<boolean>((resolve) => {
+    activeDialogResolve = (res) => resolve(Boolean(res))
+    state.dialogRequest = {
+      id: ++dialogSeq,
+      kind: 'confirm',
+      title: normalized.title || '请确认操作',
+      message: normalized.message,
+      confirmText: normalized.confirmText || '确认',
+      cancelText: normalized.cancelText || '取消',
+      danger: normalized.danger ?? true,
+    }
+  })
+}
+
+function openPrompt(opts: PromptDialogOptions): Promise<string | null> {
+  if (activeDialogResolve) {
+    activeDialogResolve(null)
+    activeDialogResolve = null
+  }
+  return new Promise<string | null>((resolve) => {
+    activeDialogResolve = (res) => resolve(typeof res === 'string' ? res : null)
+    state.dialogRequest = {
+      id: ++dialogSeq,
+      kind: 'prompt',
+      title: opts.title || '请输入内容',
+      message: opts.message,
+      defaultValue: opts.defaultValue || '',
+      placeholder: opts.placeholder || '',
+      confirmText: opts.confirmText || '保存',
+      cancelText: opts.cancelText || '取消',
+    }
+  })
+}
+
+function resolveDialog(result: boolean | string | null) {
+  const resolver = activeDialogResolve
+  activeDialogResolve = null
+  state.dialogRequest = null
+  if (resolver) resolver(result)
+}
 
 let sseSource: EventSource | null = null
 let toastTimer: number | null = null
@@ -903,6 +983,9 @@ export function useAppStore() {
     notify,
     pauseToast,
     resumeToast,
+    openConfirm,
+    openPrompt,
+    resolveDialog,
     checkAuth,
     login,
     completeSessionActivation,

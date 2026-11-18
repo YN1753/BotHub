@@ -23,7 +23,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +37,7 @@ import uk.starryheavens.vesper.bothub.ui.components.SpecularHairline
 import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.formatModuleBadge
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +47,7 @@ fun NotificationDetailSheet(
     onDiagnoseWithAi: (NotificationItem) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val theme = BotHubThemeTokens
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val (badgeLabel, badgeColor) = formatModuleBadge(item.moduleId)
 
@@ -54,7 +55,8 @@ fun NotificationDetailSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = Color(0xFF080D1B),
+        containerColor = theme.sheetBg,
+        scrimColor = theme.scrim,
         tonalElevation = 0.dp,
         dragHandle = { ObsidianSheetDragHandle() }
     ) {
@@ -90,7 +92,7 @@ fun NotificationDetailSheet(
                         text = item.createdAt,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.5.sp,
-                        color = Color(0xFF8C9BB5)
+                        color = theme.textMuted
                     )
                 }
 
@@ -99,7 +101,7 @@ fun NotificationDetailSheet(
                     fontSize = 18.sp,
                     lineHeight = 25.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFF8EE)
+                    color = theme.textPrimary
                 )
             }
 

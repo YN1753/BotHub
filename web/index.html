@@ -1,9 +1,43 @@
 <!doctype html>
-<html lang="zh-CN" class="dark">
+<html lang="zh-CN" data-theme="obsidian" data-color-mode="dark" class="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
   <meta name="theme-color" content="#080c1c" />
+  <script>
+    (function () {
+      var KEY = 'bothub_theme';
+      var LIGHT_THEMES = { daylight: '#f2f5fa', parchment: '#f4eee2' };
+      var DARK_THEMES = {
+        obsidian: '#080c1c',
+        ocean: '#061320',
+        emerald: '#061510',
+        amethyst: '#110b22'
+      };
+      var saved = 'obsidian';
+      try { saved = localStorage.getItem(KEY) || 'obsidian'; } catch (e) {}
+      var prefersLight = false;
+      try {
+        prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+      } catch (e) {}
+      var resolved = saved === 'system' ? (prefersLight ? 'daylight' : 'obsidian') : saved;
+      if (!LIGHT_THEMES[resolved] && !DARK_THEMES[resolved]) resolved = 'obsidian';
+      var isLight = !!LIGHT_THEMES[resolved];
+      var root = document.documentElement;
+      root.dataset.theme = resolved;
+      root.dataset.colorMode = isLight ? 'light' : 'dark';
+      root.classList.toggle('dark', !isLight);
+      var schemeMeta = document.querySelector('meta[name="color-scheme"]');
+      if (schemeMeta) {
+        schemeMeta.setAttribute('content', saved === 'system' ? 'light dark' : (isLight ? 'light' : 'dark'));
+      }
+      var themeMeta = document.querySelector('meta[name="theme-color"]');
+      if (themeMeta) {
+        themeMeta.setAttribute('content', LIGHT_THEMES[resolved] || DARK_THEMES[resolved]);
+      }
+    })();
+  </script>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2.36" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2.36" />
   <link rel="manifest" href="/manifest.webmanifest" />

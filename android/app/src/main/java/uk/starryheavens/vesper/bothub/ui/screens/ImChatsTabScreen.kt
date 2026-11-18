@@ -69,6 +69,7 @@ import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.VesperBrandEmblem
 import uk.starryheavens.vesper.bothub.ui.components.formatModuleBadge
 import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -90,6 +91,7 @@ fun ImChatsTabScreen(
     onCreateGroup: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     val haptics = LocalHapticFeedback.current
 
     val sortedBots = remember(bots, searchQuery) {
@@ -135,7 +137,7 @@ fun ImChatsTabScreen(
                     val interaction = remember { MutableInteractionSource() }
                     val pressed by interaction.collectIsPressedAsState()
                     val rowBg by animateColorAsState(
-                        targetValue = if (pressed) Color(0x88151F3C) else Color(0x470E152B),
+                        targetValue = if (pressed) theme.accent.copy(alpha = 0.12f) else theme.cardTop.copy(alpha = if (theme.isLight) 0.55f else 0.30f),
                         animationSpec = tween(100),
                         label = "serviceRowBg"
                     )
@@ -162,11 +164,11 @@ fun ImChatsTabScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .shadow(4.dp, sqShape, ambientColor = Color(0x77000000))
+                                        .shadow(if (theme.isLight) 2.dp else 4.dp, sqShape, ambientColor = Color(0x55000000))
                                         .clip(sqShape)
                                         .background(
                                             Brush.verticalGradient(
-                                                listOf(Color(0xFF1A2346), Color(0xFF0E1328))
+                                                listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)
                                             ),
                                             sqShape
                                         )
@@ -174,9 +176,9 @@ fun ImChatsTabScreen(
                                             BorderStroke(
                                                 0.8.dp,
                                                 specularRimBrush(
-                                                    Color(0x5CF2B880),
-                                                    Color(0x22A5B4FC),
-                                                    Color(0x0AFFFFFF)
+                                                    theme.accent.copy(alpha = 0.45f),
+                                                    theme.rimMid,
+                                                    theme.rimSubtle
                                                 )
                                             ),
                                             sqShape
@@ -216,7 +218,7 @@ fun ImChatsTabScreen(
                                             style = TextStyle(
                                                 fontSize = 15.5.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = Color(0xFFFFF8EE),
+                                                color = theme.textPrimary,
                                                 platformStyle = NoFontPaddingStyle
                                             ),
                                             maxLines = 1,
@@ -231,7 +233,7 @@ fun ImChatsTabScreen(
                                             text = formatImTime(latestNotification.createdAt),
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 11.sp,
-                                            color = Color(0xFF5D6D89),
+                                            color = theme.textMuted,
                                             maxLines = 1,
                                             softWrap = false
                                         )
@@ -240,7 +242,7 @@ fun ImChatsTabScreen(
 
                                 val servicePreview = buildAnnotatedString {
                                     if (unreadServiceCount > 0) {
-                                        withStyle(SpanStyle(color = Color(0xFFF2B880), fontWeight = FontWeight.Medium)) {
+                                        withStyle(SpanStyle(color = theme.accent, fontWeight = FontWeight.Medium)) {
                                             append("[${unreadServiceCount}条] ")
                                         }
                                     }
@@ -256,7 +258,7 @@ fun ImChatsTabScreen(
                                     text = servicePreview,
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp,
-                                    color = Color(0xFF8C9BB5),
+                                    color = theme.textMuted,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -265,7 +267,7 @@ fun ImChatsTabScreen(
 
                         HorizontalDivider(
                             thickness = 0.5.dp,
-                            color = Color(0x14FFF8EE),
+                            color = theme.divider,
                             modifier = Modifier.padding(start = 79.dp, end = 16.dp)
                         )
                     }
@@ -290,7 +292,7 @@ fun ImChatsTabScreen(
                                 text = if (searchQuery.isNotBlank()) "无匹配结果" else "暂无聊天",
                                 fontSize = 15.5.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFFFF8EE),
+                                color = theme.textPrimary,
                                 textAlign = TextAlign.Center
                             )
                             if (searchQuery.isBlank()) {
@@ -325,8 +327,8 @@ fun ImChatsTabScreen(
                 val pressed by interaction.collectIsPressedAsState()
                 val rowBg by animateColorAsState(
                     targetValue = when {
-                        pressed -> Color(0x73182344)
-                        bot.isPinned -> Color(0x400F172E)
+                        pressed -> theme.accent.copy(alpha = 0.14f)
+                        bot.isPinned -> theme.accent.copy(alpha = 0.06f)
                         else -> Color.Transparent
                     },
                     animationSpec = tween(100),
@@ -396,7 +398,7 @@ fun ImChatsTabScreen(
                                             style = TextStyle(
                                                 fontSize = 15.5.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = Color(0xFFFFF8EE),
+                                                color = theme.textPrimary,
                                                 platformStyle = NoFontPaddingStyle
                                             ),
                                             maxLines = 1,
@@ -406,19 +408,14 @@ fun ImChatsTabScreen(
                                         )
 
                                         if (bot.isGroup) {
-                                            CrispTagPill(
-                                                text = "群聊",
-                                                bgColor = Color(0x26F2B880),
-                                                borderColor = Color(0x52F2B880),
-                                                textColor = Color(0xFFFFE2BE)
-                                            )
+                                            CrispTagPill(text = "群聊")
                                         }
 
                                         if (bot.isPinned) {
                                             Icon(
                                                 imageVector = Icons.Default.PushPin,
                                                 contentDescription = "已置顶",
-                                                tint = Color(0x99F2B880),
+                                                tint = theme.accent.copy(alpha = 0.72f),
                                                 modifier = Modifier.size(11.dp)
                                             )
                                         }
@@ -429,7 +426,7 @@ fun ImChatsTabScreen(
                                             text = formatImTime(bot.updatedAt),
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 11.sp,
-                                            color = Color(0xFF5D6D89),
+                                            color = theme.textMuted,
                                             maxLines = 1,
                                             softWrap = false
                                         )
@@ -441,18 +438,18 @@ fun ImChatsTabScreen(
                                 val annotatedSnippet = buildAnnotatedString {
                                     when {
                                         isStreamingThisBot -> {
-                                            withStyle(SpanStyle(color = Color(0xFFF2B880), fontWeight = FontWeight.Medium)) {
+                                            withStyle(SpanStyle(color = theme.accent, fontWeight = FontWeight.Medium)) {
                                                 append(snippet)
                                             }
                                         }
                                         draftText.isNotEmpty() -> {
-                                            withStyle(SpanStyle(color = Color(0xFFFB7185), fontWeight = FontWeight.SemiBold)) {
+                                            withStyle(SpanStyle(color = Color(0xFFF43F5E), fontWeight = FontWeight.SemiBold)) {
                                                 append("[草稿] ")
                                             }
                                             append(draftText.replace('\n', ' '))
                                         }
                                         bot.unreadCount > 0 -> {
-                                            withStyle(SpanStyle(color = Color(0xFFF2B880), fontWeight = FontWeight.Medium)) {
+                                            withStyle(SpanStyle(color = theme.accent, fontWeight = FontWeight.Medium)) {
                                                 append("[${bot.unreadCount}条] ")
                                             }
                                             append(snippet)
@@ -465,7 +462,7 @@ fun ImChatsTabScreen(
                                     text = annotatedSnippet,
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp,
-                                    color = if (bot.unreadCount > 0 || draftText.isNotEmpty()) Color(0xFFD8E0F0) else Color(0xFF8493AE),
+                                    color = if (bot.unreadCount > 0 || draftText.isNotEmpty()) theme.textSecondary else theme.textMuted,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -475,7 +472,7 @@ fun ImChatsTabScreen(
                         if (index < sortedBots.lastIndex) {
                             HorizontalDivider(
                                 thickness = 0.5.dp,
-                                color = Color(0x13FFF8EE),
+                                color = theme.divider,
                                 modifier = Modifier.padding(start = 79.dp, end = 16.dp)
                             )
                         }

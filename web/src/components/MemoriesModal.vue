@@ -260,7 +260,13 @@ async function runBulkPin(pinState: boolean) {
 
 async function runBulkDelete() {
   if (!selectedIds.value.length || bulkBusy.value) return
-  if (!window.confirm(`确定删除已选中的 ${selectedIds.value.length} 条记忆吗？`)) return
+  const ok = await store.openConfirm({
+    title: '批量删除记忆',
+    message: `确定删除已选中的 ${selectedIds.value.length} 条记忆吗？`,
+    confirmText: '确认删除',
+    danger: true,
+  })
+  if (!ok) return
   bulkBusy.value = true
   try {
     await Promise.all(selectedIds.value.map((id) => BotHubApi.deleteMemory(id)))
@@ -323,7 +329,13 @@ async function handleDelete(id: number) {
 
 async function handlePruneScope() {
   if (filterScope.value === 'all' || pruning.value) return
-  if (!window.confirm(`确定整理「${scopeLabel(filterScope.value)}」作用域记忆，仅保留全部置顶记忆与综合权重最高的 25 条吗？`)) return
+  const ok = await store.openConfirm({
+    title: '整理作用域记忆',
+    message: `确定整理「${scopeLabel(filterScope.value)}」作用域记忆，仅保留全部置顶记忆与综合权重最高的 25 条吗？`,
+    confirmText: '确认整理',
+    danger: true,
+  })
+  if (!ok) return
   pruning.value = true
   try {
     const res = await BotHubApi.pruneMemories(filterScope.value, 25)

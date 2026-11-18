@@ -352,7 +352,13 @@ async function toggleArchive(item: StashItem) {
 }
 
 async function removeStash(item: StashItem) {
-  if (!window.confirm(`确定彻底删除「${item.title || '该条收藏'}」吗？`)) return
+  const ok = await store.openConfirm({
+    title: '删除收藏条目',
+    message: `确定彻底删除「${item.title || '该条收藏'}」吗？`,
+    confirmText: '彻底删除',
+    danger: true,
+  })
+  if (!ok) return
   const prevStash = [...store.state.stash]
   const prevRemote = remoteItems.value ? [...remoteItems.value] : null
   store.state.stash = store.state.stash.filter((x) => x.id !== item.id)

@@ -66,6 +66,7 @@ import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 @Composable
 fun StashTabScreen(
@@ -85,6 +86,7 @@ fun StashTabScreen(
     onAskAi: (StashItemUi) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     val clipboard = LocalClipboardManager.current
     var captureInput by remember { mutableStateOf("") }
     var captureNote by remember { mutableStateOf("") }
@@ -111,7 +113,7 @@ fun StashTabScreen(
         ) {
             SpecularGlassCard(
                 cornerRadius = 18.dp,
-                accentTint = Color(0xFFF2B880),
+                accentTint = theme.accent,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -129,7 +131,7 @@ fun StashTabScreen(
                             text = "快速添加收藏",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFFFF8EE)
+                            color = theme.textPrimary
                         )
                         TactileSecondaryButton(
                             text = "粘贴剪贴板",
@@ -227,13 +229,13 @@ fun StashTabScreen(
                                 },
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFFFF8EE)
+                                color = theme.textPrimary
                             )
                             if (!loading && query.isBlank()) {
                                 Text(
                                     text = "在任意 App 分享链接至 BotHub，或一键粘贴剪贴板秒收",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFF94A3B8),
+                                    color = theme.textMuted,
                                     textAlign = TextAlign.Center
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
@@ -263,11 +265,11 @@ fun StashTabScreen(
 
                 SpecularGlassCard(
                     cornerRadius = 18.dp,
-                    topColor = if (item.isUnread) Color(0xF0151F3B) else Color(0xD90E1428),
-                    bottomColor = if (item.isUnread) Color(0xF00C1224) else Color(0xD9090D1A),
+                    topColor = if (item.isUnread) theme.cardUnreadTop else theme.cardTop,
+                    bottomColor = if (item.isUnread) theme.cardUnreadBottom else theme.cardBottom,
                     accentTint = when {
-                        item.pinned -> Color(0xFFFBBF24)
-                        item.isUnread -> Color(0xFFF2B880)
+                        item.pinned -> Color(0xFFF59E0B)
+                        item.isUnread -> theme.accent
                         else -> null
                     },
                     onClick = { expanded = !expanded },
@@ -293,14 +295,14 @@ fun StashTabScreen(
                                     Box(
                                         modifier = Modifier
                                             .size(6.dp)
-                                            .background(Color(0xFFF2B880), CircleShape)
+                                            .background(theme.accent, CircleShape)
                                     )
                                 }
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(0x24F2B880))
-                                        .border(0.5.dp, Color(0x52F2B880), RoundedCornerShape(6.dp))
+                                        .background(theme.accent.copy(alpha = 0.14f))
+                                        .border(0.5.dp, theme.accent.copy(alpha = 0.36f), RoundedCornerShape(6.dp))
                                         .padding(horizontal = 7.dp, vertical = 2.dp)
                                 ) {
                                     Text(
@@ -308,7 +310,7 @@ fun StashTabScreen(
                                         style = TextStyle(
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Medium,
-                                            color = Color(0xFFFFE2BE),
+                                            color = if (theme.isLight) theme.accentDeep else theme.accentLight,
                                             platformStyle = NoFontPaddingStyle
                                         ),
                                         maxLines = 1,
@@ -319,7 +321,7 @@ fun StashTabScreen(
                                     Icon(
                                         imageVector = Icons.Default.Bookmark,
                                         contentDescription = "已置顶",
-                                        tint = Color(0xFFFBBF24),
+                                        tint = Color(0xFFF59E0B),
                                         modifier = Modifier.size(12.dp)
                                     )
                                 }
@@ -327,7 +329,7 @@ fun StashTabScreen(
                                     Text(
                                         text = "处理中",
                                         fontSize = 10.5.sp,
-                                        color = Color(0xFF34D399),
+                                        color = Color(0xFF10B981),
                                         maxLines = 1,
                                         softWrap = false
                                     )
@@ -336,7 +338,7 @@ fun StashTabScreen(
                                         text = item.domain,
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
-                                        color = Color(0xFF64748B),
+                                        color = theme.textMuted,
                                         maxLines = 1,
                                         softWrap = false,
                                         overflow = TextOverflow.Ellipsis,
@@ -349,7 +351,7 @@ fun StashTabScreen(
                                 text = if (item.createdAt.length >= 16) item.createdAt.substring(5, 16) else item.createdAt,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
-                                color = Color(0xFF5D6D89),
+                                color = theme.textMuted,
                                 maxLines = 1,
                                 softWrap = false
                             )
@@ -359,7 +361,7 @@ fun StashTabScreen(
                             text = item.title.ifEmpty { item.rawInput.take(72) },
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFFFF8EE),
+                            color = theme.textPrimary,
                             maxLines = if (expanded) 4 else 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -369,7 +371,7 @@ fun StashTabScreen(
                                 text = item.aiTldr,
                                 fontSize = 13.5.sp,
                                 lineHeight = 20.sp,
-                                color = Color(0xFFD8E0F0),
+                                color = theme.textSecondary,
                                 maxLines = if (expanded) 6 else 3,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -377,13 +379,13 @@ fun StashTabScreen(
                             Text(
                                 text = "后台正在抓取网页快照并提炼核心结论...",
                                 fontSize = 12.5.sp,
-                                color = Color(0xFF94A3B8)
+                                color = theme.textMuted
                             )
                         } else if (item.errorMsg.isNotEmpty()) {
                             Text(
                                 text = item.errorMsg,
                                 fontSize = 12.5.sp,
-                                color = Color(0xFFFDA4AF)
+                                color = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFDA4AF)
                             )
                         }
 
@@ -396,13 +398,13 @@ fun StashTabScreen(
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(999.dp))
-                                            .background(Color(0xFF141C34))
+                                            .background(theme.inputTop)
                                             .padding(horizontal = 8.dp, vertical = 2.5.dp)
                                     ) {
                                         Text(
                                             text = "#$tag",
                                             fontSize = 10.5.sp,
-                                            color = Color(0xFF94A3B8)
+                                            color = theme.textMuted
                                         )
                                     }
                                 }
@@ -413,7 +415,7 @@ fun StashTabScreen(
                             HorizontalDivider(
                                 modifier = Modifier.padding(vertical = 3.dp),
                                 thickness = 0.5.dp,
-                                color = Color(0x18FFF8EE)
+                                color = theme.divider
                             )
 
                             if (item.points.isNotEmpty()) {
@@ -422,7 +424,7 @@ fun StashTabScreen(
                                         text = "核心干货要点",
                                         fontSize = 11.5.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF34D399)
+                                        color = Color(0xFF10B981)
                                     )
                                     item.points.forEach { pt ->
                                         Row(
@@ -438,14 +440,14 @@ fun StashTabScreen(
                                                 Box(
                                                     modifier = Modifier
                                                         .size(4.5.dp)
-                                                        .background(Color(0xFFF2B880), CircleShape)
+                                                        .background(theme.accent, CircleShape)
                                                 )
                                             }
                                             Text(
                                                 text = pt,
                                                 fontSize = 13.sp,
                                                 lineHeight = 19.sp,
-                                                color = Color(0xFFCBD5E1),
+                                                color = theme.textSecondary,
                                                 modifier = Modifier.weight(1f)
                                             )
                                         }
@@ -457,7 +459,7 @@ fun StashTabScreen(
                                 Text(
                                     text = "附注: ${item.userNote}",
                                     fontSize = 12.5.sp,
-                                    color = Color(0xFFFFE2BE)
+                                    color = theme.accent
                                 )
                             }
 
@@ -489,7 +491,7 @@ fun StashTabScreen(
 
                                 CompactStashIconBtn(
                                     icon = if (item.pinned) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                    tint = if (item.pinned) Color(0xFFF2B880) else Color(0xFFCBD5E1),
+                                    tint = if (item.pinned) theme.accent else theme.textSecondary,
                                     contentDescription = if (item.pinned) "取消置顶" else "置顶",
                                     onClick = { onTogglePin(item) }
                                 )
@@ -497,7 +499,7 @@ fun StashTabScreen(
                                 if (item.status == "failed" || item.aiTldr.isEmpty()) {
                                     CompactStashIconBtn(
                                         icon = Icons.Default.Refresh,
-                                        tint = Color(0xFFCBD5E1),
+                                        tint = theme.textSecondary,
                                         contentDescription = "重新提炼",
                                         onClick = { onReprocess(item) }
                                     )
@@ -505,7 +507,7 @@ fun StashTabScreen(
 
                                 CompactStashIconBtn(
                                     icon = Icons.Default.DeleteOutline,
-                                    tint = Color(0xFFFDA4AF),
+                                    tint = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFDA4AF),
                                     contentDescription = "删除",
                                     onClick = { onDelete(item) }
                                 )
@@ -525,6 +527,7 @@ private fun CompactStashIconBtn(
     contentDescription: String,
     onClick: () -> Unit
 ) {
+    val theme = BotHubThemeTokens
     val shape = RoundedCornerShape(12.dp)
     Box(
         modifier = Modifier
@@ -532,13 +535,13 @@ private fun CompactStashIconBtn(
             .tactileClickable(pressedScale = 0.90f, hapticOnTap = true, onClick = onClick)
             .clip(shape)
             .background(
-                Brush.verticalGradient(listOf(Color(0xFF17213E), Color(0xFF0E1529))),
+                Brush.verticalGradient(listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)),
                 shape
             )
             .border(
                 BorderStroke(
                     0.8.dp,
-                    specularRimBrush(Color(0x33FFF8EE), Color(0x14FFF8EE), Color.Transparent)
+                    specularRimBrush(theme.rimHighlight, theme.rimMid, Color.Transparent)
                 ),
                 shape
             ),

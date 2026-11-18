@@ -29,7 +29,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,6 +39,7 @@ import uk.starryheavens.vesper.bothub.ui.components.SpecularHairline
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 /**
  * Full-Screen Level-2 Official Service Account Feed ("服务通知").
@@ -56,21 +56,20 @@ fun ServiceFeedScreen(
 ) {
     BackHandler(onBack = onBack)
 
+    val theme = BotHubThemeTokens
     val unreadCount = remember(notifications) { notifications.count { it.isUnread } }
     val hasReadItems = remember(notifications) { notifications.any { !it.isUnread } }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF050811))
+            .background(theme.bgBase)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xF8060913), Color(0xEB080C1A))
-                    )
+                    Brush.verticalGradient(listOf(theme.topBarTop, theme.topBarBottom))
                 )
                 .statusBarsPadding()
         ) {
@@ -92,7 +91,7 @@ fun ServiceFeedScreen(
                     Icon(
                         imageVector = Icons.Default.ChevronLeft,
                         contentDescription = "返回消息",
-                        tint = Color(0xFFFFF8EE),
+                        tint = theme.textPrimary,
                         modifier = Modifier.size(22.dp)
                     )
                     Text(
@@ -100,7 +99,7 @@ fun ServiceFeedScreen(
                         style = TextStyle(
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFFFFF8EE),
+                            color = theme.textPrimary,
                             platformStyle = NoFontPaddingStyle
                         )
                     )
@@ -111,7 +110,7 @@ fun ServiceFeedScreen(
                     style = TextStyle(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFFF8EE),
+                        color = theme.textPrimary,
                         platformStyle = NoFontPaddingStyle
                     ),
                     maxLines = 1,
@@ -144,13 +143,13 @@ fun ServiceFeedScreen(
                             .tactileClickable(pressedScale = 0.92f, hapticOnTap = true, onClick = onRefresh)
                             .clip(CircleShape)
                             .background(
-                                Brush.verticalGradient(listOf(Color(0xFF16203C), Color(0xFF0C1224))),
+                                Brush.verticalGradient(listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)),
                                 CircleShape
                             )
                             .border(
                                 BorderStroke(
                                     0.85.dp,
-                                    specularRimBrush(Color(0x33FFF8EE), Color(0x14FFF8EE), Color(0x06FFF8EE))
+                                    specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
                                 ),
                                 CircleShape
                             ),
@@ -159,7 +158,7 @@ fun ServiceFeedScreen(
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "刷新通知",
-                            tint = Color(0xFFCBD5E1),
+                            tint = theme.textSecondary,
                             modifier = Modifier.size(17.dp)
                         )
                     }

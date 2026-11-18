@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +32,7 @@ import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 import uk.starryheavens.vesper.bothub.ui.components.BotHubBottomBar
+import uk.starryheavens.vesper.bothub.ui.components.BotHubSnackbarHost
 import uk.starryheavens.vesper.bothub.ui.components.BotHubTopBar
 import uk.starryheavens.vesper.bothub.ui.components.StarfieldBackdrop
 import uk.starryheavens.vesper.bothub.ui.screens.BiometricLockScreen
@@ -51,6 +51,7 @@ import uk.starryheavens.vesper.bothub.ui.sheets.EditBotSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.ManageGroupMembersSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.NotificationDetailSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.SettingsPairingSheet
+import uk.starryheavens.vesper.bothub.ui.theme.VesperBotHubTheme
 
 private enum class ImPageLevel {
     ROOT_TABS,
@@ -117,14 +118,15 @@ fun BotHubApp(
         viewModel.handleOpenNotificationFromTray(notifId)
     }
 
-    if (!viewModel.biometricUnlocked && viewModel.isPaired) {
-        BiometricLockScreen(
-            snackbarHostState = snackbarHostState,
-            onBiometricUnlocked = viewModel::markBiometricUnlocked,
-            onPasswordVerify = viewModel::verifyFallbackPassword
-        )
-        return
-    }
+    VesperBotHubTheme(themeId = viewModel.appThemeId) {
+        if (!viewModel.biometricUnlocked && viewModel.isPaired) {
+            BiometricLockScreen(
+                snackbarHostState = snackbarHostState,
+                onBiometricUnlocked = viewModel::markBiometricUnlocked,
+                onPasswordVerify = viewModel::verifyFallbackPassword
+            )
+            return@VesperBotHubTheme
+        }
 
     val unreadInbox = viewModel.notifications.count { it.isUnread }
     val unreadBots = viewModel.bots.sumOf { it.unreadCount }
@@ -163,7 +165,7 @@ fun BotHubApp(
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         containerColor = Color.Transparent,
-                        snackbarHost = { SnackbarHost(snackbarHostState) }
+                        snackbarHost = { BotHubSnackbarHost(snackbarHostState) }
                     ) { _ ->
                         ChatRoomScreen(
                             activeBot = activeBot,
@@ -205,7 +207,7 @@ fun BotHubApp(
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         containerColor = Color.Transparent,
-                        snackbarHost = { SnackbarHost(snackbarHostState) }
+                        snackbarHost = { BotHubSnackbarHost(snackbarHostState) }
                     ) { _ ->
                         ServiceFeedScreen(
                             notifications = viewModel.notifications,
@@ -224,7 +226,7 @@ fun BotHubApp(
                             .fillMaxSize()
                             .imePadding(),
                         containerColor = Color.Transparent,
-                        snackbarHost = { SnackbarHost(snackbarHostState) },
+                        snackbarHost = { BotHubSnackbarHost(snackbarHostState) },
                         topBar = {
                             BotHubTopBar(
                                 selectedTab = viewModel.selectedTab,
@@ -461,16 +463,19 @@ fun BotHubApp(
             biometricAppLockEnabled = viewModel.biometricAppLockEnabled,
             realtimeServiceEnabled = viewModel.realtimeServiceEnabled,
             zeroClickCaptureEnabled = viewModel.zeroClickCaptureEnabled,
+            appThemeId = viewModel.appThemeId,
             api = api,
             onConnected = viewModel::onConnectedSuccessfully,
             onServerUrlSaved = viewModel::updateServerUrl,
             onBiometricLockChanged = viewModel::setBiometricAppLock,
             onRealtimeServiceChanged = viewModel::setRealtimeService,
             onZeroClickChanged = viewModel::setZeroClickCapture,
+            onThemeSelected = viewModel::setAppTheme,
             onTestHealth = viewModel::testConnectivity,
             onUnbindServer = viewModel::unbindServer,
             onShowMessage = viewModel::showMessage,
             onDismiss = viewModel::dismissSettings
         )
+    }
     }
 }

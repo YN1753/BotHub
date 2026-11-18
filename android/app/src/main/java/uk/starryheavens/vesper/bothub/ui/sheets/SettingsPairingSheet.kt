@@ -5,7 +5,9 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,6 +64,9 @@ import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
 import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
+import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.theme.BOTHUB_THEME_OPTIONS
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 import java.io.File
 import java.util.Locale
 
@@ -74,17 +81,20 @@ fun SettingsPairingSheet(
     biometricAppLockEnabled: Boolean,
     realtimeServiceEnabled: Boolean,
     zeroClickCaptureEnabled: Boolean,
+    appThemeId: String = "obsidian",
     api: BotHubApiClient,
     onConnected: (String) -> Unit,
     onServerUrlSaved: (String) -> Unit,
     onBiometricLockChanged: (Boolean) -> Unit,
     onRealtimeServiceChanged: (Boolean) -> Unit,
     onZeroClickChanged: (Boolean) -> Unit,
+    onThemeSelected: (String) -> Unit = {},
     onTestHealth: (String) -> Unit,
     onUnbindServer: () -> Unit,
     onShowMessage: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val theme = BotHubThemeTokens
     val context = LocalContext.current
     val activity = remember(context) { BiometricAuthHelper.findFragmentActivity(context) }
     val scope = rememberCoroutineScope()
@@ -244,7 +254,8 @@ fun SettingsPairingSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = Color(0xFF080D1B),
+        containerColor = theme.sheetBg,
+        scrimColor = theme.scrim,
         tonalElevation = 0.dp,
         dragHandle = { ObsidianSheetDragHandle() }
     ) {
@@ -265,7 +276,7 @@ fun SettingsPairingSheet(
                     text = if (isPaired) "设置" else "连接服务端",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFF8EE),
+                    color = theme.textPrimary,
                     maxLines = 1,
                     softWrap = false
                 )
@@ -273,22 +284,27 @@ fun SettingsPairingSheet(
                     text = "v$localVersionClean",
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
-                    color = Color(0xFF64748B),
+                    color = theme.textMuted,
                     maxLines = 1,
                     softWrap = false
                 )
             }
 
+            ThemeSelectorCard(
+                activeThemeId = appThemeId,
+                onSelect = onThemeSelected
+            )
+
             if (sheetHint.isNotEmpty()) {
                 SpecularGlassCard(
                     cornerRadius = 14.dp,
-                    accentTint = Color(0xFFF2B880),
+                    accentTint = theme.accent,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = sheetHint,
                         fontSize = 12.sp,
-                        color = Color(0xFFFFF8EE),
+                        color = theme.textPrimary,
                         modifier = Modifier.padding(12.dp)
                     )
                 }
@@ -318,7 +334,7 @@ fun SettingsPairingSheet(
                     Text(
                         text = if (showPasswordFallback) "收起密钥登录" else "密钥登录",
                         fontSize = 12.sp,
-                        color = Color(0xFFFFE2BE),
+                        color = theme.accent,
                         modifier = Modifier
                             .clickable { showPasswordFallback = !showPasswordFallback }
                             .padding(vertical = 4.dp)
@@ -326,7 +342,7 @@ fun SettingsPairingSheet(
                     Text(
                         text = if (showCustomUrlField) "收起服务器地址" else "服务器地址",
                         fontSize = 12.sp,
-                        color = Color(0xFF8C9BB5),
+                        color = theme.textMuted,
                         modifier = Modifier
                             .clickable { showCustomUrlField = !showCustomUrlField }
                             .padding(vertical = 4.dp)
@@ -403,7 +419,7 @@ fun SettingsPairingSheet(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.5.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFFFF8EE),
+                                color = theme.textPrimary,
                                 maxLines = 1,
                                 softWrap = false,
                                 overflow = TextOverflow.Ellipsis
@@ -480,7 +496,7 @@ fun SettingsPairingSheet(
 
                         HorizontalDivider(
                             thickness = 0.5.dp,
-                            color = Color(0x14FFF8EE),
+                            color = theme.divider,
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
 
@@ -493,7 +509,7 @@ fun SettingsPairingSheet(
 
                         HorizontalDivider(
                             thickness = 0.5.dp,
-                            color = Color(0x14FFF8EE),
+                            color = theme.divider,
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
 
@@ -569,16 +585,112 @@ fun SettingsPairingSheet(
 }
 
 @Composable
+private fun ThemeSelectorCard(
+    activeThemeId: String,
+    onSelect: (String) -> Unit
+) {
+    val theme = BotHubThemeTokens
+    SpecularGlassCard(
+        cornerRadius = 18.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(top = 12.dp, bottom = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 15.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "外观主题",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = theme.textPrimary,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                Text(
+                    text = BOTHUB_THEME_OPTIONS.find { it.id == activeThemeId }?.label ?: theme.label,
+                    fontSize = 12.sp,
+                    color = theme.accent,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(BOTHUB_THEME_OPTIONS, key = { it.id }) { opt ->
+                    val chosen = opt.id == activeThemeId
+                    val pillShape = RoundedCornerShape(13.dp)
+                    Row(
+                        modifier = Modifier
+                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                onSelect(opt.id)
+                            }
+                            .clip(pillShape)
+                            .background(
+                                if (chosen) theme.accent.copy(alpha = 0.16f) else theme.inputTop,
+                                pillShape
+                            )
+                            .border(
+                                BorderStroke(
+                                    if (chosen) 1.2.dp else 0.8.dp,
+                                    if (chosen) theme.accent else theme.divider
+                                ),
+                                pillShape
+                            )
+                            .padding(horizontal = 11.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(15.dp)
+                                .clip(CircleShape)
+                                .background(opt.swatchBg, CircleShape)
+                                .border(1.5.dp, opt.swatchAccent, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(opt.swatchAccent, CircleShape)
+                            )
+                        }
+                        Text(
+                            text = opt.label,
+                            fontSize = 12.sp,
+                            fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (chosen) theme.textPrimary else theme.textMuted,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun InAppOtaStatusCard(
     otaState: OtaUpdateState,
     remoteVersionClean: String,
     onStartDownload: () -> Unit,
     onInstallFile: (File) -> Unit
 ) {
+    val theme = BotHubThemeTokens
     val accent = when (otaState) {
         is OtaUpdateState.Failed -> Color(0xFFFB7185)
-        is OtaUpdateState.UpToDate -> Color(0xFF34D399)
-        else -> Color(0xFFF2B880)
+        is OtaUpdateState.UpToDate -> Color(0xFF10B981)
+        else -> theme.accent
     }
 
     SpecularGlassCard(
@@ -601,7 +713,7 @@ private fun InAppOtaStatusCard(
                             text = "发现新版本 v$remoteVersionClean",
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFFFE2BE),
+                            color = theme.textPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
@@ -622,7 +734,7 @@ private fun InAppOtaStatusCard(
                     Text(
                         text = "正在检查新版本...",
                         fontSize = 13.sp,
-                        color = Color(0xFFFFF8EE)
+                        color = theme.textPrimary
                     )
                 }
 
@@ -645,7 +757,7 @@ private fun InAppOtaStatusCard(
                             text = if (otaState.percent > 0) "正在下载更新 ${otaState.percent}%" else "正在下载更新...",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFFFE2BE),
+                            color = theme.textPrimary,
                             maxLines = 1,
                             softWrap = false
                         )
@@ -658,7 +770,7 @@ private fun InAppOtaStatusCard(
                             text = sizeLabel,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
-                            color = Color(0xFF94A3B8),
+                            color = theme.textMuted,
                             maxLines = 1,
                             softWrap = false
                         )
@@ -668,7 +780,7 @@ private fun InAppOtaStatusCard(
                             .fillMaxWidth()
                             .height(5.dp)
                             .clip(RoundedCornerShape(999.dp))
-                            .background(Color(0xFF141C34))
+                            .background(theme.inputTop)
                     ) {
                         Box(
                             modifier = Modifier
@@ -677,7 +789,7 @@ private fun InAppOtaStatusCard(
                                 .clip(RoundedCornerShape(999.dp))
                                 .background(
                                     Brush.horizontalGradient(
-                                        listOf(Color(0xFFE09A58), Color(0xFFFCE0C0))
+                                        listOf(theme.accentDeep, theme.accent)
                                     )
                                 )
                         )
@@ -693,7 +805,7 @@ private fun InAppOtaStatusCard(
                         Text(
                             text = "授权安装应用后点击继续",
                             fontSize = 13.sp,
-                            color = Color(0xFFFFE2BE),
+                            color = theme.textPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
@@ -720,7 +832,7 @@ private fun InAppOtaStatusCard(
                             text = "下载完成",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFFFFF8EE)
+                            color = theme.textPrimary
                         )
                         TactilePrimaryButton(
                             text = "立即安装",
@@ -741,7 +853,7 @@ private fun InAppOtaStatusCard(
                         Text(
                             text = "当前已是最新版本 (v${otaState.version})",
                             fontSize = 12.5.sp,
-                            color = Color(0xFFA7F3D0),
+                            color = Color(0xFF10B981),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
@@ -749,7 +861,7 @@ private fun InAppOtaStatusCard(
                         Text(
                             text = "重下覆盖",
                             fontSize = 11.5.sp,
-                            color = Color(0xFF94A3B8),
+                            color = theme.textMuted,
                             maxLines = 1,
                             softWrap = false,
                             modifier = Modifier.clickable { onStartDownload() }
@@ -766,7 +878,7 @@ private fun InAppOtaStatusCard(
                         Text(
                             text = "更新失败: ${otaState.message}",
                             fontSize = 12.5.sp,
-                            color = Color(0xFFFDA4AF),
+                            color = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFDA4AF),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
@@ -794,6 +906,7 @@ private fun SettingsToggleRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val theme = BotHubThemeTokens
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -812,7 +925,7 @@ private fun SettingsToggleRow(
                 text = title,
                 fontSize = 14.5.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color(0xFFFFF8EE),
+                color = theme.textPrimary,
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis
@@ -820,7 +933,7 @@ private fun SettingsToggleRow(
             Text(
                 text = subtitle,
                 fontSize = 11.5.sp,
-                color = Color(0xFF8C9BB5),
+                color = theme.textMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

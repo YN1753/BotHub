@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,11 +35,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.ui.BiometricAuthHelper
+import uk.starryheavens.vesper.bothub.ui.components.BotHubSnackbarHost
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
 import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.VesperBrandEmblem
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 @Composable
 fun BiometricLockScreen(
@@ -76,10 +77,11 @@ fun BiometricLockScreen(
         triggerBiometricUnlock()
     }
 
+    val theme = BotHubThemeTokens
     Scaffold(
         modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background
+        snackbarHost = { BotHubSnackbarHost(snackbarHostState) },
+        containerColor = theme.bgBase
     ) { pad ->
         Column(
             modifier = Modifier
@@ -92,8 +94,8 @@ fun BiometricLockScreen(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(999.dp))
-                    .background(Color(0xFF131A2E))
-                    .border(0.8.dp, Color(0x47F2B880), RoundedCornerShape(999.dp))
+                    .background(theme.secondaryBtnTop)
+                    .border(0.8.dp, theme.accent.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
                     .padding(start = 7.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp)
@@ -104,7 +106,7 @@ fun BiometricLockScreen(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFFFE2BE),
+                    color = if (theme.isLight) theme.accentDeep else theme.accentLight,
                     letterSpacing = 1.sp
                 )
             }
@@ -124,13 +126,13 @@ fun BiometricLockScreen(
                 text = "应用已锁定",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFFFF8EE)
+                color = theme.textPrimary
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = "请验证面容或指纹",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFF8C9BB5),
+                color = theme.textMuted,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(24.dp))

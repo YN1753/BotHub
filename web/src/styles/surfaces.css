@@ -6,56 +6,55 @@
 @layer components {
   .sidebar-console {
     background:
-      radial-gradient(125% 55% at 25% 0% var(--in-oklab), rgba(242, 184, 128, 0.09) 0%, transparent 56%),
-      radial-gradient(100% 60% at 80% 100% var(--in-oklab), rgba(56, 189, 248, 0.05) 0%, transparent 58%),
-      linear-gradient(180deg var(--in-oklab), rgba(13, 18, 35, 0.9) 0%, rgba(6, 9, 19, 0.94) 100%);
+      radial-gradient(125% 55% at 25% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.1) 0%, transparent 56%),
+      radial-gradient(100% 60% at 80% 100% var(--in-oklab), var(--bg-glow-2) 0%, transparent 58%),
+      linear-gradient(180deg var(--in-oklab), var(--surface-sidebar-top) 0%, var(--surface-sidebar-bottom) 100%);
     box-shadow:
-      inset 0 1px 0 rgba(255, 248, 238, 0.13),
-      inset -1px 0 0 rgba(255, 248, 238, 0.05),
-      0 24px 56px -12px rgba(0, 0, 0, 0.68);
+      inset 0 1px 0 var(--hairline-top),
+      inset -1px 0 0 var(--border-glass),
+      0 24px 56px -12px var(--shadow-ambient);
     backdrop-filter: blur(26px) saturate(135%);
   }
 
   .workspace-island {
     position: relative;
     background:
-      radial-gradient(85% 42% at 50% 0% var(--in-oklab), rgba(242, 184, 128, 0.055) 0%, transparent 62%),
-      radial-gradient(65% 45% at 92% 95% var(--in-oklab), rgba(99, 102, 241, 0.055) 0%, transparent 60%),
-      linear-gradient(180deg var(--in-oklab), rgba(11, 15, 30, 0.78) 0%, rgba(5, 8, 17, 0.86) 100%);
+      radial-gradient(85% 42% at 50% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.06) 0%, transparent 62%),
+      radial-gradient(65% 45% at 92% 95% var(--in-oklab), var(--bg-glow-2) 0%, transparent 60%),
+      linear-gradient(180deg var(--in-oklab), var(--surface-workspace-top) 0%, var(--surface-workspace-bottom) 100%);
     box-shadow:
-      inset 0 1px 0 rgba(255, 248, 238, 0.12),
-      0 26px 64px -14px rgba(0, 0, 0, 0.68);
+      inset 0 1px 0 var(--hairline-top),
+      0 26px 64px -14px var(--shadow-ambient);
     backdrop-filter: blur(24px) saturate(130%);
   }
 
   .modal-section {
     background:
-      radial-gradient(115% 85% at 95% 0% var(--in-oklab), rgba(242, 184, 128, 0.075) 0%, transparent 56%),
-      radial-gradient(90% 70% at 5% 100% var(--in-oklab), rgba(99, 102, 241, 0.055) 0%, transparent 60%),
-      linear-gradient(180deg var(--in-oklab), rgba(16, 21, 40, 0.82) 0%, rgba(8, 11, 23, 0.88) 100%);
-    border: 1px solid rgba(255, 248, 238, 0.11);
+      radial-gradient(115% 85% at 95% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.08) 0%, transparent 56%),
+      radial-gradient(90% 70% at 5% 100% var(--in-oklab), var(--bg-glow-2) 0%, transparent 60%),
+      linear-gradient(180deg var(--in-oklab), var(--surface-card-top) 0%, var(--surface-card-bottom) 100%);
+    border: 1px solid var(--border-glass);
     box-shadow:
-      inset 0 1px 0 rgba(255, 248, 238, 0.11),
-      0 12px 28px -8px rgba(0, 0, 0, 0.46);
+      inset 0 1px 0 var(--hairline-top),
+      0 12px 28px -8px var(--shadow-ambient);
     border-radius: 1.125rem;
     padding: 0.95rem 1.05rem;
   }
 
-  /* Primary 3D Champagne-Gold Jewel Action Button (zero position override so absolute thumbs stay absolute!) */
+  /* Primary Accent Jewel Action Button */
   .btn-jewel {
     background: linear-gradient(
       180deg var(--in-oklab),
-      #ffe7c7 0%,
-      #f3bd85 52%,
-      #d78f4f 100%
+      var(--accent-gold) 0%,
+      var(--accent-gold-deep) 100%
     );
-    color: #090c16;
-    border: 1px solid rgba(255, 236, 212, 0.65);
+    color: var(--on-accent);
+    border: 1px solid rgba(var(--accent-rgb), 0.65);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.78),
-      inset 0 -1px 0 rgba(118, 58, 14, 0.35),
-      0 8px 22px -4px rgba(242, 184, 128, 0.42),
-      0 2px 5px rgba(0, 0, 0, 0.42);
+      inset 0 1px 0 rgba(255, 255, 255, 0.38),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+      0 8px 22px -4px rgba(var(--accent-rgb), 0.36),
+      0 2px 5px var(--shadow-ambient);
     font-weight: 600;
   }
 
@@ -63,88 +62,78 @@
   button.bg-\[\#f2b880\] {
     background: linear-gradient(
       180deg var(--in-oklab),
-      #ffe7c7 0%,
-      #f3bd85 52%,
-      #d78f4f 100%
+      var(--accent-gold) 0%,
+      var(--accent-gold-deep) 100%
     );
-    border: 1px solid rgba(255, 236, 212, 0.65);
+    color: var(--on-accent);
+    border: 1px solid rgba(var(--accent-rgb), 0.65);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.78),
-      inset 0 -1px 0 rgba(118, 58, 14, 0.35),
-      0 8px 22px -4px rgba(242, 184, 128, 0.42),
-      0 2px 5px rgba(0, 0, 0, 0.42);
+      inset 0 1px 0 rgba(255, 255, 255, 0.38),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+      0 8px 22px -4px rgba(var(--accent-rgb), 0.36),
+      0 2px 5px var(--shadow-ambient);
   }
 
-  /* Secondary Convex Dark-Crystal Keycap Button */
+  /* Secondary Convex Keycap Button */
   .btn-tactile {
     background: linear-gradient(
       180deg var(--in-oklab),
-      rgba(32, 41, 72, 0.72) 0%,
-      rgba(14, 19, 36, 0.88) 100%
+      var(--surface-card-top) 0%,
+      var(--surface-card-bottom) 100%
     );
-    border: 1px solid rgba(255, 248, 238, 0.13);
+    border: 1px solid var(--border-glass);
     box-shadow:
-      inset 0 1px 0 rgba(255, 248, 238, 0.16),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.38),
-      0 6px 16px -4px rgba(0, 0, 0, 0.48);
-    color: #e2e8f0;
+      inset 0 1px 0 var(--hairline-top),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.16),
+      0 6px 16px -4px var(--shadow-ambient);
+    color: var(--text-sub);
   }
 
   /* Warm Glazed Accent Pill Button */
   .btn-tactile-gold {
     background: linear-gradient(
       180deg var(--in-oklab),
-      rgba(242, 184, 128, 0.24) 0%,
-      rgba(194, 126, 68, 0.1) 100%
+      rgba(var(--accent-rgb), 0.22) 0%,
+      rgba(var(--accent-rgb), 0.1) 100%
     );
-    border: 1px solid rgba(242, 184, 128, 0.42);
+    border: 1px solid var(--border-gold);
     box-shadow:
-      inset 0 1px 0 rgba(255, 236, 212, 0.32),
-      0 6px 18px -4px rgba(242, 184, 128, 0.22);
-    color: #fde1c2;
+      inset 0 1px 0 rgba(var(--accent-rgb), 0.24),
+      0 6px 18px -4px rgba(var(--accent-rgb), 0.2);
+    color: var(--accent-gold-light);
   }
 
   @media (hover: hover) {
     .btn-jewel:not(:disabled):hover,
     button.bg-\[\#f2b880\]:not(:disabled):hover {
-      background: linear-gradient(
-        180deg var(--in-oklab),
-        #fff0db 0%,
-        #f8ca98 52%,
-        #e29b5b 100%
-      );
+      filter: brightness(1.06);
       box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.88),
-        inset 0 -1px 0 rgba(118, 58, 14, 0.28),
-        0 12px 28px -4px rgba(242, 184, 128, 0.56),
-        0 3px 8px rgba(0, 0, 0, 0.46);
+        inset 0 1px 0 rgba(255, 255, 255, 0.5),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+        0 12px 28px -4px rgba(var(--accent-rgb), 0.48),
+        0 3px 8px var(--shadow-ambient);
     }
 
     .btn-tactile:not(:disabled):hover {
-      background: linear-gradient(
-        180deg var(--in-oklab),
-        rgba(44, 55, 94, 0.82) 0%,
-        rgba(19, 25, 48, 0.92) 100%
-      );
-      border-color: rgba(242, 184, 128, 0.45);
-      color: #fbf7f0;
+      border-color: var(--border-gold);
+      color: var(--text-main);
       box-shadow:
-        inset 0 1px 0 rgba(255, 248, 238, 0.24),
-        0 10px 22px -5px rgba(0, 0, 0, 0.56),
-        0 0 16px -4px rgba(242, 184, 128, 0.22);
+        inset 0 1px 0 var(--hairline-top),
+        0 10px 22px -5px var(--shadow-ambient),
+        0 0 16px -4px rgba(var(--accent-rgb), 0.22);
     }
 
     .btn-tactile-gold:not(:disabled):hover {
       background: linear-gradient(
         180deg var(--in-oklab),
-        rgba(242, 184, 128, 0.34) 0%,
-        rgba(194, 126, 68, 0.16) 100%
+        rgba(var(--accent-rgb), 0.32) 0%,
+        rgba(var(--accent-rgb), 0.16) 100%
       );
-      border-color: rgba(247, 203, 160, 0.68);
-      color: #fff6eb;
+      border-color: var(--accent-gold);
+      color: var(--text-main);
       box-shadow:
-        inset 0 1px 0 rgba(255, 244, 228, 0.44),
-        0 10px 24px -4px rgba(242, 184, 128, 0.32);
+        inset 0 1px 0 rgba(var(--accent-rgb), 0.36),
+        0 10px 24px -4px rgba(var(--accent-rgb), 0.28);
     }
   }
 
@@ -152,26 +141,26 @@
   .well-recessed {
     background: linear-gradient(
       180deg var(--in-oklab),
-      rgba(3, 5, 12, 0.9) 0%,
-      rgba(10, 14, 28, 0.8) 100%
+      var(--surface-input-top) 0%,
+      var(--surface-input-bottom) 100%
     );
-    border: 1px solid rgba(255, 248, 238, 0.09);
+    border: 1px solid var(--border-glass);
     box-shadow:
-      inset 0 2px 6px rgba(0, 0, 0, 0.72),
-      inset 0 -1px 0 rgba(255, 248, 238, 0.06),
-      0 1px 0 rgba(255, 248, 238, 0.04);
+      inset 0 2px 6px rgba(0, 0, 0, 0.22),
+      inset 0 -1px 0 var(--hairline-top),
+      0 1px 0 var(--border-glass);
   }
 
   /* Active Sidebar Roster Card Elevation */
   .roster-card-active {
     background:
-      radial-gradient(120% 95% at 0% 0% var(--in-oklab), rgba(242, 184, 128, 0.22) 0%, transparent 62%),
-      linear-gradient(135deg var(--in-oklab), rgba(34, 42, 74, 0.78) 0%, rgba(15, 20, 38, 0.88) 100%);
-    border: 1px solid rgba(242, 184, 128, 0.38);
+      radial-gradient(120% 95% at 0% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.2) 0%, transparent 62%),
+      linear-gradient(135deg var(--in-oklab), var(--surface-card-top) 0%, var(--surface-card-bottom) 100%);
+    border: 1px solid var(--border-gold);
     box-shadow:
-      inset 0 1px 0 rgba(255, 244, 228, 0.2),
-      0 10px 24px -6px rgba(0, 0, 0, 0.55),
-      0 0 20px -6px rgba(242, 184, 128, 0.2);
+      inset 0 1px 0 var(--hairline-top),
+      0 10px 24px -6px var(--shadow-ambient),
+      0 0 20px -6px rgba(var(--accent-rgb), 0.18);
   }
 
   /* Hero Starter Stage Soft Ambient Glow */
@@ -184,7 +173,7 @@
     inset: -24px;
     border-radius: 9999px;
     background:
-      radial-gradient(circle var(--in-oklab), rgba(242, 184, 128, 0.2) 0%, rgba(129, 140, 248, 0.08) 45%, transparent 72%);
+      radial-gradient(circle var(--in-oklab), rgba(var(--accent-rgb), 0.2) 0%, var(--bg-glow-2) 45%, transparent 72%);
     filter: blur(14px);
     pointer-events: none;
   }
@@ -192,47 +181,47 @@
   /* 3D Sculpted User Chat Message & Action Bar Surfaces */
   .msg-bubble-user {
     background:
-      radial-gradient(120% 90% at 15% 0% var(--in-oklab), rgba(255, 232, 202, 0.22) 0%, transparent 58%),
-      linear-gradient(145deg var(--in-oklab), rgba(242, 184, 128, 0.22) 0%, rgba(74, 54, 68, 0.36) 52%, rgba(22, 27, 48, 0.88) 100%);
-    border: 1px solid rgba(242, 184, 128, 0.38);
+      radial-gradient(120% 90% at 15% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.18) 0%, transparent 58%),
+      linear-gradient(145deg var(--in-oklab), var(--surface-bubble-user-top) 0%, var(--surface-bubble-user-bottom) 100%);
+    border: 1px solid var(--border-gold);
     box-shadow:
-      inset 0 1px 0 rgba(255, 246, 232, 0.28),
-      0 12px 28px -8px rgba(0, 0, 0, 0.52),
-      0 2px 10px -2px rgba(242, 184, 128, 0.12);
+      inset 0 1px 0 var(--hairline-top),
+      0 12px 28px -8px var(--shadow-ambient),
+      0 2px 10px -2px rgba(var(--accent-rgb), 0.12);
     backdrop-filter: blur(14px);
   }
 
   .msg-action-bar {
     background: linear-gradient(
       180deg var(--in-oklab),
-      rgba(22, 29, 54, 0.88) 0%,
-      rgba(11, 15, 29, 0.94) 100%
+      var(--surface-popover-top) 0%,
+      var(--surface-popover-bottom) 100%
     );
-    border: 1px solid rgba(255, 248, 238, 0.12);
+    border: 1px solid var(--border-glass);
     box-shadow:
-      inset 0 1px 0 rgba(255, 248, 238, 0.12),
-      0 8px 20px -4px rgba(0, 0, 0, 0.52);
+      inset 0 1px 0 var(--hairline-top),
+      0 8px 20px -4px var(--shadow-ambient);
     backdrop-filter: blur(14px);
   }
 
   .aero-glass {
-    background: linear-gradient(180deg var(--in-oklab), rgba(22, 28, 50, 0.86) 0%, rgba(11, 15, 29, 0.9) 100%);
+    background: linear-gradient(180deg var(--in-oklab), var(--surface-popover-top) 0%, var(--surface-popover-bottom) 100%);
     border: 1px solid var(--border-glass);
     box-shadow:
-      inset 0 1px 0 rgba(255, 248, 238, 0.13),
-      0 20px 46px rgba(0, 0, 0, 0.48);
+      inset 0 1px 0 var(--hairline-top),
+      0 20px 46px var(--shadow-ambient);
     backdrop-filter: blur(20px);
   }
 
   .vesper-card {
     position: relative;
     background:
-      radial-gradient(120% 80% at 50% 0% var(--in-oklab), rgba(255, 248, 238, 0.065) 0%, transparent 58%),
-      linear-gradient(180deg var(--in-oklab), rgba(20, 26, 48, 0.84) 0%, rgba(10, 14, 27, 0.9) 100%);
-    border: 1px solid rgba(255, 248, 238, 0.11);
+      radial-gradient(120% 80% at 50% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.05) 0%, transparent 58%),
+      linear-gradient(180deg var(--in-oklab), var(--surface-card-top) 0%, var(--surface-card-bottom) 100%);
+    border: 1px solid var(--border-glass);
     box-shadow:
-      inset 0 1px 0 rgba(255, 248, 238, 0.13),
-      0 14px 32px -6px rgba(0, 0, 0, 0.44);
+      inset 0 1px 0 var(--hairline-top),
+      0 14px 32px -6px var(--shadow-ambient);
     backdrop-filter: blur(18px);
   }
 
@@ -242,13 +231,13 @@
     overflow: hidden;
     isolation: isolate;
     background:
-      radial-gradient(125% 90% at 85% 0% var(--in-oklab), rgba(242, 184, 128, 0.085) 0%, transparent 56%),
-      radial-gradient(90% 80% at 10% 100% var(--in-oklab), rgba(99, 102, 241, 0.06) 0%, transparent 58%),
-      linear-gradient(180deg var(--in-oklab), rgba(22, 29, 52, 0.84) 0%, rgba(10, 14, 27, 0.92) 100%);
-    border: 1px solid rgba(255, 248, 238, 0.115);
+      radial-gradient(125% 90% at 85% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.085) 0%, transparent 56%),
+      radial-gradient(90% 80% at 10% 100% var(--in-oklab), var(--bg-glow-2) 0%, transparent 58%),
+      linear-gradient(180deg var(--in-oklab), var(--surface-card-top) 0%, var(--surface-card-bottom) 100%);
+    border: 1px solid var(--border-glass);
     box-shadow:
-      inset 0 1px 0 rgba(255, 248, 238, 0.15),
-      0 16px 38px -8px rgba(0, 0, 0, 0.54);
+      inset 0 1px 0 var(--hairline-top),
+      0 16px 38px -8px var(--shadow-ambient);
     backdrop-filter: blur(20px);
     transition:
       transform 240ms var(--ease-snappy),
@@ -276,7 +265,7 @@
     z-index: 1;
     background: radial-gradient(
       280px circle at var(--mx, 50%) var(--my, 0%),
-      rgba(242, 184, 128, 0.095),
+      rgba(var(--accent-rgb), 0.095),
       transparent 68%
     );
   }
@@ -286,7 +275,7 @@
     padding: 1px;
     background: radial-gradient(
       200px circle at var(--mx, 50%) var(--my, 0%),
-      rgba(247, 203, 160, 0.65),
+      rgba(var(--accent-rgb), 0.65),
       transparent 70%
     );
     -webkit-mask:
@@ -317,8 +306,8 @@
     .vesper-card-interactive:hover {
       transform: translateY(-3px);
       box-shadow:
-        inset 0 1px 0 rgba(255, 248, 238, 0.14),
-        0 20px 44px -10px rgba(0, 0, 0, 0.6);
+        inset 0 1px 0 var(--hairline-top),
+        0 20px 44px -10px var(--shadow-ambient);
     }
   }
 
@@ -326,14 +315,14 @@
   .composer-dock {
     position: relative;
     background:
-      radial-gradient(90% 100% at 50% 0% var(--in-oklab), rgba(242, 184, 128, 0.08) 0%, transparent 62%),
-      linear-gradient(180deg var(--in-oklab), rgba(20, 27, 50, 0.9) 0%, rgba(9, 13, 26, 0.96) 100%);
-    border: 1px solid rgba(255, 248, 238, 0.14);
+      radial-gradient(90% 100% at 50% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.08) 0%, transparent 62%),
+      linear-gradient(180deg var(--in-oklab), var(--surface-card-top) 0%, var(--surface-dialog-bottom) 100%);
+    border: 1px solid var(--border-glass);
     box-shadow:
-      inset 0 1px 0 rgba(255, 248, 238, 0.18),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.45),
-      0 24px 56px -10px rgba(0, 0, 0, 0.68),
-      0 4px 16px rgba(0, 0, 0, 0.4);
+      inset 0 1px 0 var(--hairline-top),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.16),
+      0 24px 56px -10px var(--shadow-ambient),
+      0 4px 16px var(--shadow-ambient);
     backdrop-filter: blur(24px) saturate(140%);
     transition:
       border-color 220ms ease-out,
@@ -341,19 +330,19 @@
       transform 240ms var(--ease-snappy);
   }
   .composer-dock:focus-within {
-    border-color: rgba(242, 184, 128, 0.52);
+    border-color: var(--border-gold);
     box-shadow:
-      inset 0 1px 0 rgba(255, 242, 224, 0.28),
-      0 0 0 1px rgba(242, 184, 128, 0.15),
-      0 26px 60px -10px rgba(0, 0, 0, 0.72),
-      0 0 32px -6px rgba(242, 184, 128, 0.22);
+      inset 0 1px 0 var(--hairline-top),
+      0 0 0 1px rgba(var(--accent-rgb), 0.18),
+      0 26px 60px -10px var(--shadow-ambient),
+      0 0 32px -6px rgba(var(--accent-rgb), 0.22);
   }
   .composer-dock.is-streaming {
-    border-color: rgba(242, 184, 128, 0.54);
+    border-color: var(--border-gold);
     box-shadow:
-      inset 0 1px 0 rgba(242, 184, 128, 0.24),
-      0 0 0 1px rgba(242, 184, 128, 0.16),
-      0 24px 56px -10px rgba(0, 0, 0, 0.68);
+      inset 0 1px 0 rgba(var(--accent-rgb), 0.24),
+      0 0 0 1px rgba(var(--accent-rgb), 0.18),
+      0 24px 56px -10px var(--shadow-ambient);
   }
   @media (prefers-reduced-motion: no-preference) {
     .composer-dock.is-streaming {

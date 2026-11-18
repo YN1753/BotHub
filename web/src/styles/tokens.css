@@ -1,6 +1,4 @@
 :root {
-  color-scheme: dark;
-  accent-color: #f2b880;
   interpolate-size: allow-keywords;
 
   --border-glass: rgba(255, 248, 238, 0.1);
@@ -8,6 +6,7 @@
   --text-sub: #cbd5e1;
   --text-muted: #94a3b8;
   --accent-gold: #f2b880;
+  --accent-rgb: 242, 184, 128;
 
   /* Motion timing & easing primitives */
   --dur-fast: 150ms;
@@ -43,10 +42,10 @@ html,
 body {
   min-height: 100%;
   background:
-    radial-gradient(ellipse 75% 52% at 14% 8% var(--in-oklab), rgba(56, 41, 108, 0.52) 0%, transparent 62%),
-    radial-gradient(ellipse 60% 48% at 88% 14% var(--in-oklab), rgba(132, 76, 38, 0.24) 0%, transparent 56%),
-    radial-gradient(ellipse 70% 50% at 78% 92% var(--in-oklab), rgba(26, 62, 92, 0.28) 0%, transparent 60%),
-    linear-gradient(180deg var(--in-oklab), #070b16 0%, #03050b 100%);
+    radial-gradient(ellipse 75% 52% at 14% 8% var(--in-oklab), var(--bg-glow-2) 0%, transparent 62%),
+    radial-gradient(ellipse 60% 48% at 88% 14% var(--in-oklab), var(--bg-glow-1) 0%, transparent 56%),
+    radial-gradient(ellipse 70% 50% at 78% 92% var(--in-oklab), rgba(var(--accent-rgb), 0.10) 0%, transparent 60%),
+    linear-gradient(180deg var(--in-oklab), var(--bg-top) 0%, var(--bg-bottom) 100%);
   color: var(--text-main);
   font-family: -apple-system, BlinkMacSystemFont, "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -55,8 +54,8 @@ body {
 }
 
 ::selection {
-  background: rgba(242, 184, 128, 0.3);
-  color: #fbf7f0;
+  background: rgba(var(--accent-rgb), 0.28);
+  color: var(--text-main);
 }
 
 /* Typographic clarity */
@@ -73,14 +72,14 @@ img, video {
   block-size: auto;
 }
 
-/* Suppress pointer focus rings while keeping a crisp champagne-gold ring for keyboard navigation */
+/* Suppress pointer focus rings while keeping a crisp accent ring for keyboard navigation */
 :where(a, button, input, select, textarea, summary, [tabindex]):focus:not(:focus-visible) {
   outline: none;
 }
 
 :where(a, button, select, summary, [tabindex]):focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(242, 184, 128, 0.65);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.65);
 }
 
 :where(input, textarea):focus-visible {
@@ -94,13 +93,14 @@ img, video {
 ) {
   background: linear-gradient(
     180deg var(--in-oklab),
-    rgba(4, 6, 14, 0.9) 0%,
-    rgba(11, 16, 31, 0.78) 100%
+    var(--surface-input-top) 0%,
+    var(--surface-input-bottom) 100%
   );
+  color: var(--text-main);
   box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, 0.64),
-    inset 0 -1px 0 rgba(255, 248, 238, 0.06),
-    0 1px 0 rgba(255, 248, 238, 0.04);
+    inset 0 2px 5px rgba(0, 0, 0, 0.22),
+    inset 0 -1px 0 var(--hairline-top),
+    0 1px 0 var(--border-glass);
   transition: border-color 180ms ease-out, box-shadow 200ms ease-out;
 }
 
@@ -109,9 +109,9 @@ img, video {
   textarea:not(.composer-textarea)
 ):focus {
   box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(242, 184, 128, 0.42),
-    0 0 20px -4px rgba(242, 184, 128, 0.24);
+    inset 0 2px 5px rgba(0, 0, 0, 0.16),
+    0 0 0 1px rgba(var(--accent-rgb), 0.45),
+    0 0 20px -4px rgba(var(--accent-rgb), 0.24);
 }
 
 /* Crisp interactive tactile motion (non-spatial color/shadow kept for all; scale opted-in) */
@@ -132,10 +132,10 @@ img, video {
   }
 }
 
-/* Unified Dark Luxury Scrollbars & Stream Scroller */
+/* Unified Theme Scrollbars & Stream Scroller */
 :where(*) {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 248, 238, 0.14) transparent;
+  scrollbar-color: var(--border-glass) transparent;
 }
 
 ::-webkit-scrollbar {
@@ -146,13 +146,13 @@ img, video {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 248, 238, 0.16);
+  background: var(--border-glass);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(242, 184, 128, 0.5);
+  background: rgba(var(--accent-rgb), 0.5);
   border: 2px solid transparent;
   background-clip: content-box;
 }

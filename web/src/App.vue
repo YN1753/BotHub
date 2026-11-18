@@ -9,6 +9,7 @@ import Sidebar from './components/Sidebar.vue'
 import BotWorkspace from './components/BotWorkspace.vue'
 import MobileImRoster from './components/MobileImRoster.vue'
 import MobileBottomDock, { type MobileImTab } from './components/MobileBottomDock.vue'
+import ConfirmDialog from './components/ConfirmDialog.vue'
 
 // On-demand route/modal code-splitting to shrink cold-boot bundle substantially
 const OpsWorkspace = lazyOverlayChunk(() => import('./components/OpsWorkspace.vue'))
@@ -353,6 +354,7 @@ onBeforeUnmount(() => {
     <TaskModal v-if="mountedFlags.task || store.state.editingTask !== undefined" />
     <QuickSwitcherModal v-if="mountedFlags.quickSwitcher || store.state.showQuickSwitcher" />
     <ForwardModal v-if="mountedFlags.forward || Boolean(store.state.forwardingMessage)" />
+    <ConfirmDialog />
 
     <!-- Offline Banner -->
     <Transition
@@ -393,7 +395,7 @@ onBeforeUnmount(() => {
         @focusin="store.pauseToast"
         @focusout="store.resumeToast"
         :class="[
-          'toast-host overflow-hidden fixed top-[max(0.875rem,env(safe-area-inset-top,0.875rem))] left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-[60] max-w-[min(92vw,24rem)] flex items-center gap-2.5 rounded-xl bg-[#0a0f1f]/96 px-3.5 py-2.5 text-xs text-slate-100 shadow-2xl backdrop-blur-xl border',
+          'toast-host aero-glass overflow-hidden fixed top-[max(0.875rem,env(safe-area-inset-top,0.875rem))] left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-[60] max-w-[min(92vw,24rem)] flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 shadow-2xl border',
           /失败|错误|异常|超时|失效|无法/.test(store.state.toastMessage)
             ? 'border-rose-400/55'
             : 'border-[#f2b880]/45'

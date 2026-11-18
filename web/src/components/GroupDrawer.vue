@@ -253,7 +253,13 @@ async function copyGroupRosterSummary() {
 
 async function handleClearTimeline() {
   if (!bot.value || store.state.isStreaming) return
-  if (!window.confirm(`确定清空 [${bot.value.name}] 的聊天记录吗？`)) return
+  const ok = await store.openConfirm({
+    title: '清空聊天记录',
+    message: `确定清空 [${bot.value.name}] 的聊天记录吗？`,
+    confirmText: '确认清空',
+    danger: true,
+  })
+  if (!ok) return
   await store.clearActiveBotTimeline()
   closeDrawer()
 }
@@ -272,7 +278,13 @@ async function handleCreateFreshThread() {
 
 async function handleDisbandGroup() {
   if (!bot.value) return
-  if (!window.confirm(`确定解散群聊 [${bot.value.name}] 吗？群消息记录将被清除。`)) return
+  const ok = await store.openConfirm({
+    title: '解散群聊',
+    message: `确定解散群聊 [${bot.value.name}] 吗？群消息记录将被清除。`,
+    confirmText: '确认解散',
+    danger: true,
+  })
+  if (!ok) return
   const disbandedId = bot.value.id
   store.state.bots = store.state.bots.filter((b) => b.id !== disbandedId)
   closeDrawer()

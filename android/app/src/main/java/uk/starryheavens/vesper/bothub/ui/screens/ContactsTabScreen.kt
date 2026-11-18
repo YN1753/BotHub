@@ -49,6 +49,7 @@ import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
 import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
 import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 @Composable
 fun ContactsTabScreen(
@@ -61,6 +62,7 @@ fun ContactsTabScreen(
     onOpenServiceFeed: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     var query by remember { mutableStateOf("") }
 
     val filtered = remember(bots, query) {
@@ -89,7 +91,6 @@ fun ContactsTabScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Pure WeChat-Style 3 Directory Entries (Zero redundant marketing subtitles!)
             if (query.isBlank()) {
                 item(key = "__top_entries__") {
                     SpecularGlassCard(
@@ -98,29 +99,29 @@ fun ContactsTabScreen(
                     ) {
                         ContactActionEntryRow(
                             icon = Icons.Default.PersonAddAlt1,
-                            accent = Color(0xFFF2B880),
+                            accent = theme.accent,
                             title = "添加 AI 好友",
                             onClick = onCreateFriend
                         )
                         HorizontalDivider(
                             thickness = 0.5.dp,
-                            color = Color(0x14FFF8EE),
+                            color = theme.divider,
                             modifier = Modifier.padding(start = 64.dp, end = 14.dp)
                         )
                         ContactActionEntryRow(
                             icon = Icons.Default.GroupAdd,
-                            accent = Color(0xFF818CF8),
+                            accent = Color(0xFF6366F1),
                             title = "发起群聊",
                             onClick = onCreateGroup
                         )
                         HorizontalDivider(
                             thickness = 0.5.dp,
-                            color = Color(0x14FFF8EE),
+                            color = theme.divider,
                             modifier = Modifier.padding(start = 64.dp, end = 14.dp)
                         )
                         ContactActionEntryRow(
                             icon = Icons.Default.NotificationsNone,
-                            accent = Color(0xFF34D399),
+                            accent = Color(0xFF10B981),
                             title = "服务通知",
                             badgeCount = unreadInboxCount,
                             onClick = onOpenServiceFeed
@@ -129,7 +130,6 @@ fun ContactsTabScreen(
                 }
             }
 
-            // Section 1: Group Chats
             if (groups.isNotEmpty()) {
                 item(key = "__sec_groups__") {
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -138,7 +138,7 @@ fun ContactsTabScreen(
                             style = TextStyle(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF8C9BB5),
+                                color = theme.textMuted,
                                 platformStyle = NoFontPaddingStyle
                             ),
                             maxLines = 1,
@@ -174,14 +174,14 @@ fun ContactsTabScreen(
                                             text = group.name,
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFFFFF8EE),
+                                            color = theme.textPrimary,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
                                             text = "${members.size}人",
                                             fontSize = 12.sp,
-                                            color = Color(0xFF8C9BB5),
+                                            color = theme.textMuted,
                                             maxLines = 1,
                                             softWrap = false
                                         )
@@ -196,7 +196,7 @@ fun ContactsTabScreen(
                                 if (index < groups.lastIndex) {
                                     HorizontalDivider(
                                         thickness = 0.5.dp,
-                                        color = Color(0x14FFF8EE),
+                                        color = theme.divider,
                                         modifier = Modifier.padding(start = 70.dp, end = 14.dp)
                                     )
                                 }
@@ -206,7 +206,6 @@ fun ContactsTabScreen(
                 }
             }
 
-            // Section 2: AI Friends
             if (friends.isNotEmpty()) {
                 item(key = "__sec_friends__") {
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -215,7 +214,7 @@ fun ContactsTabScreen(
                             style = TextStyle(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF8C9BB5),
+                                color = theme.textMuted,
                                 platformStyle = NoFontPaddingStyle
                             ),
                             maxLines = 1,
@@ -251,7 +250,7 @@ fun ContactsTabScreen(
                                             text = friend.name,
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFFFFF8EE),
+                                            color = theme.textPrimary,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -260,7 +259,7 @@ fun ContactsTabScreen(
                                             Text(
                                                 text = bio,
                                                 fontSize = 12.sp,
-                                                color = Color(0xFF8493AE),
+                                                color = theme.textMuted,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
@@ -276,7 +275,7 @@ fun ContactsTabScreen(
                                 if (index < friends.lastIndex) {
                                     HorizontalDivider(
                                         thickness = 0.5.dp,
-                                        color = Color(0x14FFF8EE),
+                                        color = theme.divider,
                                         modifier = Modifier.padding(start = 70.dp, end = 14.dp)
                                     )
                                 }
@@ -294,19 +293,25 @@ private fun QuickChatCircleButton(
     contentDescription: String,
     onClick: () -> Unit
 ) {
+    val theme = BotHubThemeTokens
     Box(
         modifier = Modifier
             .size(34.dp)
             .tactileClickable(pressedScale = 0.90f, hapticOnTap = true, onClick = onClick)
             .clip(CircleShape)
             .background(
-                Brush.verticalGradient(listOf(Color(0x2EF2B880), Color(0x18C88A4E))),
+                Brush.verticalGradient(
+                    listOf(
+                        theme.accent.copy(alpha = 0.18f),
+                        theme.accentDeep.copy(alpha = 0.08f)
+                    )
+                ),
                 CircleShape
             )
             .border(
                 BorderStroke(
                     0.8.dp,
-                    specularRimBrush(Color(0x66F2B880), Color(0x26F2B880), Color(0x0CF2B880))
+                    specularRimBrush(theme.accent.copy(alpha = 0.45f), theme.accent.copy(alpha = 0.16f), Color.Transparent)
                 ),
                 CircleShape
             ),
@@ -315,7 +320,7 @@ private fun QuickChatCircleButton(
         Icon(
             imageVector = Icons.Default.ChatBubbleOutline,
             contentDescription = contentDescription,
-            tint = Color(0xFFFFE2BE),
+            tint = if (theme.isLight) theme.accentDeep else theme.accentLight,
             modifier = Modifier.size(15.dp)
         )
     }
@@ -329,6 +334,7 @@ private fun ContactActionEntryRow(
     badgeCount: Int = 0,
     onClick: () -> Unit
 ) {
+    val theme = BotHubThemeTokens
     val sq = RoundedCornerShape(11.dp)
     Row(
         modifier = Modifier
@@ -344,14 +350,14 @@ private fun ContactActionEntryRow(
                 .clip(sq)
                 .background(
                     Brush.verticalGradient(
-                        listOf(accent.copy(alpha = 0.24f), accent.copy(alpha = 0.10f))
+                        listOf(accent.copy(alpha = 0.20f), accent.copy(alpha = 0.08f))
                     ),
                     sq
                 )
                 .border(
                     BorderStroke(
                         0.75.dp,
-                        specularRimBrush(accent.copy(alpha = 0.55f), accent.copy(alpha = 0.18f), Color.Transparent)
+                        specularRimBrush(accent.copy(alpha = 0.50f), accent.copy(alpha = 0.16f), Color.Transparent)
                     ),
                     sq
                 ),
@@ -369,7 +375,7 @@ private fun ContactActionEntryRow(
             text = title,
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
-            color = Color(0xFFFFF8EE),
+            color = theme.textPrimary,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
@@ -383,7 +389,7 @@ private fun ContactActionEntryRow(
         Icon(
             imageVector = Icons.Default.KeyboardArrowRight,
             contentDescription = null,
-            tint = Color(0xFF5D6D89),
+            tint = theme.textMuted,
             modifier = Modifier.size(18.dp)
         )
     }

@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.VesperBotHub" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.VesperBotHub" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#050811</item>
+        <item name="android:colorBackground">#050811</item>
+        <item name="android:dialogTheme">@android:style/Theme.Material.Dialog.Alert</item>
+        <item name="android:alertDialogTheme">@android:style/Theme.Material.Dialog.Alert</item>
+    </style>
 
     <style name="Theme.VesperBotHub.QuickCapture" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
@@ -10,5 +15,7 @@
         <item name="android:backgroundDimAmount">0.55</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:dialogTheme">@android:style/Theme.Material.Dialog.Alert</item>
+        <item name="android:alertDialogTheme">@android:style/Theme.Material.Dialog.Alert</item>
     </style>
 </resources>

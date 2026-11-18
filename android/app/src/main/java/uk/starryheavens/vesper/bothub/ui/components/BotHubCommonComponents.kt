@@ -75,20 +75,22 @@ import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.GrokBotGroupCluster
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 fun formatModuleBadge(moduleId: String): Pair<String, Color> {
     return when (moduleId.trim().lowercase()) {
-        "morning" -> "晨报" to Color(0xFFF2B880)
-        "radar" -> "雷达" to Color(0xFFA5B4FC)
-        "asset_watcher" -> "资产" to Color(0xFFFBBF24)
-        "nezha_webhook" -> "告警" to Color(0xFFFB7185)
-        "system_test" -> "自检" to Color(0xFF34D399)
-        else -> moduleId.ifBlank { "通知" } to Color(0xFF94A3B8)
+        "morning" -> "晨报" to Color(0xFFD97706)
+        "radar" -> "雷达" to Color(0xFF6366F1)
+        "asset_watcher" -> "资产" to Color(0xFFF59E0B)
+        "nezha_webhook" -> "告警" to Color(0xFFF43F5E)
+        "system_test" -> "自检" to Color(0xFF10B981)
+        else -> moduleId.ifBlank { "通知" } to Color(0xFF64748B)
     }
 }
 
 @Composable
 fun ObsidianSheetDragHandle(modifier: Modifier = Modifier) {
+    val theme = BotHubThemeTokens
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -99,7 +101,7 @@ fun ObsidianSheetDragHandle(modifier: Modifier = Modifier) {
             modifier = Modifier
                 .width(38.dp)
                 .height(4.dp)
-                .background(Color(0x5CCBD5E1), RoundedCornerShape(999.dp))
+                .background(theme.textMuted.copy(alpha = 0.42f), RoundedCornerShape(999.dp))
         )
         Spacer(modifier = Modifier.height(6.dp))
     }
@@ -132,10 +134,11 @@ fun ObsidianGlassInput(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default
 ) {
+    val theme = BotHubThemeTokens
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(14.dp)
     val borderColor by animateColorAsState(
-        targetValue = if (focused) Color(0x88F2B880) else Color(0x22FFF8EE),
+        targetValue = if (focused) theme.accent.copy(alpha = 0.65f) else theme.divider,
         animationSpec = tween(160),
         label = "inputFocusBorder"
     )
@@ -150,7 +153,7 @@ fun ObsidianGlassInput(
                 style = TextStyle(
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.Medium,
-                    color = if (focused) Color(0xFFFFE2BE) else Color(0xFF94A3B8),
+                    color = if (focused) theme.accent else theme.textMuted,
                     platformStyle = NoFontPaddingStyle
                 ),
                 maxLines = 1,
@@ -164,9 +167,7 @@ fun ObsidianGlassInput(
                 .sizeIn(minHeight = 46.dp)
                 .clip(shape)
                 .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xF0070B16), Color(0xF00C1224))
-                    ),
+                    Brush.verticalGradient(listOf(theme.inputTop, theme.inputBottom)),
                     shape
                 )
                 .border(0.9.dp, borderColor, shape),
@@ -180,11 +181,11 @@ fun ObsidianGlassInput(
                 visualTransformation = visualTransformation,
                 keyboardOptions = keyboardOptions,
                 textStyle = TextStyle(
-                    color = Color(0xFFFFF8EE),
+                    color = theme.textPrimary,
                     fontSize = 14.sp,
                     lineHeight = 20.sp
                 ),
-                cursorBrush = SolidColor(Color(0xFFF2B880)),
+                cursorBrush = SolidColor(theme.accent),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 12.dp)
@@ -195,7 +196,7 @@ fun ObsidianGlassInput(
                             Text(
                                 text = placeholder,
                                 fontSize = 13.5.sp,
-                                color = Color(0xFF5A6A85),
+                                color = theme.textMuted,
                                 maxLines = maxLines,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -245,7 +246,7 @@ fun BotAvatarOrCluster(
 }
 
 /**
- * Clean, Minimal WeChat / QQ Top Bar: Pure Title + Right Action (zero redundant status pills).
+ * Clean, Theme-Adaptive WeChat / QQ Top Bar.
  */
 @Composable
 fun BotHubTopBar(
@@ -261,6 +262,7 @@ fun BotHubTopBar(
     onRefresh: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
+    val theme = BotHubThemeTokens
     var showPlusMenu by remember { mutableStateOf(false) }
 
     val headerTitle = when (selectedTab) {
@@ -278,9 +280,7 @@ fun BotHubTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                Brush.verticalGradient(
-                    listOf(Color(0xF8060913), Color(0xEB080C1A))
-                )
+                Brush.verticalGradient(listOf(theme.topBarTop, theme.topBarBottom))
             )
             .statusBarsPadding()
     ) {
@@ -296,7 +296,7 @@ fun BotHubTopBar(
                 style = TextStyle(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFF8EE),
+                    color = theme.textPrimary,
                     platformStyle = NoFontPaddingStyle
                 ),
                 maxLines = 1,
@@ -328,31 +328,31 @@ fun BotHubTopBar(
                                     GlassMenuAction(
                                         label = "发起群聊",
                                         icon = Icons.Default.GroupAdd,
-                                        iconTint = Color(0xFFFFE2BE),
+                                        iconTint = theme.accent,
                                         onClick = onCreateGroup
                                     ),
                                     GlassMenuAction(
                                         label = "添加 AI 好友",
                                         icon = Icons.Default.PersonAddAlt1,
-                                        iconTint = Color(0xFFA5B4FC),
+                                        iconTint = Color(0xFF6366F1),
                                         onClick = onCreateFriend
                                     ),
                                     GlassMenuAction(
                                         label = "新建收藏",
                                         icon = Icons.Default.BookmarkBorder,
-                                        iconTint = Color(0xFF34D399),
+                                        iconTint = Color(0xFF10B981),
                                         onClick = onQuickCaptureStash
                                     ),
                                     GlassMenuAction(
                                         label = "通知全部已读",
                                         icon = Icons.Default.DoneAll,
-                                        iconTint = Color(0xFF94A3B8),
+                                        iconTint = theme.textMuted,
                                         onClick = onMarkAllRead
                                     ),
                                     GlassMenuAction(
-                                        label = "设置",
+                                        label = "设置与主题",
                                         icon = Icons.Default.Settings,
-                                        iconTint = Color(0xFFFBBF24),
+                                        iconTint = Color(0xFFF59E0B),
                                         onClick = onOpenSettings
                                     )
                                 )
@@ -386,7 +386,7 @@ fun BotHubTopBar(
                         )
                         HeaderIconCircle(
                             icon = Icons.Default.Settings,
-                            contentDescription = "设置",
+                            contentDescription = "设置与主题",
                             accent = true,
                             onClick = onOpenSettings
                         )
@@ -424,19 +424,29 @@ private fun HeaderIconCircle(
     accent: Boolean = false,
     onClick: () -> Unit
 ) {
+    val theme = BotHubThemeTokens
     val shape = CircleShape
-    val bgBrush = remember(accent) {
+    val bgBrush = remember(accent, theme.id) {
         if (accent) {
-            Brush.verticalGradient(listOf(Color(0x33F2B880), Color(0x1AC88A4E)))
+            Brush.verticalGradient(
+                listOf(
+                    theme.accent.copy(alpha = 0.20f),
+                    theme.accentDeep.copy(alpha = 0.10f)
+                )
+            )
         } else {
-            Brush.verticalGradient(listOf(Color(0xFF16203C), Color(0xFF0C1224)))
+            Brush.verticalGradient(listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom))
         }
     }
-    val rim = remember(accent) {
+    val rim = remember(accent, theme.id) {
         if (accent) {
-            specularRimBrush(Color(0x78F2B880), Color(0x2EF2B880), Color(0x10F2B880))
+            specularRimBrush(
+                theme.accent.copy(alpha = 0.50f),
+                theme.accent.copy(alpha = 0.20f),
+                theme.accent.copy(alpha = 0.08f)
+            )
         } else {
-            specularRimBrush(Color(0x33FFF8EE), Color(0x14FFF8EE), Color(0x06FFF8EE))
+            specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
         }
     }
 
@@ -452,14 +462,14 @@ private fun HeaderIconCircle(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (accent) Color(0xFFFFE2BE) else Color(0xFFE2E8F0),
+            tint = if (accent) (if (theme.isLight) theme.accentDeep else theme.accentLight) else theme.textPrimary,
             modifier = Modifier.size(18.dp)
         )
     }
 }
 
 /**
- * WeChat / QQ / Telegram Flagship Bottom Navigation Dock.
+ * Theme-Adaptive Bottom Navigation Dock.
  */
 @Composable
 fun BotHubBottomBar(
@@ -468,15 +478,14 @@ fun BotHubBottomBar(
     unreadStashCount: Int,
     onSelectTab: (BotHubTab) -> Unit
 ) {
+    val theme = BotHubThemeTokens
     val haptics = LocalHapticFeedback.current
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                Brush.verticalGradient(
-                    listOf(Color(0xF2080D1B), Color(0xFA050811))
-                )
+                Brush.verticalGradient(listOf(theme.bottomBarTop, theme.bottomBarBottom))
             )
             .navigationBarsPadding()
     ) {
@@ -502,7 +511,7 @@ fun BotHubBottomBar(
                     BotHubTab.HUB -> if (isSelected) Icons.Default.Dashboard else Icons.Outlined.Dashboard
                 }
                 val fgColor by animateColorAsState(
-                    targetValue = if (isSelected) Color(0xFFF6C692) else Color(0xFF7B8BA6),
+                    targetValue = if (isSelected) theme.accent else theme.textMuted,
                     animationSpec = tween(180),
                     label = "navFgColor"
                 )
@@ -535,7 +544,7 @@ fun BotHubBottomBar(
                                 .offset(y = (-5).dp)
                                 .background(
                                     Brush.radialGradient(
-                                        colors = listOf(Color(0x2CF2B880), Color.Transparent)
+                                        colors = listOf(theme.accent.copy(alpha = 0.16f), Color.Transparent)
                                     ),
                                     CircleShape
                                 )
@@ -566,8 +575,8 @@ fun BotHubBottomBar(
                             if (badgeCount > 0) {
                                 CrispUnreadBadge(
                                     count = badgeCount,
-                                    containerColor = if (tab == BotHubTab.AGENT) Color(0xFFF43F5E) else Color(0xFFF2B880),
-                                    contentColor = if (tab == BotHubTab.AGENT) Color.White else Color(0xFF090C16),
+                                    containerColor = if (tab == BotHubTab.AGENT) Color(0xFFF43F5E) else theme.accent,
+                                    contentColor = if (tab == BotHubTab.AGENT) Color.White else theme.onAccent,
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
                                         .offset(x = 3.dp, y = (-3).dp)
@@ -600,6 +609,7 @@ fun MetricMiniCard(
     accentColor: Color = MaterialTheme.colorScheme.primary,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     SpecularGlassCard(
         modifier = modifier,
         cornerRadius = 18.dp,
@@ -612,7 +622,7 @@ fun MetricMiniCard(
                 style = TextStyle(
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color(0xFF94A3B8),
+                    color = theme.textMuted,
                     platformStyle = NoFontPaddingStyle
                 ),
                 maxLines = 1,
@@ -645,6 +655,7 @@ fun ZeroClickCaptureRow(
     compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val theme = BotHubThemeTokens
     SpecularGlassCard(
         modifier = modifier.fillMaxWidth(),
         cornerRadius = 16.dp,
@@ -668,7 +679,7 @@ fun ZeroClickCaptureRow(
                     text = title,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color(0xFFFFF8EE),
+                    color = theme.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -676,7 +687,7 @@ fun ZeroClickCaptureRow(
                     text = subtitle,
                     fontSize = 11.5.sp,
                     lineHeight = 16.sp,
-                    color = Color(0xFF94A3B8),
+                    color = theme.textMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

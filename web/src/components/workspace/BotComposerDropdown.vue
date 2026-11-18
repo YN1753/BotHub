@@ -40,7 +40,7 @@ const emit = defineEmits<{
   >
     <div
       v-if="mentionOpen && mentionCandidates.length > 0"
-      class="origin-bottom max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 bg-[#090e1e]/96 backdrop-blur-2xl shadow-2xl p-1.5 flex flex-col gap-0.5 max-h-60 overflow-y-auto"
+      class="aero-glass origin-bottom max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 shadow-2xl p-1.5 flex flex-col gap-0.5 max-h-60 overflow-y-auto"
     >
       <div class="px-2.5 py-1 flex items-center justify-between text-[10.5px] font-mono text-slate-400">
         <span>选择要 @点名 或临时支援的 Bot</span>
@@ -113,7 +113,7 @@ const emit = defineEmits<{
   >
     <div
       v-if="slashOpen && slashCommands.length > 0"
-      class="origin-bottom max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 bg-[#090e1e]/96 backdrop-blur-2xl shadow-2xl p-1.5 flex flex-col gap-0.5"
+      class="aero-glass origin-bottom max-w-[820px] w-full mx-auto mb-2 rounded-2xl border border-[#f2b880]/35 shadow-2xl p-1.5 flex flex-col gap-0.5"
     >
       <div class="px-2.5 py-1 text-[10.5px] font-mono text-slate-400">快捷斜杠指令 (Enter 执行)</div>
       <button
