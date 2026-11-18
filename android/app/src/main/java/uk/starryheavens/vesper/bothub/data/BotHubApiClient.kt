@@ -348,7 +348,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
             val payload = JSONObject()
                 .put("id", id)
                 .put("name", name.trim())
-                .put("category", category.ifBlank { "compute" })
+                .put("category", category.ifBlank { "general" })
                 .put("spec", spec.trim())
                 .put("price", price.trim())
                 .put("due_date", dueDate.trim())
@@ -370,6 +370,28 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
             executeUnit(req, "删除资产失败")
         }
     }
+
+    suspend fun saveAssetCategories(categories: List<AssetCategoryItem>): Result<List<AssetCategoryItem>> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val arr = JSONArray()
+                categories.forEach { cat ->
+                    arr.put(
+                        JSONObject()
+                            .put("id", cat.id.trim())
+                            .put("label", cat.label.trim())
+                            .put("icon", cat.icon.ifBlank { "tag" })
+                    )
+                }
+                val payload = JSONObject().put("categories", arr).toString()
+                val req = requestBuilder("/api/v2/asset-categories")
+                    .put(jsonBody(payload))
+                    .build()
+                val json = executeJson(req, "保存资产分类失败")
+                val savedArr = json.optJSONArray("categories") ?: arr
+                JsonMappers.parseAssetCategories(savedArr)
+            }
+        }
 
     suspend fun fetchAgentSessions(): Result<List<AgentSessionSummary>> = withContext(Dispatchers.IO) {
         runCatching {

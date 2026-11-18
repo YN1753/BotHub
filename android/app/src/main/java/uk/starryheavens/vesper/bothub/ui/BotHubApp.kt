@@ -332,7 +332,8 @@ fun BotHubApp(
                                     onToggleTask = viewModel::toggleTask,
                                     onSyncAssets = viewModel::syncAssets,
                                     onSaveAsset = viewModel::saveAssetItem,
-                                    onDeleteAsset = viewModel::deleteAssetItem
+                                    onDeleteAsset = viewModel::deleteAssetItem,
+                                    onSaveAssetCategories = viewModel::saveAssetCategories
                                 )
                             }
                         }

@@ -3,9 +3,16 @@ import { ref, computed, watch } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { generateSlug, parseJsonRecord } from '../utils/format'
+import {
+  addMonthsPlain,
+  diffPlainDaysFromToday,
+  todayPlainDate,
+} from '../utils/calendar'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
+import CalendarDatePicker from './ui/CalendarDatePicker.vue'
+import ExtensibleCategorySelect from './ui/ExtensibleCategorySelect.vue'
 
 const store = useAppStore()
 const isOpen = computed(() => store.state.editingAsset !== undefined)
@@ -13,8 +20,7 @@ const isNew = computed(() => store.state.editingAsset === null)
 
 const id = ref('')
 const name = ref('')
-const category = ref('compute')
-const customCategory = ref('')
+const category = ref('general')
 const spec = ref('')
 
 // Structured pricing: Currency type + numeric amount + cycle
@@ -24,29 +30,11 @@ const billingCycle = ref<'年' | '月' | '季' | '一次性'>('年')
 
 const status = ref<'生效中' | '已到期' | '已停用'>('生效中')
 const dueMode = ref<'date' | 'permanent'>('date')
-const dueYear = ref('2027')
-const dueMonth = ref('01')
-const dueDay = ref('01')
+const dueDateVal = ref(addMonthsPlain(todayPlainDate(), 12))
 const autoRenew = ref(false)
 const warnDays = ref('[7, 3, 1]')
 const extraRows = ref<Array<{ key: string; value: string }>>([])
 const saving = ref(false)
-
-const BASE_CATEGORIES = [
-  { value: 'compute', label: '算力 / 云主机' },
-  { value: 'domain', label: '域名 / DNS' },
-  { value: 'life', label: '订阅 / 软件服务' },
-  { value: 'other', label: '其他数字资产' },
-]
-
-const categoryOptions = computed(() => {
-  const known = new Set(BASE_CATEGORIES.map((c) => c.value))
-  const extraOpts = store.state.assets
-    .map((a) => String(a.category || '').trim())
-    .filter((c) => c && !known.has(c))
-  const uniqueExtra = Array.from(new Set(extraOpts)).map((c) => ({ value: c, label: c }))
-  return [...BASE_CATEGORIES, ...uniqueExtra, { value: '__custom__', label: '+ 自定义分类...' }]
-})
 
 const CURRENCY_OPTIONS = [
   { value: 'CNY', label: '人民币 (CNY ¥)' },
@@ -92,29 +80,13 @@ const WARN_OPTIONS = [
   { value: '[30, 15, 7, 3, 1]', label: '到期前 30天 / 15天 / 7天 / 3天 / 1天' },
 ]
 
-const YEAR_OPTIONS = Array.from({ length: 12 }, (_, i) => {
-  const y = String(2025 + i)
-  return { value: y, label: `${y} 年` }
-})
-const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => {
-  const m = String(i + 1).padStart(2, '0')
-  return { value: m, label: `${m} 月` }
-})
-const dayOptions = computed(() => {
-  const y = Number(dueYear.value) || 2026
-  const m = Number(dueMonth.value) || 1
-  const maxDay = new Date(y, m, 0).getDate()
-  return Array.from({ length: maxDay }, (_, i) => {
-    const d = String(i + 1).padStart(2, '0')
-    return { value: d, label: `${d} 日` }
-  })
-})
-
-watch([dueYear, dueMonth], ([yStr, mStr]) => {
-  const maxDay = new Date(Number(yStr) || 2026, Number(mStr) || 1, 0).getDate()
-  if (Number(dueDay.value) > maxDay) {
-    dueDay.value = String(maxDay).padStart(2, '0')
-  }
+const duePresets = computed(() => {
+  const base = dueDateVal.value || todayPlainDate()
+  return [
+    { label: '+1个月', value: addMonthsPlain(base, 1) },
+    { label: '+1季度', value: addMonthsPlain(base, 3) },
+    { label: '+1年', value: addMonthsPlain(base, 12) },
+  ]
 })
 
 const pricePreview = computed(() => formatStructuredPrice())
@@ -182,17 +154,14 @@ watch(
     if (item === null) {
       id.value = ''
       name.value = ''
-      category.value = 'compute'
-      customCategory.value = ''
+      category.value = store.state.assetCategories[0]?.id || 'general'
       spec.value = ''
       currency.value = 'CNY'
       amountNum.value = ''
       billingCycle.value = '年'
       status.value = '生效中'
       dueMode.value = 'date'
-      dueYear.value = String(new Date().getFullYear() + 1)
-      dueMonth.value = '01'
-      dueDay.value = '01'
+      dueDateVal.value = addMonthsPlain(todayPlainDate(), 12)
       autoRenew.value = false
       warnDays.value = '[7, 3, 1]'
       extraRows.value = []
@@ -200,9 +169,7 @@ watch(
     }
     id.value = item.id
     name.value = item.name
-    const cat = String(item.category || 'compute').trim()
-    category.value = cat
-    customCategory.value = ''
+    category.value = String(item.category || '').trim() || 'general'
     spec.value = item.spec || ''
     status.value = normalizeStatus(item.status)
     autoRenew.value = Boolean(item.auto_renew)
@@ -217,11 +184,9 @@ watch(
       dueMode.value = 'permanent'
     } else {
       dueMode.value = 'date'
-      const m = item.due_date.match(/^(\d{4})-(\d{2})-(\d{2})/)
+      const m = item.due_date.match(/^(\d{4}-\d{2}-\d{2})/)
       if (m) {
-        dueYear.value = m[1]
-        dueMonth.value = m[2]
-        dueDay.value = m[3]
+        dueDateVal.value = m[1]
       }
     }
     extraRows.value = Object.entries(parseJsonRecord(item.extra_config))
@@ -244,34 +209,25 @@ function removeExtraRow(idx: number) {
 
 const previewDaysLeft = computed(() => {
   if (dueMode.value === 'permanent') return null
-  const target = new Date(`${dueYear.value}-${dueMonth.value}-${dueDay.value}T23:59:59`)
-  if (Number.isNaN(target.getTime())) return null
-  return Math.ceil((target.getTime() - Date.now()) / 86_400_000)
+  return diffPlainDaysFromToday(dueDateVal.value)
 })
 
 function extendDueDate(months: number) {
   dueMode.value = 'date'
-  const base = new Date(`${dueYear.value}-${dueMonth.value}-${dueDay.value}T00:00:00`)
-  const target = Number.isNaN(base.getTime()) ? new Date() : base
-  target.setMonth(target.getMonth() + months)
-  dueYear.value = String(target.getFullYear())
-  dueMonth.value = String(target.getMonth() + 1).padStart(2, '0')
-  dueDay.value = String(target.getDate()).padStart(2, '0')
+  dueDateVal.value = addMonthsPlain(dueDateVal.value || todayPlainDate(), months)
 }
 
 async function handleSubmit() {
   if (!name.value.trim() || saving.value) return
   saving.value = true
   try {
-    const finalCat =
-      category.value === '__custom__'
-        ? customCategory.value.trim() || 'other'
-        : category.value || 'compute'
+    const finalCat = category.value.trim() || 'general'
     const finalID = isNew.value ? id.value.trim() || generateSlug(name.value, finalCat) : id.value
+    const resolvedDate = dueDateVal.value || todayPlainDate()
     const dueDate =
       dueMode.value === 'permanent'
         ? '2099-12-31T23:59:59+08:00'
-        : `${dueYear.value}-${dueMonth.value}-${dueDay.value}T23:59:59+08:00`
+        : `${resolvedDate}T23:59:59+08:00`
 
     const extraObj: Record<string, string> = {}
     for (const row of extraRows.value) {
@@ -339,28 +295,15 @@ async function handleDelete() {
       <!-- Section 1: Basic Info & Structured Billing -->
       <div class="modal-section flex flex-col gap-3">
         <div class="text-xs font-semibold text-[#f2b880]">基础信息与结构化费用</div>
+        <ExtensibleCategorySelect v-model="category" />
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>资产类别</span>
-            <CustomSelect v-model="category" :options="categoryOptions" aria-label="资产类别" />
-          </div>
-          <label v-if="category === '__custom__'" class="flex flex-col gap-1 text-xs text-slate-300">
-            <span>自定义分类名称</span>
-            <input
-              v-model="customCategory"
-              type="text"
-              required
-              placeholder="如：license / telecom / storage"
-              class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
-            />
-          </label>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>资产名称</span>
-            <input v-model="name" type="text" required placeholder="如：Tokyo VPS / example.com" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
+            <input v-model="name" type="text" required placeholder="如：项目或服务名称" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
           </label>
           <label class="flex flex-col gap-1 text-xs text-slate-300">
             <span>规格与备注描述</span>
-            <input v-model="spec" type="text" placeholder="如：2C 2G · 40G NVMe" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
+            <input v-model="spec" type="text" placeholder="如：版本、配置或用途备注" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
           </label>
           <div class="flex flex-col gap-1 text-xs text-slate-300">
             <span>生命周期状态</span>
@@ -430,19 +373,14 @@ async function handleDelete() {
           </div>
 
           <div v-if="dueMode === 'date'" class="sm:col-span-2 flex flex-col gap-2">
-            <div class="grid grid-cols-3 gap-2.5">
-              <div class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>到期年份</span>
-                <CustomSelect v-model="dueYear" :options="YEAR_OPTIONS" aria-label="到期年份" />
-              </div>
-              <div class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>到期月份</span>
-                <CustomSelect v-model="dueMonth" :options="MONTH_OPTIONS" aria-label="到期月份" />
-              </div>
-              <div class="flex flex-col gap-1 text-xs text-slate-300">
-                <span>到期日期</span>
-                <CustomSelect v-model="dueDay" :options="dayOptions" aria-label="到期日期" />
-              </div>
+            <div class="flex flex-col gap-1 text-xs text-slate-300">
+              <span>到期日（日历选择）</span>
+              <CalendarDatePicker
+                v-model="dueDateVal"
+                :allow-clear="false"
+                :presets="duePresets"
+                aria-label="选择资产到期日"
+              />
             </div>
             <div class="flex items-center gap-1.5 flex-wrap">
               <span class="text-[11px] text-slate-500">一键顺延:</span>
@@ -545,7 +483,7 @@ async function handleDelete() {
           删除资产
         </button>
         <span v-else class="font-mono text-[11px] text-slate-400">
-          {{ dueMode === 'permanent' ? '长期有效 · 免提醒' : `到期日 ${dueYear}-${dueMonth}-${dueDay}` }}
+          {{ dueMode === 'permanent' ? '长期有效 · 免提醒' : `到期日 ${dueDateVal}` }}
         </span>
         <div class="flex gap-2">
           <button type="button" @click="closeModal" class="min-h-[44px] sm:min-h-[34px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">

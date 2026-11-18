@@ -2,12 +2,13 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
-import { formatLocalDate } from '../../utils/format'
+import { addDaysPlain, diffPlainDaysFromToday, todayPlainDate } from '../../utils/calendar'
 import { pickDefaultWorkerBot } from '../../utils/botLook'
 import { clearSearchOnEscape } from '../../utils/topLayer'
 import type { TodoItem } from '../../types/bothub'
 import CustomSelect from '../CustomSelect.vue'
 import SegmentedTabs from '../SegmentedTabs.vue'
+import CalendarDatePicker from '../ui/CalendarDatePicker.vue'
 
 const emit = defineEmits<{
   closeModal: []
@@ -56,14 +57,18 @@ const botFilterOptions = computed(() => [
   ...store.state.bots.map((b) => ({ value: b.id, label: b.name })),
 ])
 
-const todayPrefix = computed(() => formatLocalDate(new Date()))
+const todayPrefix = computed(() => todayPlainDate())
 const doneTodoCount = computed(() => store.state.todos.filter((t) => t.status === 'done').length)
 
 function offsetDateStr(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + days)
-  return formatLocalDate(d)
+  return addDaysPlain(todayPlainDate(), days)
 }
+
+const todoDatePresets = computed(() => [
+  { label: '明天', value: offsetDateStr(1) },
+  { label: '3天后', value: offsetDateStr(3) },
+  { label: '一周内', value: offsetDateStr(7) },
+])
 
 function isOverdue(t: TodoItem): boolean {
   return Boolean(t.status !== 'done' && t.due_at && t.due_at.slice(0, 10) < todayPrefix.value)
@@ -90,10 +95,8 @@ function botNameById(botId?: string): string {
 function formatTodoDueLabel(t: TodoItem): string {
   if (!t.due_at) return ''
   const due = t.due_at.slice(0, 10)
-  const diffDays = Math.round(
-    (new Date(`${due}T00:00:00`).getTime() - new Date(`${todayPrefix.value}T00:00:00`).getTime()) / 86_400_000
-  )
-  if (Number.isNaN(diffDays)) return due
+  const diffDays = diffPlainDaysFromToday(due)
+  if (diffDays === null) return due
   if (t.status !== 'done') {
     if (diffDays < 0) return `已逾期 ${Math.abs(diffDays)} 天 (${due})`
     if (diffDays === 0) return `今天截止 (${due})`
@@ -285,12 +288,15 @@ async function dispatchTodoToBot(t: TodoItem) {
         <div class="sm:col-span-2">
           <CustomSelect v-model="newTodoPriority" :options="PRIORITY_OPTIONS" compact aria-label="优先级" />
         </div>
-        <input
-          v-model="newTodoDueAt"
-          type="text"
-          placeholder="截止 YYYY-MM-DD"
-          class="sm:col-span-2 min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
-        />
+        <div class="sm:col-span-2">
+          <CalendarDatePicker
+            v-model="newTodoDueAt"
+            compact
+            placeholder="截止日期"
+            :presets="todoDatePresets"
+            aria-label="选择新建待办截止日期"
+          />
+        </div>
         <div class="sm:col-span-2">
           <CustomSelect v-model="newTodoBotId" :options="botAssigneeOptions" compact aria-label="指派 Bot" />
         </div>
@@ -501,14 +507,15 @@ async function dispatchTodoToBot(t: TodoItem) {
             <div class="sm:col-span-2">
               <CustomSelect v-model="editTodoPriority" :options="PRIORITY_OPTIONS" compact aria-label="编辑优先级" />
             </div>
-            <input
-              v-model="editTodoDueAt"
-              type="text"
-              placeholder="截止 YYYY-MM-DD"
-              @keydown.enter.prevent="saveEditTodo(t)"
-              @keydown.escape.stop="editingTodoId = null"
-              class="sm:col-span-2 min-h-[34px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2 font-mono text-xs text-white"
-            />
+            <div class="sm:col-span-2">
+              <CalendarDatePicker
+                v-model="editTodoDueAt"
+                compact
+                placeholder="截止日期"
+                :presets="todoDatePresets"
+                aria-label="修改待办截止日期"
+              />
+            </div>
             <div class="sm:col-span-2">
               <CustomSelect v-model="editTodoBotId" :options="botAssigneeOptions" compact aria-label="编辑指派 Bot" />
             </div>

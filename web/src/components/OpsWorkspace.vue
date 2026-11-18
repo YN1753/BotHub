@@ -3,12 +3,14 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { describeCron, formatDateOnly, summarizeAssetsMonthlyCost, triggerBlobDownload, csvEscapeCell } from '../utils/format'
+import { mergeExtensibleCategories, resolveCategoryMeta } from '../utils/assetCategories'
 import { pickDefaultWorkerBot } from '../utils/botLook'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import type { Asset } from '../types/bothub'
 import SegmentedTabs from './SegmentedTabs.vue'
 import BotAvatar from './BotAvatar.vue'
 import WorkspaceSidebarControls from './ui/WorkspaceSidebarControls.vue'
+import AssetCategoryIcon from './ui/AssetCategoryIcon.vue'
 
 defineProps<{
   desktopCollapsed?: boolean
@@ -32,24 +34,17 @@ const assetGridRef = ref<HTMLElement | null>(null)
 const taskGridRef = ref<HTMLElement | null>(null)
 const taskSectionRef = ref<HTMLElement | null>(null)
 
-const CATEGORY_LABELS: Record<string, string> = {
-  compute: '算力基建',
-  domain: '域名资产',
-  life: '订阅服务',
-  other: '其他资产',
-}
-
 const categoryTabs = computed(() => {
-  const seen = new Set<string>(['all'])
-  const tabs: Array<{ id: string; label: string }> = [{ id: 'all', label: '全部' }]
-  for (const a of store.state.assets) {
-    const c = String(a.category || '').trim()
-    if (!c || seen.has(c)) continue
-    seen.add(c)
-    tabs.push({ id: c, label: CATEGORY_LABELS[c] || c })
-  }
-  return tabs
+  const merged = mergeExtensibleCategories(store.state.assetCategories, store.state.assets)
+  return [
+    { id: 'all', label: '全部' },
+    ...merged.map((c) => ({ id: c.id, label: c.label })),
+  ]
 })
+
+function assetCategoryMeta(cat: string) {
+  return resolveCategoryMeta(cat, store.state.assetCategories)
+}
 
 function isExpiringSoon(a: Asset): boolean {
   if (a.status === '已停用' || String(a.due_date || '').startsWith('2099')) return false
@@ -473,21 +468,11 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
             >
               <div class="flex items-start justify-between gap-2.5 w-full">
                 <div class="flex items-center gap-2.5 min-w-0">
-                  <span class="w-8 h-8 rounded-xl border border-[#f2b880]/22 bg-[#f2b880]/10 text-[#f2b880] inline-flex items-center justify-center shrink-0">
-                    <svg v-if="a.category === 'compute'" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                      <rect x="2" y="3" width="20" height="8" rx="2" />
-                      <rect x="2" y="13" width="20" height="8" rx="2" />
-                      <line x1="6" y1="7" x2="6.01" y2="7" />
-                      <line x1="6" y1="17" x2="6.01" y2="17" />
-                    </svg>
-                    <svg v-else-if="a.category === 'domain'" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9" />
-                      <line x1="3" y1="12" x2="21" y2="12" />
-                      <path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z" />
-                    </svg>
-                    <svg v-else viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                    </svg>
+                  <span
+                    :title="assetCategoryMeta(a.category).label"
+                    class="w-8 h-8 rounded-xl border border-[#f2b880]/22 bg-[#f2b880]/10 text-[#f2b880] inline-flex items-center justify-center shrink-0"
+                  >
+                    <AssetCategoryIcon :icon="assetCategoryMeta(a.category).icon" :size="15" />
                   </span>
                   <div class="min-w-0">
                     <div class="flex items-center gap-1.5 min-w-0">

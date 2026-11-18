@@ -260,10 +260,31 @@ object JsonMappers {
         }
     }
 
+    fun parseAssetCategories(catArr: JSONArray?): List<AssetCategoryItem> {
+        if (catArr == null) return emptyList()
+        return buildList {
+            for (i in 0 until catArr.length()) {
+                val c = catArr.optJSONObject(i) ?: continue
+                val cid = c.optString("id", "").trim()
+                val label = c.optString("label", "").trim().ifEmpty { cid }
+                if (cid.isNotEmpty() || label.isNotEmpty()) {
+                    add(
+                        AssetCategoryItem(
+                            id = cid.ifEmpty { label },
+                            label = label,
+                            icon = c.optString("icon", "tag").ifBlank { "tag" }
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     fun parseDashboard(obj: JSONObject): DashboardSnapshot {
         val stats = obj.optJSONObject("stats") ?: JSONObject()
         val assetsArr = obj.optJSONArray("assets") ?: JSONArray()
         val tasksArr = obj.optJSONArray("tasks") ?: JSONArray()
+        val assetCategories = parseAssetCategories(obj.optJSONArray("asset_categories"))
 
         val assets = buildList {
             for (i in 0 until assetsArr.length()) {
@@ -272,7 +293,7 @@ object JsonMappers {
                     AssetItem(
                         id = a.optString("id"),
                         name = a.optString("name"),
-                        category = a.optString("category", "compute"),
+                        category = a.optString("category", "general").ifBlank { "general" },
                         spec = a.optString("spec"),
                         price = a.optString("price"),
                         dueDate = a.optString("due_date", ""),
@@ -309,7 +330,8 @@ object JsonMappers {
             activeTasks = tasks.count { it.enabled },
             unreadNotifications = stats.optInt("unread_notifications", 0),
             assets = assets,
-            tasks = tasks
+            tasks = tasks,
+            assetCategories = assetCategories
         )
     }
 
@@ -342,9 +364,19 @@ object JsonMappers {
                     .put("last_run", JSONObject().put("summary", t.lastSummary))
             )
         }
+        val catArr = JSONArray()
+        snap.assetCategories.forEach { c ->
+            catArr.put(
+                JSONObject()
+                    .put("id", c.id)
+                    .put("label", c.label)
+                    .put("icon", c.icon)
+            )
+        }
         return JSONObject()
             .put("version", snap.version)
             .put("assets", assetsArr)
+            .put("asset_categories", catArr)
             .put("tasks", tasksArr)
             .put(
                 "stats",

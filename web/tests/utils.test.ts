@@ -30,6 +30,16 @@ import {
   pickDefaultWorkerBot,
   resolveScopedMemories,
 } from '../src/utils/botLook.ts'
+import {
+  addMonthsPlain,
+  buildCalendarMonthGrid,
+  parsePlainDateParts,
+  parsePlainDateTimeParts,
+} from '../src/utils/calendar.ts'
+import {
+  mergeExtensibleCategories,
+  resolveCategoryMeta,
+} from '../src/utils/assetCategories.ts'
 import { clampUnit, computeNormalizedGaze } from '../src/utils/botGaze.ts'
 import { renderSafeMarkdown } from '../src/utils/markdown.ts'
 import { shouldReloadOnPreloadError, installPreloadErrorRecovery } from '../src/utils/lazyComponent.ts'
@@ -439,4 +449,45 @@ test('directional motion and popover exit helpers degrade gracefully', async () 
   await closePopoverWithTransition(mockPopover)
   assert.equal(hidden, true)
   assert.equal(attrs.has('data-closing'), false)
+})
+
+test('location-agnostic calendar helpers handle month grids, leap clamping, and wall-clock datetimes', () => {
+  assert.deepEqual(parsePlainDateParts('2026-11-18'), { year: 2026, month: 11, day: 18 })
+  assert.equal(parsePlainDateParts('2026-02-30'), null)
+  assert.equal(addMonthsPlain('2024-01-31', 1), '2024-02-29')
+  assert.equal(addMonthsPlain('2026-01-31', 1), '2026-02-28')
+  assert.equal(addMonthsPlain('2026-11-18', 12), '2027-11-18')
+
+  const dt = parsePlainDateTimeParts('2026-11-18 09:30')
+  assert.deepEqual(dt, { year: 2026, month: 11, day: 18, hour: 9, minute: 30 })
+
+  const grid = buildCalendarMonthGrid(2026, 11) // Nov 1 2026 is Sunday -> 6 leading days (Oct 26..31)
+  assert.equal(grid.length, 42)
+  assert.equal(grid[0].dateStr, '2026-10-26')
+  assert.equal(grid[0].inMonth, false)
+  assert.equal(grid[6].dateStr, '2026-11-01')
+  assert.equal(grid[6].inMonth, true)
+})
+
+test('extensible asset category resolver merges custom definitions and asset categories without hardcoded lock-in', () => {
+  const emptyMerged = mergeExtensibleCategories([], [])
+  assert.equal(emptyMerged.length, 0)
+
+  const saved = [
+    { id: 'insurance', label: '商业保险', icon: 'shield' },
+    { id: 'software', label: '开发软件', icon: 'key' },
+  ]
+  const assets = [
+    { id: 'a1', category: 'insurance' },
+    { id: 'a2', category: 'custom_card' },
+  ] as any[]
+
+  const merged = mergeExtensibleCategories(saved, assets)
+  assert.deepEqual(
+    merged.map((c) => c.id),
+    ['insurance', 'software', 'custom_card']
+  )
+  assert.equal(resolveCategoryMeta('insurance', saved).label, '商业保险')
+  assert.equal(resolveCategoryMeta('insurance', saved).icon, 'shield')
+  assert.equal(resolveCategoryMeta('custom_card', saved).label, 'custom_card')
 })

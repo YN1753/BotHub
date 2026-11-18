@@ -21,6 +21,7 @@ const (
 
 	KeyPushChannel       = "push_channel"
 	KeyMorningCity       = "morning_city"
+	KeyAssetCategories   = "asset_categories"
 	KeyNezhaURL          = "nezha_url"
 	KeyNezhaDBPath       = "nezha_db_path"
 	KeyRadarHNMinScore   = "radar_hn_min_score"
@@ -514,7 +515,8 @@ func (s *Store) seedDefaults() error {
 	now := NowShanghai()
 	defaults := map[string]string{
 		KeyPushChannel:       pushChannel,
-		KeyMorningCity:       "Shanghai",
+		KeyMorningCity:       "",
+		KeyAssetCategories:   "[]",
 		KeyNezhaURL:          "",
 		KeyNezhaDBPath:       nezhaDBPath,
 		KeyRadarHNMinScore:   "120",

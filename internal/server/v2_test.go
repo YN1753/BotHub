@@ -440,3 +440,80 @@ func TestV2BootstrapAndGzipMiddleware(t *testing.T) {
 		t.Fatalf("expected compact=1 to omit memories array")
 	}
 }
+
+func TestExtensibleAssetCategoriesBlankAndPersist(t *testing.T) {
+	s, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	appTok, err := s.ensureAppBearerToken()
+	if err != nil {
+		t.Fatalf("ensureAppBearerToken: %v", err)
+	}
+	h := s.Handler()
+
+	// 1. Fresh DB must start blank with zero hardcoded asset categories
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v2/asset-categories", nil)
+	getReq.Header.Set("Authorization", "Bearer "+appTok)
+	getRec := httptest.NewRecorder()
+	h.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/v2/asset-categories failed: %d", getRec.Code)
+	}
+	var initResp struct {
+		OK         bool                        `json:"ok"`
+		Categories []store.AssetCategoryOption `json:"categories"`
+	}
+	if err := json.Unmarshal(getRec.Body.Bytes(), &initResp); err != nil {
+		t.Fatalf("unmarshal init categories: %v", err)
+	}
+	if !initResp.OK || len(initResp.Categories) != 0 {
+		t.Fatalf("expected blank app to have 0 built-in asset categories, got %+v", initResp.Categories)
+	}
+
+	// 2. Save user-defined extensible categories (including duplicates / emoji stripping)
+	putBody := strings.NewReader(`{"categories":[{"id":"license","label":"软件授权","icon":"key"},{"id":"insurance","label":"健康保险","icon":"shield"},{"id":"license","label":"重复项","icon":"tag"}]}`)
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v2/asset-categories", putBody)
+	putReq.Header.Set("Authorization", "Bearer "+appTok)
+	putReq.Header.Set("Content-Type", "application/json")
+	putRec := httptest.NewRecorder()
+	h.ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("PUT /api/v2/asset-categories failed: %d: %s", putRec.Code, putRec.Body.String())
+	}
+
+	// 3. Re-fetch and confirm deduplicated persistence
+	verifyReq := httptest.NewRequest(http.MethodGet, "/api/v2/asset-categories", nil)
+	verifyReq.Header.Set("Authorization", "Bearer "+appTok)
+	verifyRec := httptest.NewRecorder()
+	h.ServeHTTP(verifyRec, verifyReq)
+	var savedResp struct {
+		Categories []store.AssetCategoryOption `json:"categories"`
+	}
+	_ = json.Unmarshal(verifyRec.Body.Bytes(), &savedResp)
+	if len(savedResp.Categories) != 2 || savedResp.Categories[0].ID != "license" || savedResp.Categories[1].Icon != "shield" {
+		t.Fatalf("unexpected saved categories: %+v", savedResp.Categories)
+	}
+
+	// 4. Create an asset with custom category and one with empty category (defaults to "general")
+	createCustom := httptest.NewRequest(http.MethodPost, "/api/assets", strings.NewReader(`{"id":"a_ins","name":"医疗险","category":"insurance","due_date":"2027-06-01"}`))
+	createCustom.Header.Set("Authorization", "Bearer "+appTok)
+	createCustom.Header.Set("Content-Type", "application/json")
+	recCustom := httptest.NewRecorder()
+	h.ServeHTTP(recCustom, createCustom)
+	if recCustom.Code != http.StatusOK {
+		t.Fatalf("create custom asset failed: %d: %s", recCustom.Code, recCustom.Body.String())
+	}
+
+	createDefault := httptest.NewRequest(http.MethodPost, "/api/assets", strings.NewReader(`{"id":"a_gen","name":"通用条目","due_date":"2027-06-01"}`))
+	createDefault.Header.Set("Authorization", "Bearer "+appTok)
+	createDefault.Header.Set("Content-Type", "application/json")
+	recDefault := httptest.NewRecorder()
+	h.ServeHTTP(recDefault, createDefault)
+	if recDefault.Code != http.StatusOK {
+		t.Fatalf("create default category asset failed: %d", recDefault.Code)
+	}
+	gotGen, _ := s.store.GetAsset("a_gen")
+	if gotGen == nil || gotGen.Category != "general" {
+		t.Fatalf("expected blank category fallback to 'general', got %+v", gotGen)
+	}
+}

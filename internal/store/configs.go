@@ -38,6 +38,7 @@ var ConfigRegistry = map[string]ConfigSpec{
 	KeyAppBearerToken:    {Editable: true, Sensitive: true},
 	KeyAndroidCertSHA256: {Editable: true},
 	KeyMorningCity:       {Editable: true},
+	KeyAssetCategories:   {Editable: true},
 	KeyRadarHNMinScore:   {Editable: true},
 	KeyRadarLimit:        {Editable: true},
 	KeyOIDCEnabled:       {Editable: true, EnvFallback: "BOTHUB_OIDC_ENABLED"},

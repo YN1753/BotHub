@@ -348,7 +348,7 @@ async function handleImportBackup(e: Event) {
             v-model="oidcIssuer"
             name="oidc_issuer"
             type="url"
-            placeholder="https://auth.starryheavens.uk"
+            placeholder="https://auth.example.com"
             autocorrect="off"
             autocapitalize="none"
             spellcheck="false"

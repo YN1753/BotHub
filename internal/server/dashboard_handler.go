@@ -108,6 +108,7 @@ func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
 	if want["assets"] {
 		assets, _ := s.store.ListAssets()
 		resp["assets"] = assets
+		resp["asset_categories"] = s.store.ListAssetCategories()
 		if !want["stats"] {
 			want["stats"] = true
 		}
@@ -204,8 +205,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"agent_sessions":  sessions,
 		"agent_memories":  memories,
 		"notifications":   notifications,
-		"configs":         cfgs,
-		"assets":          assets,
+		"configs":          cfgs,
+		"assets":           assets,
+		"asset_categories": s.store.ListAssetCategories(),
 		"push_logs":       logs,
 		"stats":           stats,
 		"uptime_sec":      int64(time.Since(s.startedAt).Seconds()),

@@ -2,6 +2,7 @@ import type {
   AgentMemory,
   AgentMessage,
   Asset,
+  AssetCategoryOption,
   Bot,
   BotExecutionLog,
   BotThread,
@@ -181,7 +182,14 @@ export const BotHubApi = {
   importBackup: (payload: unknown) =>
     apiRequest('/api/system/import', { method: 'POST', body: JSON.stringify(payload) }),
 
-  // Assets
+  // Assets & Extensible Categories
+  getAssetCategories: () =>
+    apiRequest<{ ok: boolean; categories: AssetCategoryOption[] }>('/api/v2/asset-categories'),
+  saveAssetCategories: (categories: AssetCategoryOption[]) =>
+    apiRequest<{ ok: boolean; categories: AssetCategoryOption[] }>('/api/v2/asset-categories', {
+      method: 'PUT',
+      body: JSON.stringify({ categories }),
+    }),
   createAsset: (payload: Partial<Asset>) =>
     apiRequest('/api/assets', { method: 'POST', body: JSON.stringify(payload) }),
   updateAsset: (id: string, payload: Partial<Asset>) =>

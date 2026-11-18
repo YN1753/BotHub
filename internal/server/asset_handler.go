@@ -43,6 +43,37 @@ func (s *Server) handleListAssetTemplates(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"templates": []any{}})
 }
 
+func (s *Server) handleListAssetCategories(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":         true,
+		"categories": s.store.ListAssetCategories(),
+	})
+}
+
+func (s *Server) handleSaveAssetCategories(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Categories []store.AssetCategoryOption `json:"categories"`
+	}
+	if !decodeJSON(w, r, 32768, &body) {
+		return
+	}
+	for i := range body.Categories {
+		body.Categories[i].ID = notifier.StripEmoji(strings.TrimSpace(body.Categories[i].ID))
+		body.Categories[i].Label = notifier.StripEmoji(strings.TrimSpace(body.Categories[i].Label))
+		body.Categories[i].Icon = strings.TrimSpace(body.Categories[i].Icon)
+	}
+	saved, err := s.store.SaveAssetCategories(body.Categories)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "保存资产分类失败: "+err.Error())
+		return
+	}
+	s.publishAssistantEvent("assets")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":         true,
+		"categories": saved,
+	})
+}
+
 func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 	var req store.Asset
 	if !decodeJSON(w, r, 16384, &req) {
@@ -66,7 +97,7 @@ func (s *Server) handleCreateAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Category == "" {
-		req.Category = "compute"
+		req.Category = "general"
 	}
 	if strings.TrimSpace(req.WarnDays) == "" {
 		req.WarnDays = "[7, 3, 1]"

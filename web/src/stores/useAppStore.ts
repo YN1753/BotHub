@@ -7,6 +7,7 @@ import type {
   AgentMemory,
   AgentMessage,
   Asset,
+  AssetCategoryOption,
   AvailableToolMeta,
   Bot,
   BotExecutionLog,
@@ -67,6 +68,7 @@ interface FastBootSnapshot {
   bots?: Bot[]
   notifications?: NotificationItem[]
   assets?: Asset[]
+  assetCategories?: AssetCategoryOption[]
   tasks?: Task[]
   stash?: StashItem[]
   activeBotId?: string
@@ -117,6 +119,7 @@ const state = reactive({
   availableTools: [] as AvailableToolMeta[],
   modelHealth: {} as Record<string, ModelHealthStats>,
   assets: (initialSnap?.assets || []) as Asset[],
+  assetCategories: (initialSnap?.assetCategories || []) as AssetCategoryOption[],
   tasks: (initialSnap?.tasks || []) as Task[],
   templates: [] as TaskTemplate[],
   memories: [] as AgentMemory[],
@@ -290,6 +293,7 @@ function saveFastBootSnapshot() {
       bots: state.bots.slice(0, 30),
       notifications: state.notifications.slice(0, 30),
       assets: state.assets.slice(0, 30),
+      assetCategories: state.assetCategories.slice(0, 40),
       tasks: state.tasks.slice(0, 30),
       stash: state.stash.slice(0, 40),
       activeBotId: state.activeBotId,
@@ -492,6 +496,7 @@ export function useAppStore() {
           if (data.stash_tags !== undefined) state.stashTags = data.stash_tags || []
           if (data.agent_memories !== undefined) state.memories = data.agent_memories || []
           if (data.assets !== undefined) state.assets = data.assets || []
+          if (data.asset_categories !== undefined) state.assetCategories = data.asset_categories || []
           if (data.tasks !== undefined) state.tasks = data.tasks || []
           if (data.bots !== undefined) {
             state.bots = data.bots || []
@@ -577,6 +582,7 @@ export function useAppStore() {
         state.availableTools = data.available_tools || []
         state.modelHealth = data.model_health || {}
         state.assets = data.assets || []
+        state.assetCategories = data.asset_categories || []
         state.tasks = data.tasks || []
         state.templates = data.templates || []
         state.memories = data.agent_memories || []
@@ -972,6 +978,20 @@ export function useAppStore() {
     }
   }
 
+  async function saveAssetCategories(next: AssetCategoryOption[]): Promise<AssetCategoryOption[]> {
+    const prev = [...state.assetCategories]
+    state.assetCategories = next
+    try {
+      const res = await BotHubApi.saveAssetCategories(next)
+      state.assetCategories = res.categories || next
+      saveFastBootSnapshot()
+      return state.assetCategories
+    } catch (err) {
+      state.assetCategories = prev
+      throw err
+    }
+  }
+
   return {
     state,
     activeBot,
@@ -981,6 +1001,7 @@ export function useAppStore() {
     unreadStashCount,
     expiringAssetCount,
     notify,
+    saveAssetCategories,
     pauseToast,
     resumeToast,
     openConfirm,

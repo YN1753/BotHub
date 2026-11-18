@@ -146,6 +146,8 @@ func (s *Server) Handler() http.Handler {
 
 	// Assets Management
 	mux.HandleFunc("GET /api/asset-templates", s.requireAuth(s.handleListAssetTemplates))
+	mux.HandleFunc("GET /api/v2/asset-categories", s.requireAuth(s.handleListAssetCategories))
+	mux.HandleFunc("PUT /api/v2/asset-categories", s.requireAuth(s.handleSaveAssetCategories))
 	mux.HandleFunc("GET /api/assets", s.requireAuth(s.handleListAssets))
 	mux.HandleFunc("POST /api/assets", s.requireAuth(s.handleCreateAsset))
 	mux.HandleFunc("POST /api/assets/{id}", s.requireAuth(s.handleUpdateAsset))

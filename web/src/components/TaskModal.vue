@@ -6,6 +6,8 @@ import { describeCron, generateSlug, parseJsonRecord } from '../utils/format'
 import BaseModal from './BaseModal.vue'
 import CustomSelect from './CustomSelect.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
+import CalendarDatePicker from './ui/CalendarDatePicker.vue'
+import { addMinutesPlainDateTime } from '../utils/calendar'
 
 const store = useAppStore()
 const isOpen = computed(() => store.state.editingTask !== undefined)
@@ -39,18 +41,14 @@ const isCustomCronValid = computed(() => {
   return parts.length === 5 || parts.length === 6
 })
 
+const runAtPresets = computed(() => [
+  { label: '30分钟后', value: addMinutesPlainDateTime(30) },
+  { label: '2小时后', value: addMinutesPlainDateTime(120) },
+  { label: '明早 09:00', value: addMinutesPlainDateTime(0, 9) },
+])
+
 function formatQuickRunAt(offsetMinutes: number, fixedHour?: number): string {
-  const d = new Date(Date.now() + offsetMinutes * 60_000)
-  if (fixedHour !== undefined) {
-    d.setDate(d.getDate() + 1)
-    d.setHours(fixedHour, 0, 0, 0)
-  }
-  const y = d.getFullYear()
-  const mo = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${y}-${mo}-${day} ${hh}:${mm}`
+  return addMinutesPlainDateTime(offsetMinutes, fixedHour)
 }
 
 function duplicateAsNewTask() {
@@ -324,8 +322,14 @@ async function handleDelete() {
             </div>
           </div>
           <div v-if="freq === 'once'" class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
-            <span>单次触发时间 (上海时间 YYYY-MM-DD HH:MM)</span>
-            <input v-model="runAt" type="text" placeholder="2026-11-18 09:30" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+            <span>单次触发日期与时刻 (上海时间)</span>
+            <CalendarDatePicker
+              v-model="runAt"
+              mode="datetime"
+              placeholder="点击通过日历选择触发时间..."
+              :presets="runAtPresets"
+              aria-label="单次触发日期与时间"
+            />
             <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
               <span class="text-slate-500">快捷设定:</span>
               <button type="button" @click="runAt = formatQuickRunAt(30)" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">30 分钟后</button>

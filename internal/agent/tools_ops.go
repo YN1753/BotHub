@@ -54,7 +54,7 @@ func manageAssetsToolSpec() ToolSpec {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "manage_assets",
-				Description: "查询或管理 BotHub 资产台账（VPS、域名、订阅、保号卡）。支持 list（列表）、summary（月度与年度费用分币种汇总）、expiring（查询即将到期）、upsert（新增或修改资产）、delete（删除资产）、sync（立即执行资产外部同步任务）。",
+				Description: "查询或管理 BotHub 资产与周期账单台账（支持任意自定义分类与可扩展属性）。支持 list（列表）、summary（月度与年度费用分币种汇总）、expiring（查询即将到期）、upsert（新增或修改资产）、delete（删除资产）、sync（立即执行资产外部同步任务）。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -65,7 +65,7 @@ func manageAssetsToolSpec() ToolSpec {
 						},
 						"category": map[string]any{
 							"type":        "string",
-							"description": "可选：按分类过滤或设置分类（例如 compute / domain / life / other 或自定义分类）",
+							"description": "可选：按分类过滤或设置分类（支持任意用户自定义分类标识或名称）",
 						},
 						"within_days": map[string]any{
 							"type":        "integer",

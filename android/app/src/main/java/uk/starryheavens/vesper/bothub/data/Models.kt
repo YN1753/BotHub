@@ -42,6 +42,13 @@ data class NotificationItem(
 }
 
 @Immutable
+data class AssetCategoryItem(
+    val id: String,
+    val label: String,
+    val icon: String = "tag"
+)
+
+@Immutable
 data class AssetItem(
     val id: String,
     val name: String,
@@ -260,7 +267,8 @@ data class DashboardSnapshot(
     val activeTasks: Int,
     val unreadNotifications: Int,
     val assets: List<AssetItem>,
-    val tasks: List<TaskItem>
+    val tasks: List<TaskItem>,
+    val assetCategories: List<AssetCategoryItem> = emptyList()
 )
 
 enum class ShareKind(

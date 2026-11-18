@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import uk.starryheavens.vesper.bothub.data.AgentSessionSummary
+import uk.starryheavens.vesper.bothub.data.AssetCategoryItem
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.BotItem
@@ -1364,6 +1365,31 @@ class BotHubViewModel(
                     prefs.saveCachedDashboard(prevDash)
                 }
                 showMessage(err.message ?: "删除失败")
+            }
+        }
+    }
+
+    fun saveAssetCategories(nextCategories: List<AssetCategoryItem>) {
+        val prevDash = dashboard
+        if (prevDash != null) {
+            val optimisticDash = prevDash.copy(assetCategories = nextCategories)
+            dashboard = optimisticDash
+            prefs.saveCachedDashboard(optimisticDash)
+        }
+        viewModelScope.launch {
+            api.saveAssetCategories(nextCategories).onSuccess { saved ->
+                dashboard?.let { cur ->
+                    val updated = cur.copy(assetCategories = saved)
+                    dashboard = updated
+                    prefs.saveCachedDashboard(updated)
+                }
+                showMessage("资产分类已更新")
+            }.onFailure { err ->
+                if (prevDash != null) {
+                    dashboard = prevDash
+                    prefs.saveCachedDashboard(prevDash)
+                }
+                showMessage(err.message ?: "保存分类失败")
             }
         }
     }

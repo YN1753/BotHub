@@ -9,10 +9,84 @@ import (
 	"time"
 )
 
+type AssetCategoryOption struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Icon  string `json:"icon"`
+}
+
+func sanitizeAssetCategoryID(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	return strings.ReplaceAll(trimmed, " ", "_")
+}
+
+func normalizeAssetCategories(categories []AssetCategoryOption) []AssetCategoryOption {
+	out := make([]AssetCategoryOption, 0, len(categories))
+	seen := make(map[string]bool, len(categories))
+	for _, item := range categories {
+		id := sanitizeAssetCategoryID(item.ID)
+		label := strings.TrimSpace(item.Label)
+		if id == "" && label == "" {
+			continue
+		}
+		if id == "" {
+			id = sanitizeAssetCategoryID(label)
+		}
+		if label == "" {
+			label = id
+		}
+		key := strings.ToLower(id)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		icon := strings.TrimSpace(item.Icon)
+		if icon == "" {
+			icon = "tag"
+		}
+		out = append(out, AssetCategoryOption{
+			ID:    id,
+			Label: label,
+			Icon:  icon,
+		})
+	}
+	return out
+}
+
+// ListAssetCategories returns the user-configured extensible asset categories stored in configs.
+// Returns an empty slice on a blank installation until the user adds categories.
+func (s *Store) ListAssetCategories() []AssetCategoryOption {
+	raw, err := s.GetConfig(KeyAssetCategories)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return []AssetCategoryOption{}
+	}
+	var list []AssetCategoryOption
+	if err := json.Unmarshal([]byte(raw), &list); err != nil {
+		return []AssetCategoryOption{}
+	}
+	return normalizeAssetCategories(list)
+}
+
+// SaveAssetCategories validates, deduplicates, and persists extensible asset categories.
+func (s *Store) SaveAssetCategories(categories []AssetCategoryOption) ([]AssetCategoryOption, error) {
+	cleaned := normalizeAssetCategories(categories)
+	raw, err := json.Marshal(cleaned)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.SetConfig(KeyAssetCategories, string(raw)); err != nil {
+		return nil, err
+	}
+	return cleaned, nil
+}
+
 type Asset struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
-	Category      string `json:"category"` // compute, domain, life
+	Category      string `json:"category"`
 	Spec          string `json:"spec"`
 	Price         string `json:"price"`
 	Status        string `json:"status"`
@@ -65,7 +139,7 @@ func hydrateAssetState(a *Asset, autoRenewInt int) {
 func (s *Store) ListAssets() ([]Asset, error) {
 	rows, err := s.db.Query(`
 SELECT id, name, category, spec, price, status, due_date, auto_renew, warn_days, last_checked_at, extra_config
-FROM assets ORDER BY CASE category WHEN 'compute' THEN 1 WHEN 'domain' THEN 2 WHEN 'life' THEN 3 ELSE 4 END, id ASC`)
+FROM assets ORDER BY category ASC, id ASC`)
 	if err != nil {
 		return nil, err
 	}

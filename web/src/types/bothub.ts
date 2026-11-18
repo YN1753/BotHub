@@ -113,10 +113,16 @@ export interface AgentMemory {
   updated_at: string
 }
 
+export interface AssetCategoryOption {
+  id: string
+  label: string
+  icon?: string
+}
+
 export interface Asset {
   id: string
   name: string
-  category: 'compute' | 'domain' | 'life' | string
+  category: string
   spec: string
   price: string
   status: string
@@ -325,6 +331,7 @@ export interface DashboardPayload {
   notifications: NotificationItem[]
   configs: Record<string, string>
   assets: Asset[]
+  asset_categories?: AssetCategoryOption[]
   push_logs: PushLog[]
   stats: {
     sent_pushes: number

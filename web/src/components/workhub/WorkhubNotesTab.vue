@@ -25,6 +25,12 @@ const draftNotePinned = ref(false)
 const savingNote = ref(false)
 const noteTitleRef = ref<HTMLInputElement | null>(null)
 
+const noteCategoryChoices = computed(() => {
+  const base = ['general', 'deliverable', 'plan', 'research', 'note']
+  const fromNotes = store.state.notes.map((n) => String(n.category || '').trim()).filter(Boolean)
+  return Array.from(new Set([...base, ...fromNotes]))
+})
+
 watch(
   () => store.state.pendingNoteId,
   (targetId) => {
@@ -238,13 +244,34 @@ async function refineNoteWithBot(n: WorkNote) {
           <input
             v-model="draftNoteCategory"
             type="text"
-            placeholder="分类 (deliverable/plan)"
+            list="workhub-note-categories"
+            placeholder="输入或选择文档分类..."
             class="sm:col-span-3 min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 font-mono text-xs text-white"
           />
+          <datalist id="workhub-note-categories">
+            <option v-for="cat in noteCategoryChoices" :key="cat" :value="cat" />
+          </datalist>
           <label class="sm:col-span-2 inline-flex items-center justify-center gap-1.5 text-xs text-slate-300 cursor-pointer">
             <input v-model="draftNotePinned" type="checkbox" class="accent-[#f2b880]" />
             <span>置顶</span>
           </label>
+        </div>
+        <div class="flex items-center gap-1.5 flex-wrap text-[11px] shrink-0">
+          <span class="text-slate-500">分类快选:</span>
+          <button
+            v-for="cat in noteCategoryChoices"
+            :key="cat"
+            type="button"
+            @click="draftNoteCategory = cat"
+            :class="[
+              'px-2 py-0.5 rounded-md border font-mono cursor-pointer transition-colors',
+              draftNoteCategory === cat
+                ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
+                : 'border-[#fff8ee]/10 text-slate-400 hover:text-white'
+            ]"
+          >
+            {{ cat }}
+          </button>
         </div>
         <textarea
           v-model="draftNoteContent"
