@@ -1,9 +1,21 @@
 import { escapeHtml } from './format.ts'
 import { copyToClipboard } from './clipboard.ts'
 
+const MD_LRU_LIMIT = 240
+const markdownHtmlCache = new Map<string, string>()
+
 export function renderSafeMarkdown(raw: string): string {
   const src = String(raw || '').replace(/\r\n/g, '\n')
   if (!src.trim()) return ''
+
+  if (src.length <= 16384) {
+    const cached = markdownHtmlCache.get(src)
+    if (cached !== undefined) {
+      markdownHtmlCache.delete(src)
+      markdownHtmlCache.set(src, cached)
+      return cached
+    }
+  }
 
   const codeBlocks: string[] = []
   const withPlaceholders = src.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, lang: string, code: string) => {
@@ -129,7 +141,15 @@ export function renderSafeMarkdown(raw: string): string {
     html.push(`<p>${formatInline(trimmed)}</p>`)
   }
   closeList()
-  return `<div class="md-body">${html.join('')}</div>`
+  const rendered = `<div class="md-body">${html.join('')}</div>`
+  if (src.length <= 16384) {
+    if (markdownHtmlCache.size >= MD_LRU_LIMIT) {
+      const oldestKey = markdownHtmlCache.keys().next().value
+      if (oldestKey !== undefined) markdownHtmlCache.delete(oldestKey)
+    }
+    markdownHtmlCache.set(src, rendered)
+  }
+  return rendered
 }
 
 export function handleMarkdownCodeCopy(e: MouseEvent, onCopied?: () => void): void {

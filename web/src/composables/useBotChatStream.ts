@@ -57,9 +57,13 @@ export function useBotChatStream(options: {
       return
     }
     const botId = curBot.id
+    const activeThreadSnapshot = store.state.activeThreadId || ''
     const quote = replyTarget.value
     lastPrompt.value = msg
-    if (!overrideText) inputPrompt.value = ''
+    if (!overrideText) {
+      inputPrompt.value = ''
+      store.setBotDraft(botId, '', activeThreadSnapshot)
+    }
     onClosePopovers?.()
     replyTarget.value = null
     relaySteps.value = []
@@ -124,6 +128,39 @@ export function useBotChatStream(options: {
     const turnStartedAt = Date.now()
     scrollToBottom(true)
 
+    let pendingReasoningDelta = ''
+    let pendingContentDelta = ''
+    let rafHandle: number | null = null
+
+    const flushPendingDeltas = () => {
+      if (rafHandle !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(rafHandle)
+        rafHandle = null
+      }
+      if (!pendingReasoningDelta && !pendingContentDelta) return
+      if (pendingReasoningDelta) {
+        activeTurn.reasoning += pendingReasoningDelta
+        pendingReasoningDelta = ''
+      }
+      if (pendingContentDelta) {
+        activeTurn.content += pendingContentDelta
+        pendingContentDelta = ''
+      }
+      scrollToBottom()
+    }
+
+    const scheduleDeltaFlush = () => {
+      if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+        flushPendingDeltas()
+        return
+      }
+      if (rafHandle !== null) return
+      rafHandle = window.requestAnimationFrame(() => {
+        rafHandle = null
+        flushPendingDeltas()
+      })
+    }
+
     try {
       const res = await fetch('/api/agent/chat', {
         method: 'POST',
@@ -171,6 +208,7 @@ export function useBotChatStream(options: {
             }
 
             if (currentEvent === 'system_notice') {
+              flushPendingDeltas()
               const idx = store.state.timeline.indexOf(activeTurn)
               const sysItem: ChatMessageUI = {
                 localId: `srv_${payload.id || Date.now()}`,
@@ -191,6 +229,7 @@ export function useBotChatStream(options: {
               if (idx >= 0) store.state.timeline.splice(idx, 0, sysItem)
               else store.state.timeline.push(sysItem)
             } else if (currentEvent === 'bot_turn') {
+              flushPendingDeltas()
               relaySteps.value.forEach((s) => {
                 s.status = 'done'
               })
@@ -220,9 +259,10 @@ export function useBotChatStream(options: {
               streamStatus.value = `协同接力 (${payload.step}/${payload.total_steps}): ${payload.sender_name}`
             } else if (currentEvent === 'reasoning') {
               streamStatus.value = '深度思考中...'
-              activeTurn.reasoning += payload.delta || ''
-              scrollToBottom()
+              pendingReasoningDelta += payload.delta || ''
+              scheduleDeltaFlush()
             } else if (currentEvent === 'tool_start') {
+              flushPendingDeltas()
               streamStatus.value = `执行工具: ${payload.name}...`
               activeTurn.tools.push({
                 id: payload.id,
@@ -241,15 +281,17 @@ export function useBotChatStream(options: {
               }
             } else if (currentEvent === 'content') {
               streamStatus.value = '正在生成回复...'
-              activeTurn.content += payload.delta || ''
-              scrollToBottom()
+              pendingContentDelta += payload.delta || ''
+              scheduleDeltaFlush()
             } else if (currentEvent === 'model_switch') {
               streamStatus.value = `${payload.from_label || '当前节点'} 限流或异常，已自动切换至 ${payload.to_label || payload.to_model}`
             } else if (currentEvent === 'error') {
+              flushPendingDeltas()
               activeTurn.statusText = '异常中断'
               activeTurn.errorText = payload.error || '未知流式错误'
               activeTurn.streaming = false
             } else if (currentEvent === 'done') {
+              flushPendingDeltas()
               activeTurn.streaming = false
               if (payload.model) activeTurn.model = payload.model
               const elapsedSec = ((Date.now() - turnStartedAt) / 1000).toFixed(1)
@@ -262,7 +304,12 @@ export function useBotChatStream(options: {
         }
       }
 
+      flushPendingDeltas()
       activeTurn.streaming = false
+      // Unlock composer & bot switching immediately in 0ms instead of blocking 3-4s on post-turn sync!
+      store.state.isStreaming = false
+      abortCtrl = null
+
       relaySteps.value.forEach((s) => {
         s.status = 'done'
       })
@@ -272,27 +319,31 @@ export function useBotChatStream(options: {
       if (activeTurn.statusText === '思考与生成中...') activeTurn.statusText = '已完成'
       streamStatus.value = '就绪'
       store.playSubtleChime()
-      await store.refreshWorkspaceSlices(['bots', 'memories', 'todos', 'notes', 'model_health'])
-      if (curBot.id === store.state.activeBotId) {
-        const synced = await BotHubApi.getBotMessages(curBot.id, store.state.activeThreadId).catch(() => null)
-        if (synced?.threads) store.state.botThreads = synced.threads
-        if (synced?.memories) store.state.botMemories = synced.memories
-        if (synced?.executions) store.state.botExecutions = synced.executions
-        if (synced?.messages && !store.state.isStreaming) {
-          const finalTurnStatus = activeTurn.statusText
-          const mappedSynced = mapServerMessages(synced.messages, curBot, {
-            bots: store.state.bots,
-            defaultModel: store.state.configs.ai_model,
-          })
-          if (mappedSynced.length >= store.state.timeline.length) {
-            if (finalTurnStatus && mappedSynced.length > 0 && mappedSynced[mappedSynced.length - 1].role === 'assistant') {
-              mappedSynced[mappedSynced.length - 1].statusText = finalTurnStatus
+
+      void (async () => {
+        await store.refreshWorkspaceSlices(['bots', 'memories', 'todos', 'notes', 'model_health'])
+        if (curBot.id === store.state.activeBotId && !store.state.isStreaming) {
+          const synced = await BotHubApi.getBotMessages(curBot.id, activeThreadSnapshot).catch(() => null)
+          if (synced?.threads) store.state.botThreads = synced.threads
+          if (synced?.memories) store.state.botMemories = synced.memories
+          if (synced?.executions) store.state.botExecutions = synced.executions
+          if (synced?.messages && !store.state.isStreaming && curBot.id === store.state.activeBotId) {
+            const finalTurnStatus = activeTurn.statusText
+            const mappedSynced = mapServerMessages(synced.messages, curBot, {
+              bots: store.state.bots,
+              defaultModel: store.state.configs.ai_model,
+            })
+            if (mappedSynced.length >= store.state.timeline.length) {
+              if (finalTurnStatus && mappedSynced.length > 0 && mappedSynced[mappedSynced.length - 1].role === 'assistant') {
+                mappedSynced[mappedSynced.length - 1].statusText = finalTurnStatus
+              }
+              store.state.timeline = mappedSynced
             }
-            store.state.timeline = mappedSynced
           }
         }
-      }
+      })()
     } catch (err: any) {
+      flushPendingDeltas()
       activeTurn.streaming = false
       if (err.name === 'AbortError') {
         activeTurn.statusText = '已手动停止'

@@ -305,6 +305,10 @@ test('renderSafeMarkdown sanitizes XSS and renders structured blocks', () => {
   assert.match(rich, /<table>/)
   assert.match(rich, /<blockquote>/)
   assert.match(rich, /md-copy-code-btn/)
+
+  // Verify LRU cache returns identical HTML output on repeated calls
+  const repeat = renderSafeMarkdown('**cached** `token`')
+  assert.equal(repeat, renderSafeMarkdown('**cached** `token`'))
 })
 
 test('preload error recovery guards against reload loops and storage exceptions', () => {

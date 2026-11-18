@@ -80,9 +80,9 @@ function botDraftPreview(b: Bot): string {
   return ''
 }
 
-async function handlePickBot(id: string) {
+function handlePickBot(id: string) {
   if (store.state.isStreaming) return
-  await store.selectBot(id)
+  void store.selectBot(id)
   emit('closeMobile')
 }
 

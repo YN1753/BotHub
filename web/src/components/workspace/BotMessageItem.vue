@@ -51,6 +51,10 @@ const isLongUserMessage = computed(() => {
   return c.length > 260 || c.split('\n').length > 6
 })
 
+const renderedMarkdownHtml = computed(() =>
+  props.message.content ? renderSafeMarkdown(props.message.content) : ''
+)
+
 function closeDetailsMenu(e: Event) {
   ;(e.currentTarget as HTMLElement | null)?.closest('details')?.removeAttribute('open')
 }
@@ -274,9 +278,9 @@ function closeDetailsMenu(e: Event) {
 
       <!-- Open Editorial Markdown Body -->
       <div
-        v-if="message.content"
+        v-if="renderedMarkdownHtml"
         :class="message.streaming ? 'md-streaming' : ''"
-        v-html="renderSafeMarkdown(message.content)"
+        v-html="renderedMarkdownHtml"
       />
       <div v-else-if="message.errorText" class="flex items-center justify-between gap-2 flex-wrap text-sm text-rose-400">
         <span>[调用失败] {{ message.errorText }}</span>
