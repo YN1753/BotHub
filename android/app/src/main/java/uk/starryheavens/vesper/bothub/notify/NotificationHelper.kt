@@ -18,34 +18,40 @@ import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 object NotificationHelper {
     const val CHANNEL_ALERTS = "vesper_bothub_alerts"
     const val CHANNEL_DAILY = "vesper_bothub_daily"
-    const val CHANNEL_SERVICE = "vesper_bothub_service"
+    const val CHANNEL_SERVICE = "bothub_bg_sync_silent"
+    private const val LEGACY_CHANNEL_SERVICE = "vesper_bothub_service"
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        runCatching { manager.deleteNotificationChannel(LEGACY_CHANNEL_SERVICE) }
 
         val alertsChannel = NotificationChannel(
             CHANNEL_ALERTS,
-            "高优基建与资产告警",
+            "重要提醒",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "哪吒探针告警、VPS 与域名临期防扣款提醒"
+            description = "异常告警与到期提醒"
             enableVibration(true)
         }
 
         val dailyChannel = NotificationChannel(
             CHANNEL_DAILY,
-            "智能晨报与技术雷达",
+            "日常推送",
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "DeepSeek 晨间参谋简报与全网开源技术雷达"
+            description = "简报与订阅通知"
         }
 
         val serviceChannel = NotificationChannel(
             CHANNEL_SERVICE,
-            "实时推送常驻连接",
-            NotificationManager.IMPORTANCE_LOW
+            "后台连接",
+            NotificationManager.IMPORTANCE_MIN
         ).apply {
-            description = "保持与 BotHub 的低功耗 SSE 实时连接"
+            description = "保持后台消息接收"
+            setShowBadge(false)
+            enableLights(false)
+            enableVibration(false)
+            setSound(null, null)
         }
 
         manager.createNotificationChannels(listOf(alertsChannel, dailyChannel, serviceChannel))

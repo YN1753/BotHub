@@ -329,6 +329,7 @@ fun TactilePrimaryButton(
                     platformStyle = NoFontPaddingStyle
                 ),
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -408,6 +409,7 @@ fun TactileSecondaryButton(
                     platformStyle = NoFontPaddingStyle
                 ),
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -731,7 +733,42 @@ fun CrispUnreadBadge(
                 color = contentColor,
                 platformStyle = NoFontPaddingStyle
             ),
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false
+        )
+    }
+}
+
+/**
+ * Bulletproof non-wrapping micro tag pill (never squeezes vertically into 1-char columns).
+ */
+@Composable
+fun CrispTagPill(
+    text: String,
+    bgColor: Color = Color(0x16FFFFFF),
+    borderColor: Color = Color(0x24FFF8EE),
+    textColor: Color = Color(0xFF94A3B8),
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(5.dp)
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(bgColor, shape)
+            .border(0.5.dp, borderColor, shape)
+            .padding(horizontal = 5.5.dp, vertical = 1.5.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = TextStyle(
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = textColor,
+                platformStyle = NoFontPaddingStyle
+            ),
+            maxLines = 1,
+            softWrap = false
         )
     }
 }
@@ -846,6 +883,7 @@ fun FloatingGlassPopover(
                                 platformStyle = NoFontPaddingStyle
                             ),
                             maxLines = 1,
+                            softWrap = false,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
@@ -909,7 +947,8 @@ fun TactileFilterChip(
                 color = if (selected) Color(0xFFFFE4C4) else Color(0xFF94A3B8),
                 platformStyle = NoFontPaddingStyle
             ),
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false
         )
     }
 }

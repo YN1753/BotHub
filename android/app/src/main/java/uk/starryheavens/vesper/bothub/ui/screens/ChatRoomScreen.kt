@@ -19,14 +19,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -42,23 +38,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.GroupAdd
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -86,17 +77,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
+import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
 import uk.starryheavens.vesper.bothub.ui.components.FloatingGlassPopover
 import uk.starryheavens.vesper.bothub.ui.components.GlassMenuAction
 import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
 import uk.starryheavens.vesper.bothub.ui.components.RichMarkdownText
-import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
 import uk.starryheavens.vesper.bothub.ui.components.SpecularHairline
 import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
 import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
@@ -111,9 +101,6 @@ private data class PlusActionTile(
     val onClick: () -> Unit
 )
 
-/**
- * Full-Screen Level-2 Flagship IM Chat Room (WeChat / QQ / GrokBot Chat Paradigm).
- */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatRoomScreen(
@@ -135,7 +122,6 @@ fun ChatRoomScreen(
     onOpenChatInfo: () -> Unit,
     onOpenBotProfile: (BotItem) -> Unit,
     onInviteToGroup: () -> Unit,
-    onOpenSessions: () -> Unit,
     onClearHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -184,7 +170,7 @@ fun ChatRoomScreen(
             .background(Color(0xFF050811))
             .imePadding()
     ) {
-        // 1. Authentic WeChat / QQ IM Chat Header
+        // 1. Clean WeChat / QQ IM Chat Header
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -212,7 +198,7 @@ fun ChatRoomScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.ChevronLeft,
-                        contentDescription = "返回消息列表",
+                        contentDescription = "返回",
                         tint = Color(0xFFFFF8EE),
                         modifier = Modifier.size(22.dp)
                     )
@@ -223,7 +209,9 @@ fun ChatRoomScreen(
                             fontWeight = FontWeight.Medium,
                             color = Color(0xFFFFF8EE),
                             platformStyle = NoFontPaddingStyle
-                        )
+                        ),
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
 
@@ -235,13 +223,17 @@ fun ChatRoomScreen(
                         }
                         .padding(horizontal = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                    verticalArrangement = Arrangement.spacedBy(1.dp)
                 ) {
                     Text(
-                        text = buildString {
-                            append(activeBot?.name ?: "AI 好友")
-                            if (isGroup && groupMembers.isNotEmpty()) {
-                                append(" (${groupMembers.size})")
+                        text = if (isStreaming && !isGroup) {
+                            "对方正在输入..."
+                        } else {
+                            buildString {
+                                append(activeBot?.name ?: "AI 好友")
+                                if (isGroup && groupMembers.isNotEmpty()) {
+                                    append(" (${groupMembers.size})")
+                                }
                             }
                         },
                         style = TextStyle(
@@ -251,35 +243,19 @@ fun ChatRoomScreen(
                             platformStyle = NoFontPaddingStyle
                         ),
                         maxLines = 1,
+                        softWrap = false,
                         overflow = TextOverflow.Ellipsis
                     )
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(5.5.dp)
-                                .background(
-                                    color = if (isStreaming) Color(0xFFF2B880) else Color(0xFF34D399),
-                                    shape = CircleShape
-                                )
-                        )
+                    if (isStreaming && isGroup) {
                         Text(
-                            text = when {
-                                isStreaming && isGroup -> "群成员正在思考与接力..."
-                                isStreaming -> "对方正在输入..."
-                                isGroup -> "${activeBot?.groupModeLabel() ?: "智能协同"} · ${if (activeModel == "free-pool") "免费池" else "主力引擎"}"
-                                else -> "在线 · ${if (activeModel == "free-pool") "免费池" else "主力引擎"}"
-                            },
+                            text = "成员协作发言中...",
                             style = TextStyle(
                                 fontSize = 10.5.sp,
-                                color = if (isStreaming) Color(0xFFFFE2BE) else Color(0xFF8C9BB5),
+                                color = Color(0xFFFFE2BE),
                                 platformStyle = NoFontPaddingStyle
                             ),
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            softWrap = false
                         )
                     }
                 }
@@ -304,7 +280,7 @@ fun ChatRoomScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.MoreHoriz,
-                        contentDescription = "聊天信息与设置",
+                        contentDescription = "聊天详情",
                         tint = Color(0xFFFFF8EE),
                         modifier = Modifier.size(19.dp)
                     )
@@ -324,22 +300,12 @@ fun ChatRoomScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color(0x2CF2B880))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = "群公告",
-                        style = TextStyle(
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFFFE2BE),
-                            platformStyle = NoFontPaddingStyle
-                        )
-                    )
-                }
+                CrispTagPill(
+                    text = "群公告",
+                    bgColor = Color(0x2CF2B880),
+                    borderColor = Color(0x52F2B880),
+                    textColor = Color(0xFFFFE2BE)
+                )
                 Text(
                     text = activeBot?.announcement.orEmpty(),
                     fontSize = 12.sp,
@@ -375,130 +341,42 @@ fun ChatRoomScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
         ) {
+            // Pure, uncluttered empty chat state (Avatar + Name + Bio only — zero gimmick prompt buttons!)
             if (messages.isEmpty()) {
                 item(key = "__chat_welcome__") {
-                    val icebreakers = listOf(
-                        Triple("盘点资产风险", Icons.Default.AccountBalanceWallet, "请调用工具盘点全部数字资产与算力节点，并按到期风险给出锐评。"),
-                        Triple("探查节点脉搏", Icons.Default.MonitorHeart, "请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线状态。"),
-                        Triple("检查定时调度", Icons.Default.Schedule, "请列出当前所有定时调度任务的状态与下次触发时间。"),
-                        Triple("串联近期收藏", Icons.Default.Bookmarks, "请调用 manage_stash 检索我最近收入收藏匣的未读干货并做简要串联。")
-                    )
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 6.dp, vertical = 16.dp),
+                            .padding(horizontal = 24.dp, vertical = 48.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(Color(0x990D1428))
-                                .border(0.6.dp, Color(0x18FFF8EE), RoundedCornerShape(999.dp))
-                                .padding(horizontal = 14.dp, vertical = 5.dp)
-                        ) {
+                        SpiritSquircleAvatar(
+                            bot = activeBot,
+                            allBots = allBots,
+                            containerSize = 68.dp,
+                            cornerRadius = 20.dp,
+                            interactive = true,
+                            seedKey = activeBot?.id ?: "chat_empty"
+                        )
+                        Text(
+                            text = activeBot?.name ?: "AI 好友",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFF8EE),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val desc = activeBot?.traits?.ifBlank { activeBot.roleTitle }.orEmpty()
+                        if (desc.isNotBlank()) {
                             Text(
-                                text = if (isGroup) {
-                                    "群聊已就绪，输入 @ 可点名指定 AI 成员发言"
-                                } else {
-                                    "你已连接 ${activeBot?.name ?: "AI 好友"}，现在可以开始聊天了"
-                                },
-                                fontSize = 11.5.sp,
-                                color = Color(0xFF8C9BB5)
+                                text = desc,
+                                fontSize = 12.5.sp,
+                                color = Color(0xFF8C9BB5),
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
-                        }
-
-                        SpecularGlassCard(
-                            cornerRadius = 22.dp,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(18.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                SpiritSquircleAvatar(
-                                    bot = activeBot,
-                                    allBots = allBots,
-                                    containerSize = 68.dp,
-                                    cornerRadius = 20.dp,
-                                    interactive = true,
-                                    seedKey = activeBot?.id ?: "chat_empty"
-                                )
-                                Text(
-                                    text = activeBot?.name ?: "AI 好友",
-                                    fontSize = 17.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFFF8EE)
-                                )
-                                Text(
-                                    text = activeBot?.traits?.ifBlank { activeBot.roleTitle }
-                                        ?.ifBlank { "随时在线待命，直接发消息聊聊或点下方快捷话题" }
-                                        ?: "随时在线待命",
-                                    fontSize = 12.5.sp,
-                                    color = Color(0xFF8C9BB5),
-                                    textAlign = TextAlign.Center
-                                )
-
-                                Spacer(modifier = Modifier.height(2.dp))
-
-                                icebreakers.chunked(2).forEach { pair ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(IntrinsicSize.Min),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        pair.forEach { (label, icon, prompt) ->
-                                            val tileShape = RoundedCornerShape(13.dp)
-                                            Row(
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .fillMaxHeight()
-                                                    .sizeIn(minHeight = 44.dp)
-                                                    .tactileClickable(
-                                                        pressedScale = 0.96f,
-                                                        hapticOnTap = true,
-                                                        onClick = { onSendPrompt(prompt) }
-                                                    )
-                                                    .clip(tileShape)
-                                                    .background(
-                                                        Brush.verticalGradient(
-                                                            listOf(Color(0xFF151E39), Color(0xFF0D1326))
-                                                        ),
-                                                        tileShape
-                                                    )
-                                                    .border(
-                                                        BorderStroke(
-                                                            0.8.dp,
-                                                            specularRimBrush(Color(0x2EFFF8EE), Color(0x12FFF8EE), Color.Transparent)
-                                                        ),
-                                                        tileShape
-                                                    )
-                                                    .padding(horizontal = 10.dp, vertical = 10.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = icon,
-                                                    contentDescription = null,
-                                                    tint = Color(0xFFF2B880),
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                                Text(
-                                                    text = label,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = Color(0xFFE6ECF8),
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                 }
@@ -592,13 +470,13 @@ fun ChatRoomScreen(
                                 offsetY = 38.dp,
                                 items = listOf(
                                     GlassMenuAction(
-                                        label = "复制消息",
+                                        label = "复制",
                                         icon = Icons.Default.ContentCopy,
                                         iconTint = Color(0xFFFFE2BE),
                                         onClick = { onCopyText(msg.content) }
                                     ),
                                     GlassMenuAction(
-                                        label = "引用该条",
+                                        label = "引用",
                                         icon = Icons.Default.FormatQuote,
                                         iconTint = Color(0xFFA5B4FC),
                                         onClick = { quoteTarget = "我" to msg.content }
@@ -661,29 +539,23 @@ fun ChatRoomScreen(
                                                 text = msg.persona.ifEmpty { speakerBot?.name ?: "AI" },
                                                 fontSize = 11.5.sp,
                                                 fontWeight = FontWeight.Medium,
-                                                color = Color(0xFF8C9BB5)
+                                                color = Color(0xFF8C9BB5),
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false)
                                             )
                                             if (msg.msgKind == "routine") {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(4.dp))
-                                                        .background(Color(0x28FBBF24))
-                                                        .padding(horizontal = 5.dp, vertical = 1.dp)
-                                                ) {
-                                                    Text(
-                                                        text = "异常提醒",
-                                                        style = TextStyle(
-                                                            fontSize = 9.5.sp,
-                                                            color = Color(0xFFFDE68A),
-                                                            platformStyle = NoFontPaddingStyle
-                                                        )
-                                                    )
-                                                }
+                                                CrispTagPill(
+                                                    text = "提醒",
+                                                    bgColor = Color(0x28FBBF24),
+                                                    borderColor = Color(0x52FBBF24),
+                                                    textColor = Color(0xFFFDE68A)
+                                                )
                                             }
                                         }
                                     }
 
-                                    // Specular Glass AI Speech Bubble (Long-Press for Copy / Quote!)
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -740,10 +612,11 @@ fun ChatRoomScreen(
                                                         modifier = Modifier.size(14.dp)
                                                     )
                                                     Text(
-                                                        text = "思考过程 (${msg.reasoning.length} 字)",
-                                                        fontFamily = FontFamily.Monospace,
+                                                        text = "思考过程",
                                                         fontSize = 11.sp,
-                                                        color = Color(0xFFFDE68A)
+                                                        color = Color(0xFFFDE68A),
+                                                        maxLines = 1,
+                                                        softWrap = false
                                                     )
                                                 }
                                                 AnimatedVisibility(
@@ -785,7 +658,9 @@ fun ChatRoomScreen(
                                                             text = tLabel,
                                                             fontFamily = FontFamily.Monospace,
                                                             fontSize = 10.5.sp,
-                                                            color = Color(0xFFA7F3D0)
+                                                            color = Color(0xFFA7F3D0),
+                                                            maxLines = 1,
+                                                            softWrap = false
                                                         )
                                                     }
                                                 }
@@ -809,7 +684,7 @@ fun ChatRoomScreen(
                                                         .background(Color(0xFFF2B880), CircleShape)
                                                 )
                                                 Text(
-                                                    text = "正在组织回复...",
+                                                    text = "正在输入...",
                                                     fontSize = 12.5.sp,
                                                     color = Color(0xFF94A3B8)
                                                 )
@@ -817,7 +692,6 @@ fun ChatRoomScreen(
                                         }
                                     }
 
-                                    // Clean 1-tap micro pill ONLY on the latest reply (long-press works on ALL bubbles)
                                     if (isLatestReply && msg.content.isNotEmpty()) {
                                         Row(
                                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -841,7 +715,9 @@ fun ChatRoomScreen(
                                                 Text(
                                                     text = "复制",
                                                     fontSize = 10.5.sp,
-                                                    color = Color(0xFF5D6D89)
+                                                    color = Color(0xFF5D6D89),
+                                                    maxLines = 1,
+                                                    softWrap = false
                                                 )
                                             }
 
@@ -856,14 +732,16 @@ fun ChatRoomScreen(
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.FormatQuote,
-                                                    contentDescription = "引用回复",
+                                                    contentDescription = "引用",
                                                     tint = Color(0xFF5D6D89),
                                                     modifier = Modifier.size(12.dp)
                                                 )
                                                 Text(
                                                     text = "引用",
                                                     fontSize = 10.5.sp,
-                                                    color = Color(0xFF5D6D89)
+                                                    color = Color(0xFF5D6D89),
+                                                    maxLines = 1,
+                                                    softWrap = false
                                                 )
                                             }
                                         }
@@ -878,13 +756,13 @@ fun ChatRoomScreen(
                                     offsetY = 28.dp,
                                     items = listOf(
                                         GlassMenuAction(
-                                            label = "复制消息内容",
+                                            label = "复制",
                                             icon = Icons.Default.ContentCopy,
                                             iconTint = Color(0xFFFFE2BE),
                                             onClick = { onCopyText(msg.content) }
                                         ),
                                         GlassMenuAction(
-                                            label = "引用并回复",
+                                            label = "引用",
                                             icon = Icons.Default.FormatQuote,
                                             iconTint = Color(0xFFA5B4FC),
                                             onClick = {
@@ -938,7 +816,9 @@ fun ChatRoomScreen(
                         Text(
                             text = "@${member.name}",
                             fontSize = 11.sp,
-                            color = Color(0xFFCBD5E1)
+                            color = Color(0xFFCBD5E1),
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -956,7 +836,7 @@ fun ChatRoomScreen(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "引用 $sender: ${snippet.replace('\n', ' ')}",
+                    text = "$sender: ${snippet.replace('\n', ' ')}",
                     fontSize = 11.5.sp,
                     color = Color(0xFF94A3B8),
                     maxLines = 1,
@@ -976,7 +856,7 @@ fun ChatRoomScreen(
             }
         }
 
-        // 6. Flagship Bottom Composer + Duotone "+" Action Tray
+        // 6. Clean Bottom Composer + 1-Row 4-Tile IM "+" Toolbar
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -996,46 +876,6 @@ fun ChatRoomScreen(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Thinking Mode Toggle Circle
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .tactileClickable(pressedScale = 0.90f, hapticOnTap = true) {
-                            onThinkingChange(!enableThinking)
-                        }
-                        .clip(CircleShape)
-                        .background(
-                            Brush.verticalGradient(
-                                if (enableThinking) {
-                                    listOf(Color(0x36F2B880), Color(0x1CC88A4E))
-                                } else {
-                                    listOf(Color(0xFF151E38), Color(0xFF0C1224))
-                                }
-                            ),
-                            CircleShape
-                        )
-                        .border(
-                            BorderStroke(
-                                0.85.dp,
-                                if (enableThinking) {
-                                    specularRimBrush(Color(0x80F2B880), Color(0x33F2B880), Color.Transparent)
-                                } else {
-                                    specularRimBrush(Color(0x2EFFF8EE), Color(0x12FFF8EE), Color.Transparent)
-                                }
-                            ),
-                            CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Psychology,
-                        contentDescription = if (enableThinking) "深度思考已开启" else "深度思考已关闭",
-                        tint = if (enableThinking) Color(0xFFFFE2BE) else Color(0xFF7B8BA6),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                // Recessed Rounded Message Input Field
                 val inputShape = RoundedCornerShape(20.dp)
                 val inputBorder by animateColorAsState(
                     targetValue = if (composerFocused) Color(0x80F2B880) else Color(0x22FFF8EE),
@@ -1072,11 +912,11 @@ fun ChatRoomScreen(
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (inputText.isEmpty()) {
                                     Text(
-                                        text = if (isGroup) "发送群聊消息..." else "发消息给 ${activeBot?.name ?: "AI 好友"}...",
+                                        text = "发消息...",
                                         fontSize = 14.sp,
                                         color = Color(0xFF5A6A85),
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        softWrap = false
                                     )
                                 }
                                 inner()
@@ -1085,7 +925,6 @@ fun ChatRoomScreen(
                     )
                 }
 
-                // "+" Action Panel Button
                 Box(
                     modifier = Modifier
                         .size(40.dp)
@@ -1118,13 +957,12 @@ fun ChatRoomScreen(
                 ) {
                     Icon(
                         imageVector = if (showPlusDrawer) Icons.Default.Close else Icons.Default.Add,
-                        contentDescription = "展开快捷功能",
+                        contentDescription = "更多功能",
                         tint = if (showPlusDrawer) Color(0xFFFFE2BE) else Color(0xFFCBD5E1),
                         modifier = Modifier.size(20.dp)
                     )
                 }
 
-                // Jewel Send Pill or Stop Button
                 if (isStreaming) {
                     TactileSecondaryButton(
                         text = "停止",
@@ -1146,48 +984,41 @@ fun ChatRoomScreen(
                 }
             }
 
-            // Expandable WeChat "+" Duotone Action Grid (8 Distinct Icons!)
+            // Pure 1-Row 4-Tile Native Chat Controls (Zero hardcoded personal prompts!)
             AnimatedVisibility(
                 visible = showPlusDrawer,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
                 val isPool = activeModel == "free-pool"
-                val row1 = listOf(
-                    PlusActionTile("盘点资产", Icons.Default.AccountBalanceWallet, Color(0xFFF2B880)) {
-                        showPlusDrawer = false
-                        onSendPrompt("请调用工具盘点全部数字资产与算力节点，并按到期风险给出锐评。")
-                    },
-                    PlusActionTile("哪吒脉搏", Icons.Default.MonitorHeart, Color(0xFF34D399)) {
-                        showPlusDrawer = false
-                        onSendPrompt("请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线状态。")
-                    },
-                    PlusActionTile("检查调度", Icons.Default.Schedule, Color(0xFF818CF8)) {
-                        showPlusDrawer = false
-                        onSendPrompt("请列出当前所有定时调度任务的状态与下次触发时间。")
-                    },
-                    PlusActionTile("串联收藏", Icons.Default.Bookmarks, Color(0xFFFBBF24)) {
-                        showPlusDrawer = false
-                        onSendPrompt("请调用 manage_stash 检索我最近收入收藏匣的未读干货并做简要串联。")
-                    }
-                )
-                val row2 = listOf(
+                val tools = listOf(
                     PlusActionTile(
-                        if (isPool) "引擎:免费" else "引擎:主力",
-                        Icons.Default.AutoAwesome,
-                        Color(0xFFC084FC)
+                        label = if (enableThinking) "思考:开" else "思考:关",
+                        icon = Icons.Default.Psychology,
+                        accent = if (enableThinking) Color(0xFFF2B880) else Color(0xFF8C9BB5)
+                    ) {
+                        onThinkingChange(!enableThinking)
+                    },
+                    PlusActionTile(
+                        label = if (isPool) "免费模型" else "主力模型",
+                        icon = Icons.Default.AutoAwesome,
+                        accent = Color(0xFFC084FC)
                     ) {
                         onModelChange(if (isPool) "deepseek-flash" else "free-pool")
                     },
-                    PlusActionTile("拉人建群", Icons.Default.GroupAdd, Color(0xFF38BDF8)) {
+                    PlusActionTile(
+                        label = "拉人建群",
+                        icon = Icons.Default.GroupAdd,
+                        accent = Color(0xFF38BDF8)
+                    ) {
                         showPlusDrawer = false
                         onInviteToGroup()
                     },
-                    PlusActionTile("历史话题", Icons.Default.History, Color(0xFFCBD5E1)) {
-                        showPlusDrawer = false
-                        onOpenSessions()
-                    },
-                    PlusActionTile("清空记录", Icons.Default.DeleteSweep, Color(0xFFFB7185)) {
+                    PlusActionTile(
+                        label = "清空记录",
+                        icon = Icons.Default.DeleteSweep,
+                        accent = Color(0xFFFB7185)
+                    ) {
                         showPlusDrawer = false
                         onClearHistory()
                     }
@@ -1200,17 +1031,15 @@ fun ChatRoomScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     HorizontalDivider(thickness = 0.5.dp, color = Color(0x14FFF8EE))
-                    listOf(row1, row2).forEach { rowItems ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            rowItems.forEach { tile ->
-                                PlusTrayItem(
-                                    tile = tile,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        tools.forEach { tile ->
+                            PlusTrayItem(
+                                tile = tile,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }
@@ -1282,6 +1111,7 @@ private fun PlusTrayItem(
                 platformStyle = NoFontPaddingStyle
             ),
             maxLines = 1,
+            softWrap = false,
             overflow = TextOverflow.Ellipsis
         )
     }

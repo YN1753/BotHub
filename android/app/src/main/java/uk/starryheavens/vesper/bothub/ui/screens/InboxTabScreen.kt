@@ -176,7 +176,9 @@ fun InboxTabScreen(
                                             fontWeight = FontWeight.Medium,
                                             color = badgeColor,
                                             platformStyle = NoFontPaddingStyle
-                                        )
+                                        ),
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }
@@ -185,7 +187,9 @@ fun InboxTabScreen(
                                 text = formatShortTimestamp(item.createdAt),
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
-                                color = Color(0xFF5D6D89)
+                                color = Color(0xFF5D6D89),
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
 

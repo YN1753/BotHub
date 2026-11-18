@@ -87,7 +87,7 @@ fun StashTabScreen(
     var captureNote by remember { mutableStateOf("") }
 
     val filters = listOf(
-        "unread" to "未读干货",
+        "unread" to "未读",
         "all" to "全部",
         "pinned" to "置顶",
         "note" to "闪念",
@@ -98,7 +98,7 @@ fun StashTabScreen(
         RecessedSearchBar(
             value = query,
             onValueChange = onQueryChange,
-            placeholder = "检索收藏标题、AI 结论或标签...",
+            placeholder = "搜索收藏",
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
         )
 
@@ -267,7 +267,9 @@ fun StashTabScreen(
                                             fontWeight = FontWeight.Medium,
                                             color = Color(0xFFFFE2BE),
                                             platformStyle = NoFontPaddingStyle
-                                        )
+                                        ),
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                                 if (item.pinned) {
@@ -278,14 +280,18 @@ fun StashTabScreen(
                                             fontWeight = FontWeight.SemiBold,
                                             color = Color(0xFFFBBF24),
                                             platformStyle = NoFontPaddingStyle
-                                        )
+                                        ),
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                                 if (item.status == "processing") {
                                     Text(
-                                        text = "提炼中",
+                                        text = "处理中",
                                         fontSize = 10.5.sp,
-                                        color = Color(0xFF34D399)
+                                        color = Color(0xFF34D399),
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 } else if (item.domain.isNotEmpty()) {
                                     Text(
@@ -294,7 +300,9 @@ fun StashTabScreen(
                                         fontSize = 11.sp,
                                         color = Color(0xFF64748B),
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
                                     )
                                 }
                             }
@@ -303,7 +311,9 @@ fun StashTabScreen(
                                 text = if (item.createdAt.length >= 16) item.createdAt.substring(5, 16) else item.createdAt,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
-                                color = Color(0xFF5D6D89)
+                                color = Color(0xFF5D6D89),
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
 

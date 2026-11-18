@@ -288,8 +288,46 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
             val req = requestBuilder("/api/modules/asset_watcher/run")
                 .post(emptyJsonBody)
                 .build()
-            val json = executeJson(req, "资产嗅探同步失败")
-            json.optString("summary", "").ifEmpty { "资产嗅探同步完成" }
+            val json = executeJson(req, "资产同步失败")
+            json.optString("summary", "").ifEmpty { "同步完成" }
+        }
+    }
+
+    suspend fun saveAsset(
+        existingId: String?,
+        name: String,
+        category: String,
+        spec: String,
+        price: String,
+        dueDate: String,
+        autoRenew: Boolean
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val id = existingId?.trim().takeUnless { it.isNullOrEmpty() }
+                ?: "asset_${System.currentTimeMillis() % 100000000}"
+            val payload = JSONObject()
+                .put("id", id)
+                .put("name", name.trim())
+                .put("category", category.ifBlank { "compute" })
+                .put("spec", spec.trim())
+                .put("price", price.trim())
+                .put("due_date", dueDate.trim())
+                .put("auto_renew", autoRenew)
+                .toString()
+            val path = if (existingId.isNullOrBlank()) "/api/assets" else "/api/assets/${existingId.trim()}"
+            val req = requestBuilder(path)
+                .post(jsonBody(payload))
+                .build()
+            executeUnit(req, "保存资产失败")
+        }
+    }
+
+    suspend fun deleteAsset(assetId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/assets/${assetId.trim()}")
+                .delete()
+                .build()
+            executeUnit(req, "删除资产失败")
         }
     }
 
@@ -341,6 +379,34 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .post(jsonBody(payload))
                 .build()
             val json = executeJson(req, "更新置顶状态失败")
+            JsonMappers.parseBot(json.optJSONObject("bot") ?: JSONObject())
+        }
+    }
+
+    suspend fun updateBotDetails(
+        botId: String,
+        name: String,
+        roleTitle: String,
+        avatarStyle: String,
+        traits: String,
+        systemPrompt: String,
+        groupMode: String,
+        announcement: String
+    ): Result<BotItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("name", name.trim())
+                .put("role_title", roleTitle.trim())
+                .put("avatar_style", avatarStyle)
+                .put("traits", traits.trim())
+                .put("system_prompt", systemPrompt.trim())
+                .put("group_mode", groupMode)
+                .put("announcement", announcement.trim())
+                .toString()
+            val req = requestBuilder("/api/v2/bots/$botId")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "保存资料失败")
             JsonMappers.parseBot(json.optJSONObject("bot") ?: JSONObject())
         }
     }

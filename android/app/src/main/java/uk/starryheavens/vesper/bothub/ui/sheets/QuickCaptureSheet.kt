@@ -166,12 +166,14 @@ fun QuickCaptureSheet(
                             seedKey = "quick_capture"
                         )
                         Text(
-                            text = "BotHub 智能收藏与闪念匣",
+                            text = "快速收藏",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFFFF8EE),
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                     }
                     Box(
@@ -188,7 +190,9 @@ fun QuickCaptureSheet(
                                 fontWeight = FontWeight.Medium,
                                 color = Color(0xFFFFE2BE),
                                 platformStyle = NoFontPaddingStyle
-                            )
+                            ),
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }

@@ -523,6 +523,38 @@ class BotHubViewModel(
         }
     }
 
+    fun saveBotEdits(
+        botId: String,
+        name: String,
+        roleTitle: String,
+        avatarStyle: String,
+        traits: String,
+        systemPrompt: String,
+        groupMode: String,
+        announcement: String
+    ) {
+        viewModelScope.launch {
+            api.updateBotDetails(
+                botId = botId,
+                name = name,
+                roleTitle = roleTitle,
+                avatarStyle = avatarStyle,
+                traits = traits,
+                systemPrompt = systemPrompt,
+                groupMode = groupMode,
+                announcement = announcement
+            ).onSuccess { updated ->
+                bots = bots.map { if (it.id == botId) updated else it }
+                if (inspectingBotProfile?.id == botId) {
+                    inspectingBotProfile = updated
+                }
+                showMessage("已保存")
+            }.onFailure { err ->
+                showMessage(err.message ?: "保存失败")
+            }
+        }
+    }
+
     fun loadBotTimeline(botId: String) {
         if (isStreaming || prefs.bearerToken.isEmpty()) return
         viewModelScope.launch {
@@ -866,12 +898,49 @@ class BotHubViewModel(
 
     fun syncAssets() {
         viewModelScope.launch {
-            showMessage("正在嗅探同步云端资产...")
-            api.syncAssetWatcher().onSuccess { msg ->
-                showMessage(msg)
+            api.syncAssetWatcher().onSuccess {
+                showMessage("资产状态已刷新")
                 refreshAll()
             }.onFailure { err ->
                 showMessage("同步失败: ${err.message}")
+            }
+        }
+    }
+
+    fun saveAssetItem(
+        existingId: String?,
+        name: String,
+        category: String,
+        spec: String,
+        price: String,
+        dueDate: String,
+        autoRenew: Boolean
+    ) {
+        viewModelScope.launch {
+            api.saveAsset(
+                existingId = existingId,
+                name = name,
+                category = category,
+                spec = spec,
+                price = price,
+                dueDate = dueDate,
+                autoRenew = autoRenew
+            ).onSuccess {
+                showMessage("资产已保存")
+                refreshAll()
+            }.onFailure { err ->
+                showMessage(err.message ?: "保存失败")
+            }
+        }
+    }
+
+    fun deleteAssetItem(assetId: String) {
+        viewModelScope.launch {
+            api.deleteAsset(assetId).onSuccess {
+                showMessage("资产已删除")
+                refreshAll()
+            }.onFailure { err ->
+                showMessage(err.message ?: "删除失败")
             }
         }
     }

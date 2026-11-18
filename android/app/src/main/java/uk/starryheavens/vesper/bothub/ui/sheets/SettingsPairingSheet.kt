@@ -54,7 +54,6 @@ import uk.starryheavens.vesper.bothub.ui.PasskeyOutcome
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
 import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
-import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
 import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
@@ -78,7 +77,6 @@ fun SettingsPairingSheet(
     onZeroClickChanged: (Boolean) -> Unit,
     onTestHealth: (String) -> Unit,
     onUnbindServer: () -> Unit,
-    onOpenConsole: (String, String) -> Unit = { _, _ -> },
     onShowMessage: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -131,7 +129,7 @@ fun SettingsPairingSheet(
                 Intent(Intent.ACTION_VIEW, Uri.parse("$base/api/auth/oidc/login?platform=android"))
             )
         }.onFailure { err ->
-            sheetHint = "无法拉起系统浏览器: ${err.message}"
+            sheetHint = "无法打开浏览器: ${err.message}"
         }
     }
 
@@ -158,7 +156,7 @@ fun SettingsPairingSheet(
                 when (BiometricAuthHelper.signInWithPasskey(act, api, urlInput)) {
                     is PasskeyOutcome.Success -> {
                         connecting = false
-                        onConnected("无感面容 / 指纹验证通过，实时通知已开启")
+                        onConnected("已登录")
                         return@launch
                     }
                     is PasskeyOutcome.Cancelled -> {
@@ -172,8 +170,8 @@ fun SettingsPairingSheet(
             if (BiometricAuthHelper.canUseLocalBiometrics(context)) {
                 BiometricAuthHelper.authenticateLocal(
                     activity = act,
-                    title = "无感激活 BotHub 实时通知",
-                    subtitle = "优先前置无感面容识别，不支持面容自动降级指纹",
+                    title = "登录 BotHub",
+                    subtitle = "验证面容或指纹",
                     onSuccess = {
                         if (oidcAvailable) {
                             launchVesperAuthOidcPairing()
@@ -208,39 +206,26 @@ fun SettingsPairingSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                SpiritSquircleAvatar(
-                    bot = null,
-                    allBots = emptyList(),
-                    avatarStyleOverride = "butler:gold",
-                    state = if (connecting || registeringPasskey) "working" else "idle",
-                    containerSize = 42.dp,
-                    cornerRadius = 13.dp,
-                    interactive = true,
-                    seedKey = "settings_spirit"
+                Text(
+                    text = if (isPaired) "设置" else "连接服务端",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFFF8EE),
+                    maxLines = 1,
+                    softWrap = false
                 )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (isPaired) "实时守护与连接设置" else "一键激活 BotHub 手机端",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFFF8EE)
-                    )
-                    Text(
-                        text = if (isPaired) {
-                            "客户端 v$localVersionClean" +
-                                if (remoteVersionClean.isNotEmpty()) " · 服务端 v$remoteVersionClean" else ""
-                        } else {
-                            "首选 Vesper Auth 单点免密绑定 · 目标 ${UrlUtils.formatDisplayHost(urlInput)}"
-                        },
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        color = Color(0xFF8C9BB5)
-                    )
-                }
+                Text(
+                    text = "v$localVersionClean",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = Color(0xFF64748B),
+                    maxLines = 1,
+                    softWrap = false
+                )
             }
 
             if (sheetHint.isNotEmpty()) {
@@ -260,7 +245,7 @@ fun SettingsPairingSheet(
 
             if (!isPaired) {
                 TactilePrimaryButton(
-                    text = "使用 Vesper Auth 通行证一键绑定",
+                    text = "Vesper Auth 登录",
                     enabled = !connecting,
                     minHeight = 48.dp,
                     onClick = { launchVesperAuthOidcPairing() },
@@ -268,7 +253,7 @@ fun SettingsPairingSheet(
                 )
 
                 TactileSecondaryButton(
-                    text = if (connecting) "正在调起面容 / 指纹..." else "面容 / 指纹通行密钥直连",
+                    text = if (connecting) "验证中..." else "通行密钥登录",
                     enabled = !connecting,
                     minHeight = 46.dp,
                     onClick = { runPasskeyConnect() },
@@ -280,7 +265,7 @@ fun SettingsPairingSheet(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = if (showPasswordFallback) "收起访问密钥表单" else "改用访问密钥绑定",
+                        text = if (showPasswordFallback) "收起密钥登录" else "密钥登录",
                         fontSize = 12.sp,
                         color = Color(0xFFFFE2BE),
                         modifier = Modifier
@@ -288,7 +273,7 @@ fun SettingsPairingSheet(
                             .padding(vertical = 4.dp)
                     )
                     Text(
-                        text = if (showCustomUrlField) "收起服务器地址" else "修改服务器地址",
+                        text = if (showCustomUrlField) "收起服务器地址" else "服务器地址",
                         fontSize = 12.sp,
                         color = Color(0xFF8C9BB5),
                         modifier = Modifier
@@ -301,7 +286,7 @@ fun SettingsPairingSheet(
                     ObsidianGlassInput(
                         value = urlInput,
                         onValueChange = { urlInput = it },
-                        label = "BotHub 服务端地址",
+                        label = "服务端地址",
                         placeholder = "https://bot.starryheavens.uk",
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -312,14 +297,14 @@ fun SettingsPairingSheet(
                     ObsidianGlassInput(
                         value = passwordInput,
                         onValueChange = { passwordInput = it },
-                        label = "控制台访问密钥（备用兜底）",
-                        placeholder = "输入访问密钥...",
+                        label = "访问密钥",
+                        placeholder = "输入密钥",
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     TactilePrimaryButton(
-                        text = if (connecting) "验证并开启通知中..." else "验证密钥并开启通知",
+                        text = if (connecting) "登录中..." else "登录",
                         enabled = !connecting && passwordInput.isNotBlank(),
                         minHeight = 46.dp,
                         onClick = {
@@ -328,7 +313,7 @@ fun SettingsPairingSheet(
                                 connecting = true
                                 api.exchangeToken(urlInput, passwordInput).onSuccess {
                                     passwordInput = ""
-                                    onConnected("已连接并自动开启锁屏实时通知")
+                                    onConnected("已连接")
                                 }.onFailure { err ->
                                     sheetHint = err.message ?: "密钥验证失败"
                                 }
@@ -339,9 +324,9 @@ fun SettingsPairingSheet(
                     )
                 }
             } else {
-                // 1. Connected Server Node + Compact Passkey Enrollment Pill
+                // 1. Connected Server Row (Clean, zero wrapping!)
                 SpecularGlassCard(
-                    cornerRadius = 18.dp,
+                    cornerRadius = 17.dp,
                     accentTint = Color(0xFF34D399),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -350,46 +335,36 @@ fun SettingsPairingSheet(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column(
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(end = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                                .padding(end = 10.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.5.dp)
-                                        .background(Color(0xFF34D399), CircleShape)
-                                )
-                                Text(
-                                    text = UrlUtils.formatDisplayHost(serverUrl),
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFFFFF8EE),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .background(Color(0xFF34D399), CircleShape)
+                            )
                             Text(
-                                text = "免密令牌已绑定 · 实时推送就绪",
-                                fontSize = 11.sp,
-                                color = Color(0xFF8C9BB5),
+                                text = UrlUtils.formatDisplayHost(serverUrl),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFFFF8EE),
                                 maxLines = 1,
+                                softWrap = false,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
 
                         TactileSecondaryButton(
-                            text = if (registeringPasskey) "录入中..." else "通行密钥",
+                            text = if (registeringPasskey) "录入中" else "通行密钥",
                             accent = true,
                             cornerRadius = 999.dp,
                             minHeight = 33.dp,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
                             onClick = {
                                 val act = activity ?: return@TactileSecondaryButton
                                 if (registeringPasskey) return@TactileSecondaryButton
@@ -398,7 +373,7 @@ fun SettingsPairingSheet(
                                     sheetHint = ""
                                     when (val out = BiometricAuthHelper.registerPasskey(act, api)) {
                                         is PasskeyOutcome.Success -> {
-                                            onShowMessage("已录入本机通行密钥，重装也可刷脸秒连")
+                                            onShowMessage("已录入通行密钥")
                                         }
                                         is PasskeyOutcome.Cancelled -> Unit
                                         is PasskeyOutcome.Failed -> {
@@ -429,10 +404,13 @@ fun SettingsPairingSheet(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = "发现新版本 v$remoteVersionClean · 点击拉取安装包",
-                                fontSize = 12.5.sp,
+                                text = "发现新版本 v$remoteVersionClean",
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFFFE2BE)
+                                color = Color(0xFFFFE2BE),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
                             )
                             Icon(
                                 imageVector = Icons.Default.KeyboardArrowRight,
@@ -444,15 +422,15 @@ fun SettingsPairingSheet(
                     }
                 }
 
-                // 2. Unified Grouped Specular Glass Toggles (Custom 46x26dp Capsule Toggles!)
+                // 2. Clean Concise Toggles (Zero technical jargon!)
                 SpecularGlassCard(
                     cornerRadius = 18.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         SettingsToggleRow(
-                            title = "启动无感面容 / 指纹锁",
-                            subtitle = "优先前置面容解锁，不影响后台锁屏收通知",
+                            title = "应用锁",
+                            subtitle = "打开应用时验证面容或指纹",
                             checked = biometricAppLockEnabled,
                             onCheckedChange = { checked ->
                                 if (!checked) {
@@ -461,13 +439,13 @@ fun SettingsPairingSheet(
                                 }
                                 val act = activity
                                 if (act == null || !BiometricAuthHelper.canUseLocalBiometrics(context)) {
-                                    sheetHint = "当前设备尚未在系统设置中录入面容或指纹"
+                                    sheetHint = "请先在系统设置中录入面容或指纹"
                                     return@SettingsToggleRow
                                 }
                                 BiometricAuthHelper.authenticateLocal(
                                     activity = act,
-                                    title = "开启无感面容 / 指纹保护",
-                                    subtitle = "验证一次本机面容或指纹即可启用",
+                                    title = "开启应用锁",
+                                    subtitle = "验证面容或指纹",
                                     onSuccess = { onBiometricLockChanged(true) },
                                     onFallbackOrCancel = { msg -> sheetHint = msg }
                                 )
@@ -481,8 +459,8 @@ fun SettingsPairingSheet(
                         )
 
                         SettingsToggleRow(
-                            title = "常驻 SSE 实时秒推服务",
-                            subtitle = "默认开启，锁屏毫秒级直弹服务端情报与告警",
+                            title = "后台消息通知",
+                            subtitle = "退至后台时接收新消息提醒",
                             checked = realtimeServiceEnabled,
                             onCheckedChange = onRealtimeServiceChanged
                         )
@@ -494,64 +472,27 @@ fun SettingsPairingSheet(
                         )
 
                         SettingsToggleRow(
-                            title = "系统分享零点击秒收",
-                            subtitle = "任意应用点系统分享即自动入库并秒回原应用",
+                            title = "系统分享直接收藏",
+                            subtitle = "分享内容自动存入收藏",
                             checked = zeroClickCaptureEnabled,
                             onCheckedChange = onZeroClickChanged
                         )
                     }
                 }
 
-                // 3. Full-Featured Hybrid Web Console Entry
-                SpecularGlassCard(
-                    cornerRadius = 17.dp,
-                    accentTint = Color(0xFFF2B880),
-                    onClick = {
-                        onDismiss()
-                        onOpenConsole("settings", "全功能系统控制台")
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "打开全功能系统控制台",
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFFFE2BE)
-                            )
-                            Text(
-                                text = "模型池路由 · 技能工坊 · 长期记忆 · 备份与安全",
-                                fontSize = 11.sp,
-                                color = Color(0xFF8C9BB5)
-                            )
-                        }
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = Color(0xFFF2B880),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                // 4. Compact 2x2 Tactile Maintenance Grid
+                // 3. Clean Action Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TactileSecondaryButton(
-                        text = "测试连通性",
+                        text = "连接测试",
                         minHeight = 44.dp,
                         onClick = { onTestHealth(urlInput) },
                         modifier = Modifier.weight(1f)
                     )
                     TactileSecondaryButton(
-                        text = "保活白名单",
+                        text = "省电白名单",
                         minHeight = 44.dp,
                         onClick = {
                             val batIntent = Intent(
@@ -575,7 +516,7 @@ fun SettingsPairingSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TactileSecondaryButton(
-                        text = "拉取最新 APK",
+                        text = "检查更新",
                         minHeight = 44.dp,
                         onClick = {
                             runCatching {
@@ -585,7 +526,7 @@ fun SettingsPairingSheet(
                         modifier = Modifier.weight(1f)
                     )
                     TactileSecondaryButton(
-                        text = "重新绑定服务端",
+                        text = "退出登录",
                         danger = true,
                         minHeight = 44.dp,
                         onClick = onUnbindServer,
@@ -610,7 +551,7 @@ private fun SettingsToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 15.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -622,18 +563,18 @@ private fun SettingsToggleRow(
         ) {
             Text(
                 text = title,
-                fontSize = 14.sp,
+                fontSize = 14.5.sp,
                 fontWeight = FontWeight.Medium,
                 color = Color(0xFFFFF8EE),
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = subtitle,
                 fontSize = 11.5.sp,
-                lineHeight = 16.sp,
                 color = Color(0xFF8C9BB5),
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }

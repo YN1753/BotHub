@@ -14,8 +14,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -48,12 +49,7 @@ import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
 import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
 import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 
-/**
- * WeChat "通讯录" / QQ "好友" Flagship Directory Screen.
- */
 @Composable
 fun ContactsTabScreen(
     bots: List<BotItem>,
@@ -63,7 +59,6 @@ fun ContactsTabScreen(
     onCreateFriend: () -> Unit,
     onCreateGroup: () -> Unit,
     onOpenServiceFeed: () -> Unit,
-    onOpenConsole: (String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var query by remember { mutableStateOf("") }
@@ -85,7 +80,7 @@ fun ContactsTabScreen(
         RecessedSearchBar(
             value = query,
             onValueChange = { query = it },
-            placeholder = "搜索 AI 好友昵称、专长或群聊...",
+            placeholder = "搜索好友或群聊",
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
 
@@ -94,7 +89,7 @@ fun ContactsTabScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Top WeChat-Style Functional Entries Card
+            // Pure WeChat-Style 3 Directory Entries (Zero redundant marketing subtitles!)
             if (query.isBlank()) {
                 item(key = "__top_entries__") {
                     SpecularGlassCard(
@@ -104,63 +99,50 @@ fun ContactsTabScreen(
                         ContactActionEntryRow(
                             icon = Icons.Default.PersonAddAlt1,
                             accent = Color(0xFFF2B880),
-                            title = "新的 AI 好友",
-                            subtitle = "定制性格、说话口吻与专属工具",
+                            title = "添加 AI 好友",
                             onClick = onCreateFriend
                         )
                         HorizontalDivider(
                             thickness = 0.5.dp,
                             color = Color(0x14FFF8EE),
-                            modifier = Modifier.padding(start = 66.dp, end = 14.dp)
+                            modifier = Modifier.padding(start = 64.dp, end = 14.dp)
                         )
                         ContactActionEntryRow(
                             icon = Icons.Default.GroupAdd,
                             accent = Color(0xFF818CF8),
                             title = "发起群聊",
-                            subtitle = "拉多位 AI 好友进群分工或头脑风暴",
                             onClick = onCreateGroup
                         )
                         HorizontalDivider(
                             thickness = 0.5.dp,
                             color = Color(0x14FFF8EE),
-                            modifier = Modifier.padding(start = 66.dp, end = 14.dp)
+                            modifier = Modifier.padding(start = 64.dp, end = 14.dp)
                         )
                         ContactActionEntryRow(
                             icon = Icons.Default.NotificationsNone,
                             accent = Color(0xFF34D399),
-                            title = "服务通知订阅号",
-                            subtitle = if (unreadInboxCount > 0) "$unreadInboxCount 条未读情报推送" else "晨间简报 · 技术雷达 · 异常告警",
+                            title = "服务通知",
                             badgeCount = unreadInboxCount,
                             onClick = onOpenServiceFeed
-                        )
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = Color(0x14FFF8EE),
-                            modifier = Modifier.padding(start = 66.dp, end = 14.dp)
-                        )
-                        ContactActionEntryRow(
-                            icon = Icons.Default.AutoAwesome,
-                            accent = Color(0xFFC084FC),
-                            title = "技能工坊与记忆库",
-                            subtitle = "编排 AI 好友自定义技能与长期记忆",
-                            onClick = { onOpenConsole("skills", "技能工坊与记忆库") }
                         )
                     }
                 }
             }
 
-            // Section 1: Group Chats Inset Card
+            // Section 1: Group Chats
             if (groups.isNotEmpty()) {
                 item(key = "__sec_groups__") {
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text(
-                            text = "我的群聊 (${groups.size})",
+                            text = "群聊 (${groups.size})",
                             style = TextStyle(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color(0xFF8C9BB5),
                                 platformStyle = NoFontPaddingStyle
                             ),
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(start = 4.dp)
                         )
                         SpecularGlassCard(
@@ -197,11 +179,11 @@ fun ContactsTabScreen(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = "${members.size}位AI成员 · ${group.groupModeLabel()}",
+                                            text = "${members.size}人",
                                             fontSize = 12.sp,
                                             color = Color(0xFF8C9BB5),
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            softWrap = false
                                         )
                                     }
 
@@ -224,18 +206,20 @@ fun ContactsTabScreen(
                 }
             }
 
-            // Section 2: AI Friends Inset Card
+            // Section 2: AI Friends
             if (friends.isNotEmpty()) {
                 item(key = "__sec_friends__") {
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text(
-                            text = "AI 好友 (${friends.size})",
+                            text = "好友 (${friends.size})",
                             style = TextStyle(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color(0xFF8C9BB5),
                                 platformStyle = NoFontPaddingStyle
                             ),
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(start = 4.dp)
                         )
                         SpecularGlassCard(
@@ -263,42 +247,24 @@ fun ContactsTabScreen(
                                         modifier = Modifier.weight(1f),
                                         verticalArrangement = Arrangement.spacedBy(2.dp)
                                     ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Text(
-                                                text = friend.name,
-                                                fontSize = 15.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = Color(0xFFFFF8EE),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(5.dp))
-                                                    .background(Color(0x16FFFFFF))
-                                                    .border(0.5.dp, Color(0x22FFF8EE), RoundedCornerShape(5.dp))
-                                                    .padding(horizontal = 5.dp, vertical = 1.dp)
-                                            ) {
-                                                Text(
-                                                    text = friend.modeBadgeLabel(),
-                                                    style = TextStyle(
-                                                        fontSize = 9.5.sp,
-                                                        color = Color(0xFFCBD5E1),
-                                                        platformStyle = NoFontPaddingStyle
-                                                    )
-                                                )
-                                            }
-                                        }
                                         Text(
-                                            text = friend.traits.ifBlank { friend.roleTitle }.ifBlank { "随时在线" },
-                                            fontSize = 12.sp,
-                                            color = Color(0xFF8493AE),
+                                            text = friend.name,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFFFF8EE),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
+                                        val bio = friend.traits.ifBlank { friend.roleTitle }
+                                        if (bio.isNotBlank()) {
+                                            Text(
+                                                text = bio,
+                                                fontSize = 12.sp,
+                                                color = Color(0xFF8493AE),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
 
                                     QuickChatCircleButton(
@@ -360,11 +326,10 @@ private fun ContactActionEntryRow(
     icon: ImageVector,
     accent: Color,
     title: String,
-    subtitle: String,
     badgeCount: Int = 0,
     onClick: () -> Unit
 ) {
-    val sq = RoundedCornerShape(12.dp)
+    val sq = RoundedCornerShape(11.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -375,7 +340,7 @@ private fun ContactActionEntryRow(
     ) {
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(38.dp)
                 .clip(sq)
                 .background(
                     Brush.verticalGradient(
@@ -396,28 +361,20 @@ private fun ContactActionEntryRow(
                 imageVector = icon,
                 contentDescription = null,
                 tint = accent,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(19.dp)
             )
         }
 
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = title,
-                fontSize = 14.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFFFF8EE)
-            )
-            Text(
-                text = subtitle,
-                fontSize = 11.5.sp,
-                color = Color(0xFF8C9BB5),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+        Text(
+            text = title,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFFFFF8EE),
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
 
         if (badgeCount > 0) {
             CrispUnreadBadge(count = badgeCount)

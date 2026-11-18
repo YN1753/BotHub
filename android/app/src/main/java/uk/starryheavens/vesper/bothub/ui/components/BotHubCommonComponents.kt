@@ -69,23 +69,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.BotItem
-import uk.starryheavens.vesper.bothub.data.UrlUtils
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.GrokBotGroupCluster
 
 fun formatModuleBadge(moduleId: String): Pair<String, Color> {
     return when (moduleId.trim().lowercase()) {
-        "morning" -> "晨间简报" to Color(0xFFF2B880)
-        "radar" -> "技术雷达" to Color(0xFFA5B4FC)
-        "asset_watcher" -> "资产预警" to Color(0xFFFBBF24)
-        "nezha_webhook" -> "探针告警" to Color(0xFFFB7185)
-        "system_test" -> "通道自检" to Color(0xFF34D399)
-        else -> moduleId.ifBlank { "系统情报" } to Color(0xFF94A3B8)
+        "morning" -> "晨报" to Color(0xFFF2B880)
+        "radar" -> "雷达" to Color(0xFFA5B4FC)
+        "asset_watcher" -> "资产" to Color(0xFFFBBF24)
+        "nezha_webhook" -> "告警" to Color(0xFFFB7185)
+        "system_test" -> "自检" to Color(0xFF34D399)
+        else -> moduleId.ifBlank { "通知" } to Color(0xFF94A3B8)
     }
 }
 
@@ -155,6 +153,8 @@ fun ObsidianGlassInput(
                     color = if (focused) Color(0xFFFFE2BE) else Color(0xFF94A3B8),
                     platformStyle = NoFontPaddingStyle
                 ),
+                maxLines = 1,
+                softWrap = false,
                 modifier = Modifier.padding(start = 4.dp)
             )
         }
@@ -245,14 +245,12 @@ fun BotAvatarOrCluster(
 }
 
 /**
- * Clean, Breathable WeChat / QQ Single-Line IM Top Header with Floating Glass "+" Popover.
+ * Clean, Minimal WeChat / QQ Top Bar: Pure Title + Right Action (zero redundant status pills).
  */
 @Composable
 fun BotHubTopBar(
     selectedTab: BotHubTab,
-    allBots: List<BotItem>,
     isRefreshing: Boolean = false,
-    serverUrl: String,
     totalUnreadMessages: Int = 0,
     showStashCapture: Boolean = false,
     onCreateFriend: () -> Unit = {},
@@ -264,8 +262,17 @@ fun BotHubTopBar(
     onOpenSettings: () -> Unit
 ) {
     var showPlusMenu by remember { mutableStateOf(false) }
-    val friendCount = remember(allBots) { allBots.count { !it.isGroup } }
-    val groupCount = remember(allBots) { allBots.count { it.isGroup } }
+
+    val headerTitle = when (selectedTab) {
+        BotHubTab.AGENT -> when {
+            isRefreshing -> "收取中..."
+            totalUnreadMessages > 0 -> "消息 ($totalUnreadMessages)"
+            else -> "消息"
+        }
+        BotHubTab.INBOX -> "通讯录"
+        BotHubTab.STASH -> "收藏"
+        BotHubTab.HUB -> "中枢"
+    }
 
     Column(
         modifier = Modifier
@@ -284,79 +291,21 @@ fun BotHubTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            Text(
+                text = headerTitle,
+                style = TextStyle(
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFFF8EE),
+                    platformStyle = NoFontPaddingStyle
+                ),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(end = 10.dp)
-            ) {
-                when (selectedTab) {
-                    BotHubTab.AGENT -> {
-                        val headerTitle = when {
-                            isRefreshing -> "收取中..."
-                            totalUnreadMessages > 0 -> "消息 ($totalUnreadMessages)"
-                            else -> "消息"
-                        }
-                        Text(
-                            text = headerTitle,
-                            style = TextStyle(
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFFF8EE),
-                                platformStyle = NoFontPaddingStyle
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        OnlineStatusChip(
-                            label = "在线",
-                            dotColor = Color(0xFF34D399),
-                            onClick = onOpenSettings
-                        )
-                    }
-
-                    BotHubTab.INBOX -> {
-                        Text(
-                            text = "通讯录",
-                            style = TextStyle(
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFFF8EE),
-                                platformStyle = NoFontPaddingStyle
-                            )
-                        )
-                        SubtleCountPill("$friendCount 好友 · $groupCount 群聊")
-                    }
-
-                    BotHubTab.STASH -> {
-                        Text(
-                            text = "收藏",
-                            style = TextStyle(
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFFF8EE),
-                                platformStyle = NoFontPaddingStyle
-                            )
-                        )
-                        SubtleCountPill("智能提炼匣")
-                    }
-
-                    BotHubTab.HUB -> {
-                        VesperBrandEmblem(size = 25.dp)
-                        Text(
-                            text = "中枢",
-                            style = TextStyle(
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFFF8EE),
-                                platformStyle = NoFontPaddingStyle
-                            )
-                        )
-                        SubtleCountPill(UrlUtils.formatDisplayHost(serverUrl))
-                    }
-                }
-            }
+                    .weight(1f, fill = false)
+                    .padding(end = 12.dp)
+            )
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -389,19 +338,19 @@ fun BotHubTopBar(
                                         onClick = onCreateFriend
                                     ),
                                     GlassMenuAction(
-                                        label = "秒收链接 / 闪念",
+                                        label = "新建收藏",
                                         icon = Icons.Default.BookmarkBorder,
                                         iconTint = Color(0xFF34D399),
                                         onClick = onQuickCaptureStash
                                     ),
                                     GlassMenuAction(
-                                        label = "服务通知全已读",
+                                        label = "通知全部已读",
                                         icon = Icons.Default.DoneAll,
                                         iconTint = Color(0xFF94A3B8),
                                         onClick = onMarkAllRead
                                     ),
                                     GlassMenuAction(
-                                        label = "连接与守护设置",
+                                        label = "设置",
                                         icon = Icons.Default.Settings,
                                         iconTint = Color(0xFFFBBF24),
                                         onClick = onOpenSettings
@@ -422,7 +371,7 @@ fun BotHubTopBar(
 
                     BotHubTab.STASH -> {
                         HeaderPillAction(
-                            label = if (showStashCapture) "收起" else "秒收",
+                            label = if (showStashCapture) "收起" else "添加",
                             icon = Icons.Default.Add,
                             accent = !showStashCapture,
                             onClick = onToggleStashCapture
@@ -432,12 +381,12 @@ fun BotHubTopBar(
                     BotHubTab.HUB -> {
                         HeaderIconCircle(
                             icon = Icons.Default.Refresh,
-                            contentDescription = "刷新状态",
+                            contentDescription = "刷新",
                             onClick = onRefresh
                         )
                         HeaderIconCircle(
                             icon = Icons.Default.Settings,
-                            contentDescription = "连接与推送设置",
+                            contentDescription = "设置",
                             accent = true,
                             onClick = onOpenSettings
                         )
@@ -447,64 +396,6 @@ fun BotHubTopBar(
         }
 
         SpecularHairline()
-    }
-}
-
-@Composable
-private fun OnlineStatusChip(
-    label: String,
-    dotColor: Color,
-    onClick: () -> Unit
-) {
-    val shape = RoundedCornerShape(999.dp)
-    Row(
-        modifier = Modifier
-            .tactileClickable(pressedScale = 0.95f, onClick = onClick)
-            .clip(shape)
-            .background(Color(0x1C34D399), shape)
-            .border(0.7.dp, Color(0x3D34D399), shape)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.5.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(5.5.dp)
-                .background(dotColor, CircleShape)
-        )
-        Text(
-            text = label,
-            style = TextStyle(
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFFA7F3D0),
-                platformStyle = NoFontPaddingStyle
-            )
-        )
-    }
-}
-
-@Composable
-private fun SubtleCountPill(text: String) {
-    val shape = RoundedCornerShape(999.dp)
-    Box(
-        modifier = Modifier
-            .clip(shape)
-            .background(Color(0x14FFFFFF), shape)
-            .border(0.6.dp, Color(0x1EFFF8EE), shape)
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-    ) {
-        Text(
-            text = text,
-            style = TextStyle(
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF94A3B8),
-                platformStyle = NoFontPaddingStyle
-            ),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
     }
 }
 
@@ -568,8 +459,7 @@ private fun HeaderIconCircle(
 }
 
 /**
- * WeChat / QQ / Telegram Flagship Bottom Navigation Dock:
- * Outline-to-Filled Icon Morphing + Spring Scale + Soft Radial Glow (no bulky active box!).
+ * WeChat / QQ / Telegram Flagship Bottom Navigation Dock.
  */
 @Composable
 fun BotHubBottomBar(
@@ -693,7 +583,8 @@ fun BotHubBottomBar(
                                 color = fgColor,
                                 platformStyle = NoFontPaddingStyle
                             ),
-                            maxLines = 1
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -725,6 +616,7 @@ fun MetricMiniCard(
                     platformStyle = NoFontPaddingStyle
                 ),
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(6.dp))
@@ -736,7 +628,9 @@ fun MetricMiniCard(
                     fontWeight = FontWeight.Bold,
                     color = accentColor,
                     platformStyle = NoFontPaddingStyle
-                )
+                ),
+                maxLines = 1,
+                softWrap = false
             )
         }
     }
@@ -746,8 +640,8 @@ fun MetricMiniCard(
 fun ZeroClickCaptureRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    title: String = "系统分享零点击秒收",
-    subtitle: String = "任意应用点击系统分享即自动入库并秒回原应用",
+    title: String = "系统分享直接收藏",
+    subtitle: String = "分享内容自动存入收藏",
     compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -774,13 +668,17 @@ fun ZeroClickCaptureRow(
                     text = title,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color(0xFFFFF8EE)
+                    color = Color(0xFFFFF8EE),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = subtitle,
                     fontSize = 11.5.sp,
                     lineHeight = 16.sp,
-                    color = Color(0xFF94A3B8)
+                    color = Color(0xFF94A3B8),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             TactileToggle(

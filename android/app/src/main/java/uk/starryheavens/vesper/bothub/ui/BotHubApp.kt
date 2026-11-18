@@ -30,6 +30,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.lifecycle.viewmodel.compose.viewModel
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
+import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 import uk.starryheavens.vesper.bothub.ui.components.BotHubBottomBar
 import uk.starryheavens.vesper.bothub.ui.components.BotHubTopBar
@@ -44,9 +45,9 @@ import uk.starryheavens.vesper.bothub.ui.screens.StashTabScreen
 import uk.starryheavens.vesper.bothub.ui.sheets.AgentSessionsSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.BotProfileSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.ChatInfoSheet
-import uk.starryheavens.vesper.bothub.ui.sheets.ConsoleWebSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.CreateFriendSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.CreateGroupSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.EditBotSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.NotificationDetailSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.SettingsPairingSheet
 
@@ -74,21 +75,13 @@ fun BotHubApp(
     val snackbarHostState = remember { SnackbarHostState() }
     var showStashCaptureInline by remember { mutableStateOf(false) }
     var showChatInfoSheet by remember { mutableStateOf(false) }
-    var consoleTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var editingBot by remember { mutableStateOf<BotItem?>(null) }
 
     val viewModel: BotHubViewModel = viewModel(
         factory = remember(context, prefs, api) {
             BotHubViewModel.factory(context.applicationContext, prefs, api)
         }
     )
-
-    fun launchConsole(entry: String, title: String) {
-        if (!viewModel.isPaired) {
-            viewModel.openSettings()
-        } else {
-            consoleTarget = entry to title
-        }
-    }
 
     LaunchedEffect(viewModel) {
         viewModel.uiEvents.collect { msg ->
@@ -149,7 +142,6 @@ fun BotHubApp(
     Box(modifier = Modifier.fillMaxSize()) {
         StarfieldBackdrop()
 
-        // WeChat / QQ Two-Level Navigation: Root IM Tabs <-> Full-Screen Push Chat / Service Feed
         AnimatedContent(
             targetState = pageLevel,
             transitionSpec = {
@@ -188,7 +180,7 @@ fun BotHubApp(
                             onThinkingChange = viewModel::updateThinking,
                             onCopyText = { txt ->
                                 clipboard.setText(AnnotatedString(txt))
-                                viewModel.showMessage("已复制消息内容")
+                                viewModel.showMessage("已复制")
                             },
                             onOpenChatInfo = { showChatInfoSheet = true },
                             onOpenBotProfile = viewModel::openBotProfile,
@@ -197,7 +189,6 @@ fun BotHubApp(
                                     sourceBotId = if (activeBot?.isGroup == true) "" else viewModel.activeBotId
                                 )
                             },
-                            onOpenSessions = viewModel::openSessions,
                             onClearHistory = viewModel::clearActiveChatHistory
                         )
                     }
@@ -229,9 +220,7 @@ fun BotHubApp(
                         topBar = {
                             BotHubTopBar(
                                 selectedTab = viewModel.selectedTab,
-                                allBots = viewModel.bots,
                                 isRefreshing = viewModel.isRefreshing,
-                                serverUrl = viewModel.serverUrl,
                                 totalUnreadMessages = totalUnreadMessages,
                                 showStashCapture = showStashCaptureInline,
                                 onCreateFriend = viewModel::openCreateFriend,
@@ -295,8 +284,7 @@ fun BotHubApp(
                                     onOpenChat = viewModel::openChatRoom,
                                     onCreateFriend = viewModel::openCreateFriend,
                                     onCreateGroup = { viewModel.openCreateGroup("") },
-                                    onOpenServiceFeed = viewModel::openServiceFeed,
-                                    onOpenConsole = ::launchConsole
+                                    onOpenServiceFeed = viewModel::openServiceFeed
                                 )
 
                                 BotHubTab.STASH -> StashTabScreen(
@@ -327,12 +315,11 @@ fun BotHubApp(
                                 BotHubTab.HUB -> HubTabScreen(
                                     modifier = contentModifier,
                                     snapshot = viewModel.dashboard,
-                                    serverUrl = viewModel.serverUrl,
                                     onRunTask = viewModel::runTask,
                                     onToggleTask = viewModel::toggleTask,
                                     onSyncAssets = viewModel::syncAssets,
-                                    onOpenSettings = viewModel::openSettings,
-                                    onOpenConsole = ::launchConsole
+                                    onSaveAsset = viewModel::saveAssetItem,
+                                    onDeleteAsset = viewModel::deleteAssetItem
                                 )
                             }
                         }
@@ -342,7 +329,6 @@ fun BotHubApp(
         }
     }
 
-    // Bottom Sheets & Overlays
     viewModel.inspectingBotProfile?.let { profileBot ->
         val freshBot = viewModel.bots.find { it.id == profileBot.id } ?: profileBot
         BotProfileSheet(
@@ -351,23 +337,64 @@ fun BotHubApp(
             onSendMessage = { viewModel.openChatRoom(freshBot.id) },
             onTogglePin = { viewModel.togglePinBot(freshBot) },
             onStartGroupWithBot = { viewModel.openCreateGroup(freshBot.id) },
-            onOpenStudioConfig = {
+            onEditBot = {
                 viewModel.dismissBotProfile()
-                viewModel.selectBot(freshBot.id)
-                launchConsole("bot_config", "高级人设编排 · ${freshBot.name}")
+                editingBot = freshBot
             },
             onDeleteBot = { viewModel.deleteFriendOrGroup(freshBot) },
             onDismiss = viewModel::dismissBotProfile
         )
     }
 
+    editingBot?.let { targetBot ->
+        val freshBot = viewModel.bots.find { it.id == targetBot.id } ?: targetBot
+        EditBotSheet(
+            bot = freshBot,
+            onSave = { name, roleTitle, avatarStyle, traits, systemPrompt, groupMode, announcement ->
+                viewModel.saveBotEdits(
+                    botId = freshBot.id,
+                    name = name,
+                    roleTitle = roleTitle,
+                    avatarStyle = avatarStyle,
+                    traits = traits,
+                    systemPrompt = systemPrompt,
+                    groupMode = groupMode,
+                    announcement = announcement
+                )
+                editingBot = null
+            },
+            onDismiss = { editingBot = null }
+        )
+    }
+
+    if (showChatInfoSheet) {
+        ChatInfoSheet(
+            activeBot = activeBot,
+            allBots = viewModel.bots,
+            activeModel = viewModel.activeModel,
+            enableThinking = viewModel.enableThinking,
+            onModelChange = viewModel::updateModel,
+            onThinkingChange = viewModel::updateThinking,
+            onTogglePin = {
+                if (activeBot != null) viewModel.togglePinBot(activeBot)
+            },
+            onInviteToGroup = {
+                viewModel.openCreateGroup(
+                    sourceBotId = if (activeBot?.isGroup == true) "" else viewModel.activeBotId
+                )
+            },
+            onOpenMemberProfile = viewModel::openBotProfile,
+            onEditBot = {
+                if (activeBot != null) editingBot = activeBot
+            },
+            onClearHistory = viewModel::clearActiveChatHistory,
+            onDismiss = { showChatInfoSheet = false }
+        )
+    }
+
     if (viewModel.showCreateFriendSheet) {
         CreateFriendSheet(
             onSubmit = viewModel::createNewFriend,
-            onOpenAdvancedStudio = {
-                viewModel.dismissCreateFriend()
-                launchConsole("create_bot", "高级 AI 好友编排")
-            },
             onDismiss = viewModel::dismissCreateFriend
         )
     }
@@ -381,27 +408,13 @@ fun BotHubApp(
         )
     }
 
-    if (showChatInfoSheet) {
-        ChatInfoSheet(
-            activeBot = activeBot,
-            allBots = viewModel.bots,
-            activeModel = viewModel.activeModel,
-            enableThinking = viewModel.enableThinking,
-            onModelChange = viewModel::updateModel,
-            onThinkingChange = viewModel::updateThinking,
-            onTogglePin = { if (activeBot != null) viewModel.togglePinBot(activeBot) },
-            onInviteToGroup = {
-                viewModel.openCreateGroup(
-                    sourceBotId = if (activeBot?.isGroup == true) "" else viewModel.activeBotId
-                )
-            },
-            onOpenMemberProfile = viewModel::openBotProfile,
-            onOpenSessions = viewModel::openSessions,
-            onOpenStudioConfig = {
-                launchConsole("bot_config", "高级设定 · ${activeBot?.name ?: "AI"}")
-            },
-            onClearHistory = viewModel::clearActiveChatHistory,
-            onDismiss = { showChatInfoSheet = false }
+    if (viewModel.showSessionsSheet) {
+        AgentSessionsSheet(
+            sessions = viewModel.agentSessions,
+            currentSessionId = viewModel.sessionId,
+            onSelectSession = viewModel::loadAgentSession,
+            onNewSession = viewModel::startNewSession,
+            onDismiss = viewModel::dismissSessions
         )
     }
 
@@ -410,7 +423,7 @@ fun BotHubApp(
             item = item,
             onCopyBody = { body ->
                 clipboard.setText(AnnotatedString(body))
-                viewModel.showMessage("已复制通知正文")
+                viewModel.showMessage("已复制")
             },
             onDiagnoseWithAi = viewModel::diagnoseNotificationWithAi,
             onDismiss = viewModel::dismissNotificationDetail
@@ -432,32 +445,8 @@ fun BotHubApp(
             onZeroClickChanged = viewModel::setZeroClickCapture,
             onTestHealth = viewModel::testConnectivity,
             onUnbindServer = viewModel::unbindServer,
-            onOpenConsole = ::launchConsole,
             onShowMessage = viewModel::showMessage,
             onDismiss = viewModel::dismissSettings
-        )
-    }
-
-    if (viewModel.showSessionsSheet) {
-        AgentSessionsSheet(
-            sessions = viewModel.agentSessions,
-            currentSessionId = viewModel.sessionId,
-            onSelectSession = viewModel::loadAgentSession,
-            onNewSession = viewModel::startNewSession,
-            onDismiss = viewModel::dismissSessions
-        )
-    }
-
-    consoleTarget?.let { (entry, title) ->
-        ConsoleWebSheet(
-            serverUrl = viewModel.serverUrl,
-            entry = entry,
-            title = title,
-            api = api,
-            onDismiss = {
-                consoleTarget = null
-                viewModel.refreshAll()
-            }
         )
     }
 }

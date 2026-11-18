@@ -48,12 +48,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.NotificationItem
 import uk.starryheavens.vesper.bothub.data.formatImTime
+import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
 import uk.starryheavens.vesper.bothub.ui.components.CrispUnreadBadge
 import uk.starryheavens.vesper.bothub.ui.components.FloatingGlassPopover
 import uk.starryheavens.vesper.bothub.ui.components.GlassMenuAction
@@ -67,9 +67,6 @@ import uk.starryheavens.vesper.bothub.ui.components.VesperBrandEmblem
 import uk.starryheavens.vesper.bothub.ui.components.formatModuleBadge
 import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 
-/**
- * WeChat / QQ / GrokBot Flagship IM Conversation Roster ("消息" Tab).
- */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ImChatsTabScreen(
@@ -110,16 +107,15 @@ fun ImChatsTabScreen(
     val showServiceChannel = remember(searchQuery, latestNotification) {
         val q = searchQuery.trim().lowercase()
         q.isEmpty() ||
-            "服务通知 情报 晨报 雷达 告警".contains(q) ||
+            "服务通知 简报 雷达 告警".contains(q) ||
             (latestNotification?.title?.lowercase()?.contains(q) == true)
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // Recessed Dark Capsule Search Bar
         RecessedSearchBar(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
-            placeholder = "搜索 AI 好友、群聊或近期消息...",
+            placeholder = "搜索",
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
 
@@ -127,7 +123,7 @@ fun ImChatsTabScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 20.dp)
         ) {
-            // 1. Official Service Account Row ("服务通知")
+            // 1. Official Service Feed Row ("服务通知")
             if (showServiceChannel) {
                 item(key = "__service_channel__") {
                     val interaction = remember { MutableInteractionSource() }
@@ -204,7 +200,10 @@ fun ImChatsTabScreen(
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(end = 8.dp)
                                     ) {
                                         Text(
                                             text = "服务通知",
@@ -213,10 +212,14 @@ fun ImChatsTabScreen(
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = Color(0xFFFFF8EE),
                                                 platformStyle = NoFontPaddingStyle
-                                            )
+                                            ),
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
                                         )
-                                        ImMicroTag(
-                                            text = "订阅号",
+                                        CrispTagPill(
+                                            text = "通知",
                                             bgColor = Color(0x24818CF8),
                                             borderColor = Color(0x47818CF8),
                                             textColor = Color(0xFFC7D2FE)
@@ -228,7 +231,9 @@ fun ImChatsTabScreen(
                                             text = formatImTime(latestNotification.createdAt),
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 11.sp,
-                                            color = Color(0xFF5D6D89)
+                                            color = Color(0xFF5D6D89),
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                     }
                                 }
@@ -236,14 +241,14 @@ fun ImChatsTabScreen(
                                 val servicePreview = buildAnnotatedString {
                                     if (unreadServiceCount > 0) {
                                         withStyle(SpanStyle(color = Color(0xFFF2B880), fontWeight = FontWeight.Medium)) {
-                                            append("[${unreadServiceCount}条未读] ")
+                                            append("[${unreadServiceCount}条] ")
                                         }
                                     }
                                     if (latestNotification != null) {
                                         val (modName, _) = formatModuleBadge(latestNotification.moduleId)
                                         append("$modName · ${latestNotification.title}")
                                     } else {
-                                        append("晨间简报 · 技术雷达 · 临期与探针异常直达")
+                                        append("暂无新通知")
                                     }
                                 }
 
@@ -267,7 +272,7 @@ fun ImChatsTabScreen(
                 }
             }
 
-            // 2. Empty Roster Onboarding Card
+            // 2. Empty Roster State
             if (sortedBots.isEmpty()) {
                 item(key = "__empty_im__") {
                     SpecularGlassCard(
@@ -279,25 +284,19 @@ fun ImChatsTabScreen(
                         Column(
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 26.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
-                                text = if (searchQuery.isNotBlank()) "未找到匹配的 AI 好友或群聊" else "还没有添加 AI 好友",
+                                text = if (searchQuery.isNotBlank()) "无匹配结果" else "暂无聊天",
                                 fontSize = 15.5.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFFFF8EE)
-                            )
-                            Text(
-                                text = "每个 AI 都拥有独立性格、职责与记忆，还能拉多位 AI 组建协作群聊",
-                                fontSize = 12.5.sp,
-                                lineHeight = 18.sp,
-                                color = Color(0xFF94A3B8),
+                                color = Color(0xFFFFF8EE),
                                 textAlign = TextAlign.Center
                             )
                             if (searchQuery.isBlank()) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     TactilePrimaryButton(
-                                        text = "+ 添加 AI 好友",
+                                        text = "添加 AI 好友",
                                         cornerRadius = 999.dp,
                                         minHeight = 38.dp,
                                         onClick = onCreateFriend
@@ -401,15 +400,19 @@ fun ImChatsTabScreen(
                                                 platformStyle = NoFontPaddingStyle
                                             ),
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
                                         )
 
-                                        ImMicroTag(
-                                            text = if (bot.isGroup) "群聊" else bot.modeBadgeLabel(),
-                                            bgColor = if (bot.isGroup) Color(0x26F2B880) else Color(0x16FFFFFF),
-                                            borderColor = if (bot.isGroup) Color(0x52F2B880) else Color(0x22FFF8EE),
-                                            textColor = if (bot.isGroup) Color(0xFFFFE2BE) else Color(0xFF94A3B8)
-                                        )
+                                        if (bot.isGroup) {
+                                            CrispTagPill(
+                                                text = "群聊",
+                                                bgColor = Color(0x26F2B880),
+                                                borderColor = Color(0x52F2B880),
+                                                textColor = Color(0xFFFFE2BE)
+                                            )
+                                        }
 
                                         if (bot.isPinned) {
                                             Text(
@@ -419,7 +422,9 @@ fun ImChatsTabScreen(
                                                     fontWeight = FontWeight.Medium,
                                                     color = Color(0xFFF2B880),
                                                     platformStyle = NoFontPaddingStyle
-                                                )
+                                                ),
+                                                maxLines = 1,
+                                                softWrap = false
                                             )
                                         }
                                     }
@@ -429,7 +434,9 @@ fun ImChatsTabScreen(
                                             text = formatImTime(bot.updatedAt),
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 11.sp,
-                                            color = Color(0xFF5D6D89)
+                                            color = Color(0xFF5D6D89),
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                     }
                                 }
@@ -480,13 +487,13 @@ fun ImChatsTabScreen(
                         offsetY = 44.dp,
                         items = listOf(
                             GlassMenuAction(
-                                label = if (bot.isPinned) "取消置顶" else "置顶该聊天",
+                                label = if (bot.isPinned) "取消置顶" else "置顶聊天",
                                 icon = Icons.Default.PushPin,
                                 iconTint = Color(0xFFF2B880),
                                 onClick = { onTogglePinBot(bot) }
                             ),
                             GlassMenuAction(
-                                label = if (bot.isGroup) "查看群聊资料" else "查看好友资料卡",
+                                label = if (bot.isGroup) "群聊资料" else "好友资料",
                                 icon = Icons.Default.AccountBox,
                                 iconTint = Color(0xFFA5B4FC),
                                 onClick = { onOpenBotProfile(bot) }
@@ -496,33 +503,5 @@ fun ImChatsTabScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ImMicroTag(
-    text: String,
-    bgColor: Color,
-    borderColor: Color,
-    textColor: Color
-) {
-    val shape = RoundedCornerShape(5.dp)
-    Box(
-        modifier = Modifier
-            .clip(shape)
-            .background(bgColor, shape)
-            .border(0.5.dp, borderColor, shape)
-            .padding(horizontal = 5.dp, vertical = 1.5.dp)
-    ) {
-        Text(
-            text = text,
-            style = TextStyle(
-                fontSize = 9.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = textColor,
-                platformStyle = NoFontPaddingStyle
-            ),
-            maxLines = 1
-        )
     }
 }

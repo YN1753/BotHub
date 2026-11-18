@@ -103,25 +103,17 @@ fun ServiceFeedScreen(
                     )
                 }
 
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "服务通知",
-                        style = TextStyle(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFFF8EE),
-                            platformStyle = NoFontPaddingStyle
-                        )
-                    )
-                    Text(
-                        text = if (unreadCount > 0) "$unreadCount 条未读情报" else "晨报 · 雷达 · 异常告警订阅号",
-                        style = TextStyle(
-                            fontSize = 10.5.sp,
-                            color = Color(0xFF8C9BB5),
-                            platformStyle = NoFontPaddingStyle
-                        )
-                    )
-                }
+                Text(
+                    text = "服务通知",
+                    style = TextStyle(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFFF8EE),
+                        platformStyle = NoFontPaddingStyle
+                    ),
+                    maxLines = 1,
+                    softWrap = false
+                )
 
                 if (unreadCount > 0) {
                     TactileSecondaryButton(
