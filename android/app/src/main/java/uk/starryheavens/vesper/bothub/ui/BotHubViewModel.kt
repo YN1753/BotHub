@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import uk.starryheavens.vesper.bothub.data.AgentSessionSummary
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
@@ -22,6 +24,7 @@ import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
+import uk.starryheavens.vesper.bothub.data.JsonMappers
 import uk.starryheavens.vesper.bothub.data.NotificationItem
 import uk.starryheavens.vesper.bothub.data.StashItemUi
 import uk.starryheavens.vesper.bothub.data.TaskItem
@@ -41,13 +44,13 @@ class BotHubViewModel(
     var selectedTab by mutableStateOf(BotHubTab.AGENT)
         private set
 
-    var isPaired by mutableStateOf(prefs.bearerToken.isNotEmpty())
+    var isPaired by mutableStateOf(prefs.isLikelyPaired)
         private set
 
-    var showSettingsSheet by mutableStateOf(prefs.bearerToken.isEmpty())
+    var showSettingsSheet by mutableStateOf(!prefs.isLikelyPaired)
         private set
 
-    var biometricUnlocked by mutableStateOf(!prefs.biometricAppLockEnabled || prefs.bearerToken.isEmpty())
+    var biometricUnlocked by mutableStateOf(!prefs.biometricAppLockEnabled || !prefs.isLikelyPaired)
         private set
 
     var serverUrl by mutableStateOf(prefs.serverUrl)
@@ -62,10 +65,13 @@ class BotHubViewModel(
     var zeroClickCaptureEnabled by mutableStateOf(prefs.zeroClickCaptureEnabled)
         private set
 
-    var bots by mutableStateOf<List<BotItem>>(emptyList())
+    var bots by mutableStateOf(prefs.loadCachedBots())
         private set
 
-    var activeBotId by mutableStateOf("butler")
+    var activeBotId by mutableStateOf(prefs.lastActiveBotId)
+        private set
+
+    var draftsByBot by mutableStateOf(prefs.loadBotDrafts())
         private set
 
     var inChatRoom by mutableStateOf(false)
@@ -120,26 +126,29 @@ class BotHubViewModel(
     var selectedNotification by mutableStateOf<NotificationItem?>(null)
         private set
 
-    var stashItems by mutableStateOf<List<StashItemUi>>(emptyList())
+    var stashItems by mutableStateOf(prefs.loadCachedStash())
         private set
 
     var stashQuery by mutableStateOf("")
         private set
 
-    var stashFilter by mutableStateOf("unread")
+    var stashFilter by mutableStateOf("all")
         private set
 
     var stashLoading by mutableStateOf(false)
         private set
 
-    var dashboard by mutableStateOf<DashboardSnapshot?>(null)
+    var dashboard by mutableStateOf<DashboardSnapshot?>(prefs.loadCachedDashboard())
         private set
 
     var isRefreshing by mutableStateOf(false)
         private set
 
+    private val timelineCache = mutableMapOf<String, List<ChatTurnUi>>()
+    private var lastFullRefreshAtMs: Long = 0L
     private var pendingNotificationId: Long? = null
     private var stashSearchJob: Job? = null
+    private var liveSyncDebounceJob: Job? = null
     private var activeChatJob: Job? = null
 
     @Volatile
@@ -147,9 +156,61 @@ class BotHubViewModel(
     private val turnSequence = AtomicLong(0L)
 
     init {
-        if (prefs.bearerToken.isNotEmpty()) {
-            RealtimePushService.syncWithPrefs(appContext, prefs)
-            refreshAll()
+        val initialTurns = prefs.loadCachedBotMessages(activeBotId)
+        if (initialTurns.isNotEmpty()) {
+            timelineCache[activeBotId] = initialTurns
+            chatMessages.addAll(initialTurns)
+        }
+        inputText = draftsByBot[activeBotId].orEmpty()
+
+        viewModelScope.launch {
+            val token = withContext(Dispatchers.IO) { prefs.warmUpCredentials() }
+            val actuallyPaired = token.isNotEmpty()
+            isPaired = actuallyPaired
+            if (!actuallyPaired) {
+                showSettingsSheet = true
+                biometricUnlocked = true
+            } else {
+                showSettingsSheet = false
+                refreshAll(silent = bots.isNotEmpty())
+            }
+        }
+
+        viewModelScope.launch {
+            RealtimePushService.liveEvents.collect { (event, obj) ->
+                when (event) {
+                    "notification" -> {
+                        val item = JsonMappers.parseNotification(obj)
+                        if (notifications.none { it.id == item.id }) {
+                            val updated = (listOf(item) + notifications).take(60)
+                            notifications = updated
+                            prefs.saveCachedNotifications(updated)
+                        }
+                        scheduleSilentLiveSync()
+                    }
+                    "bot_state" -> {
+                        val bId = obj.optString("bot_id", "")
+                        val st = obj.optString("state", "")
+                        if (bId.isNotEmpty() && st.isNotEmpty()) {
+                            bots = bots.map { if (it.id == bId) it.copy(state = st) else it }
+                        }
+                    }
+                    "bot_message", "stash_update", "assistant_update" -> {
+                        scheduleSilentLiveSync()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun scheduleSilentLiveSync() {
+        liveSyncDebounceJob?.cancel()
+        liveSyncDebounceJob = viewModelScope.launch {
+            delay(380L)
+            refreshAll(silent = true)
+            if (inChatRoom && !isStreaming && sessionId.isEmpty() && activeBotId.isNotBlank()) {
+                loadBotTimeline(activeBotId)
+            }
         }
     }
 
@@ -164,9 +225,18 @@ class BotHubViewModel(
         showServiceFeed = false
         selectedTab = tab
         if (triggerRefresh) {
-            when (tab) {
-                BotHubTab.AGENT, BotHubTab.INBOX, BotHubTab.HUB -> refreshAll()
-                BotHubTab.STASH -> refreshStash()
+            val now = System.currentTimeMillis()
+            if (now - lastFullRefreshAtMs > 15_000L) {
+                when (tab) {
+                    BotHubTab.AGENT, BotHubTab.INBOX, BotHubTab.HUB -> refreshAll(silent = true)
+                    BotHubTab.STASH -> {
+                        if (stashItems.isEmpty() || stashQuery.isNotBlank() || stashFilter != "all") {
+                            refreshStash(silent = stashItems.isNotEmpty())
+                        } else {
+                            refreshAll(silent = true)
+                        }
+                    }
+                }
             }
         }
     }
@@ -175,15 +245,47 @@ class BotHubViewModel(
         imSearchQuery = q
     }
 
+    private fun persistBotDraft(botId: String, text: String) {
+        if (botId.isBlank()) return
+        val trimmed = text
+        val current = draftsByBot[botId].orEmpty()
+        if (current == trimmed) return
+        val next = draftsByBot.toMutableMap()
+        if (trimmed.isBlank()) {
+            next.remove(botId)
+        } else {
+            next[botId] = trimmed
+        }
+        draftsByBot = next
+        prefs.saveBotDrafts(next)
+    }
+
     fun openChatRoom(botId: String) {
         inspectingBotProfile = null
         showServiceFeed = false
         if (botId.isNotBlank()) {
             val changedBot = activeBotId != botId
+            if (changedBot && sessionId.isEmpty() && activeBotId.isNotBlank()) {
+                persistBotDraft(activeBotId, inputText)
+            }
             activeBotId = botId
-            bots = bots.map { if (it.id == botId) it.copy(unreadCount = 0) else it }
+            prefs.lastActiveBotId = botId
+            val nextBots = bots.map { if (it.id == botId && it.unreadCount != 0) it.copy(unreadCount = 0) else it }
+            if (nextBots != bots) {
+                bots = nextBots
+                prefs.saveCachedBots(nextBots)
+            }
+
             if (changedBot || chatMessages.isEmpty()) {
                 sessionId = ""
+                inputText = draftsByBot[botId].orEmpty()
+                val cachedTurns = timelineCache[botId] ?: prefs.loadCachedBotMessages(botId).also { loaded ->
+                    if (loaded.isNotEmpty()) timelineCache[botId] = loaded
+                }
+                chatMessages.clear()
+                if (cachedTurns.isNotEmpty()) {
+                    chatMessages.addAll(cachedTurns)
+                }
                 loadBotTimeline(botId)
             }
         }
@@ -191,10 +293,16 @@ class BotHubViewModel(
     }
 
     fun closeChatRoom() {
+        if (sessionId.isEmpty() && activeBotId.isNotBlank()) {
+            persistBotDraft(activeBotId, inputText)
+        }
         inChatRoom = false
-        if (prefs.bearerToken.isNotEmpty()) {
+        if (prefs.isLikelyPaired) {
             viewModelScope.launch {
-                api.fetchBots().onSuccess { bots = it }
+                api.fetchBots().onSuccess { list ->
+                    bots = list
+                    prefs.saveCachedBots(list)
+                }
             }
         }
     }
@@ -202,7 +310,9 @@ class BotHubViewModel(
     fun openServiceFeed() {
         inChatRoom = false
         showServiceFeed = true
-        refreshAll()
+        if (System.currentTimeMillis() - lastFullRefreshAtMs > 10_000L) {
+            refreshAll(silent = notifications.isNotEmpty())
+        }
     }
 
     fun closeServiceFeed() {
@@ -353,14 +463,19 @@ class BotHubViewModel(
         }
     }
 
-    fun refreshAll() {
-        if (prefs.bearerToken.isEmpty()) return
+    fun refreshAll(silent: Boolean = false) {
+        if (!prefs.isLikelyPaired) return
         viewModelScope.launch {
-            isRefreshing = true
+            if (prefs.bearerToken.isEmpty()) return@launch
+            if (!silent) {
+                isRefreshing = true
+            }
             try {
                 val bootRes = api.fetchBootstrap()
                 if (bootRes.isSuccess) {
                     val payload = bootRes.getOrThrow()
+                    lastFullRefreshAtMs = System.currentTimeMillis()
+
                     notifications = payload.notifications
                     prefs.saveCachedNotifications(payload.notifications)
                     val maxId = payload.notifications.maxOfOrNull { it.id } ?: 0L
@@ -368,16 +483,20 @@ class BotHubViewModel(
                     resolvePendingNotificationIfPresent(payload.notifications)
 
                     dashboard = payload.dashboard
+                    prefs.saveCachedDashboard(payload.dashboard)
 
                     val firstLoad = bots.isEmpty()
                     bots = payload.bots
+                    prefs.saveCachedBots(payload.bots)
                     if (firstLoad && payload.bots.isNotEmpty()) {
                         val chosen = payload.bots.find { it.id == activeBotId } ?: payload.bots.first()
                         activeBotId = chosen.id
+                        prefs.lastActiveBotId = chosen.id
                     }
 
                     if (stashQuery.isBlank() && stashFilter == "all") {
                         stashItems = payload.stashItems
+                        prefs.saveCachedStash(payload.stashItems)
                     } else if (selectedTab == BotHubTab.STASH) {
                         api.fetchStashItems(query = stashQuery, filter = stashFilter, limit = 80).onSuccess { items ->
                             stashItems = items
@@ -395,34 +514,58 @@ class BotHubViewModel(
                             }
                         }
                         launch {
-                            api.fetchDashboard().onSuccess { snap -> dashboard = snap }
+                            api.fetchDashboard().onSuccess { snap ->
+                                dashboard = snap
+                                prefs.saveCachedDashboard(snap)
+                            }
                         }
                         launch {
-                            api.fetchBots().onSuccess { list -> bots = list }
+                            api.fetchBots().onSuccess { list ->
+                                bots = list
+                                prefs.saveCachedBots(list)
+                            }
                         }
                         launch {
                             api.fetchStashItems(query = stashQuery, filter = stashFilter, limit = 80).onSuccess { items ->
                                 stashItems = items
+                                if (stashQuery.isBlank() && stashFilter == "all") {
+                                    prefs.saveCachedStash(items)
+                                }
                             }
                         }
                     }
+                    lastFullRefreshAtMs = System.currentTimeMillis()
                 }
             } finally {
-                isRefreshing = false
+                if (!silent) {
+                    isRefreshing = false
+                }
             }
         }
     }
 
-    fun refreshStash(queryOverride: String = stashQuery, filterOverride: String = stashFilter) {
-        if (prefs.bearerToken.isEmpty()) return
+    fun refreshStash(
+        queryOverride: String = stashQuery,
+        filterOverride: String = stashFilter,
+        silent: Boolean = false
+    ) {
+        if (!prefs.isLikelyPaired) return
         viewModelScope.launch {
-            stashLoading = true
+            if (prefs.bearerToken.isEmpty()) return@launch
+            if (!silent) {
+                stashLoading = true
+            }
             try {
                 api.fetchStashItems(query = queryOverride, filter = filterOverride, limit = 80).onSuccess { items ->
                     stashItems = items
+                    if (queryOverride.isBlank() && filterOverride == "all") {
+                        prefs.saveCachedStash(items)
+                    }
                 }
             } finally {
-                stashLoading = false
+                if (!silent) {
+                    stashLoading = false
+                }
             }
         }
     }
@@ -433,14 +576,54 @@ class BotHubViewModel(
 
     fun togglePinBot(bot: BotItem) {
         val nextPinned = !bot.isPinned
-        bots = bots.map { if (it.id == bot.id) it.copy(isPinned = nextPinned) else it }
+        val optimistic = bots.map { if (it.id == bot.id) it.copy(isPinned = nextPinned) else it }
+        bots = optimistic
+        prefs.saveCachedBots(optimistic)
         viewModelScope.launch {
             api.updateBotPin(bot.id, nextPinned).onSuccess { updated ->
-                bots = bots.map { if (it.id == bot.id) updated else it }
+                val synced = bots.map { if (it.id == bot.id) updated else it }
+                bots = synced
+                prefs.saveCachedBots(synced)
                 showMessage(if (nextPinned) "已置顶聊天" else "已取消置顶")
             }.onFailure { err ->
-                bots = bots.map { if (it.id == bot.id) bot else it }
+                val rolledBack = bots.map { if (it.id == bot.id) bot else it }
+                bots = rolledBack
+                prefs.saveCachedBots(rolledBack)
                 showMessage(err.message ?: "置顶操作失败")
+            }
+        }
+    }
+
+    fun markBotRead(bot: BotItem) {
+        if (bot.unreadCount <= 0) return
+        val updated = bots.map { if (it.id == bot.id) it.copy(unreadCount = 0) else it }
+        bots = updated
+        prefs.saveCachedBots(updated)
+        viewModelScope.launch {
+            // Fetching bot messages clears server-side unread count cleanly
+            api.fetchBotMessages(bot.id)
+        }
+    }
+
+    fun clearBotHistoryById(bot: BotItem) {
+        if (isStreaming && activeBotId == bot.id) return
+        timelineCache.remove(bot.id)
+        prefs.saveCachedBotMessages(bot.id, emptyList())
+        if (activeBotId == bot.id && sessionId.isEmpty()) {
+            chatMessages.clear()
+        }
+        val clearedBots = bots.map {
+            if (it.id == bot.id) it.copy(lastSummary = "", unreadCount = 0) else it
+        }
+        bots = clearedBots
+        prefs.saveCachedBots(clearedBots)
+        viewModelScope.launch {
+            api.clearBotMessages(bot.id).onSuccess {
+                showMessage("已清空「${bot.name}」的聊天记录")
+                refreshAll(silent = true)
+            }.onFailure { err ->
+                showMessage(err.message ?: "清空记录失败")
+                refreshAll(silent = true)
             }
         }
     }
@@ -450,10 +633,12 @@ class BotHubViewModel(
         val targetId = activeBotId
         chatMessages.clear()
         if (targetId.isNotBlank() && sessionId.isEmpty()) {
+            timelineCache.remove(targetId)
+            prefs.saveCachedBotMessages(targetId, emptyList())
             viewModelScope.launch {
                 api.clearBotMessages(targetId).onSuccess {
                     showMessage("已清空当前聊天记录")
-                    refreshAll()
+                    refreshAll(silent = true)
                 }.onFailure { err ->
                     showMessage(err.message ?: "清空记录失败")
                 }
@@ -568,26 +753,33 @@ class BotHubViewModel(
     }
 
     fun loadBotTimeline(botId: String) {
-        if (isStreaming || prefs.bearerToken.isEmpty()) return
+        if (isStreaming || !prefs.isLikelyPaired) return
         viewModelScope.launch {
+            if (prefs.bearerToken.isEmpty()) return@launch
             api.fetchBotMessages(botId).onSuccess { msgs ->
                 val target = bots.find { it.id == botId }
-                if (target != null) {
-                    activeModel = target.model
-                    enableThinking = target.enableThinking
-                }
-                chatMessages.clear()
-                msgs.forEach { m ->
-                    chatMessages.add(
-                        m.toChatTurnUi(
-                            idPrefix = "botmsg",
-                            defaultPersona = target?.name ?: botId,
-                            defaultModel = target?.model ?: activeModel,
-                            defaultBotId = botId,
-                            defaultAvatarStyle = target?.avatarStyle ?: "butler:gold",
-                            bots = bots
-                        )
+                val mapped = msgs.map { m ->
+                    m.toChatTurnUi(
+                        idPrefix = "botmsg",
+                        defaultPersona = target?.name ?: botId,
+                        defaultModel = target?.model ?: activeModel,
+                        defaultBotId = botId,
+                        defaultAvatarStyle = target?.avatarStyle ?: "butler:gold",
+                        bots = bots
                     )
+                }
+                timelineCache[botId] = mapped
+                prefs.saveCachedBotMessages(botId, mapped)
+
+                if (activeBotId == botId && sessionId.isEmpty() && !isStreaming) {
+                    if (target != null) {
+                        activeModel = target.model
+                        enableThinking = target.enableThinking
+                    }
+                    if (chatMessages.toList() != mapped) {
+                        chatMessages.clear()
+                        chatMessages.addAll(mapped)
+                    }
                 }
             }
         }
@@ -610,6 +802,9 @@ class BotHubViewModel(
 
     fun updateInputText(text: String) {
         inputText = text
+        if (sessionId.isEmpty() && activeBotId.isNotBlank()) {
+            persistBotDraft(activeBotId, text)
+        }
     }
 
     fun openSessions() {
@@ -676,7 +871,11 @@ class BotHubViewModel(
         val userTurnId = "u_${now}_$seq"
         val assistantId = "a_${now}_$seq"
 
+        val targetBotId = activeBotId
         inputText = ""
+        if (sessionId.isEmpty() && targetBotId.isNotBlank()) {
+            persistBotDraft(targetBotId, "")
+        }
         isStreaming = true
         chatMessages.add(
             ChatTurnUi(
@@ -751,7 +950,12 @@ class BotHubViewModel(
             } finally {
                 activeStreamCall = null
                 isStreaming = false
-                refreshAll()
+                if (sessionId.isEmpty() && targetBotId.isNotBlank() && activeBotId == targetBotId) {
+                    val snapshotTurns = chatMessages.toList()
+                    timelineCache[targetBotId] = snapshotTurns
+                    prefs.saveCachedBotMessages(targetBotId, snapshotTurns)
+                }
+                refreshAll(silent = true)
             }
         }
     }
@@ -770,9 +974,14 @@ class BotHubViewModel(
     fun selectNotification(item: NotificationItem) {
         selectedNotification = item
         if (item.isUnread) {
+            val optimistic = notifications.map {
+                if (it.id == item.id) it.copy(readAt = "read") else it
+            }
+            notifications = optimistic
+            prefs.saveCachedNotifications(optimistic)
             viewModelScope.launch {
                 api.markNotificationRead(item.id)
-                refreshAll()
+                refreshAll(silent = true)
             }
         }
     }
@@ -787,17 +996,21 @@ class BotHubViewModel(
         selectedTab = BotHubTab.AGENT
         val butler = bots.firstOrNull { !it.isGroup } ?: bots.firstOrNull()
         if (butler != null) {
-            activeBotId = butler.id
+            openChatRoom(butler.id)
+        } else {
+            inChatRoom = true
         }
-        inChatRoom = true
         sendAgentPrompt("请帮我分析这条通知并给出排查或处置建议：\n\n标题：${item.title}\n\n${item.markdownBody}")
     }
 
     fun markAllNotificationsRead() {
+        val optimistic = notifications.map { if (it.isUnread) it.copy(readAt = "read") else it }
+        notifications = optimistic
+        prefs.saveCachedNotifications(optimistic)
+        showMessage("已全部标为已读")
         viewModelScope.launch {
             api.markAllNotificationsRead()
-            refreshAll()
-            showMessage("全部情报已标记为已读")
+            refreshAll(silent = true)
         }
     }
 
@@ -815,14 +1028,19 @@ class BotHubViewModel(
     fun updateStashFilter(filter: String) {
         stashFilter = filter
         stashSearchJob?.cancel()
-        refreshStash(stashQuery, filter)
+        refreshStash(stashQuery, filter, silent = stashItems.isNotEmpty())
     }
 
     fun captureStashItem(rawInput: String, userNote: String) {
         viewModelScope.launch {
-            api.createStashItem(rawInput, userNote).onSuccess { (_, dedup) ->
-                showMessage(if (dedup) "该链接已在收藏匣，已合并批注" else "已收入收藏匣，后台正提炼要点")
-                refreshStash()
+            api.createStashItem(rawInput, userNote).onSuccess { (created, dedup) ->
+                if (!dedup && stashQuery.isBlank()) {
+                    val prepended = listOf(created) + stashItems.filterNot { it.id == created.id }
+                    stashItems = prepended
+                    if (stashFilter == "all") prefs.saveCachedStash(prepended)
+                }
+                showMessage(if (dedup) "该链接已在收藏匣，已合并批注" else "已收入收藏，后台提炼中")
+                refreshStash(silent = true)
             }.onFailure { err ->
                 showMessage("收藏失败: ${err.message}")
             }
@@ -830,16 +1048,26 @@ class BotHubViewModel(
     }
 
     fun markStashItemRead(item: StashItemUi) {
+        val next = stashItems.map { if (it.id == item.id) it.copy(readCount = it.readCount + 1) else it }
+        stashItems = next
+        if (stashQuery.isBlank() && stashFilter == "all") prefs.saveCachedStash(next)
         viewModelScope.launch {
             api.updateStashItem(item.id, markRead = true)
-            refreshStash()
+            refreshStash(silent = true)
         }
     }
 
     fun toggleStashPin(item: StashItemUi) {
+        val nextPinned = !item.pinned
+        val prev = stashItems
+        val optimistic = stashItems.map { if (it.id == item.id) it.copy(pinned = nextPinned) else it }
+        stashItems = optimistic
+        if (stashQuery.isBlank() && stashFilter == "all") prefs.saveCachedStash(optimistic)
         viewModelScope.launch {
-            api.updateStashItem(item.id, pinned = !item.pinned).onSuccess {
-                refreshStash()
+            api.updateStashItem(item.id, pinned = nextPinned).onSuccess {
+                refreshStash(silent = true)
+            }.onFailure {
+                stashItems = prev
             }
         }
     }
@@ -848,7 +1076,7 @@ class BotHubViewModel(
         viewModelScope.launch {
             api.reprocessStashItem(item.id).onSuccess {
                 showMessage("已重新排入 AI 提炼队列")
-                refreshStash()
+                refreshStash(silent = true)
             }.onFailure { err ->
                 showMessage("重提炼失败: ${err.message}")
             }
@@ -856,10 +1084,15 @@ class BotHubViewModel(
     }
 
     fun deleteStashItem(item: StashItemUi) {
+        val prev = stashItems
+        val optimistic = stashItems.filterNot { it.id == item.id }
+        stashItems = optimistic
+        if (stashQuery.isBlank() && stashFilter == "all") prefs.saveCachedStash(optimistic)
+        showMessage("已删除")
         viewModelScope.launch {
-            api.deleteStashItem(item.id).onSuccess {
-                showMessage("已删除收藏条目")
-                refreshStash()
+            api.deleteStashItem(item.id).onFailure { err ->
+                stashItems = prev
+                showMessage("删除失败: ${err.message}")
             }
         }
     }
@@ -869,9 +1102,10 @@ class BotHubViewModel(
         showServiceFeed = false
         val target = bots.find { it.id == activeBotId } ?: bots.firstOrNull { !it.isGroup } ?: bots.firstOrNull()
         if (target != null) {
-            activeBotId = target.id
+            openChatRoom(target.id)
+        } else {
+            inChatRoom = true
         }
-        inChatRoom = true
         val summaryBlock = buildString {
             append("请结合我收藏匣中的这条内容继续深入分析：\n")
             append("标题：${item.title.ifEmpty { item.rawInput.take(60) }}\n")
@@ -887,10 +1121,10 @@ class BotHubViewModel(
 
     fun runTask(task: TaskItem) {
         viewModelScope.launch {
-            showMessage("正在触发: ${task.name}")
+            showMessage("正在执行: ${task.name}")
             api.triggerTask(task.id).onSuccess { msg ->
                 showMessage(msg)
-                refreshAll()
+                refreshAll(silent = true)
             }.onFailure { err ->
                 showMessage("执行失败: ${err.message}")
             }
@@ -898,11 +1132,25 @@ class BotHubViewModel(
     }
 
     fun toggleTask(task: TaskItem, enabled: Boolean) {
+        val prevDash = dashboard
+        if (prevDash != null) {
+            val nextTasks = prevDash.tasks.map { if (it.id == task.id) it.copy(enabled = enabled) else it }
+            val optimisticDash = prevDash.copy(
+                activeTasks = nextTasks.count { it.enabled },
+                tasks = nextTasks
+            )
+            dashboard = optimisticDash
+            prefs.saveCachedDashboard(optimisticDash)
+        }
         viewModelScope.launch {
             api.toggleTaskEnabled(task.id, enabled).onSuccess {
                 showMessage(if (enabled) "已启用: ${task.name}" else "已暂停: ${task.name}")
-                refreshAll()
+                refreshAll(silent = true)
             }.onFailure { err ->
+                if (prevDash != null) {
+                    dashboard = prevDash
+                    prefs.saveCachedDashboard(prevDash)
+                }
                 showMessage("更新失败: ${err.message}")
             }
         }
@@ -912,7 +1160,7 @@ class BotHubViewModel(
         viewModelScope.launch {
             api.syncAssetWatcher().onSuccess {
                 showMessage("资产状态已刷新")
-                refreshAll()
+                refreshAll(silent = true)
             }.onFailure { err ->
                 showMessage("同步失败: ${err.message}")
             }
@@ -939,7 +1187,7 @@ class BotHubViewModel(
                 autoRenew = autoRenew
             ).onSuccess {
                 showMessage("资产已保存")
-                refreshAll()
+                refreshAll(silent = true)
             }.onFailure { err ->
                 showMessage(err.message ?: "保存失败")
             }
@@ -947,11 +1195,26 @@ class BotHubViewModel(
     }
 
     fun deleteAssetItem(assetId: String) {
+        val prevDash = dashboard
+        if (prevDash != null) {
+            val nextAssets = prevDash.assets.filterNot { it.id == assetId }
+            val optimisticDash = prevDash.copy(
+                totalAssets = nextAssets.size,
+                expiringCount = nextAssets.count { it.isExpiringSoon },
+                assets = nextAssets
+            )
+            dashboard = optimisticDash
+            prefs.saveCachedDashboard(optimisticDash)
+        }
         viewModelScope.launch {
             api.deleteAsset(assetId).onSuccess {
                 showMessage("资产已删除")
-                refreshAll()
+                refreshAll(silent = true)
             }.onFailure { err ->
+                if (prevDash != null) {
+                    dashboard = prevDash
+                    prefs.saveCachedDashboard(prevDash)
+                }
                 showMessage(err.message ?: "删除失败")
             }
         }

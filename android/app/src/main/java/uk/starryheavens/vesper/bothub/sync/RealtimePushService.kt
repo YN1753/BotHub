@@ -11,8 +11,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import uk.starryheavens.vesper.bothub.R
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
@@ -72,6 +76,10 @@ class RealtimePushService : Service() {
                     val item = JsonMappers.parseNotification(obj)
                     prefs.advanceLastEventId(item.id)
                     NotificationHelper.showNotification(applicationContext, item)
+                    _liveEvents.tryEmit(event to obj)
+                }
+                "bot_message", "bot_state", "stash_update", "assistant_update" -> {
+                    _liveEvents.tryEmit(event to obj)
                 }
             }
         }
@@ -87,6 +95,9 @@ class RealtimePushService : Service() {
 
     companion object {
         private const val FOREGROUND_NOTIFICATION_ID = 9001
+
+        private val _liveEvents = MutableSharedFlow<Pair<String, JSONObject>>(extraBufferCapacity = 32)
+        val liveEvents: SharedFlow<Pair<String, JSONObject>> = _liveEvents.asSharedFlow()
 
         fun start(context: Context) {
             runCatching {

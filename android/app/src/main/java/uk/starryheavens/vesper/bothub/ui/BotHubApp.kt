@@ -205,7 +205,7 @@ fun BotHubApp(
                             onBack = viewModel::closeServiceFeed,
                             onSelectNotification = viewModel::selectNotification,
                             onMarkAllRead = viewModel::markAllNotificationsRead,
-                            onRefresh = viewModel::refreshAll
+                            onRefresh = { viewModel.refreshAll(silent = false) }
                         )
                     }
                 }
@@ -231,7 +231,7 @@ fun BotHubApp(
                                 },
                                 onMarkAllRead = viewModel::markAllNotificationsRead,
                                 onToggleStashCapture = { showStashCaptureInline = !showStashCaptureInline },
-                                onRefresh = viewModel::refreshAll,
+                                onRefresh = { viewModel.refreshAll(silent = false) },
                                 onOpenSettings = viewModel::openSettings
                             )
                         },
@@ -264,6 +264,7 @@ fun BotHubApp(
                                     modifier = contentModifier,
                                     bots = viewModel.bots,
                                     notifications = viewModel.notifications,
+                                    draftsByBot = viewModel.draftsByBot,
                                     activeBotId = viewModel.activeBotId,
                                     isStreaming = viewModel.isStreaming,
                                     searchQuery = viewModel.imSearchQuery,
@@ -271,6 +272,8 @@ fun BotHubApp(
                                     onOpenChat = viewModel::openChatRoom,
                                     onOpenServiceFeed = viewModel::openServiceFeed,
                                     onTogglePinBot = viewModel::togglePinBot,
+                                    onMarkBotRead = viewModel::markBotRead,
+                                    onClearBotHistory = viewModel::clearBotHistoryById,
                                     onOpenBotProfile = viewModel::openBotProfile,
                                     onCreateFriend = viewModel::openCreateFriend,
                                     onCreateGroup = { viewModel.openCreateGroup("") }

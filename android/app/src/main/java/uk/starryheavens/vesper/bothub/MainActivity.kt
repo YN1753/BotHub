@@ -15,6 +15,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.navigation.AppIntents
@@ -43,18 +46,13 @@ class MainActivity : FragmentActivity() {
             navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
         )
 
-        NotificationHelper.ensureChannels(this)
-        requestNotificationPermissionIfNeeded()
-        PushSyncWorker.schedulePeriodicSync(this)
-
         val prefs = BotHubPrefs(applicationContext)
-        RealtimePushService.syncWithPrefs(this, prefs)
+        val api = BotHubApiClient(prefs)
 
         if (savedInstanceState == null) {
             extractIncomingIntent(intent)
         }
 
-        val api = BotHubApiClient(prefs)
         setContent {
             VesperBotHubTheme {
                 BotHubApp(
@@ -70,6 +68,15 @@ class MainActivity : FragmentActivity() {
                     onPairPayloadConsumed = { pairPayloadState = null }
                 )
             }
+        }
+
+        // Defer Keystore initialization, WorkManager DB setup, and Foreground Service sync off Frame 1
+        requestNotificationPermissionIfNeeded()
+        lifecycleScope.launch(Dispatchers.IO) {
+            NotificationHelper.ensureChannels(applicationContext)
+            prefs.warmUpCredentials()
+            PushSyncWorker.schedulePeriodicSync(applicationContext)
+            RealtimePushService.syncWithPrefs(applicationContext, prefs)
         }
     }
 

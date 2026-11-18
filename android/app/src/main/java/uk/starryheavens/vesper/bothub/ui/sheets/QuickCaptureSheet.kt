@@ -37,7 +37,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.ShareTextParser
@@ -68,7 +70,7 @@ fun QuickCaptureSheet(
     var saving by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf("") }
 
-    val hasToken = prefs.bearerToken.isNotEmpty()
+    var hasToken by remember { mutableStateOf(prefs.isLikelyPaired) }
 
     fun submitCapture() {
         if (saving || !hasToken) return
@@ -93,6 +95,8 @@ fun QuickCaptureSheet(
     }
 
     LaunchedEffect(Unit) {
+        val warmToken = withContext(Dispatchers.IO) { prefs.warmUpCredentials() }
+        hasToken = warmToken.isNotEmpty()
         if (hasToken && prefs.zeroClickCaptureEnabled) {
             submitCapture()
         }

@@ -121,8 +121,7 @@ fun formatImTime(raw: String): String {
     if (clean.isEmpty()) return ""
     // Format "2026-11-18 08:05:11" -> "08:05" if today, else "11-18"
     if (clean.length >= 16 && clean[4] == '-' && clean[10] == ' ') {
-        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-            .format(java.util.Date())
+        val today = java.time.LocalDate.now().toString()
         return if (clean.startsWith(today)) {
             clean.substring(11, 16)
         } else {

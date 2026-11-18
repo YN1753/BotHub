@@ -24,8 +24,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -72,6 +75,7 @@ import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 fun ImChatsTabScreen(
     bots: List<BotItem>,
     notifications: List<NotificationItem>,
+    draftsByBot: Map<String, String> = emptyMap(),
     activeBotId: String,
     isStreaming: Boolean,
     searchQuery: String,
@@ -79,6 +83,8 @@ fun ImChatsTabScreen(
     onOpenChat: (String) -> Unit,
     onOpenServiceFeed: () -> Unit,
     onTogglePinBot: (BotItem) -> Unit,
+    onMarkBotRead: (BotItem) -> Unit = {},
+    onClearBotHistory: (BotItem) -> Unit = {},
     onOpenBotProfile: (BotItem) -> Unit,
     onCreateFriend: () -> Unit,
     onCreateGroup: () -> Unit,
@@ -217,12 +223,6 @@ fun ImChatsTabScreen(
                                             softWrap = false,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f, fill = false)
-                                        )
-                                        CrispTagPill(
-                                            text = "通知",
-                                            bgColor = Color(0x24818CF8),
-                                            borderColor = Color(0x47818CF8),
-                                            textColor = Color(0xFFC7D2FE)
                                         )
                                     }
 
@@ -415,16 +415,11 @@ fun ImChatsTabScreen(
                                         }
 
                                         if (bot.isPinned) {
-                                            Text(
-                                                text = "置顶",
-                                                style = TextStyle(
-                                                    fontSize = 9.5.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = Color(0xFFF2B880),
-                                                    platformStyle = NoFontPaddingStyle
-                                                ),
-                                                maxLines = 1,
-                                                softWrap = false
+                                            Icon(
+                                                imageVector = Icons.Default.PushPin,
+                                                contentDescription = "已置顶",
+                                                tint = Color(0x99F2B880),
+                                                modifier = Modifier.size(11.dp)
                                             )
                                         }
                                     }
@@ -441,6 +436,7 @@ fun ImChatsTabScreen(
                                     }
                                 }
 
+                                val draftText = draftsByBot[bot.id]?.trim().orEmpty()
                                 val snippet = bot.conversationSnippet(isStreamingThisBot)
                                 val annotatedSnippet = buildAnnotatedString {
                                     when {
@@ -448,6 +444,12 @@ fun ImChatsTabScreen(
                                             withStyle(SpanStyle(color = Color(0xFFF2B880), fontWeight = FontWeight.Medium)) {
                                                 append(snippet)
                                             }
+                                        }
+                                        draftText.isNotEmpty() -> {
+                                            withStyle(SpanStyle(color = Color(0xFFFB7185), fontWeight = FontWeight.SemiBold)) {
+                                                append("[草稿] ")
+                                            }
+                                            append(draftText.replace('\n', ' '))
                                         }
                                         bot.unreadCount > 0 -> {
                                             withStyle(SpanStyle(color = Color(0xFFF2B880), fontWeight = FontWeight.Medium)) {
@@ -463,7 +465,7 @@ fun ImChatsTabScreen(
                                     text = annotatedSnippet,
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp,
-                                    color = if (bot.unreadCount > 0) Color(0xFFD8E0F0) else Color(0xFF8493AE),
+                                    color = if (bot.unreadCount > 0 || draftText.isNotEmpty()) Color(0xFFD8E0F0) else Color(0xFF8493AE),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -479,19 +481,26 @@ fun ImChatsTabScreen(
                         }
                     }
 
-                    FloatingGlassPopover(
-                        expanded = showContextMenu,
-                        onDismissRequest = { showContextMenu = false },
-                        alignment = Alignment.TopEnd,
-                        offsetX = (-14).dp,
-                        offsetY = 44.dp,
-                        items = listOf(
+                    val contextActions = buildList {
+                        if (bot.unreadCount > 0) {
+                            add(
+                                GlassMenuAction(
+                                    label = "标为已读",
+                                    icon = Icons.Default.DoneAll,
+                                    iconTint = Color(0xFF34D399),
+                                    onClick = { onMarkBotRead(bot) }
+                                )
+                            )
+                        }
+                        add(
                             GlassMenuAction(
                                 label = if (bot.isPinned) "取消置顶" else "置顶聊天",
                                 icon = Icons.Default.PushPin,
                                 iconTint = Color(0xFFF2B880),
                                 onClick = { onTogglePinBot(bot) }
-                            ),
+                            )
+                        )
+                        add(
                             GlassMenuAction(
                                 label = if (bot.isGroup) "群聊资料" else "好友资料",
                                 icon = Icons.Default.AccountBox,
@@ -499,6 +508,23 @@ fun ImChatsTabScreen(
                                 onClick = { onOpenBotProfile(bot) }
                             )
                         )
+                        add(
+                            GlassMenuAction(
+                                label = "清空记录",
+                                icon = Icons.Outlined.DeleteOutline,
+                                iconTint = Color(0xFFFB7185),
+                                onClick = { onClearBotHistory(bot) }
+                            )
+                        )
+                    }
+
+                    FloatingGlassPopover(
+                        expanded = showContextMenu,
+                        onDismissRequest = { showContextMenu = false },
+                        alignment = Alignment.TopEnd,
+                        offsetX = (-14).dp,
+                        offsetY = 44.dp,
+                        items = contextActions
                     )
                 }
             }

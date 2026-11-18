@@ -121,6 +121,42 @@ object JsonMappers {
         }
     }
 
+    fun serializeBots(items: List<BotItem>): String {
+        val arr = JSONArray()
+        items.forEach { b ->
+            val membersArr = JSONArray()
+            b.memberIds.forEach { membersArr.put(it) }
+            arr.put(
+                JSONObject()
+                    .put("id", b.id)
+                    .put("name", b.name)
+                    .put("role_title", b.roleTitle)
+                    .put("avatar_style", b.avatarStyle)
+                    .put("model", b.model)
+                    .put("enable_thinking", b.enableThinking)
+                    .put("state", b.state)
+                    .put("unread_count", b.unreadCount)
+                    .put("last_summary", b.lastSummary)
+                    .put("is_group", b.isGroup)
+                    .put("member_ids", membersArr)
+                    .put("bot_mode", b.botMode)
+                    .put("is_pinned", b.isPinned)
+                    .put("is_builtin", b.isBuiltin)
+                    .put("traits", b.traits)
+                    .put("system_prompt", b.systemPrompt)
+                    .put("group_mode", b.groupMode)
+                    .put("announcement", b.announcement)
+                    .put("updated_at", b.updatedAt)
+            )
+        }
+        return arr.toString()
+    }
+
+    fun deserializeBots(rawJson: String): List<BotItem> {
+        if (rawJson.isBlank()) return emptyList()
+        return runCatching { parseBots(JSONArray(rawJson)) }.getOrDefault(emptyList())
+    }
+
     fun parseStashItem(s: JSONObject): StashItemUi {
         return StashItemUi(
             id = s.optString("id"),
@@ -149,6 +185,38 @@ object JsonMappers {
                 add(parseStashItem(s))
             }
         }
+    }
+
+    fun serializeStashItems(items: List<StashItemUi>, maxItems: Int = 80): String {
+        val arr = JSONArray()
+        items.take(maxItems).forEach { s ->
+            val pts = JSONArray()
+            s.points.forEach { pts.put(it) }
+            arr.put(
+                JSONObject()
+                    .put("id", s.id)
+                    .put("kind", s.kind)
+                    .put("url", s.url)
+                    .put("domain", s.domain)
+                    .put("title", s.title)
+                    .put("raw_input", s.rawInput)
+                    .put("user_note", s.userNote)
+                    .put("ai_tldr", s.aiTldr)
+                    .put("points", pts)
+                    .put("tags", s.tags)
+                    .put("status", s.status)
+                    .put("error_msg", s.errorMsg)
+                    .put("pinned", s.pinned)
+                    .put("read_count", s.readCount)
+                    .put("created_at", s.createdAt)
+            )
+        }
+        return arr.toString()
+    }
+
+    fun deserializeStashItems(rawJson: String): List<StashItemUi> {
+        if (rawJson.isBlank()) return emptyList()
+        return runCatching { parseStashItems(JSONArray(rawJson)) }.getOrDefault(emptyList())
     }
 
     fun parseHistoryMessages(arr: JSONArray?): List<AgentHistoryMessage> {
@@ -243,5 +311,127 @@ object JsonMappers {
             assets = assets,
             tasks = tasks
         )
+    }
+
+    fun serializeDashboard(snap: DashboardSnapshot): String {
+        val assetsArr = JSONArray()
+        snap.assets.forEach { a ->
+            assetsArr.put(
+                JSONObject()
+                    .put("id", a.id)
+                    .put("name", a.name)
+                    .put("category", a.category)
+                    .put("spec", a.spec)
+                    .put("price", a.price)
+                    .put("due_date", a.dueDate)
+                    .put("status", a.status)
+                    .put("days_left", a.daysLeft)
+                    .put("auto_renew", a.autoRenew)
+            )
+        }
+        val tasksArr = JSONArray()
+        snap.tasks.forEach { t ->
+            tasksArr.put(
+                JSONObject()
+                    .put("id", t.id)
+                    .put("name", t.name)
+                    .put("type", t.type)
+                    .put("cron_expr", t.cronExpr)
+                    .put("enabled", t.enabled)
+                    .put("next_run_at", t.nextRunAt)
+                    .put("last_run", JSONObject().put("summary", t.lastSummary))
+            )
+        }
+        return JSONObject()
+            .put("version", snap.version)
+            .put("assets", assetsArr)
+            .put("tasks", tasksArr)
+            .put(
+                "stats",
+                JSONObject()
+                    .put("total_assets", snap.totalAssets)
+                    .put("unread_notifications", snap.unreadNotifications)
+            )
+            .toString()
+    }
+
+    fun deserializeDashboard(rawJson: String): DashboardSnapshot? {
+        if (rawJson.isBlank()) return null
+        return runCatching { parseDashboard(JSONObject(rawJson)) }.getOrNull()
+    }
+
+    fun serializeChatTurns(items: List<ChatTurnUi>, maxItems: Int = 50): String {
+        val arr = JSONArray()
+        items.takeLast(maxItems).forEach { t ->
+            val toolsArr = JSONArray()
+            t.tools.forEach { toolsArr.put(it) }
+            arr.put(
+                JSONObject()
+                    .put("id", t.id)
+                    .put("role", t.role)
+                    .put("persona", t.persona)
+                    .put("model", t.model)
+                    .put("reasoning", t.reasoning)
+                    .put("tools", toolsArr)
+                    .put("content", t.content)
+                    .put("msg_kind", t.msgKind)
+                    .put("sender_bot_id", t.senderBotId)
+                    .put("avatar_style", t.avatarStyle)
+            )
+        }
+        return arr.toString()
+    }
+
+    fun deserializeChatTurns(rawJson: String): List<ChatTurnUi> {
+        if (rawJson.isBlank()) return emptyList()
+        return runCatching {
+            val arr = JSONArray(rawJson)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    add(
+                        ChatTurnUi(
+                            id = o.optString("id"),
+                            role = o.optString("role", "assistant"),
+                            persona = o.optString("persona", ""),
+                            model = o.optString("model", "deepseek-flash"),
+                            reasoning = o.optString("reasoning", ""),
+                            tools = optStringList(o, "tools"),
+                            content = o.optString("content", ""),
+                            msgKind = o.optString("msg_kind", "chat"),
+                            senderBotId = o.optString("sender_bot_id", ""),
+                            avatarStyle = o.optString("avatar_style", "butler:gold")
+                        )
+                    )
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun serializeDrafts(drafts: Map<String, String>): String {
+        val obj = JSONObject()
+        drafts.forEach { (k, v) ->
+            if (k.isNotBlank() && v.isNotBlank()) {
+                obj.put(k, v)
+            }
+        }
+        return obj.toString()
+    }
+
+    fun deserializeDrafts(rawJson: String): Map<String, String> {
+        if (rawJson.isBlank()) return emptyMap()
+        return runCatching {
+            val obj = JSONObject(rawJson)
+            buildMap {
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val v = obj.optString(k, "")
+                    if (k.isNotBlank() && v.isNotBlank()) {
+                        put(k, v)
+                    }
+                }
+            }
+        }.getOrDefault(emptyMap())
     }
 }

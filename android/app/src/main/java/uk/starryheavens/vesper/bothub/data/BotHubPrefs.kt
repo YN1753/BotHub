@@ -26,30 +26,66 @@ class BotHubPrefs(context: Context) {
         }.getOrElse { prefs }
     }
 
+    @Volatile
+    private var memoryBearerToken: String? = null
+
+    val isLikelyPaired: Boolean
+        get() {
+            val mem = memoryBearerToken
+            if (mem != null) return mem.isNotEmpty()
+            if (prefs.contains("has_paired_hint")) {
+                return prefs.getBoolean("has_paired_hint", false)
+            }
+            return bearerToken.isNotEmpty()
+        }
+
+    fun warmUpCredentials(): String = bearerToken
+
     var serverUrl: String
         get() = UrlUtils.normalizeServerUrl(prefs.getString("server_url", UrlUtils.DEFAULT_SERVER_URL))
         set(value) = prefs.edit().putString("server_url", UrlUtils.normalizeServerUrl(value)).apply()
 
     var bearerToken: String
         get() {
+            memoryBearerToken?.let { return it }
             val sec = securePrefs.getString("bearer_token", "")?.trim().orEmpty()
-            if (sec.isNotEmpty()) return sec
+            if (sec.isNotEmpty()) {
+                memoryBearerToken = sec
+                if (!prefs.getBoolean("has_paired_hint", false)) {
+                    prefs.edit().putBoolean("has_paired_hint", true).apply()
+                }
+                return sec
+            }
             // One-time transparent migration from legacy plaintext SharedPreferences
             val legacy = prefs.getString("bearer_token", "")?.trim().orEmpty()
             if (legacy.isNotEmpty()) {
                 securePrefs.edit().putString("bearer_token", legacy).apply()
-                prefs.edit().remove("bearer_token").apply()
+                prefs.edit()
+                    .remove("bearer_token")
+                    .putBoolean("has_paired_hint", true)
+                    .apply()
+            } else if (!prefs.contains("has_paired_hint")) {
+                prefs.edit().putBoolean("has_paired_hint", false).apply()
             }
+            memoryBearerToken = legacy
             return legacy
         }
         set(value) {
             val clean = value.trim()
+            memoryBearerToken = clean
             if (clean.isEmpty()) {
                 securePrefs.edit().remove("bearer_token").apply()
+                prefs.edit()
+                    .remove("bearer_token")
+                    .putBoolean("has_paired_hint", false)
+                    .apply()
             } else {
                 securePrefs.edit().putString("bearer_token", clean).apply()
+                prefs.edit()
+                    .remove("bearer_token")
+                    .putBoolean("has_paired_hint", true)
+                    .apply()
             }
-            prefs.edit().remove("bearer_token").apply()
         }
 
     var lastEventId: Long
@@ -90,6 +126,10 @@ class BotHubPrefs(context: Context) {
         bearerToken = ""
     }
 
+    var lastActiveBotId: String
+        get() = prefs.getString("last_active_bot_id", "butler") ?: "butler"
+        set(value) = prefs.edit().putString("last_active_bot_id", value.ifBlank { "butler" }).apply()
+
     fun saveCachedNotifications(items: List<NotificationItem>) {
         prefs.edit().putString("cached_notifications", JsonMappers.serializeNotifications(items)).apply()
     }
@@ -97,5 +137,54 @@ class BotHubPrefs(context: Context) {
     fun loadCachedNotifications(): List<NotificationItem> {
         val raw = prefs.getString("cached_notifications", "") ?: return emptyList()
         return JsonMappers.deserializeNotifications(raw)
+    }
+
+    fun saveCachedBots(items: List<BotItem>) {
+        prefs.edit().putString("cached_bots_v1", JsonMappers.serializeBots(items)).apply()
+    }
+
+    fun loadCachedBots(): List<BotItem> {
+        val raw = prefs.getString("cached_bots_v1", "") ?: return emptyList()
+        return JsonMappers.deserializeBots(raw)
+    }
+
+    fun saveCachedDashboard(snap: DashboardSnapshot) {
+        prefs.edit().putString("cached_dashboard_v1", JsonMappers.serializeDashboard(snap)).apply()
+    }
+
+    fun loadCachedDashboard(): DashboardSnapshot? {
+        val raw = prefs.getString("cached_dashboard_v1", "") ?: return null
+        return JsonMappers.deserializeDashboard(raw)
+    }
+
+    fun saveCachedStash(items: List<StashItemUi>) {
+        prefs.edit().putString("cached_stash_v1", JsonMappers.serializeStashItems(items)).apply()
+    }
+
+    fun loadCachedStash(): List<StashItemUi> {
+        val raw = prefs.getString("cached_stash_v1", "") ?: return emptyList()
+        return JsonMappers.deserializeStashItems(raw)
+    }
+
+    fun saveCachedBotMessages(botId: String, items: List<ChatTurnUi>) {
+        if (botId.isBlank()) return
+        prefs.edit()
+            .putString("cached_chat_turns_${botId.trim()}", JsonMappers.serializeChatTurns(items, maxItems = 50))
+            .apply()
+    }
+
+    fun loadCachedBotMessages(botId: String): List<ChatTurnUi> {
+        if (botId.isBlank()) return emptyList()
+        val raw = prefs.getString("cached_chat_turns_${botId.trim()}", "") ?: return emptyList()
+        return JsonMappers.deserializeChatTurns(raw)
+    }
+
+    fun saveBotDrafts(drafts: Map<String, String>) {
+        prefs.edit().putString("cached_bot_drafts_v1", JsonMappers.serializeDrafts(drafts)).apply()
+    }
+
+    fun loadBotDrafts(): Map<String, String> {
+        val raw = prefs.getString("cached_bot_drafts_v1", "") ?: return emptyMap()
+        return JsonMappers.deserializeDrafts(raw)
     }
 }
