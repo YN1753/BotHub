@@ -41,7 +41,8 @@ const mode = computed({
 const name = ref('')
 const roleTitle = ref('')
 const avatarStyle = ref('butler:gold')
-const model = ref(store.modelOptions.value[0]?.value || 'primary')
+const model = ref(store.modelOptions.value[0]?.value || 'auto:free')
+const allowPaidFallback = ref(false)
 const botMode = ref<BotMode>('hybrid')
 const memoryPolicy = ref<MemoryPolicy>('isolated')
 const traits = ref('')
@@ -189,8 +190,9 @@ watch(
   (open) => {
     if (!open) return
     if (!store.modelOptions.value.some((o) => o.value === model.value)) {
-      model.value = store.modelOptions.value[0]?.value || 'primary'
+      model.value = store.modelOptions.value[0]?.value || 'auto:free'
     }
+    allowPaidFallback.value = false
     if (allowedTools.value.length === 0 && botMode.value !== 'companion' && availableTools.value.length > 0) {
       allowedTools.value = availableTools.value.map((t) => t.id)
     }
@@ -241,10 +243,10 @@ async function handleSubmit() {
       )
       const toolSet = new Set<string>()
       const skillSet = new Set<string>()
-      let derivedModel = groupModel.value || store.modelOptions.value[0]?.value || 'primary'
+      let derivedModel = groupModel.value || store.modelOptions.value[0]?.value || 'auto:free'
       let allCompanion = selectedBots.length > 0
       selectedBots.forEach((b) => {
-        if (!groupModel.value && b.model && derivedModel === (store.modelOptions.value[0]?.value || 'primary')) {
+        if (!groupModel.value && b.model && derivedModel === (store.modelOptions.value[0]?.value || 'auto:free')) {
           derivedModel = b.model
         }
         if (b.bot_mode !== 'companion') allCompanion = false
@@ -257,6 +259,7 @@ async function handleSubmit() {
         role_title: groupDesc.value.trim() || `多 Bot 协同群 (${groupMembers.value.length} 成员)`,
         avatar_style: groupAvatar.value,
         model: derivedModel,
+        allow_paid_fallback: false,
         bot_mode: allCompanion ? 'companion' : 'hybrid',
         memory_policy: 'isolated',
         enable_thinking: !allCompanion,
@@ -299,6 +302,7 @@ async function handleSubmit() {
       role_title: roleTitle.value.trim() || (botMode.value === 'companion' ? '专属生活伙伴' : '专属智能助理'),
       avatar_style: avatarStyle.value,
       model: model.value,
+      allow_paid_fallback: allowPaidFallback.value,
       bot_mode: botMode.value,
       memory_policy: memoryPolicy.value,
       traits: traits.value.trim(),
@@ -431,8 +435,13 @@ async function handleSubmit() {
               <span>记忆隔离策略</span>
               <CustomSelect v-model="memoryPolicy" :options="MEMORY_POLICY_OPTIONS" aria-label="记忆隔离策略" />
             </div>
-            <div class="sm:col-span-2 flex items-center justify-between pt-1">
+            <div class="sm:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
               <ToggleSwitch v-model="enableThinking" label="默认开启深度思考推理链" />
+              <ToggleSwitch
+                v-model="allowPaidFallback"
+                label="允许付费兜底"
+                description="关闭则严格限免费模型池"
+              />
             </div>
           </div>
 

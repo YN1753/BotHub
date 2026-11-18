@@ -102,6 +102,18 @@ func (s *Server) handleClearBotMessages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	_ = s.store.ClearBotUnread(id)
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("thread_updated", map[string]any{
+			"bot_id":    id,
+			"thread_id": strings.TrimSpace(r.URL.Query().Get("thread_id")),
+			"action":    "cleared",
+		})
+		s.push.Hub().PublishEvent("bot_state", map[string]any{
+			"bot_id":       id,
+			"unread_count": 0,
+			"last_summary": "",
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -115,6 +127,13 @@ func (s *Server) handleDeleteBotMessage(w http.ResponseWriter, r *http.Request) 
 	if err := s.store.DeleteBotMessage(id, msgID); err != nil {
 		writeError(w, http.StatusInternalServerError, "删除消息失败: "+err.Error())
 		return
+	}
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("thread_updated", map[string]any{
+			"bot_id": id,
+			"msg_id": msgID,
+			"action": "message_deleted",
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -243,6 +262,14 @@ func (s *Server) handleCreateBotThread(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.store.SetBotActiveThread(botID, threadID)
 	threads, _ := s.store.ListBotThreads(botID)
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("thread_updated", map[string]any{
+			"bot_id":    botID,
+			"thread_id": threadID,
+			"action":    "created",
+			"threads":   threads,
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
 		"thread":  th,
@@ -333,6 +360,14 @@ func (s *Server) handleForkBotThread(w http.ResponseWriter, r *http.Request) {
 
 	threads, _ := s.store.ListBotThreads(botID)
 	msgs, _ := s.store.ListBotMessagesByThread(botID, newThreadID, 60)
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("thread_updated", map[string]any{
+			"bot_id":    botID,
+			"thread_id": newThreadID,
+			"action":    "forked",
+			"threads":   threads,
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":       true,
 		"thread":   th,
@@ -369,6 +404,14 @@ func (s *Server) handleUpdateBotThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	threads, _ := s.store.ListBotThreads(botID)
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("thread_updated", map[string]any{
+			"bot_id":    botID,
+			"thread_id": threadID,
+			"action":    "updated",
+			"threads":   threads,
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "thread": th, "threads": threads})
 }
 
@@ -380,6 +423,14 @@ func (s *Server) handleDeleteBotThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	threads, _ := s.store.ListBotThreads(botID)
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("thread_updated", map[string]any{
+			"bot_id":    botID,
+			"thread_id": threadID,
+			"action":    "deleted",
+			"threads":   threads,
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "threads": threads})
 }
 
@@ -433,6 +484,18 @@ func (s *Server) handleSummarizeBotThread(w http.ResponseWriter, r *http.Request
 		memScopes = append(memScopes, "global")
 	}
 	memories, _ := s.store.ListScopedMemories(memScopes, "", 60)
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("thread_updated", map[string]any{
+			"bot_id":    botID,
+			"thread_id": threadID,
+			"summary":   summary,
+			"action":    "summarized",
+			"threads":   threads,
+		})
+	}
+	if saveMem {
+		s.publishAssistantEvent("memories")
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":             true,

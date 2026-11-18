@@ -462,7 +462,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
             type="button"
             :aria-pressed="enableThinking"
             @click="emit('update:enableThinking', !enableThinking)"
-            :title="selectedModel.startsWith('pool:') || selectedModel === 'free-pool' ? '深度思考开关主要作用于 DeepSeek Flash / 支持 thinking 的中转站' : '开启或关闭深度推理思考链'"
+            :title="selectedModel.startsWith('pool:') || selectedModel === 'auto:free' ? '深度思考开关作用于支持推理链（Thinking）的模型' : '开启或关闭深度推理思考链'"
             :class="[
               'min-h-[40px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880]',
               enableThinking ? 'btn-tactile-gold' : 'btn-tactile text-slate-400',

@@ -294,11 +294,33 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         runCatching {
             val req = requestBuilder("/api/v2/app/bootstrap").get().build()
             val json = executeJson(req, "同步失败")
+            val dash = JsonMappers.parseDashboard(json)
             BootstrapPayload(
                 bots = JsonMappers.parseBots(json.optJSONArray("bots")),
                 notifications = JsonMappers.parseNotifications(json.optJSONArray("notifications")),
-                dashboard = JsonMappers.parseDashboard(json),
-                stashItems = JsonMappers.parseStashItems(json.optJSONArray("stash"))
+                dashboard = dash,
+                stashItems = JsonMappers.parseStashItems(json.optJSONArray("stash")),
+                modelOptions = dash.modelOptions,
+                revisions = dash.revisions
+            )
+        }
+    }
+
+    suspend fun fetchDashboardSlice(kinds: List<String>): Result<DashboardSlicePayload> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanKinds = kinds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            val encoded = URLEncoder.encode(cleanKinds.joinToString(","), "UTF-8")
+            val req = requestBuilder("/api/v2/dashboard/slice?kinds=$encoded").get().build()
+            val json = executeJson(req, "局部同步失败")
+            DashboardSlicePayload(
+                bots = if (json.has("bots")) JsonMappers.parseBots(json.optJSONArray("bots")) else null,
+                assets = if (json.has("assets")) JsonMappers.parseAssets(json.optJSONArray("assets")) else null,
+                assetCategories = if (json.has("asset_categories")) JsonMappers.parseAssetCategories(json.optJSONArray("asset_categories")) else null,
+                tasks = if (json.has("tasks")) JsonMappers.parseTasks(json.optJSONArray("tasks")) else null,
+                notifications = if (json.has("notifications")) JsonMappers.parseNotifications(json.optJSONArray("notifications")) else null,
+                stashItems = if (json.has("stash")) JsonMappers.parseStashItems(json.optJSONArray("stash")) else null,
+                modelOptions = if (json.has("model_options")) JsonMappers.parseModelOptions(json.optJSONArray("model_options")) else null,
+                revisions = JsonMappers.parseRevisions(json.optJSONObject("revisions"))
             )
         }
     }
@@ -476,12 +498,14 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
     suspend fun updateBotPreferences(
         botId: String,
         model: String? = null,
-        enableThinking: Boolean? = null
+        enableThinking: Boolean? = null,
+        allowPaidFallback: Boolean? = null
     ): Result<BotItem> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = JSONObject()
             if (!model.isNullOrBlank()) payload.put("model", model.trim())
             if (enableThinking != null) payload.put("enable_thinking", enableThinking)
+            if (allowPaidFallback != null) payload.put("allow_paid_fallback", allowPaidFallback)
             val req = requestBuilder("/api/v2/bots/$botId")
                 .post(jsonBody(payload.toString()))
                 .build()
@@ -517,7 +541,8 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         traits: String,
         systemPrompt: String,
         groupMode: String,
-        announcement: String
+        announcement: String,
+        allowPaidFallback: Boolean? = null
     ): Result<BotItem> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = JSONObject()
@@ -528,9 +553,11 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("system_prompt", systemPrompt.trim())
                 .put("group_mode", groupMode)
                 .put("announcement", announcement.trim())
-                .toString()
+            if (allowPaidFallback != null) {
+                payload.put("allow_paid_fallback", allowPaidFallback)
+            }
             val req = requestBuilder("/api/v2/bots/$botId")
-                .post(jsonBody(payload))
+                .post(jsonBody(payload.toString()))
                 .build()
             val json = executeJson(req, "保存资料失败")
             JsonMappers.parseBot(json.optJSONObject("bot") ?: JSONObject())
@@ -543,7 +570,9 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         avatarStyle: String,
         botMode: String,
         traits: String,
-        systemPrompt: String
+        systemPrompt: String,
+        model: String = "auto:free",
+        allowPaidFallback: Boolean = false
     ): Result<BotItem> = withContext(Dispatchers.IO) {
         runCatching {
             val defaultTools = if (botMode == "companion") {
@@ -561,6 +590,8 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("role_title", roleTitle.trim())
                 .put("avatar_style", avatarStyle)
                 .put("bot_mode", botMode)
+                .put("model", model.ifBlank { "auto:free" })
+                .put("allow_paid_fallback", allowPaidFallback)
                 .put("traits", traits.trim())
                 .put("system_prompt", systemPrompt.trim())
                 .put("allowed_tools", defaultTools.toString())
@@ -732,6 +763,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         persona: String,
         model: String,
         enableThinking: Boolean = true,
+        allowPaidFallback: Boolean? = null,
         onCallCreated: (Call) -> Unit = {},
         onSession: (String) -> Unit,
         onReasoningDelta: (String) -> Unit,
@@ -740,14 +772,17 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         onError: (String) -> Unit
     ) = withContext(Dispatchers.IO) {
         runCatching {
-            val payload = JSONObject()
+            val payloadObj = JSONObject()
                 .put("session_id", sessionId)
                 .put("bot_id", botId)
                 .put("message", message)
                 .put("persona", persona)
                 .put("model", model)
                 .put("enable_thinking", enableThinking)
-                .toString()
+            if (allowPaidFallback != null) {
+                payloadObj.put("allow_paid_fallback", allowPaidFallback)
+            }
+            val payload = payloadObj.toString()
 
             val req = requestBuilder("/api/agent/chat")
                 .header("Accept", "text/event-stream")

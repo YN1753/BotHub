@@ -41,6 +41,22 @@ func (s *Server) schedulerTasksList() ([]any, error) {
 	return tasks, nil
 }
 
+func (s *Server) safeMaskedConfigs() map[string]string {
+	cfgs, _ := s.store.GetAllConfigs()
+	delete(cfgs, store.KeyAdminPassHash)
+	delete(cfgs, store.KeySessionSecret)
+	delete(cfgs, store.KeyFreeModelPool)
+	store.MaskSensitiveConfigs(cfgs)
+	return cfgs
+}
+
+func (s *Server) revisionsSnapshot() map[string]int64 {
+	if s != nil && s.push != nil && s.push.Hub() != nil {
+		return s.push.Hub().RevisionsSnapshot()
+	}
+	return map[string]int64{}
+}
+
 // handleDashboardSlice serves targeted partial refreshes (workhub, ops, agents, or comma-separated kinds)
 // so SSE assistant_update bursts only query the changed SQLite tables instead of all 16 dashboard tables.
 func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +90,10 @@ func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
 			want["skills"] = true
 			want["memories"] = true
 			want["model_health"] = true
-		case "todos", "notes", "stash", "memories", "assets", "tasks", "bots", "skills", "notifications", "push_logs", "stats", "model_health":
+			want["models"] = true
+		case "model_pool":
+			want["models"] = true
+		case "todos", "notes", "stash", "memories", "assets", "tasks", "bots", "skills", "notifications", "push_logs", "stats", "model_health", "models", "configs":
 			want[strings.ToLower(strings.TrimSpace(part))] = true
 		default:
 			writeError(w, http.StatusBadRequest, "不支持的 dashboard slice: "+part)
@@ -86,6 +105,7 @@ func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
 		"ok":         true,
 		"uptime_sec": int64(time.Since(s.startedAt).Seconds()),
 		"server_now": store.NowShanghai(),
+		"revisions":  s.revisionsSnapshot(),
 	}
 	if want["todos"] {
 		todos, _ := s.store.ListTodos("all", "", 120)
@@ -142,8 +162,17 @@ func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
 		stats, _ := s.store.CountStats()
 		resp["stats"] = stats
 	}
-	if want["model_health"] && s.agent != nil {
+	if want["models"] {
+		resp["model_pool"] = store.MaskModelPool(s.store.GetModelPool())
+		if s.agent != nil {
+			resp["model_options"] = s.agent.ModelOptionsPayload()
+			resp["model_health"] = s.agent.GetModelHealth()
+		}
+	} else if want["model_health"] && s.agent != nil {
 		resp["model_health"] = s.agent.GetModelHealth()
+	}
+	if want["configs"] {
+		resp["configs"] = s.safeMaskedConfigs()
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -155,11 +184,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "读取任务状态失败")
 		return
 	}
-	cfgs, _ := s.store.GetAllConfigs()
-	delete(cfgs, store.KeyAdminPassHash)
-	delete(cfgs, store.KeySessionSecret)
-	delete(cfgs, store.KeyFreeModelPool)
-	store.MaskSensitiveConfigs(cfgs)
+	cfgs := s.safeMaskedConfigs()
 
 	logs, _ := s.store.ListPushLogs(40)
 	assets, _ := s.store.ListAssets()
@@ -175,8 +200,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	stashTags, _ := s.store.ListTopStashTags(14)
 	modelPool := store.MaskModelPool(s.store.GetModelPool())
 	var modelHealth any
+	var modelOptions any
 	if s.agent != nil {
 		modelHealth = s.agent.GetModelHealth()
+		modelOptions = s.agent.ModelOptionsPayload()
 	}
 
 	var templates any
@@ -199,6 +226,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"stash":           stashItems,
 		"stash_tags":      stashTags,
 		"model_pool":      modelPool,
+		"model_options":   modelOptions,
 		"model_health":    modelHealth,
 		"available_tools": agent.AvailableToolsPayload(),
 		"templates":       templates,
@@ -210,6 +238,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"asset_categories": s.store.ListAssetCategories(),
 		"push_logs":       logs,
 		"stats":           stats,
+		"revisions":       s.revisionsSnapshot(),
 		"uptime_sec":      int64(time.Since(s.startedAt).Seconds()),
 		"server_now":      store.NowShanghai(),
 	})

@@ -97,14 +97,28 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req store.Task
+	var req struct {
+		ID                string  `json:"id"`
+		Name              string  `json:"name"`
+		Type              string  `json:"type"`
+		BotID             *string `json:"bot_id"`
+		Description       *string `json:"description"`
+		CronExpr          string  `json:"cron_expr"`
+		RunAt             string  `json:"run_at"`
+		Model             *string `json:"model"`
+		AllowPaidFallback *bool   `json:"allow_paid_fallback"`
+		Enabled           *bool   `json:"enabled"`
+		Params            string  `json:"params"`
+	}
 	if !decodeJSON(w, r, 16384, &req) {
 		return
 	}
 
 	if req.Name != "" { existing.Name = strings.TrimSpace(req.Name) }
-	if req.BotID != "" { existing.BotID = strings.TrimSpace(req.BotID) }
-	if req.Description != "" { existing.Description = strings.TrimSpace(req.Description) }
+	if req.BotID != nil { existing.BotID = strings.TrimSpace(*req.BotID) }
+	if req.Description != nil { existing.Description = strings.TrimSpace(*req.Description) }
+	if req.Model != nil { existing.Model = strings.TrimSpace(*req.Model) }
+	if req.AllowPaidFallback != nil { existing.AllowPaidFallback = *req.AllowPaidFallback }
 	if req.RunAt != "" {
 		if _, err := scheduler.ParseRunAt(req.RunAt, nil); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -124,7 +138,9 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 			existing.RunAt = ""
 		}
 	}
-	existing.Enabled = req.Enabled
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
 	if req.Params != "" {
 		var js map[string]any
 		if json.Unmarshal([]byte(req.Params), &js) != nil {

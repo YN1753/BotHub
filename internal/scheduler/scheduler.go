@@ -16,18 +16,20 @@ import (
 )
 
 type TaskStatus struct {
-	ID          string           `json:"id"`
-	Name        string           `json:"name"`
-	Type        string           `json:"type"`
-	BotID       string           `json:"bot_id"`
-	Description string           `json:"description"`
-	CronExpr    string           `json:"cron_expr"`
-	RunAt       string           `json:"run_at,omitempty"`
-	Enabled     bool             `json:"enabled"`
-	Params      string           `json:"params"`
-	NextRunAt   string           `json:"next_run_at"`
-	IsRunning   bool             `json:"is_running"`
-	LastRun     *store.ModuleRun `json:"last_run,omitempty"`
+	ID                string           `json:"id"`
+	Name              string           `json:"name"`
+	Type              string           `json:"type"`
+	BotID             string           `json:"bot_id"`
+	Description       string           `json:"description"`
+	CronExpr          string           `json:"cron_expr"`
+	RunAt             string           `json:"run_at,omitempty"`
+	Model             string           `json:"model,omitempty"`
+	AllowPaidFallback bool             `json:"allow_paid_fallback"`
+	Enabled           bool             `json:"enabled"`
+	Params            string           `json:"params"`
+	NextRunAt         string           `json:"next_run_at"`
+	IsRunning         bool             `json:"is_running"`
+	LastRun           *store.ModuleRun `json:"last_run,omitempty"`
 }
 
 // Scheduler coordinates cron jobs, one-shot reminders, and manual task triggers.
@@ -277,6 +279,10 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 		}
 	}
 
+	taskCtx := store.WithPaidFallback(ctx, task.AllowPaidFallback)
+	if strings.TrimSpace(task.Model) != "" {
+		taskCtx = store.WithTaskModelOverride(taskCtx, task.Model)
+	}
 	start := time.Now()
 	func() {
 		defer func() {
@@ -285,7 +291,7 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 				log.Printf("[scheduler] %v", runErr)
 			}
 		}()
-		res, runErr = runner.RunWithTask(ctx, *task)
+		res, runErr = runner.RunWithTask(taskCtx, *task)
 	}()
 	durationMs := time.Since(start).Milliseconds()
 
@@ -419,18 +425,20 @@ func (s *Scheduler) Status() ([]TaskStatus, error) {
 		}
 
 		out = append(out, TaskStatus{
-			ID:          t.ID,
-			Name:        t.Name,
-			Type:        t.Type,
-			BotID:       t.BotID,
-			Description: t.Description,
-			CronExpr:    t.CronExpr,
-			RunAt:       t.RunAt,
-			Enabled:     t.Enabled,
-			Params:      t.Params,
-			NextRunAt:   nextRun,
-			IsRunning:   s.running[t.ID],
-			LastRun:     lastPtr,
+			ID:                t.ID,
+			Name:              t.Name,
+			Type:              t.Type,
+			BotID:             t.BotID,
+			Description:       t.Description,
+			CronExpr:          t.CronExpr,
+			RunAt:             t.RunAt,
+			Model:             t.Model,
+			AllowPaidFallback: t.AllowPaidFallback,
+			Enabled:           t.Enabled,
+			Params:            t.Params,
+			NextRunAt:         nextRun,
+			IsRunning:         s.running[t.ID],
+			LastRun:           lastPtr,
 		})
 	}
 	return out, nil

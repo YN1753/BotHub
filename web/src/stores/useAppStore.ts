@@ -13,6 +13,7 @@ import type {
   BotExecutionLog,
   BotThread,
   ModelHealthStats,
+  ModelOptionDTO,
   ModelPoolEntry,
   NotificationItem,
   PushLog,
@@ -116,6 +117,8 @@ const state = reactive({
   stash: (initialSnap?.stash || []) as StashItem[],
   stashTags: [] as StashTagCount[],
   modelPool: [] as ModelPoolEntry[],
+  modelOptions: [] as ModelOptionDTO[],
+  revisions: {} as Record<string, number>,
   availableTools: [] as AvailableToolMeta[],
   modelHealth: {} as Record<string, ModelHealthStats>,
   assets: (initialSnap?.assets || []) as Asset[],
@@ -339,48 +342,54 @@ export function useAppStore() {
   )
 
   const modelOptions = computed<SelectOption[]>(() => {
+    if (state.modelOptions.length > 0) {
+      return state.modelOptions.map((o) => ({
+        value: o.id,
+        label: o.label,
+      }))
+    }
     const enabledNodes = state.modelPool.filter((m) => m.enabled)
-    const readyCount = enabledNodes.filter((m) => Boolean(m.api_key && m.model)).length
-    const hasPrimaryKey = Boolean((state.configs.deepseek_api_key || '').trim())
-    const primaryModel = (state.configs.ai_model || '').trim()
-    const primaryOpt: SelectOption = {
-      value: 'primary',
-      label: hasPrimaryKey
-        ? `主力引擎 (${primaryModel || '待拉取模型'})`
-        : '主力引擎 (需先配置 Key)',
-    }
-    const baseOpts: SelectOption[] = []
-
-    if (!hasPrimaryKey && enabledNodes.length > 0) {
-      baseOpts.push({
-        value: 'free-pool',
-        label:
-          readyCount > 0
-            ? `免费模型池 (自动容灾 · ${readyCount} 已就绪)`
-            : '免费模型池 (待配 Key 与模型)',
-      })
-      baseOpts.push(primaryOpt)
-    } else {
-      baseOpts.push(primaryOpt)
-      if (enabledNodes.length > 0) {
-        baseOpts.push({
-          value: 'free-pool',
-          label:
-            readyCount > 0
-              ? `免费模型池 (自动容灾 · ${readyCount} 已就绪)`
-              : '免费模型池 (待配 Key 与模型)',
-        })
-      }
-    }
+    const freeOpts: SelectOption[] = []
+    const paidOpts: SelectOption[] = []
+    let freeReady = 0
+    let paidReady = 0
 
     for (const node of enabledNodes) {
-      const modelTag = node.model ? ` · ${node.model}` : ' · 待拉取模型'
-      baseOpts.push({
-        value: `pool:${node.id}`,
-        label: `${node.name}${modelTag} [${node.api_key && node.model ? '可用' : '待配置'}]`,
+      const tier = node.tier === 'paid' ? 'paid' : 'free'
+      const models = Array.from(
+        new Set([...(node.models || []), node.model || ''].map((x) => x.trim()).filter(Boolean))
+      )
+      const list = models.length > 0 ? models : ['']
+      list.forEach((m, idx) => {
+        const ready = Boolean(node.api_key && m)
+        if (ready) {
+          if (tier === 'paid') paidReady++
+          else freeReady++
+        }
+        const optId = idx === 0 || !m ? `pool:${node.id}` : `pool:${node.id}::${m}`
+        const tag = tier === 'paid' ? '[付费]' : '[免费]'
+        const opt = {
+          value: optId,
+          label: `${tag} ${node.name} · ${m || '待选择模型'} (${ready ? '可用' : '待配置'})`,
+        }
+        if (tier === 'paid') paidOpts.push(opt)
+        else freeOpts.push(opt)
       })
     }
-    return baseOpts
+
+    const out: SelectOption[] = [
+      {
+        value: 'auto:free',
+        label: freeReady > 0 ? `自动 · 免费模型池 (${freeReady} 可用)` : '自动 · 免费模型池 (未配置)',
+      },
+    ]
+    if (paidReady > 0 || paidOpts.length > 0) {
+      out.push({
+        value: 'auto:paid',
+        label: `自动 · 付费模型池 (${paidReady} 可用)`,
+      })
+    }
+    return [...out, ...freeOpts, ...paidOpts]
   })
 
   async function checkAuth() {
@@ -452,6 +461,8 @@ export function useAppStore() {
     'push_logs',
     'stats',
     'configs',
+    'models',
+    'model_pool',
     'model_health',
     'workhub',
     'ops',
@@ -508,6 +519,9 @@ export function useAppStore() {
           if (data.notifications !== undefined) state.notifications = data.notifications || []
           if (data.push_logs !== undefined) state.pushLogs = data.push_logs || []
           if (data.configs !== undefined && data.configs) state.configs = data.configs
+          if (data.model_pool !== undefined) state.modelPool = data.model_pool || []
+          if (data.model_options !== undefined) state.modelOptions = data.model_options || []
+          if (data.revisions !== undefined && data.revisions) state.revisions = { ...state.revisions, ...data.revisions }
           if (data.stats?.sent_pushes !== undefined) {
             state.stats.sent_pushes = Number(data.stats.sent_pushes) || 0
           }
@@ -579,6 +593,8 @@ export function useAppStore() {
         state.stash = data.stash || []
         state.stashTags = data.stash_tags || []
         state.modelPool = data.model_pool || []
+        state.modelOptions = data.model_options || []
+        if (data.revisions) state.revisions = data.revisions
         state.availableTools = data.available_tools || []
         state.modelHealth = data.model_health || {}
         state.assets = data.assets || []
@@ -863,9 +879,35 @@ export function useAppStore() {
       hadDisconnect = false
       state.sseConnected = true
       if (reconnected) {
-        loadDashboard(false)
+        void loadDashboard(false)
+        void refreshActiveBot()
       }
     }
+
+    es.addEventListener('connected', (ev: MessageEvent) => {
+      try {
+        const payload = JSON.parse(ev.data || '{}') as { revisions?: Record<string, number> }
+        if (!payload.revisions) return
+        const prev = state.revisions || {}
+        const changedKinds: string[] = []
+        const revKeys = ['bots', 'tasks', 'assets', 'todos', 'notes', 'stash', 'memories', 'skills', 'models', 'configs', 'notifications']
+        for (const k of revKeys) {
+          if ((payload.revisions[k] || 0) > (prev[k] || 0)) {
+            changedKinds.push(k)
+          }
+        }
+        const msgBumped = (payload.revisions.messages || 0) > (prev.messages || 0)
+        state.revisions = { ...prev, ...payload.revisions }
+        if (changedKinds.length > 0) {
+          void refreshWorkspaceSlices(changedKinds)
+        }
+        if (msgBumped && state.activeBotId) {
+          void refreshActiveBot()
+        }
+      } catch {
+        // ignore
+      }
+    })
 
     es.addEventListener('notification', (ev: MessageEvent) => {
       try {
@@ -942,13 +984,23 @@ export function useAppStore() {
 
     es.addEventListener('thread_updated', (ev: MessageEvent) => {
       try {
-        const payload = JSON.parse(ev.data || '{}') as { bot_id?: string; thread_id?: string; summary?: string }
-        if (payload.bot_id === state.activeBotId && payload.thread_id) {
-          const target = state.botThreads.find((t) => t.id === payload.thread_id)
-          if (target && payload.summary !== undefined) {
-            target.summary = payload.summary
+        const payload = JSON.parse(ev.data || '{}') as {
+          bot_id?: string
+          thread_id?: string
+          action?: string
+          summary?: string
+        }
+        if (payload.bot_id === state.activeBotId) {
+          if (payload.action && payload.action !== 'summarized') {
+            void refreshActiveBot()
+          } else if (payload.thread_id) {
+            const target = state.botThreads.find((t) => t.id === payload.thread_id)
+            if (target && payload.summary !== undefined) {
+              target.summary = payload.summary
+            }
           }
         }
+        void refreshWorkspaceSlices(['bots'])
       } catch {
         // ignore
       }

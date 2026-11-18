@@ -152,9 +152,8 @@ function handleSelectedModelChange(nextModel: string) {
   selectedModel.value = nextModel
   const b = bot.value
   if (b) {
-    const serverModel = nextModel === 'primary' ? 'deepseek-flash' : nextModel
-    b.model = serverModel
-    void BotHubApi.updateBot(b.id, { model: serverModel }).catch(() => {})
+    b.model = nextModel
+    void BotHubApi.updateBot(b.id, { model: nextModel }).catch(() => {})
   }
 }
 
@@ -238,7 +237,7 @@ watch(
   bot,
   (b) => {
     if (!b) return
-    const normModel = !b.model || b.model === 'deepseek-flash' ? 'primary' : b.model
+    const normModel = !b.model || b.model === 'free-pool' ? 'auto:free' : b.model
     selectedModel.value = normModel
     enableThinking.value = b.enable_thinking !== false
     announcementDismissed.value = false

@@ -320,7 +320,7 @@ func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
 	// Verify primary cooldown deprioritizes primary behind healthy pool fallback while retaining primary at tail
 	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "sk-primary-key")
 	eng.health.recordFailure("primary", "HTTP 429 rate limited", true)
-	targets, rErr := eng.ResolveChatTargets("")
+	targets, rErr := eng.ResolveChatTargets("primary")
 	if rErr != nil || len(targets) < 2 {
 		t.Fatalf("ResolveChatTargets primary fallback failed: err=%v targets=%+v", rErr, targets)
 	}
@@ -337,5 +337,119 @@ func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
 	}
 	if !foundModelUsed {
 		t.Fatalf("expected persisted model_used=Qwen/Qwen2.5-7B-Instruct in agent_messages, got %+v", msgs)
+	}
+}
+
+func TestDualPoolMultiModelAndPerTaskPaidGuard(t *testing.T) {
+	tmpDir := t.TempDir()
+	st, err := store.Open(filepath.Join(tmpDir, "dual_pool.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	if err := st.SaveModelPool([]store.ModelPoolEntry{
+		{
+			ID:       "free_vendor",
+			Name:     "免费聚合",
+			Tier:     store.ModelTierFree,
+			Provider: "openai",
+			BaseURL:  "https://free.example.com/v1",
+			APIKey:   "sk-free-key",
+			Models:   []string{"free-m1", "free-m2"},
+			Enabled:  true,
+			Priority: 10,
+		},
+		{
+			ID:       "paid_vendor",
+			Name:     "付费主力",
+			Tier:     store.ModelTierPaid,
+			Provider: "deepseek",
+			BaseURL:  "https://paid.example.com/v1",
+			APIKey:   "sk-paid-key",
+			Models:   []string{"paid-m1", "paid-m2"},
+			Enabled:  true,
+			Priority: 10,
+		},
+	}); err != nil {
+		t.Fatalf("SaveModelPool failed: %v", err)
+	}
+
+	eng := NewEngine(st, &fakeTaskController{st: st})
+
+	opts := eng.ModelOptionsPayload()
+	optIDs := make(map[string]store.ModelPoolEntry)
+	seenIDs := make(map[string]string)
+	for _, o := range opts {
+		seenIDs[o.ID] = o.Tier
+	}
+	_ = optIDs
+	for _, want := range []string{"auto:free", "auto:paid", "pool:free_vendor", "pool:free_vendor::free-m2", "pool:paid_vendor", "pool:paid_vendor::paid-m2"} {
+		if _, ok := seenIDs[want]; !ok {
+			t.Fatalf("expected ModelOptionsPayload to contain %q, got %+v", want, opts)
+		}
+	}
+
+	// 1. Per-task guard OFF (false): auto:free MUST NOT include any Paid Pool target
+	ctxBlocked := store.WithPaidFallback(context.Background(), false)
+	targets, err := eng.ResolveChatTargetsWithContext(ctxBlocked, "auto:free", false)
+	if err != nil || len(targets) != 2 {
+		t.Fatalf("expected strictly 2 free targets when allow_paid_fallback=false, got err=%v targets=%+v", err, targets)
+	}
+	for _, tg := range targets {
+		if tg.Model == "paid-m1" || tg.Model == "paid-m2" {
+			t.Fatalf("paid model leaked into auto:free with guard off: %+v", tg)
+		}
+	}
+
+	// 2. Task guard OFF also blocks auto:paid / pinned paid model if task explicitly forbids paid
+	if _, err := eng.ResolveChatTargetsWithContext(ctxBlocked, "auto:paid", false); err == nil {
+		t.Fatalf("expected task allow_paid_fallback=false to block auto:paid")
+	}
+	if _, err := eng.ResolveChatTargetsWithContext(ctxBlocked, "pool:paid_vendor::paid-m2", false); err == nil {
+		t.Fatalf("expected task allow_paid_fallback=false to block pinned paid node")
+	}
+
+	// 3. Task guard ON (true): auto:free includes Free models first, Paid models as tail fallback
+	ctxAllowed := store.WithPaidFallback(context.Background(), true)
+	targetsWithFallback, err := eng.ResolveChatTargetsWithContext(ctxAllowed, "auto:free", true)
+	if err != nil || len(targetsWithFallback) != 4 {
+		t.Fatalf("expected 4 targets (2 free + 2 paid fallback), got err=%v targets=%+v", err, targetsWithFallback)
+	}
+	if targetsWithFallback[0].Model != "free-m1" || targetsWithFallback[2].Model != "paid-m1" {
+		t.Fatalf("unexpected priority ordering in dual pool fallback: %+v", targetsWithFallback)
+	}
+
+	// 4. Disable free vendor & verify allow_paid_fallback=false fails loudly instead of silently billing
+	_ = st.SaveModelPool([]store.ModelPoolEntry{
+		{
+			ID:       "free_vendor",
+			Name:     "免费聚合",
+			Tier:     store.ModelTierFree,
+			Provider: "openai",
+			BaseURL:  "https://free.example.com/v1",
+			APIKey:   "sk-free-key",
+			Models:   []string{"free-m1"},
+			Enabled:  false,
+			Priority: 10,
+		},
+		{
+			ID:       "paid_vendor",
+			Name:     "付费主力",
+			Tier:     store.ModelTierPaid,
+			Provider: "deepseek",
+			BaseURL:  "https://paid.example.com/v1",
+			APIKey:   "sk-paid-key",
+			Models:   []string{"paid-m1"},
+			Enabled:  true,
+			Priority: 10,
+		},
+	})
+	if _, err := eng.ResolveChatTargetsWithContext(ctxBlocked, "auto:free", false); err == nil {
+		t.Fatalf("expected error when Free Pool is empty and allow_paid_fallback=false")
+	}
+	fallbackOnlyPaid, err := eng.ResolveChatTargetsWithContext(ctxAllowed, "auto:free", true)
+	if err != nil || len(fallbackOnlyPaid) != 1 || fallbackOnlyPaid[0].Model != "paid-m1" {
+		t.Fatalf("expected fallback to paid-m1 when allow_paid_fallback=true, got err=%v targets=%+v", err, fallbackOnlyPaid)
 	}
 }

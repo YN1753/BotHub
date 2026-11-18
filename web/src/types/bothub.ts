@@ -10,6 +10,7 @@ export interface Bot {
   avatar_style: string
   system_prompt: string
   model: string
+  allow_paid_fallback?: boolean
   enable_thinking: boolean
   allowed_tools: string
   bot_mode?: BotMode | string
@@ -152,6 +153,8 @@ export interface Task {
   name: string
   type: string
   bot_id?: string
+  model?: string
+  allow_paid_fallback?: boolean
   description: string
   cron_expr: string
   run_at?: string
@@ -292,13 +295,24 @@ export interface UpstreamModelCheck {
 export interface ModelPoolEntry {
   id: string
   name: string
+  tier?: 'free' | 'paid' | string
   provider: string
   base_url: string
   api_key: string
   model: string
+  models?: string[]
   enabled: boolean
   priority: number
   note: string
+}
+
+export interface ModelOptionDTO {
+  id: string
+  label: string
+  tier: 'auto' | 'free' | 'paid' | string
+  provider: string
+  model: string
+  available: boolean
 }
 
 export interface ModelHealthStats {
@@ -324,6 +338,8 @@ export interface DashboardPayload {
   stash?: StashItem[]
   stash_tags?: StashTagCount[]
   model_pool?: ModelPoolEntry[]
+  model_options?: ModelOptionDTO[]
+  revisions?: Record<string, number>
   available_tools?: AvailableToolMeta[]
   model_health?: Record<string, ModelHealthStats>
   templates: TaskTemplate[]

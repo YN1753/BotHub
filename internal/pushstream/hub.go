@@ -1,6 +1,7 @@
 package pushstream
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -19,6 +20,23 @@ type Hub struct {
 	done          chan struct{}
 	closed        bool
 	droppedEvents atomic.Uint64
+	revMu         sync.RWMutex
+	revs          map[string]int64
+}
+
+var defaultRevisionDomains = []string{
+	"bots",
+	"messages",
+	"assets",
+	"tasks",
+	"todos",
+	"notes",
+	"stash",
+	"memories",
+	"skills",
+	"models",
+	"configs",
+	"notifications",
 }
 
 // DroppedCount returns the total number of SSE events dropped due to slow consumers.
@@ -27,9 +45,90 @@ func (h *Hub) DroppedCount() uint64 {
 }
 
 func NewHub() *Hub {
+	revs := make(map[string]int64, len(defaultRevisionDomains))
+	for _, d := range defaultRevisionDomains {
+		revs[d] = 1
+	}
 	return &Hub{
 		eventClients: make(map[chan StreamEvent]func()),
 		done:         make(chan struct{}),
+		revs:         revs,
+	}
+}
+
+// BumpRevision increments the monotonic sync counter for one or more workspace domains.
+func (h *Hub) BumpRevision(domains ...string) {
+	if h == nil || len(domains) == 0 {
+		return
+	}
+	h.revMu.Lock()
+	defer h.revMu.Unlock()
+	if h.revs == nil {
+		h.revs = make(map[string]int64, len(defaultRevisionDomains))
+	}
+	for _, raw := range domains {
+		d := strings.ToLower(strings.TrimSpace(raw))
+		if d != "" {
+			h.revs[d]++
+		}
+	}
+}
+
+// RevisionsSnapshot returns a copy of all domain revision counters for cross-client delta sync.
+func (h *Hub) RevisionsSnapshot() map[string]int64 {
+	out := make(map[string]int64, len(defaultRevisionDomains))
+	if h == nil {
+		for _, d := range defaultRevisionDomains {
+			out[d] = 1
+		}
+		return out
+	}
+	h.revMu.RLock()
+	defer h.revMu.RUnlock()
+	for k, v := range h.revs {
+		out[k] = v
+	}
+	return out
+}
+
+func (h *Hub) recordRevisionForEvent(event string, data any) {
+	switch event {
+	case "notification":
+		h.BumpRevision("notifications")
+	case "bot_message":
+		h.BumpRevision("messages", "bots")
+	case "bot_state":
+		h.BumpRevision("bots")
+	case "thread_updated":
+		h.BumpRevision("bots", "messages")
+	case "stash_update":
+		h.BumpRevision("stash")
+	case "assistant_update":
+		m, ok := data.(map[string]any)
+		if !ok {
+			return
+		}
+		rawKind, _ := m["kind"].(string)
+		for _, part := range strings.Split(rawKind, ",") {
+			switch strings.ToLower(strings.TrimSpace(part)) {
+			case "workhub":
+				h.BumpRevision("todos", "notes", "stash")
+			case "ops":
+				h.BumpRevision("tasks", "assets")
+			case "agents":
+				h.BumpRevision("bots", "skills", "memories")
+			case "asset_categories", "assets":
+				h.BumpRevision("assets")
+			case "model_health", "model_pool", "models":
+				h.BumpRevision("models")
+			case "backup_restored", "dashboard":
+				h.BumpRevision(defaultRevisionDomains...)
+			case "notifications_cleared", "notifications":
+				h.BumpRevision("notifications")
+			case "todos", "notes", "stash", "memories", "tasks", "bots", "skills", "configs":
+				h.BumpRevision(part)
+			}
+		}
 	}
 }
 
@@ -107,6 +206,7 @@ func (h *Hub) sendEventNonBlocking(ch chan StreamEvent, ev StreamEvent) {
 // PublishEvent fans out any typed SSE event to all connected SubscribeEvents listeners.
 // When a slow subscriber's buffer is full, it evicts the oldest queued event so the latest state wins.
 func (h *Hub) PublishEvent(event string, data any) {
+	h.recordRevisionForEvent(event, data)
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	if h.closed {

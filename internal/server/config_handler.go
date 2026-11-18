@@ -39,6 +39,7 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.publishAssistantEvent("configs,models")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

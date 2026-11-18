@@ -92,6 +92,7 @@ func (s *Server) handleV2Events(w http.ResponseWriter, r *http.Request) {
 		"ok":           true,
 		"latest_id":    latestID,
 		"unread_count": s.store.CountUnreadNotifications(),
+		"revisions":    s.revisionsSnapshot(),
 		"server_now":   store.NowShanghai(),
 	})
 	_, _ = fmt.Fprintf(w, "event: connected\ndata: %s\n\n", string(initData))
@@ -520,18 +521,27 @@ func (s *Server) handleV2AppBootstrap(w http.ResponseWriter, r *http.Request) {
 	notifications, _ := s.store.ListNotifications(0, 40, false)
 	assets, _ := s.store.ListAssets()
 	stash, _ := s.store.SearchStashItemsWithKind("", "all", "", "", 60)
+	var modelOptions any
+	if s.agent != nil {
+		modelOptions = s.agent.ModelOptionsPayload()
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":            true,
-		"version":       s.version,
-		"mirror_path":   "/api/v2/app/apk",
-		"apk_url":       "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk",
-		"bots":          bots,
-		"notifications": notifications,
-		"stash":         stash,
-		"assets":        assets,
-		"tasks":         tasks,
-		"server_now":    store.NowShanghai(),
+		"ok":               true,
+		"version":          s.version,
+		"mirror_path":      "/api/v2/app/apk",
+		"apk_url":          "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk",
+		"bots":             bots,
+		"notifications":    notifications,
+		"stash":            stash,
+		"assets":           assets,
+		"asset_categories": s.store.ListAssetCategories(),
+		"tasks":            tasks,
+		"model_pool":       store.MaskModelPool(s.store.GetModelPool()),
+		"model_options":    modelOptions,
+		"configs":          s.safeMaskedConfigs(),
+		"revisions":        s.revisionsSnapshot(),
+		"server_now":       store.NowShanghai(),
 	})
 }
 

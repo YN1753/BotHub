@@ -88,12 +88,13 @@ object JsonMappers {
     }
 
     fun parseBot(b: JSONObject): BotItem {
+        val rawModel = b.optString("model", "").ifBlank { "auto:free" }
         return BotItem(
             id = b.optString("id"),
             name = b.optString("name"),
             roleTitle = b.optString("role_title"),
             avatarStyle = b.optString("avatar_style", "butler:gold"),
-            model = b.optString("model", "deepseek-flash"),
+            model = rawModel,
             enableThinking = b.optBoolean("enable_thinking", true),
             state = b.optString("state", "idle"),
             unreadCount = b.optInt("unread_count", 0),
@@ -107,7 +108,8 @@ object JsonMappers {
             systemPrompt = b.optString("system_prompt", ""),
             groupMode = b.optString("group_mode", "smart"),
             announcement = b.optString("announcement", ""),
-            updatedAt = b.optString("updated_at", "")
+            updatedAt = b.optString("updated_at", ""),
+            allowPaidFallback = b.optBoolean("allow_paid_fallback", false)
         )
     }
 
@@ -147,6 +149,7 @@ object JsonMappers {
                     .put("group_mode", b.groupMode)
                     .put("announcement", b.announcement)
                     .put("updated_at", b.updatedAt)
+                    .put("allow_paid_fallback", b.allowPaidFallback)
             )
         }
         return arr.toString()
@@ -280,13 +283,68 @@ object JsonMappers {
         }
     }
 
-    fun parseDashboard(obj: JSONObject): DashboardSnapshot {
-        val stats = obj.optJSONObject("stats") ?: JSONObject()
-        val assetsArr = obj.optJSONArray("assets") ?: JSONArray()
-        val tasksArr = obj.optJSONArray("tasks") ?: JSONArray()
-        val assetCategories = parseAssetCategories(obj.optJSONArray("asset_categories"))
+    fun parseModelOptions(arr: JSONArray?): List<ModelOptionItem> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val id = o.optString("id", "").trim()
+                if (id.isNotEmpty()) {
+                    add(
+                        ModelOptionItem(
+                            id = id,
+                            label = o.optString("label", id).ifBlank { id },
+                            tier = o.optString("tier", "free").ifBlank { "free" },
+                            provider = o.optString("provider", ""),
+                            model = o.optString("model", ""),
+                            available = o.optBoolean("available", true)
+                        )
+                    )
+                }
+            }
+        }
+    }
 
-        val assets = buildList {
+    fun parseRevisions(obj: JSONObject?): Map<String, Long> {
+        if (obj == null) return emptyMap()
+        return buildMap {
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val v = obj.optLong(k, -1L)
+                if (k.isNotBlank() && v >= 0L) {
+                    put(k, v)
+                }
+            }
+        }
+    }
+
+    fun parseTasks(tasksArr: JSONArray?): List<TaskItem> {
+        if (tasksArr == null) return emptyList()
+        return buildList {
+            for (i in 0 until tasksArr.length()) {
+                val t = tasksArr.optJSONObject(i) ?: continue
+                val lastRun = t.optJSONObject("last_run")
+                add(
+                    TaskItem(
+                        id = t.optString("id"),
+                        name = t.optString("name"),
+                        type = t.optString("type"),
+                        cronExpr = t.optString("cron_expr"),
+                        enabled = t.optBoolean("enabled", false),
+                        nextRunAt = t.optString("next_run_at", "--"),
+                        lastSummary = lastRun?.optString("summary")?.ifEmpty { "等待执行" } ?: "等待执行",
+                        model = t.optString("model", ""),
+                        allowPaidFallback = t.optBoolean("allow_paid_fallback", false)
+                    )
+                )
+            }
+        }
+    }
+
+    fun parseAssets(assetsArr: JSONArray?): List<AssetItem> {
+        if (assetsArr == null) return emptyList()
+        return buildList {
             for (i in 0 until assetsArr.length()) {
                 val a = assetsArr.optJSONObject(i) ?: continue
                 add(
@@ -304,24 +362,15 @@ object JsonMappers {
                 )
             }
         }
+    }
 
-        val tasks = buildList {
-            for (i in 0 until tasksArr.length()) {
-                val t = tasksArr.optJSONObject(i) ?: continue
-                val lastRun = t.optJSONObject("last_run")
-                add(
-                    TaskItem(
-                        id = t.optString("id"),
-                        name = t.optString("name"),
-                        type = t.optString("type"),
-                        cronExpr = t.optString("cron_expr"),
-                        enabled = t.optBoolean("enabled", false),
-                        nextRunAt = t.optString("next_run_at", "--"),
-                        lastSummary = lastRun?.optString("summary")?.ifEmpty { "等待执行" } ?: "等待执行"
-                    )
-                )
-            }
-        }
+    fun parseDashboard(obj: JSONObject): DashboardSnapshot {
+        val stats = obj.optJSONObject("stats") ?: JSONObject()
+        val assetCategories = parseAssetCategories(obj.optJSONArray("asset_categories"))
+        val assets = parseAssets(obj.optJSONArray("assets"))
+        val tasks = parseTasks(obj.optJSONArray("tasks"))
+        val modelOptions = parseModelOptions(obj.optJSONArray("model_options"))
+        val revisions = parseRevisions(obj.optJSONObject("revisions"))
 
         return DashboardSnapshot(
             version = obj.optString("version", "v2.0.0"),
@@ -331,7 +380,9 @@ object JsonMappers {
             unreadNotifications = stats.optInt("unread_notifications", 0),
             assets = assets,
             tasks = tasks,
-            assetCategories = assetCategories
+            assetCategories = assetCategories,
+            modelOptions = modelOptions,
+            revisions = revisions
         )
     }
 
@@ -361,6 +412,8 @@ object JsonMappers {
                     .put("cron_expr", t.cronExpr)
                     .put("enabled", t.enabled)
                     .put("next_run_at", t.nextRunAt)
+                    .put("model", t.model)
+                    .put("allow_paid_fallback", t.allowPaidFallback)
                     .put("last_run", JSONObject().put("summary", t.lastSummary))
             )
         }
@@ -373,10 +426,23 @@ object JsonMappers {
                     .put("icon", c.icon)
             )
         }
+        val modelOptArr = JSONArray()
+        snap.modelOptions.forEach { m ->
+            modelOptArr.put(
+                JSONObject()
+                    .put("id", m.id)
+                    .put("label", m.label)
+                    .put("tier", m.tier)
+                    .put("provider", m.provider)
+                    .put("model", m.model)
+                    .put("available", m.available)
+            )
+        }
         return JSONObject()
             .put("version", snap.version)
             .put("assets", assetsArr)
             .put("asset_categories", catArr)
+            .put("model_options", modelOptArr)
             .put("tasks", tasksArr)
             .put(
                 "stats",

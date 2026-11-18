@@ -71,6 +71,7 @@ class RealtimePushService : Service() {
                     if (prefs.lastEventId == 0L && serverLatest > 0L) {
                         prefs.advanceLastEventId(serverLatest)
                     }
+                    _liveEvents.tryEmit(event to obj)
                 }
                 "notification" -> {
                     val item = JsonMappers.parseNotification(obj)
@@ -78,7 +79,7 @@ class RealtimePushService : Service() {
                     NotificationHelper.showNotification(applicationContext, item)
                     _liveEvents.tryEmit(event to obj)
                 }
-                "bot_message", "bot_state", "stash_update", "assistant_update" -> {
+                "bot_message", "bot_state", "stash_update", "assistant_update", "thread_updated" -> {
                     _liveEvents.tryEmit(event to obj)
                 }
             }

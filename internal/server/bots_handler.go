@@ -165,15 +165,16 @@ func (s *Server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name           string  `json:"name"`
-		RoleTitle      string  `json:"role_title"`
-		AvatarStyle    string  `json:"avatar_style"`
-		SystemPrompt   string  `json:"system_prompt"`
-		BotMode        *string `json:"bot_mode"`
-		MemoryPolicy   *string `json:"memory_policy"`
-		Traits         *string `json:"traits"`
-		Model          string  `json:"model"`
-		EnableThinking *bool   `json:"enable_thinking"`
+		Name              string  `json:"name"`
+		RoleTitle         string  `json:"role_title"`
+		AvatarStyle       string  `json:"avatar_style"`
+		SystemPrompt      string  `json:"system_prompt"`
+		BotMode           *string `json:"bot_mode"`
+		MemoryPolicy      *string `json:"memory_policy"`
+		Traits            *string `json:"traits"`
+		Model             string  `json:"model"`
+		AllowPaidFallback *bool   `json:"allow_paid_fallback"`
+		EnableThinking    *bool   `json:"enable_thinking"`
 		AllowedTools   string  `json:"allowed_tools"`
 		SkillIDs       *string `json:"skill_ids"`
 		MemberIDs      string  `json:"member_ids"`
@@ -240,6 +241,9 @@ func (s *Server) handleUpdateBot(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.EnableThinking != nil {
 		existing.EnableThinking = *req.EnableThinking
+	}
+	if req.AllowPaidFallback != nil {
+		existing.AllowPaidFallback = *req.AllowPaidFallback
 	}
 	if req.IsPinned != nil {
 		existing.IsPinned = *req.IsPinned

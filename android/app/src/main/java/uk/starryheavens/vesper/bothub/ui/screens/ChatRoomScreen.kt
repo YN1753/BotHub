@@ -96,6 +96,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
+import uk.starryheavens.vesper.bothub.data.ModelOptionItem
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
 import uk.starryheavens.vesper.bothub.ui.components.FloatingGlassPopover
@@ -111,6 +112,8 @@ import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.sheets.ModelPickerSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.resolveModelOptionDisplayName
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 private data class PlusActionTile(
@@ -127,6 +130,7 @@ fun ChatRoomScreen(
     allBots: List<BotItem>,
     otherUnreadCount: Int,
     activeModel: String,
+    modelOptions: List<ModelOptionItem> = emptyList(),
     enableThinking: Boolean,
     messages: List<ChatTurnUi>,
     inputText: String,
@@ -152,6 +156,7 @@ fun ChatRoomScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var showPlusDrawer by remember { mutableStateOf(false) }
+    var showModelPickerSheet by remember { mutableStateOf(false) }
     var composerFocused by remember { mutableStateOf(false) }
     var quoteTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     var forwardPayload by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -1449,7 +1454,7 @@ fun ChatRoomScreen(
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                val isPool = activeModel == "free-pool"
+                val modelShortLabel = resolveModelOptionDisplayName(activeModel, modelOptions)
                 val tools = listOf(
                     PlusActionTile(
                         label = if (enableThinking) "思考:开" else "思考:关",
@@ -1459,11 +1464,11 @@ fun ChatRoomScreen(
                         onThinkingChange(!enableThinking)
                     },
                     PlusActionTile(
-                        label = if (isPool) "免费模型" else "主力模型",
+                        label = modelShortLabel,
                         icon = Icons.Default.AutoAwesome,
                         accent = if (theme.isLight) Color(0xFF9333EA) else Color(0xFFC084FC)
                     ) {
-                        onModelChange(if (isPool) "deepseek-flash" else "free-pool")
+                        showModelPickerSheet = true
                     },
                     PlusActionTile(
                         label = if (isGroup) "群成员" else "拉人建群",
@@ -1504,6 +1509,18 @@ fun ChatRoomScreen(
                 }
             }
         }
+    }
+
+    if (showModelPickerSheet) {
+        ModelPickerSheet(
+            activeModel = activeModel,
+            modelOptions = modelOptions,
+            onSelect = { chosen ->
+                showModelPickerSheet = false
+                onModelChange(chosen)
+            },
+            onDismiss = { showModelPickerSheet = false }
+        )
     }
 
     forwardPayload?.let { (senderName, bodyContent) ->

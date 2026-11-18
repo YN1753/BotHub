@@ -154,6 +154,8 @@ func (e *Engine) DistillStashAsync(id string) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
+		// Background unattended stash distillation must never burn paid quota.
+		ctx = store.WithPaidFallback(ctx, false)
 		_ = e.DistillStashNow(ctx, stashID)
 	}(strings.TrimSpace(id))
 }

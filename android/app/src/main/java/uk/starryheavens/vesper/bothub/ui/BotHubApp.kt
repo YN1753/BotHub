@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +27,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
@@ -89,6 +93,19 @@ fun BotHubApp(
     LaunchedEffect(viewModel) {
         viewModel.uiEvents.collect { msg ->
             snackbarHostState.showSnackbar(msg)
+        }
+    }
+
+    DisposableEffect(context, viewModel) {
+        val owner = context as? LifecycleOwner
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.onAppForegrounded()
+            }
+        }
+        owner?.lifecycle?.addObserver(observer)
+        onDispose {
+            owner?.lifecycle?.removeObserver(observer)
         }
     }
 
@@ -172,6 +189,7 @@ fun BotHubApp(
                             allBots = viewModel.bots,
                             otherUnreadCount = otherUnreadWhileInChat,
                             activeModel = viewModel.activeModel,
+                            modelOptions = viewModel.modelOptions,
                             enableThinking = viewModel.enableThinking,
                             messages = viewModel.messages,
                             inputText = viewModel.inputText,
@@ -364,7 +382,7 @@ fun BotHubApp(
         val freshBot = viewModel.bots.find { it.id == targetBot.id } ?: targetBot
         EditBotSheet(
             bot = freshBot,
-            onSave = { name, roleTitle, avatarStyle, traits, systemPrompt, groupMode, announcement ->
+            onSave = { name, roleTitle, avatarStyle, traits, systemPrompt, groupMode, announcement, allowPaid ->
                 viewModel.saveBotEdits(
                     botId = freshBot.id,
                     name = name,
@@ -373,7 +391,8 @@ fun BotHubApp(
                     traits = traits,
                     systemPrompt = systemPrompt,
                     groupMode = groupMode,
-                    announcement = announcement
+                    announcement = announcement,
+                    allowPaidFallback = allowPaid
                 )
                 editingBot = null
             },
@@ -386,9 +405,11 @@ fun BotHubApp(
             activeBot = activeBot,
             allBots = viewModel.bots,
             activeModel = viewModel.activeModel,
+            modelOptions = viewModel.modelOptions,
             enableThinking = viewModel.enableThinking,
             onModelChange = viewModel::updateModel,
             onThinkingChange = viewModel::updateThinking,
+            onAllowPaidFallbackChange = viewModel::updateAllowPaidFallback,
             onTogglePin = {
                 if (activeBot != null) viewModel.togglePinBot(activeBot)
             },
@@ -411,7 +432,17 @@ fun BotHubApp(
 
     if (viewModel.showCreateFriendSheet) {
         CreateFriendSheet(
-            onSubmit = viewModel::createNewFriend,
+            onSubmit = { name, roleTitle, avatarStyle, botMode, traits, systemPrompt, allowPaid ->
+                viewModel.createNewFriend(
+                    name = name,
+                    roleTitle = roleTitle,
+                    avatarStyle = avatarStyle,
+                    botMode = botMode,
+                    traits = traits,
+                    systemPrompt = systemPrompt,
+                    allowPaidFallback = allowPaid
+                )
+            },
             onDismiss = viewModel::dismissCreateFriend
         )
     }

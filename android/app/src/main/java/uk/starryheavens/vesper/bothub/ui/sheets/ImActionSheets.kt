@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.BotItem
+import uk.starryheavens.vesper.bothub.data.ModelOptionItem
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
@@ -327,7 +328,8 @@ fun EditBotSheet(
         traits: String,
         systemPrompt: String,
         groupMode: String,
-        announcement: String
+        announcement: String,
+        allowPaidFallback: Boolean
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -340,6 +342,7 @@ fun EditBotSheet(
     var systemPrompt by remember(bot.id) { mutableStateOf(bot.systemPrompt) }
     var groupMode by remember(bot.id) { mutableStateOf(bot.groupMode.ifBlank { "smart" }) }
     var announcement by remember(bot.id) { mutableStateOf(bot.announcement) }
+    var allowPaidFallback by remember(bot.id) { mutableStateOf(bot.allowPaidFallback) }
 
     val groupModes = listOf(
         "smart" to "智能协同",
@@ -444,6 +447,33 @@ fun EditBotSheet(
                 )
             }
 
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { allowPaidFallback = !allowPaidFallback }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text(
+                        text = "允许该 Bot 付费兜底",
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = theme.textPrimary
+                    )
+                    Text(
+                        text = "关闭时严格只走免费模型池",
+                        fontSize = 11.5.sp,
+                        color = theme.textSecondary
+                    )
+                }
+                TactileToggle(
+                    checked = allowPaidFallback,
+                    onCheckedChange = { allowPaidFallback = it }
+                )
+            }
+
             TactilePrimaryButton(
                 text = "保存",
                 enabled = name.isNotBlank(),
@@ -457,7 +487,8 @@ fun EditBotSheet(
                             traits.trim(),
                             systemPrompt.trim(),
                             groupMode,
-                            announcement.trim()
+                            announcement.trim(),
+                            allowPaidFallback
                         )
                     }
                 },
@@ -552,7 +583,8 @@ fun CreateFriendSheet(
         avatarStyle: String,
         botMode: String,
         traits: String,
-        systemPrompt: String
+        systemPrompt: String,
+        allowPaidFallback: Boolean
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -570,6 +602,7 @@ fun CreateFriendSheet(
     var roleTitle by remember { mutableStateOf("") }
     var traits by remember { mutableStateOf("") }
     var systemPrompt by remember { mutableStateOf("") }
+    var allowPaidFallback by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -654,6 +687,33 @@ fun CreateFriendSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { allowPaidFallback = !allowPaidFallback }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                    Text(
+                        text = "允许该 Bot 付费兜底",
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = theme.textPrimary
+                    )
+                    Text(
+                        text = "默认关闭（仅免费模型池）",
+                        fontSize = 11.5.sp,
+                        color = theme.textSecondary
+                    )
+                }
+                TactileToggle(
+                    checked = allowPaidFallback,
+                    onCheckedChange = { allowPaidFallback = it }
+                )
+            }
+
             TactilePrimaryButton(
                 text = "完成",
                 enabled = name.isNotBlank(),
@@ -670,7 +730,8 @@ fun CreateFriendSheet(
                             selectedAvatar,
                             selectedMode,
                             traits.trim(),
-                            prompt
+                            prompt,
+                            allowPaidFallback
                         )
                     }
                 },
@@ -914,9 +975,11 @@ fun ChatInfoSheet(
     activeBot: BotItem?,
     allBots: List<BotItem>,
     activeModel: String,
+    modelOptions: List<ModelOptionItem> = emptyList(),
     enableThinking: Boolean,
     onModelChange: (String) -> Unit,
     onThinkingChange: (Boolean) -> Unit,
+    onAllowPaidFallbackChange: (Boolean) -> Unit = {},
     onTogglePin: () -> Unit,
     onInviteToGroup: () -> Unit,
     onOpenMemberProfile: (BotItem) -> Unit,
@@ -926,6 +989,7 @@ fun ChatInfoSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showModelPicker by remember { mutableStateOf(false) }
     val isGroup = activeBot?.isGroup == true
     val members = remember(activeBot, allBots) {
         when {
@@ -1116,13 +1180,11 @@ fun ChatInfoSheet(
                         modifier = Modifier.padding(horizontal = 15.dp)
                     )
 
-                    val isPool = activeModel == "free-pool"
+                    val currentModelLabel = resolveModelOptionDisplayName(activeModel, modelOptions)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                onModelChange(if (isPool) "deepseek-flash" else "free-pool")
-                            }
+                            .clickable { showModelPicker = true }
                             .padding(horizontal = 15.dp, vertical = 13.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
@@ -1130,20 +1192,51 @@ fun ChatInfoSheet(
                         Text("模型切换", fontSize = 14.sp, color = theme.textPrimary)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            modifier = Modifier.weight(1f, fill = false).padding(start = 12.dp)
                         ) {
                             Text(
-                                text = if (isPool) "免费模型" else "主力模型",
+                                text = currentModelLabel,
                                 fontSize = 12.5.sp,
                                 color = if (theme.isLight) theme.accentDeep else theme.accentLight,
                                 maxLines = 1,
-                                softWrap = false
+                                overflow = TextOverflow.Ellipsis
                             )
                             Icon(
                                 imageVector = Icons.Default.KeyboardArrowRight,
                                 contentDescription = null,
                                 tint = theme.accent,
                                 modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    if (activeBot != null) {
+                        HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = theme.divider,
+                            modifier = Modifier.padding(horizontal = 15.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onAllowPaidFallbackChange(!activeBot.allowPaidFallback) }
+                                .padding(horizontal = 15.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text("允许付费兜底", fontSize = 14.sp, color = theme.textPrimary)
+                                Text(
+                                    text = "关闭时严格限用免费模型池",
+                                    fontSize = 11.sp,
+                                    color = theme.textSecondary
+                                )
+                            }
+                            TactileToggle(
+                                checked = activeBot.allowPaidFallback,
+                                onCheckedChange = onAllowPaidFallbackChange
                             )
                         }
                     }
@@ -1195,6 +1288,18 @@ fun ChatInfoSheet(
 
             Spacer(modifier = Modifier.height(8.dp))
         }
+    }
+
+    if (showModelPicker) {
+        ModelPickerSheet(
+            activeModel = activeModel,
+            modelOptions = modelOptions,
+            onSelect = { chosen ->
+                showModelPicker = false
+                onModelChange(chosen)
+            },
+            onDismiss = { showModelPicker = false }
+        )
     }
 }
 
@@ -1347,6 +1452,176 @@ fun ManageGroupMembersSheet(
                     }
                 }
             }
+        }
+    }
+}
+
+internal fun resolveModelOptionDisplayName(
+    activeModel: String,
+    modelOptions: List<ModelOptionItem>
+): String {
+    val clean = activeModel.trim()
+    modelOptions.firstOrNull { it.id == clean }?.let { opt ->
+        return opt.model.takeIf { it.isNotBlank() && opt.tier != "auto" }
+            ?: when (opt.id) {
+                "auto:free" -> "自动 · 免费池"
+                "auto:paid" -> "自动 · 付费池"
+                else -> opt.label
+            }
+    }
+    return when {
+        clean.isEmpty() || clean == "auto:free" || clean == "free-pool" -> "自动 · 免费池"
+        clean == "auto:paid" || clean == "paid-pool" -> "自动 · 付费池"
+        clean.contains("::") -> clean.substringAfter("::")
+        else -> clean
+    }
+}
+
+/**
+ * 7. Dual-Pool Theme-Aware Model Picker Sheet ("切换推理模型").
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ModelPickerSheet(
+    activeModel: String,
+    modelOptions: List<ModelOptionItem>,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val theme = BotHubThemeTokens
+    val effectiveOptions = remember(modelOptions) {
+        modelOptions.ifEmpty {
+            listOf(
+                ModelOptionItem(
+                    id = "auto:free",
+                    label = "自动 · 免费模型池",
+                    tier = "auto",
+                    provider = "free-pool",
+                    model = "auto:free",
+                    available = true
+                )
+            )
+        }
+    }
+    val sections = remember(effectiveOptions) {
+        listOf(
+            "自动池路由" to effectiveOptions.filter { it.tier == "auto" },
+            "免费模型池" to effectiveOptions.filter { it.tier == "free" },
+            "付费模型池" to effectiveOptions.filter { it.tier == "paid" }
+        ).filter { it.second.isNotEmpty() }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = theme.sheetBg,
+        scrimColor = theme.scrim,
+        tonalElevation = 0.dp,
+        dragHandle = { ObsidianSheetDragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "切换推理模型",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = theme.textPrimary
+            )
+            Text(
+                text = "按「自动 / 免费池 / 付费池」实时从服务端配置读取",
+                fontSize = 12.sp,
+                color = theme.textSecondary
+            )
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(340.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                sections.forEach { (sectionTitle, itemsList) ->
+                    item(key = "hdr_$sectionTitle") {
+                        Text(
+                            text = sectionTitle,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = theme.textMuted,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        )
+                    }
+                    items(itemsList, key = { it.id }) { opt ->
+                        val selected = activeModel == opt.id ||
+                            (activeModel == "free-pool" && opt.id == "auto:free") ||
+                            (activeModel.isBlank() && opt.id == "auto:free")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (selected) theme.accent.copy(alpha = 0.14f) else theme.cardSurface
+                                )
+                                .border(
+                                    width = if (selected) 1.dp else 0.5.dp,
+                                    color = if (selected) theme.accent else theme.cardBorder,
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                .clickable { onSelect(opt.id) }
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when {
+                                            !opt.available -> theme.textMuted
+                                            opt.tier == "paid" -> theme.accent
+                                            else -> Color(0xFF10B981)
+                                        }
+                                    )
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = opt.label,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = theme.textPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (opt.tier != "auto" && opt.provider.isNotBlank()) {
+                                    Text(
+                                        text = "${opt.provider} · ${opt.id}",
+                                        fontSize = 11.sp,
+                                        color = theme.textSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            if (selected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "已选中",
+                                    tint = theme.accent,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
         }
     }
 }

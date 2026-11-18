@@ -119,24 +119,47 @@ func summarizeDirect(ctx context.Context, st *store.Store, systemPrompt, userPro
 		})
 	}
 
-	poolLightFlag, _ := st.GetConfig(store.KeyPoolForLight)
-	usePoolLight := strings.TrimSpace(poolLightFlag) == "" || strings.EqualFold(strings.TrimSpace(poolLightFlag), "true") || strings.TrimSpace(poolLightFlag) == "1"
-	if usePoolLight {
-		for _, entry := range st.GetModelPool() {
-			if !entry.Enabled || strings.TrimSpace(entry.APIKey) == "" || strings.TrimSpace(entry.Model) == "" {
-				continue
-			}
-			candidates = append(candidates, llmCandidate{
+	allowPaid, explicitPaid := store.PaidFallbackFromContext(ctx)
+	var freeCandidates []llmCandidate
+	for _, entry := range st.GetModelPool() {
+		if !entry.Enabled || strings.TrimSpace(entry.APIKey) == "" {
+			continue
+		}
+		if store.NormalizeModelTier(entry.Tier) == store.ModelTierPaid {
+			continue
+		}
+		for _, modID := range entry.EffectiveModels() {
+			freeCandidates = append(freeCandidates, llmCandidate{
 				baseURL:  strings.TrimRight(strings.TrimSpace(entry.BaseURL), "/"),
 				apiKey:   strings.TrimSpace(entry.APIKey),
-				model:    strings.TrimSpace(entry.Model),
+				model:    modID,
 				provider: entry.Provider,
 			})
 		}
 	}
 
-	if primaryKey != "" {
-		candidates = append(candidates, llmCandidate{
+	poolLightFlag, _ := st.GetConfig(store.KeyPoolForLight)
+	usePoolLight := strings.TrimSpace(poolLightFlag) == "" || strings.EqualFold(strings.TrimSpace(poolLightFlag), "true") || strings.TrimSpace(poolLightFlag) == "1"
+	if usePoolLight {
+		candidates = append(candidates, freeCandidates...)
+	}
+
+	var paidCandidates []llmCandidate
+	for _, entry := range st.GetModelPool() {
+		if !entry.Enabled || strings.TrimSpace(entry.APIKey) == "" || store.NormalizeModelTier(entry.Tier) != store.ModelTierPaid {
+			continue
+		}
+		for _, modID := range entry.EffectiveModels() {
+			paidCandidates = append(paidCandidates, llmCandidate{
+				baseURL:  strings.TrimRight(strings.TrimSpace(entry.BaseURL), "/"),
+				apiKey:   strings.TrimSpace(entry.APIKey),
+				model:    modID,
+				provider: entry.Provider,
+			})
+		}
+	}
+	if len(paidCandidates) == 0 && primaryKey != "" {
+		paidCandidates = append(paidCandidates, llmCandidate{
 			baseURL:       primaryBase,
 			apiKey:        primaryKey,
 			model:         primaryModel,
@@ -145,7 +168,14 @@ func summarizeDirect(ctx context.Context, st *store.Store, systemPrompt, userPro
 		})
 	}
 
+	if (explicitPaid && allowPaid) || (!explicitPaid && len(freeCandidates) == 0 && lightKey == "") || (!explicitPaid && len(freeCandidates) > 0 && lightKey == "") {
+		candidates = append(candidates, paidCandidates...)
+	}
+
 	if len(candidates) == 0 {
+		if explicitPaid && !allowPaid && len(paidCandidates) > 0 {
+			return "", fmt.Errorf("当前任务未开启「允许付费兜底」，且免费模型池暂无可用节点")
+		}
 		return "", fmt.Errorf("api_key not configured")
 	}
 

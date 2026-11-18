@@ -198,7 +198,11 @@ func (e *Engine) runSingleBotTurn(
 	if rawModel == "" {
 		rawModel = actingBot.Model
 	}
-	targets, err := e.ResolveChatTargets(rawModel)
+	allowPaid := actingBot.AllowPaidFallback
+	if req.AllowPaidFallback != nil {
+		allowPaid = *req.AllowPaidFallback
+	}
+	targets, err := e.ResolveChatTargetsWithContext(ctx, rawModel, allowPaid)
 	if err != nil {
 		e.emitBotState(actingBot.ID, store.BotStateBlocked, err.Error())
 		return nil, err
@@ -751,12 +755,22 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 	nowStr := store.NowShanghai()
 	routinePrompt := fmt.Sprintf("[后台定时例程「%s」于 %s 自动触发，请用你本人的口吻与工具能力完成以下指令并直接输出给用户；若本指令属于状态监控、健康检查或异常巡检性质，且当前各项指标均正常无需报警，请仅输出 [SILENT_OK]，不要输出例行正常汇报]\n%s", taskName, nowStr, strings.TrimSpace(prompt))
 
+	reqModel := strings.TrimSpace(bot.Model)
+	if taskOverride := store.TaskModelFromContext(ctx); taskOverride != "" {
+		reqModel = taskOverride
+	}
+	allowPaid, explicitPaid := store.PaidFallbackFromContext(ctx)
+	var allowPaidPtr *bool
+	if explicitPaid {
+		allowPaidPtr = &allowPaid
+	}
 	req := ChatRequest{
-		BotID:    bot.ID,
-		ThreadID: threadID,
-		MsgKind:  "routine",
-		Message:  routinePrompt,
-		Model:    bot.Model,
+		BotID:             bot.ID,
+		ThreadID:          threadID,
+		MsgKind:           "routine",
+		Message:           routinePrompt,
+		Model:             reqModel,
+		AllowPaidFallback: allowPaidPtr,
 	}
 
 	var resp *ChatResponse

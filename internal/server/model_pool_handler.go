@@ -41,13 +41,18 @@ func (s *Server) handleSaveModelPool(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.store.SaveModelPool(req.Entries); err != nil {
-		writeError(w, http.StatusInternalServerError, "保存免费模型池失败: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "保存模型池失败: "+err.Error())
 		return
 	}
-	s.publishAssistantEvent("model_health")
+	s.publishAssistantEvent("models,model_health")
+	var modelOptions any
+	if s.agent != nil {
+		modelOptions = s.agent.ModelOptionsPayload()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":         true,
-		"model_pool": store.MaskModelPool(s.store.GetModelPool()),
+		"ok":            true,
+		"model_pool":    store.MaskModelPool(s.store.GetModelPool()),
+		"model_options": modelOptions,
 	})
 }
 

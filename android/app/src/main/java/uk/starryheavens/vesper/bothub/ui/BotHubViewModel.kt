@@ -26,6 +26,7 @@ import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.JsonMappers
+import uk.starryheavens.vesper.bothub.data.ModelOptionItem
 import uk.starryheavens.vesper.bothub.data.NotificationItem
 import uk.starryheavens.vesper.bothub.data.StashItemUi
 import uk.starryheavens.vesper.bothub.data.TaskItem
@@ -148,11 +149,16 @@ class BotHubViewModel(
     var dashboard by mutableStateOf<DashboardSnapshot?>(prefs.loadCachedDashboard())
         private set
 
+    var modelOptions by mutableStateOf(prefs.loadCachedDashboard()?.modelOptions ?: emptyList())
+        private set
+
     var isRefreshing by mutableStateOf(false)
         private set
 
     private val timelineCache = mutableMapOf<String, List<ChatTurnUi>>()
+    private var lastRevisions: Map<String, Long> = prefs.loadCachedDashboard()?.revisions ?: emptyMap()
     private var lastFullRefreshAtMs: Long = 0L
+    private var lastForegroundSyncMs: Long = 0L
     private var pendingNotificationId: Long? = null
     private var stashSearchJob: Job? = null
     private var liveSyncDebounceJob: Job? = null
@@ -186,6 +192,27 @@ class BotHubViewModel(
         viewModelScope.launch {
             RealtimePushService.liveEvents.collect { (event, obj) ->
                 when (event) {
+                    "connected" -> {
+                        val revs = JsonMappers.parseRevisions(obj.optJSONObject("revisions"))
+                        if (revs.isEmpty() || lastRevisions.isEmpty()) {
+                            scheduleSilentLiveSync()
+                        } else {
+                            val changed = mutableListOf<String>()
+                            listOf("bots", "tasks", "assets", "stash", "models", "notifications", "configs").forEach { k ->
+                                if ((revs[k] ?: 0L) > (lastRevisions[k] ?: 0L)) {
+                                    changed.add(k)
+                                }
+                            }
+                            val msgBumped = (revs["messages"] ?: 0L) > (lastRevisions["messages"] ?: 0L)
+                            lastRevisions = lastRevisions + revs
+                            if (changed.isNotEmpty()) {
+                                syncDashboardSlices(changed)
+                            }
+                            if (msgBumped && activeBotId.isNotBlank() && !isStreaming && sessionId.isEmpty()) {
+                                loadBotTimeline(activeBotId)
+                            }
+                        }
+                    }
                     "notification" -> {
                         val item = JsonMappers.parseNotification(obj)
                         if (notifications.none { it.id == item.id }) {
@@ -198,13 +225,100 @@ class BotHubViewModel(
                     "bot_state" -> {
                         val bId = obj.optString("bot_id", "")
                         val st = obj.optString("state", "")
-                        if (bId.isNotEmpty() && st.isNotEmpty()) {
-                            bots = bots.map { if (it.id == bId) it.copy(state = st) else it }
+                        val summary = obj.optString("last_summary", "")
+                        val hasUnread = obj.has("unread_count")
+                        val unreadVal = obj.optInt("unread_count", 0)
+                        if (bId.isNotEmpty()) {
+                            bots = bots.map {
+                                if (it.id == bId) {
+                                    it.copy(
+                                        state = st.ifEmpty { it.state },
+                                        lastSummary = summary.ifEmpty { it.lastSummary },
+                                        unreadCount = if (hasUnread) unreadVal else it.unreadCount
+                                    )
+                                } else it
+                            }
                         }
                     }
-                    "bot_message", "stash_update", "assistant_update" -> {
+                    "thread_updated" -> {
+                        val bId = obj.optString("bot_id", "")
+                        syncDashboardSlices(listOf("bots"))
+                        if (bId == activeBotId && !isStreaming && sessionId.isEmpty()) {
+                            loadBotTimeline(bId)
+                        }
+                    }
+                    "bot_message" -> {
                         scheduleSilentLiveSync()
                     }
+                    "stash_update" -> {
+                        syncDashboardSlices(listOf("stash"))
+                    }
+                    "assistant_update" -> {
+                        val rawKinds = obj.optString("kind", "")
+                        val kinds = rawKinds.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        if (kinds.any { it == "backup_restored" || it == "dashboard" } || kinds.isEmpty()) {
+                            scheduleSilentLiveSync()
+                        } else {
+                            syncDashboardSlices(kinds)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun onAppForegrounded() {
+        if (!prefs.isLikelyPaired || isStreaming) return
+        val now = System.currentTimeMillis()
+        if (now - lastForegroundSyncMs < 4000L) return
+        lastForegroundSyncMs = now
+        refreshAll(silent = true)
+        if (inChatRoom && sessionId.isEmpty() && activeBotId.isNotBlank()) {
+            loadBotTimeline(activeBotId)
+        }
+    }
+
+    private fun syncDashboardSlices(kinds: List<String>) {
+        if (!prefs.isLikelyPaired || kinds.isEmpty()) return
+        viewModelScope.launch {
+            if (prefs.bearerToken.isEmpty()) return@launch
+            api.fetchDashboardSlice(kinds).onSuccess { slice ->
+                slice.bots?.let { nextBots ->
+                    bots = nextBots
+                    prefs.saveCachedBots(nextBots)
+                }
+                slice.notifications?.let { nextNotifs ->
+                    notifications = nextNotifs
+                    prefs.saveCachedNotifications(nextNotifs)
+                    val maxId = nextNotifs.maxOfOrNull { it.id } ?: 0L
+                    prefs.advanceLastEventId(maxId)
+                }
+                slice.stashItems?.let { nextStash ->
+                    if (stashQuery.isBlank() && stashFilter == "all") {
+                        stashItems = nextStash
+                        prefs.saveCachedStash(nextStash)
+                    }
+                }
+                slice.modelOptions?.let { nextOpts ->
+                    modelOptions = nextOpts
+                }
+                val curDash = dashboard
+                if (curDash != null && (slice.assets != null || slice.tasks != null || slice.assetCategories != null || slice.modelOptions != null)) {
+                    val nextDash = curDash.copy(
+                        assets = slice.assets ?: curDash.assets,
+                        tasks = slice.tasks ?: curDash.tasks,
+                        assetCategories = slice.assetCategories ?: curDash.assetCategories,
+                        modelOptions = slice.modelOptions ?: curDash.modelOptions,
+                        totalAssets = slice.assets?.size ?: curDash.totalAssets,
+                        expiringCount = (slice.assets ?: curDash.assets).count { it.isExpiringSoon },
+                        activeTasks = (slice.tasks ?: curDash.tasks).count { it.enabled },
+                        revisions = slice.revisions.ifEmpty { curDash.revisions }
+                    )
+                    dashboard = nextDash
+                    prefs.saveCachedDashboard(nextDash)
+                }
+                if (slice.revisions.isNotEmpty()) {
+                    lastRevisions = lastRevisions + slice.revisions
                 }
             }
         }
@@ -536,6 +650,10 @@ class BotHubViewModel(
 
                     dashboard = payload.dashboard
                     prefs.saveCachedDashboard(payload.dashboard)
+                    modelOptions = payload.modelOptions.ifEmpty { payload.dashboard.modelOptions }
+                    if (payload.revisions.isNotEmpty()) {
+                        lastRevisions = lastRevisions + payload.revisions
+                    }
 
                     val firstLoad = bots.isEmpty()
                     bots = payload.bots
@@ -754,7 +872,9 @@ class BotHubViewModel(
         avatarStyle: String,
         botMode: String,
         traits: String,
-        systemPrompt: String
+        systemPrompt: String,
+        model: String = "auto:free",
+        allowPaidFallback: Boolean = false
     ) {
         viewModelScope.launch {
             api.createAiFriend(
@@ -763,7 +883,9 @@ class BotHubViewModel(
                 avatarStyle = avatarStyle,
                 botMode = botMode,
                 traits = traits,
-                systemPrompt = systemPrompt
+                systemPrompt = systemPrompt,
+                model = model,
+                allowPaidFallback = allowPaidFallback
             ).onSuccess { created ->
                 showCreateFriendSheet = false
                 bots = listOf(created) + bots.filterNot { it.id == created.id }
@@ -827,7 +949,8 @@ class BotHubViewModel(
         traits: String,
         systemPrompt: String,
         groupMode: String,
-        announcement: String
+        announcement: String,
+        allowPaidFallback: Boolean? = null
     ) {
         viewModelScope.launch {
             api.updateBotDetails(
@@ -838,7 +961,8 @@ class BotHubViewModel(
                 traits = traits,
                 systemPrompt = systemPrompt,
                 groupMode = groupMode,
-                announcement = announcement
+                announcement = announcement,
+                allowPaidFallback = allowPaidFallback
             ).onSuccess { updated ->
                 bots = bots.map { if (it.id == botId) updated else it }
                 if (inspectingBotProfile?.id == botId) {
@@ -920,6 +1044,24 @@ class BotHubViewModel(
             if (prefs.isLikelyPaired) {
                 viewModelScope.launch {
                     api.updateBotPreferences(botId = targetId, enableThinking = enabled).onSuccess { updated ->
+                        val synced = bots.map { if (it.id == targetId) updated else it }
+                        bots = synced
+                        prefs.saveCachedBots(synced)
+                    }
+                }
+            }
+        }
+    }
+
+    fun updateAllowPaidFallback(allow: Boolean) {
+        val targetId = activeBotId
+        if (sessionId.isEmpty() && targetId.isNotBlank()) {
+            val optimistic = bots.map { if (it.id == targetId) it.copy(allowPaidFallback = allow) else it }
+            bots = optimistic
+            prefs.saveCachedBots(optimistic)
+            if (prefs.isLikelyPaired) {
+                viewModelScope.launch {
+                    api.updateBotPreferences(botId = targetId, allowPaidFallback = allow).onSuccess { updated ->
                         val synced = bots.map { if (it.id == targetId) updated else it }
                         bots = synced
                         prefs.saveCachedBots(synced)
@@ -1036,6 +1178,7 @@ class BotHubViewModel(
                     persona = activePersona,
                     model = activeModel,
                     enableThinking = enableThinking,
+                    allowPaidFallback = activeBotObj?.allowPaidFallback,
                     onCallCreated = { call -> activeStreamCall = call },
                     onSession = { sid ->
                         viewModelScope.launch { sessionId = sid }

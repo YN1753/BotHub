@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -49,6 +50,44 @@ const (
 	KeyOIDCClientSecret = "oidc_client_secret"
 	KeyOIDCAllowedSub   = "oidc_allowed_sub"
 )
+
+type paidFallbackCtxKey struct{}
+type taskModelCtxKey struct{}
+
+// WithPaidFallback binds a per-task or per-bot paid-model fallback permission to ctx.
+// Background tasks default to disallowing paid fallback unless explicitly enabled.
+func WithPaidFallback(ctx context.Context, allow bool) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, paidFallbackCtxKey{}, allow)
+}
+
+// PaidFallbackFromContext inspects ctx for an explicit per-task/per-bot paid fallback flag.
+func PaidFallbackFromContext(ctx context.Context) (allowed bool, explicit bool) {
+	if ctx == nil {
+		return false, false
+	}
+	v, ok := ctx.Value(paidFallbackCtxKey{}).(bool)
+	return v, ok
+}
+
+// WithTaskModelOverride attaches an optional per-task model/pool target ID to ctx.
+func WithTaskModelOverride(ctx context.Context, model string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, taskModelCtxKey{}, strings.TrimSpace(model))
+}
+
+// TaskModelFromContext extracts any task-level model/pool override attached to ctx.
+func TaskModelFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	v, _ := ctx.Value(taskModelCtxKey{}).(string)
+	return strings.TrimSpace(v)
+}
 
 type Store struct {
 	db *sql.DB
@@ -361,7 +400,10 @@ END;`
 		`ALTER TABLE bots ADD COLUMN skill_ids TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE bots ADD COLUMN traits TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE bots ADD COLUMN active_thread_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE bots ADD COLUMN allow_paid_fallback INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE tasks ADD COLUMN run_at TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE tasks ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE tasks ADD COLUMN allow_paid_fallback INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range alters {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {

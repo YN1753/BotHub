@@ -517,3 +517,75 @@ func TestExtensibleAssetCategoriesBlankAndPersist(t *testing.T) {
 		t.Fatalf("expected blank category fallback to 'general', got %+v", gotGen)
 	}
 }
+
+func TestBootstrapSyncPayloadAndRevisionBumps(t *testing.T) {
+	s, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	s.push = notifier.NewClient(s.store)
+
+	appTok, err := s.ensureAppBearerToken()
+	if err != nil {
+		t.Fatalf("ensureAppBearerToken: %v", err)
+	}
+	h := s.Handler()
+
+	_, _ = s.store.SaveAssetCategories([]store.AssetCategoryOption{
+		{ID: "cloud_vps", Label: "云主机", Icon: "server"},
+	})
+	_ = s.store.SaveModelPool([]store.ModelPoolEntry{
+		{
+			ID:       "openrouter_free",
+			Name:     "OpenRouter 免费",
+			Tier:     store.ModelTierFree,
+			Provider: "openai",
+			BaseURL:  "https://openrouter.ai/api/v1",
+			APIKey:   "sk-or-test",
+			Models:   []string{"qwen/qwen3-free", "meta/llama-free"},
+			Enabled:  true,
+		},
+	})
+
+	// Update config and verify revision bumps
+	beforeRevs := s.revisionsSnapshot()
+	s.publishAssistantEvent("configs,models")
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("thread_updated", map[string]any{"bot_id": "bot_1", "action": "cleared"})
+	}
+	afterRevs := s.revisionsSnapshot()
+	if afterRevs["configs"] <= beforeRevs["configs"] || afterRevs["models"] <= beforeRevs["models"] || afterRevs["messages"] <= beforeRevs["messages"] {
+		t.Fatalf("expected monotonic revision bumps across configs/models/messages, before=%+v after=%+v", beforeRevs, afterRevs)
+	}
+
+	reqBoot := httptest.NewRequest(http.MethodGet, "/api/v2/app/bootstrap", nil)
+	reqBoot.Header.Set("Authorization", "Bearer "+appTok)
+	recBoot := httptest.NewRecorder()
+	h.ServeHTTP(recBoot, reqBoot)
+	if recBoot.Code != http.StatusOK {
+		t.Fatalf("bootstrap failed: %d: %s", recBoot.Code, recBoot.Body.String())
+	}
+	var bootResp struct {
+		OK              bool                        `json:"ok"`
+		AssetCategories []store.AssetCategoryOption `json:"asset_categories"`
+		ModelOptions    []struct {
+			ID   string `json:"id"`
+			Tier string `json:"tier"`
+		} `json:"model_options"`
+		Revisions map[string]int64 `json:"revisions"`
+	}
+	if err := json.Unmarshal(recBoot.Body.Bytes(), &bootResp); err != nil {
+		t.Fatalf("unmarshal bootstrap: %v", err)
+	}
+	if !bootResp.OK || len(bootResp.AssetCategories) != 1 || len(bootResp.ModelOptions) < 2 || bootResp.Revisions["models"] == 0 {
+		t.Fatalf("expected bootstrap to include asset_categories, model_options, and revisions, got %+v", bootResp)
+	}
+
+	// Verify /api/v2/dashboard/slice?kinds=models serves model_pool + model_options cleanly
+	reqSlice := httptest.NewRequest(http.MethodGet, "/api/v2/dashboard/slice?kinds=models", nil)
+	reqSlice.Header.Set("Authorization", "Bearer "+appTok)
+	recSlice := httptest.NewRecorder()
+	h.ServeHTTP(recSlice, reqSlice)
+	if recSlice.Code != http.StatusOK || !strings.Contains(recSlice.Body.String(), "model_options") || !strings.Contains(recSlice.Body.String(), "revisions") {
+		t.Fatalf("expected models slice to return model_options and revisions, got %d: %s", recSlice.Code, recSlice.Body.String())
+	}
+}

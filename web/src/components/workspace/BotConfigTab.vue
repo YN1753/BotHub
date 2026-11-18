@@ -19,7 +19,8 @@ const bot = store.activeBot
 const cfgName = ref('')
 const cfgRole = ref('')
 const cfgPrompt = ref('')
-const cfgModel = ref('primary')
+const cfgModel = ref('auto:free')
+const cfgAllowPaidFallback = ref(false)
 const cfgAvatar = ref('butler:gold')
 const cfgThinking = ref(true)
 const cfgBotMode = ref<BotMode>('hybrid')
@@ -78,7 +79,7 @@ const filteredGroupedTools = computed(() => {
 const hasProfileChanges = computed(() => {
   const b = bot.value
   if (!b) return false
-  const normModel = !b.model || b.model === 'deepseek-flash' ? 'primary' : b.model
+  const normModel = !b.model || b.model === 'free-pool' ? 'auto:free' : b.model
   const normMode = (b.bot_mode as BotMode) || 'hybrid'
   const normPolicy = (b.memory_policy as MemoryPolicy) || 'standard'
   const parseSorted = (raw?: string) => parseJsonStringArray(raw).toSorted().join(',')
@@ -87,6 +88,7 @@ const hasProfileChanges = computed(() => {
     cfgRole.value.trim() !== (b.role_title || '') ||
     cfgPrompt.value.trim() !== (b.system_prompt || '').trim() ||
     cfgModel.value !== normModel ||
+    cfgAllowPaidFallback.value !== Boolean(b.allow_paid_fallback) ||
     cfgAvatar.value !== (b.avatar_style || 'cyan') ||
     cfgThinking.value !== (b.enable_thinking !== false) ||
     cfgBotMode.value !== normMode ||
@@ -107,11 +109,12 @@ watch(
   bot,
   (b) => {
     if (!b) return
-    const normModel = !b.model || b.model === 'deepseek-flash' ? 'primary' : b.model
+    const normModel = !b.model || b.model === 'free-pool' ? 'auto:free' : b.model
     cfgName.value = b.name
     cfgRole.value = b.role_title
     cfgPrompt.value = b.system_prompt
     cfgModel.value = normModel
+    cfgAllowPaidFallback.value = Boolean(b.allow_paid_fallback)
     cfgAvatar.value = b.avatar_style || 'cyan'
     cfgThinking.value = b.enable_thinking !== false
     cfgBotMode.value = (b.bot_mode as BotMode) || 'hybrid'
@@ -143,6 +146,7 @@ async function saveBotProfile() {
       role_title: cfgRole.value.trim(),
       avatar_style: cfgAvatar.value,
       model: cfgModel.value,
+      allow_paid_fallback: cfgAllowPaidFallback.value,
       bot_mode: cfgBotMode.value,
       memory_policy: cfgMemoryPolicy.value,
       traits: cfgTraits.value.trim(),
@@ -295,8 +299,13 @@ function openScopedMemoriesManager() {
             <span>记忆隔离策略</span>
             <CustomSelect v-model="cfgMemoryPolicy" :options="MEMORY_POLICY_OPTIONS" aria-label="记忆隔离策略" />
           </div>
-          <div class="md:col-span-2 flex items-center justify-between">
+          <div class="md:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <ToggleSwitch v-model="cfgThinking" label="默认开启深度思考" />
+            <ToggleSwitch
+              v-model="cfgAllowPaidFallback"
+              label="允许付费兜底"
+              description="开启后，免费池不可用时可回退至付费池"
+            />
           </div>
 
           <div v-if="isGroupBot" class="md:col-span-2 flex flex-col gap-2.5 text-xs text-slate-300">

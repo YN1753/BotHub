@@ -44,6 +44,13 @@ class PushSyncWorker(
                     val merged = byId.values.sortedByDescending { it.id }.take(60)
                     prefs.saveCachedNotifications(merged)
                 }
+                // Warm local snapshot so opening the app cold reflects cross-device edits immediately.
+                api.fetchBootstrap().onSuccess { boot ->
+                    prefs.saveCachedBots(boot.bots)
+                    prefs.saveCachedDashboard(boot.dashboard)
+                    prefs.saveCachedStash(boot.stashItems)
+                    prefs.saveCachedNotifications(boot.notifications)
+                }
                 Result.success()
             },
             onFailure = {

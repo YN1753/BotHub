@@ -20,6 +20,8 @@ const id = ref('')
 const name = ref('')
 const type = ref('morning')
 const botId = ref('')
+const taskModel = ref('')
+const allowPaidFallback = ref(false)
 const enabled = ref(true)
 const description = ref('')
 
@@ -92,6 +94,10 @@ const botOptions = computed(() => [
   { value: '', label: '通用后台调度（不绑定特定 Bot）' },
   ...store.state.bots.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` })),
 ])
+const taskModelOptions = computed(() => [
+  { value: '', label: '沿用默认 (优先免费模型池 / 绑定 Bot)' },
+  ...store.modelOptions.value,
+])
 const currentFields = computed(() => {
   const tpl = store.state.templates.find((t) => t.type === type.value)
   return tpl?.params_schema || tpl?.fields || []
@@ -150,6 +156,8 @@ watch(
       name.value = ''
       type.value = store.state.templates[0]?.type || 'bot_prompt'
       botId.value = (item as any)?.bot_id || store.state.activeBotId || ''
+      taskModel.value = ''
+      allowPaidFallback.value = false
       enabled.value = true
       description.value = ''
       freq.value = 'daily'
@@ -169,6 +177,8 @@ watch(
     name.value = t.name
     type.value = t.type
     botId.value = t.bot_id || ''
+    taskModel.value = t.model || ''
+    allowPaidFallback.value = Boolean(t.allow_paid_fallback)
     enabled.value = Boolean(t.enabled)
     description.value = t.description || ''
     if (t.run_at) {
@@ -207,6 +217,8 @@ async function handleSubmit() {
       name: name.value.trim(),
       type: type.value,
       bot_id: botId.value,
+      model: taskModel.value,
+      allow_paid_fallback: allowPaidFallback.value,
       cron_expr: freq.value === 'once' ? '' : computedCron.value,
       run_at: freq.value === 'once' ? runAt.value.trim() : '',
       enabled: enabled.value,
@@ -274,6 +286,17 @@ async function handleDelete() {
           </label>
           <div class="flex flex-col justify-end">
             <ToggleSwitch v-model="enabled" label="启用后台自动调度" />
+          </div>
+          <div class="flex flex-col gap-1 text-xs text-slate-300">
+            <span>任务指定模型</span>
+            <CustomSelect v-model="taskModel" :options="taskModelOptions" aria-label="任务指定模型" />
+          </div>
+          <div class="flex flex-col justify-end">
+            <ToggleSwitch
+              v-model="allowPaidFallback"
+              label="允许该任务调用付费模型"
+              description="默认仅走免费池；此任务必须保底执行时再单独开启"
+            />
           </div>
         </div>
       </div>

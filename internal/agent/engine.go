@@ -59,16 +59,17 @@ func NewEngine(st *store.Store, sched TaskController) *Engine {
 }
 
 type ChatRequest struct {
-	SessionID      string `json:"session_id"`
-	BotID          string `json:"bot_id,omitempty"`
-	ThreadID       string `json:"thread_id,omitempty"`
-	MsgKind        string `json:"-"`
-	Message        string `json:"message"`
-	Persona        string `json:"persona"`
-	Model          string `json:"model"`
-	EnableThinking *bool  `json:"enable_thinking,omitempty"`
-	ReplyToID      int64  `json:"reply_to_id,omitempty"`
-	ReplyPreview   string `json:"reply_preview,omitempty"`
+	SessionID         string `json:"session_id"`
+	BotID             string `json:"bot_id,omitempty"`
+	ThreadID          string `json:"thread_id,omitempty"`
+	MsgKind           string `json:"-"`
+	Message           string `json:"message"`
+	Persona           string `json:"persona"`
+	Model             string `json:"model"`
+	EnableThinking    *bool  `json:"enable_thinking,omitempty"`
+	AllowPaidFallback *bool  `json:"allow_paid_fallback,omitempty"`
+	ReplyToID         int64  `json:"reply_to_id,omitempty"`
+	ReplyPreview      string `json:"reply_preview,omitempty"`
 }
 
 type ToolTrace struct {
@@ -177,10 +178,12 @@ func NormalizeModelID(model string) string {
 	}
 }
 
-// CallLightModel executes a non-streaming completion preferring explicit light model config,
-// then active Free Model Pool providers (when pool_for_light is enabled), then primary DeepSeek / relay.
+// CallLightModel executes a non-streaming completion preferring explicit light / Free Pool nodes,
+// only falling back to Paid Pool when PaidFallbackFromContext(ctx) is explicitly enabled (or when
+// legacy callers without a context guard have no Free Pool configured).
 func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
 	var candidates []ModelTarget
+	allowPaid, explicitPaid := store.PaidFallbackFromContext(ctx)
 
 	lightKey, _ := e.store.GetConfig(store.KeyLightAPIKey)
 	lightBase, _ := e.store.GetConfig(store.KeyLightBaseURL)
@@ -209,17 +212,22 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 		})
 	}
 
+	freeTargets := activePoolTargetsByTier(e.store, store.ModelTierFree)
 	if isConfigTrue(e.store, store.KeyPoolForLight, true) {
-		candidates = append(candidates, activeFreePoolTargets(e.store)...)
+		candidates = append(candidates, freeTargets...)
 	}
 
-	primary := primaryDeepSeekTarget(e.store)
-	if primary.APIKey != "" {
-		candidates = append(candidates, primary)
+	paidTargets := activePoolTargetsByTier(e.store, store.ModelTierPaid)
+	// Per-task paid protection: only touch Paid Pool if explicitly allowed on ctx, OR legacy unguarded call with no Free Pool configured
+	if (explicitPaid && allowPaid) || (!explicitPaid && len(freeTargets) == 0 && lightKey == "") || (!explicitPaid && len(freeTargets) > 0 && lightKey == "" && isConfigTrue(e.store, store.KeyPoolFallback, true)) {
+		candidates = append(candidates, paidTargets...)
 	}
 
 	if len(candidates) == 0 {
-		return "", fmt.Errorf("未配置轻量模型、免费模型池或主力 API Key")
+		if explicitPaid && !allowPaid && len(paidTargets) > 0 {
+			return "", fmt.Errorf("当前任务未开启「允许付费兜底」，且免费模型池暂无可用节点")
+		}
+		return "", fmt.Errorf("未配置免费模型池或可用轻量模型节点")
 	}
 	candidates = e.health.prioritizeHealthy(candidates)
 
@@ -314,7 +322,7 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 		return e.chatStreamForBot(ctx, req, emit)
 	}
 
-	targets, err := e.ResolveChatTargets(req.Model)
+	targets, err := e.ResolveChatTargetsWithContext(ctx, req.Model, req.AllowPaidFallback != nil && *req.AllowPaidFallback)
 	if err != nil {
 		return nil, err
 	}
@@ -571,6 +579,9 @@ func (e *Engine) hasLightTarget() bool {
 	if e == nil || e.store == nil {
 		return false
 	}
+	if len(activePoolTargetsByTier(e.store, store.ModelTierFree)) > 0 {
+		return true
+	}
 	if lightKey, _ := e.store.GetConfig(store.KeyLightAPIKey); strings.TrimSpace(lightKey) != "" {
 		return true
 	}
@@ -618,6 +629,8 @@ func (e *Engine) distillMemoryWithScope(scope, botMode, userMsg, assistantReply 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	// Background memory distillation runs silently after chat; default to Free Pool only.
+	ctx = store.WithPaidFallback(ctx, false)
 
 	existingMems, _ := e.store.ListScopedMemories([]string{scope}, "", 25)
 	var existingKeysHint string

@@ -163,6 +163,14 @@ func manageTasksToolSpec() ToolSpec {
 							"type":        "boolean",
 							"description": "是否启用任务（upsert 或 toggle 时使用）",
 						},
+						"model": map[string]any{
+							"type":        "string",
+							"description": "可选：任务指定模型（如 auto:free、auto:paid 或 pool:<id>[::<model>]，留空沿用默认）",
+						},
+						"allow_paid_fallback": map[string]any{
+							"type":        "boolean",
+							"description": "可选：是否允许该任务在免费池不可用或指定付费模型时使用付费模型池（默认 false，防误消耗）",
+						},
 						"description": map[string]any{
 							"type":        "string",
 							"description": "任务说明（upsert 时使用）",
@@ -550,18 +558,20 @@ func (e *Engine) toolManageAssets(ctx context.Context, argsJSON string) (string,
 
 func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Action       string `json:"action"`
-		ID           string `json:"id"`
-		Name         string `json:"name"`
-		Type         string `json:"type"`
-		BotID        string `json:"bot_id"`
-		CronExpr     string `json:"cron_expr"`
-		RunAt        string `json:"run_at"`
-		DelayMinutes int    `json:"delay_minutes"`
-		Prompt       string `json:"prompt"`
-		Enabled      *bool  `json:"enabled"`
-		Description  string `json:"description"`
-		Params       string `json:"params"`
+		Action            string `json:"action"`
+		ID                string `json:"id"`
+		Name              string `json:"name"`
+		Type              string `json:"type"`
+		BotID             string `json:"bot_id"`
+		CronExpr          string `json:"cron_expr"`
+		RunAt             string `json:"run_at"`
+		DelayMinutes      int    `json:"delay_minutes"`
+		Prompt            string `json:"prompt"`
+		Enabled           *bool  `json:"enabled"`
+		Model             string `json:"model"`
+		AllowPaidFallback *bool  `json:"allow_paid_fallback"`
+		Description       string `json:"description"`
+		Params            string `json:"params"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 manage_tasks 参数失败: %w", err)
@@ -705,6 +715,12 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		}
 		if args.Enabled != nil {
 			task.Enabled = *args.Enabled
+		}
+		if m := strings.TrimSpace(args.Model); m != "" {
+			task.Model = m
+		}
+		if args.AllowPaidFallback != nil {
+			task.AllowPaidFallback = *args.AllowPaidFallback
 		}
 		if strings.TrimSpace(args.Params) != "" {
 			var js map[string]any

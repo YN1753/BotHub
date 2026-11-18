@@ -78,7 +78,9 @@ data class TaskItem(
     val cronExpr: String,
     val enabled: Boolean,
     val nextRunAt: String,
-    val lastSummary: String
+    val lastSummary: String,
+    val model: String = "",
+    val allowPaidFallback: Boolean = false
 ) {
     fun formattedSchedule(): String {
         val shortNext = formatShortNextRun(nextRunAt)
@@ -114,11 +116,34 @@ data class AppVersionInfo(
 )
 
 @Immutable
+data class ModelOptionItem(
+    val id: String,
+    val label: String,
+    val tier: String = "free",
+    val provider: String = "",
+    val model: String = "",
+    val available: Boolean = true
+)
+
+@Immutable
 data class BootstrapPayload(
     val bots: List<BotItem>,
     val notifications: List<NotificationItem>,
     val dashboard: DashboardSnapshot,
-    val stashItems: List<StashItemUi> = emptyList()
+    val stashItems: List<StashItemUi> = emptyList(),
+    val modelOptions: List<ModelOptionItem> = emptyList(),
+    val revisions: Map<String, Long> = emptyMap()
+)
+
+data class DashboardSlicePayload(
+    val bots: List<BotItem>? = null,
+    val assets: List<AssetItem>? = null,
+    val assetCategories: List<AssetCategoryItem>? = null,
+    val tasks: List<TaskItem>? = null,
+    val notifications: List<NotificationItem>? = null,
+    val stashItems: List<StashItemUi>? = null,
+    val modelOptions: List<ModelOptionItem>? = null,
+    val revisions: Map<String, Long> = emptyMap()
 )
 
 @Immutable
@@ -165,7 +190,8 @@ data class BotItem(
     val systemPrompt: String = "",
     val groupMode: String = "smart",
     val announcement: String = "",
-    val updatedAt: String = ""
+    val updatedAt: String = "",
+    val allowPaidFallback: Boolean = false
 ) {
     fun resolveGroupMembers(allBots: List<BotItem>): List<BotItem> {
         val specialists = allBots.filter { !it.isGroup }
@@ -268,7 +294,9 @@ data class DashboardSnapshot(
     val unreadNotifications: Int,
     val assets: List<AssetItem>,
     val tasks: List<TaskItem>,
-    val assetCategories: List<AssetCategoryItem> = emptyList()
+    val assetCategories: List<AssetCategoryItem> = emptyList(),
+    val modelOptions: List<ModelOptionItem> = emptyList(),
+    val revisions: Map<String, Long> = emptyMap()
 )
 
 enum class ShareKind(
