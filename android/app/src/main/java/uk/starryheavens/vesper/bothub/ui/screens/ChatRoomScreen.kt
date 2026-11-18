@@ -952,10 +952,9 @@ fun ChatRoomScreen(
                                                     exit = fadeOut() + shrinkVertically()
                                                 ) {
                                                     Text(
-                                                        text = msg.reasoning,
-                                                        fontFamily = FontFamily.Monospace,
-                                                        fontSize = 11.5.sp,
-                                                        lineHeight = 17.5.sp,
+                                                        text = msg.reasoning.replace("<think>", "").replace("</think>", "").trim(),
+                                                        fontSize = 12.sp,
+                                                        lineHeight = 18.sp,
                                                         color = theme.textSecondary,
                                                         modifier = Modifier.padding(top = 5.dp)
                                                     )
@@ -985,8 +984,7 @@ fun ChatRoomScreen(
                                                         )
                                                         Text(
                                                             text = tLabel,
-                                                            fontFamily = FontFamily.Monospace,
-                                                            fontSize = 10.5.sp,
+                                                            fontSize = 11.sp,
                                                             color = toolText,
                                                             maxLines = 1,
                                                             softWrap = false

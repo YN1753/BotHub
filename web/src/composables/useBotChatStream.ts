@@ -1,6 +1,7 @@
 import { ref, computed, type Ref } from 'vue'
 import { BotHubApi } from '../api/client'
 import { mapServerMessages, type ChatMessageUI } from '../utils/chatMapper'
+import { formatToolHumanName } from '../utils/toolMeta'
 import type { useAppStore } from '../stores/useAppStore'
 import type { RelayStepItem } from '../components/workspace/BotRelayStrip.vue'
 
@@ -263,7 +264,8 @@ export function useBotChatStream(options: {
               scheduleDeltaFlush()
             } else if (currentEvent === 'tool_start') {
               flushPendingDeltas()
-              streamStatus.value = `执行工具: ${payload.name}...`
+              const humanTool = formatToolHumanName(String(payload.name || ''), store.state.skills || [])
+              streamStatus.value = `正在${humanTool}...`
               activeTurn.tools.push({
                 id: payload.id,
                 name: payload.name,
@@ -295,10 +297,7 @@ export function useBotChatStream(options: {
               activeTurn.streaming = false
               if (payload.model) activeTurn.model = payload.model
               const elapsedSec = ((Date.now() - turnStartedAt) / 1000).toFixed(1)
-              activeTurn.statusText =
-                payload.usage && payload.usage.total_tokens
-                  ? `${payload.usage.prompt_tokens}+${payload.usage.completion_tokens} Tokens · ${elapsedSec}s`
-                  : `已完成 · ${elapsedSec}s`
+              activeTurn.statusText = `用时 ${elapsedSec}s`
             }
           }
         }

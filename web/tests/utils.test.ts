@@ -16,7 +16,12 @@ import {
   summarizeAssetsMonthlyCost,
   scoreOmnisearchMatch,
 } from '../src/utils/format.ts'
-import { formatToolDisplayName, groupAvailableTools } from '../src/utils/toolMeta.ts'
+import {
+  formatToolDisplayName,
+  formatToolHumanName,
+  groupAvailableTools,
+  summarizeToolStep,
+} from '../src/utils/toolMeta.ts'
 import {
   parseAvatarStyle,
   composeAvatarStyle,
@@ -126,6 +131,41 @@ test('toolMeta groups and formats builtin & skill names cleanly', () => {
   assert.equal(grouped.length, 2)
   assert.equal(grouped[0].id, 'assistant')
   assert.equal(grouped[1].id, 'extra')
+
+  assert.equal(formatToolHumanName('read_url', []), '阅读网页')
+  assert.equal(formatToolHumanName('web_search', []), '联网检索')
+
+  const readSummary = summarizeToolStep({
+    name: 'read_url',
+    arguments: '{"url":"https://github.com/trending"}',
+    result: JSON.stringify({
+      ok: true,
+      url: 'https://github.com/trending',
+      title: 'Trending repositories on GitHub',
+      content: 'Trending repositories on GitHub today Skip to content Sign in...',
+    }),
+    done: true,
+  })
+  assert.equal(readSummary.title, '阅读网页 · github.com/trending')
+  assert.equal(readSummary.statusLabel, '已读取')
+  assert.equal(readSummary.subtitle, 'Trending repositories on GitHub')
+  assert.equal(JSON.stringify(readSummary).includes('Skip to content'), false)
+
+  const searchSummary = summarizeToolStep({
+    name: 'web_search',
+    arguments: '{"query":"open source AI agent project trending 2026"}',
+    result: JSON.stringify({
+      count: 2,
+      query: 'open source AI agent project trending 2026',
+      results: [
+        { title: 'Whiteboard (YC W26)', url: 'https://github.com/devdotfast/whiteboard' },
+      ],
+    }),
+    done: true,
+  })
+  assert.equal(searchSummary.statusLabel, '找到 2 条结果')
+  assert.equal(searchSummary.sources.length, 1)
+  assert.equal(searchSummary.sources[0].domain, 'github.com')
 })
 
 test('botLook parses styles, resolves group members, picks worker bots and scopes memories', () => {

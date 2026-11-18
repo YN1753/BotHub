@@ -245,36 +245,35 @@ function closeDetailsMenu(e: Event) {
 
       <!-- Calm Thinking Waveform -->
       <div
-        v-if="message.streaming && !message.content && !message.reasoning && !message.tools.length"
+        v-if="message.streaming && !message.content"
         class="py-1 flex items-center gap-2 text-xs text-slate-400"
         aria-live="polite"
       >
         <span class="thinking-dots inline-flex items-center gap-1" aria-hidden="true">
           <span /><span /><span />
         </span>
-        <span>正在构思</span>
+        <span>{{ message.reasoning ? '正在深度思考' : message.tools.length ? '正在检索与整理结果' : '正在构思' }}</span>
       </div>
 
-      <!-- Collapsible Reasoning -->
+      <!-- Collapsible Reasoning (collapsed by default, readable prose instead of terminal dump) -->
       <details
         v-if="message.reasoning"
-        :open="message.streaming && !message.content"
         class="vesper-details well-recessed rounded-2xl px-3.5 py-2 text-xs text-slate-400"
       >
-        <summary class="cursor-pointer flex items-center gap-1.5 font-mono text-amber-300/90 select-none">
+        <summary class="cursor-pointer flex items-center gap-1.5 text-[#f2b880] select-none">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron shrink-0">
             <polyline points="9 18 15 12 9 6" />
           </svg>
           <span>思考过程</span>
-          <span class="text-[10px] text-amber-300/60">({{ message.reasoning.length }} 字)</span>
+          <span class="text-[10.5px] text-slate-400">({{ message.reasoning.length }} 字)</span>
         </summary>
-        <div class="mt-2 font-mono whitespace-pre-wrap leading-relaxed text-slate-300/90">
-          {{ message.reasoning }}
+        <div class="mt-2 pt-2 border-t border-[#fff8ee]/8 whitespace-pre-wrap leading-relaxed text-slate-300/90 max-h-60 overflow-y-auto">
+          {{ message.reasoning.replace(/<\/?think>/g, '').trim() }}
         </div>
       </details>
 
-      <!-- Collapsible Merged Tool Call Trajectory -->
-      <BotToolTrail :tools="message.tools" @copy="emit('copyMarkdown', $event)" />
+      <!-- Collapsible Human-Readable Tool Activity Summary -->
+      <BotToolTrail :tools="message.tools" />
 
       <!-- Open Editorial Markdown Body -->
       <div

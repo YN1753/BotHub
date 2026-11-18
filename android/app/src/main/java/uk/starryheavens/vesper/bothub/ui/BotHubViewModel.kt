@@ -1049,8 +1049,11 @@ class BotHubViewModel(
                     onToolCall = { toolName, status ->
                         viewModelScope.launch {
                             updateTurnById(assistantId) { cur ->
-                                val label = "$toolName ($status)"
-                                val updatedTools = cur.tools.filterNot { it.startsWith("$toolName (") } + label
+                                val displayName = formatHumanToolName(toolName)
+                                val label = if (status == "执行中") "$displayName · 进行中" else displayName
+                                val updatedTools = cur.tools.filterNot {
+                                    it == displayName || it.startsWith("$displayName ·")
+                                } + label
                                 cur.copy(tools = updatedTools)
                             }
                         }
@@ -1362,6 +1365,31 @@ class BotHubViewModel(
                 }
                 showMessage(err.message ?: "删除失败")
             }
+        }
+    }
+
+    private fun formatHumanToolName(toolName: String): String {
+        val clean = toolName.trim()
+        return when {
+            clean == "web_search" -> "联网搜索"
+            clean == "read_url" -> "阅读网页"
+            clean == "consult_bot" -> "协同成员"
+            clean == "manage_todos" -> "待办管理"
+            clean == "manage_notes" -> "工作文档"
+            clean == "manage_stash" -> "收藏闪念"
+            clean == "manage_tasks" -> "定时提醒"
+            clean == "workspace_briefing" -> "今日简报"
+            clean == "send_notification" -> "主动推送"
+            clean == "calculate_eval" -> "精确计算"
+            clean == "datetime_calc" -> "日期推算"
+            clean == "remember_fact" -> "写入记忆"
+            clean == "recall_memory" -> "检索记忆"
+            clean == "manage_memory" -> "整理记忆"
+            clean == "manage_assets" -> "资产台账"
+            clean == "query_nezha_nodes" -> "探针巡检"
+            clean.startsWith("skill_") -> clean.removePrefix("skill_")
+            clean.isBlank() -> "扩展能力"
+            else -> clean
         }
     }
 

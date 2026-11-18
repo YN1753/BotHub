@@ -38,6 +38,212 @@ export function formatToolDisplayName(name: string, skills: Skill[] = []): strin
   return meta ? `${meta.shortLabel} (${name})` : name
 }
 
+export function formatToolHumanName(name: string, skills: Skill[] = []): string {
+  if (name.startsWith('skill_')) {
+    const slug = name.slice(6)
+    const found = skills.find((s) => s.slug === slug)
+    return found?.name || slug
+  }
+  if (name === 'read_url') return '阅读网页'
+  return TOOL_META[name]?.shortLabel || name
+}
+
+export interface HumanToolSource {
+  title: string
+  url: string
+  domain: string
+}
+
+export interface HumanToolStepSummary {
+  title: string
+  subtitle?: string
+  url?: string
+  statusLabel: string
+  sources: HumanToolSource[]
+  isError: boolean
+}
+
+function tryParseJson(raw?: string): Record<string, any> | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null
+  try {
+    const parsed = JSON.parse(trimmed)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function safeHttpUrl(raw: unknown): string {
+  if (typeof raw !== 'string') return ''
+  const s = raw.trim()
+  if (!s) return ''
+  try {
+    const u = new URL(s)
+    if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
+  } catch {
+    // ignore invalid URL
+  }
+  return ''
+}
+
+function formatCompactUrl(rawUrl: string): { display: string; domain: string } {
+  try {
+    const u = new URL(rawUrl)
+    const host = u.hostname.replace(/^www\./, '')
+    const path = u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/$/, '') : ''
+    const full = `${host}${path}`
+    return {
+      domain: host,
+      display: full.length > 44 ? `${full.slice(0, 41)}...` : full,
+    }
+  } catch {
+    return { domain: rawUrl, display: rawUrl.slice(0, 44) }
+  }
+}
+
+function clipText(val: unknown, maxLen = 48): string {
+  if (typeof val !== 'string') return ''
+  const clean = val.replace(/\s+/g, ' ').trim()
+  if (!clean) return ''
+  return clean.length > maxLen ? `${clean.slice(0, maxLen - 1)}…` : clean
+}
+
+const TOOL_ACTION_LABELS: Record<string, string> = {
+  list: '查看列表',
+  get: '查看详情',
+  add: '新增',
+  create: '创建',
+  update: '更新',
+  edit: '编辑',
+  delete: '删除',
+  remove: '移除',
+  search: '检索',
+  query: '查询',
+  complete: '标记完成',
+  done: '标记完成',
+  toggle: '切换状态',
+  archive: '归档',
+}
+
+export function summarizeToolStep(
+  tool: {
+    name: string
+    arguments?: string
+    result?: string
+    status?: string
+    done?: boolean
+  },
+  skills: Skill[] = []
+): HumanToolStepSummary {
+  const args = tryParseJson(tool.arguments) || {}
+  const res = tryParseJson(tool.result)
+  const done = Boolean(tool.done)
+  const isError = tool.status === 'error' || Boolean(res && res.ok === false && res.error)
+  const errMsg = res && typeof res.error === 'string' ? clipText(res.error, 42) : ''
+
+  if (tool.name === 'web_search') {
+    const q = clipText(args.query || res?.query, 44)
+    const rawResults = Array.isArray(res?.results) ? res.results : []
+    const count = typeof res?.count === 'number' ? res.count : rawResults.length
+    const sources: HumanToolSource[] = []
+    for (const item of rawResults) {
+      if (sources.length >= 3) break
+      const url = safeHttpUrl(item?.url)
+      if (!url) continue
+      const { domain } = formatCompactUrl(url)
+      sources.push({
+        title: clipText(item?.title || domain, 36) || domain,
+        url,
+        domain,
+      })
+    }
+    return {
+      title: q ? `搜索「${q}」` : '联网搜索',
+      statusLabel: !done
+        ? '搜索中...'
+        : isError
+          ? errMsg || '检索异常'
+          : count > 0
+            ? `找到 ${count} 条结果`
+            : '未命中结果',
+      sources,
+      isError,
+    }
+  }
+
+  if (tool.name === 'read_url') {
+    const url = safeHttpUrl(args.url || res?.url)
+    const formatted = url ? formatCompactUrl(url) : null
+    const pageTitle = clipText(res?.title, 48)
+    return {
+      title: formatted ? `阅读网页 · ${formatted.display}` : '阅读网页',
+      subtitle: pageTitle && pageTitle !== formatted?.display ? pageTitle : undefined,
+      url: url || undefined,
+      statusLabel: !done ? '读取中...' : isError ? errMsg || '读取失败' : '已读取',
+      sources: [],
+      isError,
+    }
+  }
+
+  if (tool.name === 'consult_bot') {
+    if (res && res.parallel_count && Array.isArray(res.results)) {
+      const names = res.results
+        .filter((x: any) => x?.ok && x?.bot_name)
+        .map((x: any) => String(x.bot_name))
+      return {
+        title: `并发协同 (${res.parallel_count || res.results.length} 位成员)`,
+        subtitle: names.length ? names.join('、') : undefined,
+        statusLabel: !done ? '协作中...' : isError ? '协作异常' : '已完成',
+        sources: [],
+        isError,
+      }
+    }
+    const targetName = clipText(res?.bot_name || args.bot_name || args.target_bot, 28)
+    const roleTitle = clipText(res?.role_title, 24)
+    return {
+      title: targetName ? `协同成员 · ${targetName}` : '协同队友委派',
+      subtitle: roleTitle || undefined,
+      statusLabel: !done ? '协作中...' : isError ? errMsg || '协作异常' : '已完成',
+      sources: [],
+      isError,
+    }
+  }
+
+  const humanName = formatToolHumanName(tool.name, skills)
+  const actionKey = typeof args.action === 'string' ? args.action.trim().toLowerCase() : ''
+  const actionLabel = actionKey ? TOOL_ACTION_LABELS[actionKey] || '' : ''
+  const subject = clipText(
+    args.title || args.name || args.fact_key || args.query || args.expression || args.target || args.content,
+    42
+  )
+  const count =
+    typeof res?.count === 'number'
+      ? res.count
+      : Array.isArray(res?.items)
+        ? res.items.length
+        : Array.isArray(res?.nodes)
+          ? res.nodes.length
+          : Array.isArray(res?.memories)
+            ? res.memories.length
+            : undefined
+
+  return {
+    title: actionLabel ? `${humanName} · ${actionLabel}` : humanName,
+    subtitle: subject || undefined,
+    statusLabel: !done
+      ? '处理中...'
+      : isError
+        ? errMsg || '异常'
+        : count !== undefined
+          ? `共 ${count} 项`
+          : '已完成',
+    sources: [],
+    isError,
+  }
+}
+
 const GROUP_ORDER: Array<{ id: string; label: string }> = [
   { id: 'assistant', label: '个人助手与行动' },
   { id: 'research', label: '检索、阅读与精确计算' },
