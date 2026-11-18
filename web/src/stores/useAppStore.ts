@@ -31,52 +31,89 @@ export type MainWorkspace = 'bots' | 'ops'
 export type BotSubView = 'stream' | 'routines' | 'config' | 'activity'
 
 const TOAST_DURATION_MS = 3200
+const FASTBOOT_STORAGE_KEY = 'bothub_fastboot_v1'
+
+interface FastBootSnapshot {
+  version?: string
+  bots?: Bot[]
+  notifications?: NotificationItem[]
+  assets?: Asset[]
+  tasks?: Task[]
+  stash?: StashItem[]
+  activeBotId?: string
+  timelinesByBot?: Record<string, ChatMessageUI[]>
+}
+
+function loadFastBootSnapshot(): FastBootSnapshot | null {
+  try {
+    const raw = localStorage.getItem(FASTBOOT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as FastBootSnapshot
+    if (!parsed || !Array.isArray(parsed.bots)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+const initialSnap = typeof window !== 'undefined' ? loadFastBootSnapshot() : null
+const timelinesByBot: Record<string, ChatMessageUI[]> = initialSnap?.timelinesByBot
+  ? { ...initialSnap.timelinesByBot }
+  : {}
+const initialActiveBotId =
+  (typeof window !== 'undefined' && localStorage.getItem('bothub_active_bot')) ||
+  initialSnap?.activeBotId ||
+  initialSnap?.bots?.[0]?.id ||
+  ''
 
 const state = reactive({
-  authChecked: false,
-  authenticated: false,
+  authChecked: Boolean(initialSnap),
+  authenticated: Boolean(initialSnap),
   oidcEnabled: false,
   oidcProviderName: 'Vesper Auth',
-  version: 'v2.37.0',
+  version: initialSnap?.version || 'v2.46.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
   stats: {
     sent_pushes: 0,
   },
-  bots: [] as Bot[],
+  bots: (initialSnap?.bots || []) as Bot[],
   skills: [] as Skill[],
   todos: [] as TodoItem[],
   notes: [] as WorkNote[],
-  stash: [] as StashItem[],
+  stash: (initialSnap?.stash || []) as StashItem[],
   stashTags: [] as StashTagCount[],
   modelPool: [] as ModelPoolEntry[],
   availableTools: [] as AvailableToolMeta[],
   modelHealth: {} as Record<string, ModelHealthStats>,
-  assets: [] as Asset[],
-  tasks: [] as Task[],
+  assets: (initialSnap?.assets || []) as Asset[],
+  tasks: (initialSnap?.tasks || []) as Task[],
   templates: [] as TaskTemplate[],
   memories: [] as AgentMemory[],
-  notifications: [] as NotificationItem[],
+  notifications: (initialSnap?.notifications || []) as NotificationItem[],
   pushLogs: [] as PushLog[],
   configs: {} as Record<string, string>,
 
   // Navigation & Active Bot Workspace
   workspace: 'bots' as MainWorkspace,
-  activeBotId: localStorage.getItem('bothub_active_bot') || '',
+  activeBotId: initialActiveBotId,
   activeThreadId: '',
   botThreads: [] as BotThread[],
   botMemories: [] as AgentMemory[],
   botExecutions: [] as BotExecutionLog[],
   botView: 'stream' as BotSubView,
-  timeline: [] as ChatMessageUI[],
+  timeline: (initialActiveBotId && timelinesByBot[initialActiveBotId]
+    ? [...timelinesByBot[initialActiveBotId]]
+    : []) as ChatMessageUI[],
   isStreaming: false,
   sseConnected: false,
   soundEnabled: localStorage.getItem('bothub_sound') === '1',
   ambientMotionPaused: localStorage.getItem('bothub_ambient_paused') === '1',
   draftsByBot: (() => {
     try {
-      return parseJsonRecord(sessionStorage.getItem('bothub_drafts'))
+      const persisted = localStorage.getItem('bothub_drafts_v2') || sessionStorage.getItem('bothub_drafts')
+      return parseJsonRecord(persisted)
     } catch {
       return {} as Record<string, string>
     }
@@ -152,6 +189,44 @@ function mapOptions() {
   return {
     bots: state.bots,
     defaultModel: state.configs.ai_model,
+  }
+}
+
+function saveFastBootSnapshot() {
+  if (typeof window === 'undefined' || !state.authenticated) return
+  try {
+    const trimmedTimelines: Record<string, ChatMessageUI[]> = {}
+    const candidateIds = Array.from(
+      new Set([state.activeBotId, ...state.bots.slice(0, 6).map((b) => b.id)].filter(Boolean))
+    ).slice(0, 6)
+    for (const id of candidateIds) {
+      const list = timelinesByBot[id]
+      if (Array.isArray(list) && list.length > 0) {
+        trimmedTimelines[id] = list.slice(-30)
+      }
+    }
+    const payload: FastBootSnapshot = {
+      version: state.version,
+      bots: state.bots.slice(0, 30),
+      notifications: state.notifications.slice(0, 30),
+      assets: state.assets.slice(0, 30),
+      tasks: state.tasks.slice(0, 30),
+      stash: state.stash.slice(0, 40),
+      activeBotId: state.activeBotId,
+      timelinesByBot: trimmedTimelines,
+    }
+    localStorage.setItem(FASTBOOT_STORAGE_KEY, JSON.stringify(payload))
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function clearFastBootSnapshot() {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.removeItem(FASTBOOT_STORAGE_KEY)
+  } catch {
+    // Ignore
   }
 }
 
@@ -236,9 +311,13 @@ export function useAppStore() {
       if (state.authenticated) {
         await loadDashboard(true)
         startSSE()
+      } else {
+        clearFastBootSnapshot()
       }
     } catch {
-      state.authenticated = false
+      if (!initialSnap) {
+        state.authenticated = false
+      }
       state.authChecked = true
     }
   }
@@ -256,6 +335,7 @@ export function useAppStore() {
 
   async function logout() {
     stopSSE()
+    clearFastBootSnapshot()
     await BotHubApi.logout().catch(() => {})
     state.authenticated = false
   }
@@ -394,7 +474,11 @@ export function useAppStore() {
     }
     const run = (async () => {
       try {
-        const data = await BotHubApi.dashboard()
+        // Fire active bot timeline in parallel with dashboard when activeBotId is already known!
+        const preflightBotId = loadInitialBot && state.activeBotId ? state.activeBotId : ''
+        const preflightPromise = preflightBotId ? selectBot(preflightBotId) : Promise.resolve()
+
+        const [data] = await Promise.all([BotHubApi.dashboard(), preflightPromise])
         state.version = data.version || state.version
         state.commit = data.commit || state.commit
         state.buildTime = data.build_time || state.buildTime
@@ -427,11 +511,12 @@ export function useAppStore() {
           state.botExecutions = []
           state.timeline = []
           localStorage.removeItem('bothub_active_bot')
-        } else if (loadInitialBot || !state.bots.some((b) => b.id === state.activeBotId)) {
-          const exists = state.bots.some((b) => b.id === state.activeBotId)
-          const targetId = exists ? state.activeBotId : state.bots[0].id
-          await selectBot(targetId)
+        } else if (!state.bots.some((b) => b.id === state.activeBotId)) {
+          await selectBot(state.bots[0].id)
+        } else if (loadInitialBot && !preflightBotId) {
+          await selectBot(state.activeBotId)
         }
+        saveFastBootSnapshot()
       } catch (err: any) {
         notify(err.message || '加载中枢数据失败')
       } finally {
@@ -462,6 +547,7 @@ export function useAppStore() {
 
   async function selectBot(botId: string, threadId?: string) {
     const seq = ++latestSelectSeq
+    const changedBot = state.activeBotId !== botId
     state.activeBotId = botId
     state.workspace = 'bots'
     localStorage.setItem('bothub_active_bot', botId)
@@ -470,8 +556,12 @@ export function useAppStore() {
       bot.unread_count = 0
       if (bot.state === 'done') bot.state = 'idle'
     }
+    const targetThread = threadId !== undefined ? threadId : (bot?.active_thread_id || '')
+    const cacheKey = targetThread ? `${botId}::${targetThread}` : botId
+    if (changedBot || threadId !== undefined) {
+      state.timeline = timelinesByBot[cacheKey] ? [...timelinesByBot[cacheKey]] : []
+    }
     try {
-      const targetThread = threadId !== undefined ? threadId : (bot?.active_thread_id || '')
       const res = await BotHubApi.getBotMessages(botId, targetThread)
       if (seq !== latestSelectSeq) return
       state.activeThreadId = res.thread_id || ''
@@ -482,7 +572,14 @@ export function useAppStore() {
         const idx = state.bots.findIndex((b) => b.id === botId)
         if (idx >= 0) state.bots[idx] = { ...state.bots[idx], ...res.bot }
       }
-      state.timeline = mapServerMessages(res.messages || [], res.bot || bot, mapOptions())
+      const mapped = mapServerMessages(res.messages || [], res.bot || bot, mapOptions())
+      state.timeline = mapped
+      const resolvedKey = state.activeThreadId ? `${botId}::${state.activeThreadId}` : botId
+      timelinesByBot[resolvedKey] = mapped
+      if (!state.activeThreadId) {
+        timelinesByBot[botId] = mapped
+      }
+      saveFastBootSnapshot()
     } catch (err: any) {
       if (seq !== latestSelectSeq) return
       notify(err.message || '加载 Bot 对话流失败')
@@ -639,7 +736,7 @@ export function useAppStore() {
     if (text) state.draftsByBot[key] = text
     else delete state.draftsByBot[key]
     try {
-      sessionStorage.setItem('bothub_drafts', JSON.stringify(state.draftsByBot))
+      localStorage.setItem('bothub_drafts_v2', JSON.stringify(state.draftsByBot))
     } catch {
       // ignore storage quota errors
     }

@@ -496,3 +496,37 @@ dialog.vesper-dialog[open]:where(:not([data-closing]))::backdrop {
     transition-duration: 0.1s;
   }
 }
+
+/* ============================================================================
+   SPA View State Caching (content-visibility: hidden + inert)
+   Retains layout & scroll state across workspace/mobile-IM tab switches
+   ============================================================================ */
+.spa-view-inactive {
+  content-visibility: hidden;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+@supports not (content-visibility: hidden) {
+  .spa-view-inactive {
+    display: none !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .spa-mobile-chat-inactive {
+    content-visibility: hidden;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  @supports not (content-visibility: hidden) {
+    .spa-mobile-chat-inactive {
+      display: none !important;
+    }
+  }
+}

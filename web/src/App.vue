@@ -3,7 +3,6 @@ import { ref, reactive, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from './stores/useAppStore'
 import { BotHubApi } from './api/client'
 import { lazyOverlayChunk } from './utils/lazyComponent'
-import { resolveTabSlideTransition, type DirectionalTransitionName } from './utils/motion'
 import StarfieldBg from './components/StarfieldBg.vue'
 import LoginGate from './components/LoginGate.vue'
 import Sidebar from './components/Sidebar.vue'
@@ -34,7 +33,6 @@ const isAppShell = ref(
 )
 const mobileImTab = ref<MobileImTab>('chats')
 const mobileInChatRoom = ref(isAppShell.value)
-const workspaceTransition = ref<DirectionalTransitionName>('vesper-slide-forward')
 
 function handleSelectMobileImTab(tab: MobileImTab) {
   mobileInChatRoom.value = false
@@ -47,13 +45,6 @@ function handleSelectMobileImTab(tab: MobileImTab) {
   mobileImTab.value = tab
   store.state.workspace = tab === 'ops' ? 'ops' : 'bots'
 }
-
-watch(
-  () => store.state.workspace,
-  (next, prev) => {
-    workspaceTransition.value = resolveTabSlideTransition(next, prev || 'bots', ['bots', 'ops'])
-  }
-)
 
 // Once opened, keep modal components mounted so closing <dialog> transitions stay smooth
 const mountedFlags = reactive({
@@ -147,6 +138,11 @@ function handleGlobalKeydown(e: KeyboardEvent) {
 }
 
 function handleUnauthorized() {
+  try {
+    localStorage.removeItem('bothub_fastboot_v1')
+  } catch {
+    // ignore
+  }
   if (!store.state.authenticated) return
   store.stopSSE()
   store.state.authenticated = false
@@ -304,31 +300,38 @@ onBeforeUnmount(() => {
 
       <main
         :inert="mobileSidebarOpen || undefined"
-        class="workspace-island flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden md:rounded-[24px] md:border md:border-[#fff8ee]/12"
+        class="workspace-island relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden md:rounded-[24px] md:border md:border-[#fff8ee]/12"
       >
         <MobileImRoster
-          v-if="!isAppShell && store.state.workspace === 'bots' && !mobileInChatRoom"
+          v-if="!isAppShell"
+          :class="store.state.workspace !== 'bots' || mobileInChatRoom ? 'spa-view-inactive' : ''"
+          :inert="store.state.workspace !== 'bots' || mobileInChatRoom || undefined"
+          :aria-hidden="store.state.workspace !== 'bots' || mobileInChatRoom ? 'true' : 'false'"
           :mode="mobileImTab === 'contacts' ? 'contacts' : 'chats'"
           @enter-chat="mobileInChatRoom = true"
         />
 
-        <Transition :name="workspaceTransition" mode="out-in">
-          <BotWorkspace
-            v-if="store.state.workspace === 'bots'"
-            key="bots"
-            :class="!isAppShell && !mobileInChatRoom ? 'hidden md:flex' : ''"
-            :desktop-collapsed="desktopCollapsed"
-            @open-mobile-menu="isAppShell ? (mobileSidebarOpen = true) : (mobileInChatRoom = false)"
-            @toggle-desktop-sidebar="toggleDesktopSidebar"
-          />
-          <OpsWorkspace
-            v-else-if="mountedFlags.ops || store.state.workspace === 'ops'"
-            key="ops"
-            :desktop-collapsed="desktopCollapsed"
-            @open-mobile-menu="mobileSidebarOpen = true"
-            @toggle-desktop-sidebar="toggleDesktopSidebar"
-          />
-        </Transition>
+        <BotWorkspace
+          :class="[
+            store.state.workspace !== 'bots' ? 'spa-view-inactive' : '',
+            !isAppShell && store.state.workspace === 'bots' && !mobileInChatRoom ? 'spa-mobile-chat-inactive' : ''
+          ]"
+          :inert="store.state.workspace !== 'bots' || undefined"
+          :aria-hidden="store.state.workspace !== 'bots' ? 'true' : 'false'"
+          :desktop-collapsed="desktopCollapsed"
+          @open-mobile-menu="isAppShell ? (mobileSidebarOpen = true) : (mobileInChatRoom = false)"
+          @toggle-desktop-sidebar="toggleDesktopSidebar"
+        />
+
+        <OpsWorkspace
+          v-if="mountedFlags.ops || store.state.workspace === 'ops'"
+          :class="store.state.workspace !== 'ops' ? 'spa-view-inactive' : ''"
+          :inert="store.state.workspace !== 'ops' || undefined"
+          :aria-hidden="store.state.workspace !== 'ops' ? 'true' : 'false'"
+          :desktop-collapsed="desktopCollapsed"
+          @open-mobile-menu="mobileSidebarOpen = true"
+          @toggle-desktop-sidebar="toggleDesktopSidebar"
+        />
 
         <MobileBottomDock
           v-if="!isAppShell && !(store.state.workspace === 'bots' && mobileInChatRoom)"

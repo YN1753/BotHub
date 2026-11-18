@@ -8,7 +8,7 @@ import BotAvatar from './BotAvatar.vue'
 import BotGroupAvatar from './BotGroupAvatar.vue'
 import VesperBrandIcon from './ui/VesperBrandIcon.vue'
 
-const props = defineProps<{
+defineProps<{
   mode?: 'chats' | 'contacts'
 }>()
 
@@ -19,7 +19,6 @@ const emit = defineEmits<{
 const store = useAppStore()
 const searchQuery = ref('')
 const plusOpen = ref(false)
-const rosterScope = ref<'all' | 'groups' | 'companion' | 'worker'>('all')
 
 const inboxUnread = computed(() => store.unreadInboxCount.value)
 const botUnreadTotal = computed(() =>
@@ -47,11 +46,6 @@ const sortedBots = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return store.state.bots
     .filter((b) => {
-      if (props.mode !== 'contacts') {
-        if (rosterScope.value === 'groups' && !isGroup(b)) return false
-        if (rosterScope.value === 'companion' && (isGroup(b) || b.bot_mode !== 'companion')) return false
-        if (rosterScope.value === 'worker' && (isGroup(b) || b.bot_mode === 'companion')) return false
-      }
       if (!q) return true
       return `${b.name} ${b.role_title} ${b.traits || ''} ${b.last_summary}`.toLowerCase().includes(q)
     })
@@ -67,9 +61,10 @@ const sortedBots = computed(() => {
 const groupList = computed(() => sortedBots.value.filter((b) => isGroup(b)))
 const friendList = computed(() => sortedBots.value.filter((b) => !isGroup(b)))
 
-async function handleSelectConversation(botId: string) {
+function handleSelectConversation(botId: string) {
   if (!store.state.isStreaming) {
-    await store.selectBot(botId)
+    // Do NOT await network round-trip before entering chat room: timeline swaps in 0ms from cache!
+    void store.selectBot(botId)
   }
   emit('enterChat', botId)
 }
@@ -89,23 +84,12 @@ function openCreateGroup() {
 
 <template>
   <section class="md:hidden flex-1 min-h-0 flex flex-col overflow-hidden">
-    <!-- WeChat / QQ Mobile IM Header -->
-    <header class="relative z-20 px-4 pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] pb-2.5 border-b border-[#fff8ee]/10 bg-[#070b16]/90 backdrop-blur-xl flex items-center justify-between gap-3 shrink-0">
-      <div class="flex items-center gap-2.5 min-w-0">
-        <VesperBrandIcon :size="28" />
-        <div class="min-w-0">
-          <h1 class="text-[16px] font-semibold text-[#fff8ee] leading-tight truncate">
-            <template v-if="mode === 'contacts'">通讯录</template>
-            <template v-else>{{ totalUnread > 0 ? `消息 (${totalUnread})` : '消息' }}</template>
-          </h1>
-          <p class="text-[11px] text-slate-400 leading-tight truncate">
-            <template v-if="mode === 'contacts'">
-              {{ friendList.length }} 位 AI 好友 · {{ groupList.length }} 个群聊
-            </template>
-            <template v-else>AI 好友与协同群聊实时在线</template>
-          </p>
-        </div>
-      </div>
+    <!-- Compact Single-Row WeChat / QQ Mobile IM Header -->
+    <header class="relative z-20 px-4 pt-[max(0.65rem,env(safe-area-inset-top,0.65rem))] pb-2 border-b border-[#fff8ee]/10 bg-[#070b16]/92 backdrop-blur-xl flex items-center justify-between gap-3 shrink-0">
+      <h1 class="text-[17px] font-bold text-[#fff8ee] leading-tight truncate">
+        <template v-if="mode === 'contacts'">好友</template>
+        <template v-else>{{ totalUnread > 0 ? `消息 (${totalUnread})` : '消息' }}</template>
+      </h1>
 
       <div class="relative flex items-center gap-2 shrink-0">
         <button
@@ -122,17 +106,16 @@ function openCreateGroup() {
 
         <button
           type="button"
-          aria-label="系统设置"
+          aria-label="设置"
           @click="store.state.showSettingsModal = true"
           class="btn-tactile w-9 h-9 rounded-full inline-flex items-center justify-center text-slate-300 cursor-pointer"
         >
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
             <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </button>
 
-        <!-- WeChat "+" Floating Menu -->
         <div
           v-if="plusOpen"
           class="fixed inset-0 z-30"
@@ -140,14 +123,14 @@ function openCreateGroup() {
         />
         <div
           v-if="plusOpen"
-          class="absolute right-0 top-11 z-40 w-44 rounded-2xl border border-[#fff8ee]/16 bg-[#0d1428]/98 p-1.5 shadow-2xl backdrop-blur-2xl flex flex-col gap-0.5"
+          class="absolute right-0 top-11 z-40 w-40 rounded-2xl border border-[#fff8ee]/16 bg-[#0d1428]/98 p-1.5 shadow-2xl backdrop-blur-2xl flex flex-col gap-0.5"
         >
           <button
             type="button"
             @click="openCreateGroup"
             class="w-full px-3 py-2.5 rounded-xl text-left text-xs text-slate-100 hover:bg-white/8 cursor-pointer"
           >
-            发起协作群聊
+            发起群聊
           </button>
           <button
             type="button"
@@ -161,98 +144,71 @@ function openCreateGroup() {
             @click="plusOpen = false; store.state.showWorkhubModal = true"
             class="w-full px-3 py-2.5 rounded-xl text-left text-xs text-slate-100 hover:bg-white/8 cursor-pointer"
           >
-            秒收链接 / 闪念
-          </button>
-          <button
-            type="button"
-            @click="plusOpen = false; store.state.showSkillsModal = true"
-            class="w-full px-3 py-2.5 rounded-xl text-left text-xs text-slate-100 hover:bg-white/8 cursor-pointer"
-          >
-            技能工坊
+            快速收藏
           </button>
         </div>
       </div>
     </header>
 
-    <!-- Search Bar + Optional Scope Filter -->
-    <div class="px-3.5 pt-2.5 pb-1.5 shrink-0 flex flex-col gap-2">
-      <div class="flex items-center gap-2 rounded-xl border border-[#fff8ee]/12 bg-[#0a0f1f]/90 px-3 py-2">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-500 shrink-0" aria-hidden="true">
+    <!-- Recessed Search Bar -->
+    <div class="px-3.5 py-2 shrink-0">
+      <div class="flex items-center gap-2 rounded-full border border-[#fff8ee]/10 bg-[#080d1b]/95 px-3.5 py-2">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" class="text-slate-500 shrink-0" aria-hidden="true">
           <circle cx="11" cy="11" r="8" />
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
         <input
           v-model="searchQuery"
           type="search"
-          placeholder="搜索 AI 好友、群聊或近期消息..."
+          :placeholder="mode === 'contacts' ? '搜索好友或群聊' : '搜索'"
           class="flex-1 min-w-0 bg-transparent text-[13px] text-white placeholder-slate-500 focus:outline-none"
         />
       </div>
-
-      <div v-if="mode !== 'contacts'" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-        <button
-          v-for="tab in [
-            { id: 'all', label: '全部' },
-            { id: 'groups', label: '群聊' },
-            { id: 'companion', label: '伴聊' },
-            { id: 'worker', label: '助理' }
-          ]"
-          :key="tab.id"
-          type="button"
-          @click="rosterScope = tab.id as any"
-          :class="[
-            'px-3 py-1 rounded-full text-[11.5px] font-medium border transition-colors cursor-pointer shrink-0',
-            rosterScope === tab.id
-              ? 'bg-[#f2b880]/16 border-[#f2b880]/55 text-[#ffe2be]'
-              : 'bg-[#0b1022]/80 border-[#fff8ee]/10 text-slate-400'
-          ]"
-        >
-          {{ tab.label }}
-        </button>
-      </div>
     </div>
 
-    <!-- Mode A: Contacts Directory ("好友 / 通讯录") -->
+    <!-- Mode A: Contacts Directory ("好友") -->
     <div v-if="mode === 'contacts'" class="flex-1 min-h-0 overflow-y-auto pb-4">
-      <div class="mx-3.5 mt-1 mb-3 rounded-2xl border border-[#fff8ee]/12 bg-[#0c1224]/90 divide-y divide-[#fff8ee]/8">
+      <div
+        v-if="!searchQuery.trim()"
+        class="mx-3.5 mt-0.5 mb-3 rounded-2xl border border-[#fff8ee]/12 bg-[#0c1224]/90 divide-y divide-[#fff8ee]/8"
+      >
         <button
           type="button"
           @click="openCreateBot"
           class="w-full px-3.5 py-3 flex items-center justify-between gap-3 text-left cursor-pointer"
         >
-          <div>
-            <div class="text-[14px] font-medium text-[#fff8ee]">新的 AI 好友</div>
-            <div class="text-[11.5px] text-slate-400">定制专属性格、口吻与绑定技能</div>
-          </div>
-          <span class="text-xs text-[#ffe2be]">+ 添加</span>
+          <span class="text-[14.5px] font-medium text-[#fff8ee]">添加 AI 好友</span>
+          <span class="text-xs text-slate-400">&gt;</span>
         </button>
         <button
           type="button"
           @click="openCreateGroup"
           class="w-full px-3.5 py-3 flex items-center justify-between gap-3 text-left cursor-pointer"
         >
-          <div>
-            <div class="text-[14px] font-medium text-[#fff8ee]">发起协作群聊</div>
-            <div class="text-[11.5px] text-slate-400">拉多位 AI 好友进群分工讨论</div>
-          </div>
-          <span class="text-xs text-indigo-300">+ 建群</span>
+          <span class="text-[14.5px] font-medium text-[#fff8ee]">发起群聊</span>
+          <span class="text-xs text-slate-400">&gt;</span>
         </button>
         <button
           type="button"
-          @click="store.state.showMemoriesModal = true"
+          @click="store.state.showInboxModal = true"
           class="w-full px-3.5 py-3 flex items-center justify-between gap-3 text-left cursor-pointer"
         >
-          <div>
-            <div class="text-[14px] font-medium text-[#fff8ee]">长期记忆与技能库</div>
-            <div class="text-[11.5px] text-slate-400">管理跨会话记忆与自定义工具</div>
-          </div>
-          <span class="text-xs text-slate-400">&gt;</span>
+          <span class="text-[14.5px] font-medium text-[#fff8ee]">服务通知</span>
+          <span class="inline-flex items-center gap-1.5">
+            <span
+              v-if="inboxUnread > 0"
+              class="min-w-[17px] h-[17px] px-1 rounded-full bg-rose-500 text-white font-mono text-[10px] font-bold leading-none inline-flex items-center justify-center"
+            >
+              {{ inboxUnread > 99 ? '99+' : inboxUnread }}
+            </span>
+            <span class="text-xs text-slate-400">&gt;</span>
+          </span>
         </button>
       </div>
 
       <template v-if="groupList.length > 0">
         <div class="px-4 py-1.5 text-[11.5px] font-semibold text-slate-400">
-          我的群聊 ({{ groupList.length }})
+          群聊 ({{ groupList.length }})
         </div>
         <div class="divide-y divide-[#fff8ee]/8">
           <button
@@ -266,15 +222,15 @@ function openCreateGroup() {
               <BotGroupAvatar :members="resolveGroupMembers(g)" :fallback-style="g.avatar_style" :state="g.state" size="sm" />
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-[14.5px] font-medium text-[#fff8ee] truncate">{{ g.name }}</div>
-              <div class="text-[12px] text-slate-400 truncate">{{ resolveGroupMembers(g).length }} 位成员 · {{ g.role_title }}</div>
+              <div class="text-[14.5px] font-semibold text-[#fff8ee] truncate">{{ g.name }}</div>
+              <div class="text-[12px] text-slate-400 truncate">{{ resolveGroupMembers(g).length }}人</div>
             </div>
           </button>
         </div>
       </template>
 
       <div class="px-4 pt-3 pb-1.5 text-[11.5px] font-semibold text-slate-400">
-        AI 好友 ({{ friendList.length }})
+        好友 ({{ friendList.length }})
       </div>
       <div class="divide-y divide-[#fff8ee]/8">
         <button
@@ -289,13 +245,8 @@ function openCreateGroup() {
             <span :class="['absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-[#050811]', botStateDotClass(f.state)]" />
           </div>
           <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[14.5px] font-medium text-[#fff8ee] truncate">{{ f.name }}</span>
-              <span class="px-1.5 py-0.5 rounded text-[10px] border border-[#fff8ee]/12 text-slate-300 shrink-0">
-                {{ f.bot_mode === 'companion' ? '伴聊' : '助理' }}
-              </span>
-            </div>
-            <div class="text-[12px] text-slate-400 truncate">{{ f.traits || f.role_title || '随时在线' }}</div>
+            <div class="text-[14.5px] font-semibold text-[#fff8ee] truncate">{{ f.name }}</div>
+            <div class="text-[12px] text-slate-400 truncate">{{ f.traits || f.role_title || '在线' }}</div>
           </div>
         </button>
       </div>
@@ -303,14 +254,14 @@ function openCreateGroup() {
 
     <!-- Mode B: WeChat / QQ IM Conversation List ("消息") -->
     <div v-else class="flex-1 min-h-0 overflow-y-auto pb-3">
-      <!-- Official Service Notification Channel -->
+      <!-- Service Notification Channel -->
       <button
         v-if="!searchQuery.trim()"
         type="button"
         @click="store.state.showInboxModal = true"
-        class="w-full px-4 py-3 flex items-center gap-3.5 text-left bg-[#0d1428]/45 border-b border-[#fff8ee]/8 hover:bg-white/[0.04] cursor-pointer"
+        class="w-full px-4 py-3 flex items-center gap-3.5 text-left border-b border-[#fff8ee]/8 hover:bg-white/[0.04] cursor-pointer"
       >
-        <div class="relative w-12 h-12 rounded-[14px] border border-[#f2b880]/35 bg-[#101830] flex items-center justify-center shrink-0">
+        <div class="relative w-12 h-12 rounded-[15px] border border-[#f2b880]/30 bg-[#101830] flex items-center justify-center shrink-0">
           <VesperBrandIcon :size="32" />
           <span
             v-if="inboxUnread > 0"
@@ -321,17 +272,14 @@ function openCreateGroup() {
         </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-1.5 min-w-0">
-              <span class="text-[15px] font-semibold text-[#fff8ee] truncate">服务通知</span>
-              <span class="px-1.5 py-0.5 rounded text-[9.5px] bg-indigo-400/15 border border-indigo-300/30 text-indigo-200 shrink-0">订阅号</span>
-            </div>
+            <span class="text-[15.5px] font-semibold text-[#fff8ee] truncate">服务通知</span>
             <span v-if="latestNotif" class="font-mono text-[11px] text-slate-500 shrink-0">
               {{ formatChatTime(latestNotif.created_at) }}
             </span>
           </div>
-          <div class="mt-0.5 text-[12.5px] text-slate-400 truncate">
-            <span v-if="inboxUnread > 0" class="text-[#f2b880] font-medium">[{{ inboxUnread }}条未读] </span>
-            <span>{{ latestNotif ? latestNotif.title : '晨间简报 · 技术雷达 · 节点告警实时推送' }}</span>
+          <div class="mt-0.5 text-[13px] text-slate-400 truncate">
+            <span v-if="inboxUnread > 0" class="text-[#f2b880] font-medium">[{{ inboxUnread }}条] </span>
+            <span>{{ latestNotif ? latestNotif.title : '暂无新通知' }}</span>
           </div>
         </div>
       </button>
@@ -344,10 +292,10 @@ function openCreateGroup() {
         @click="handleSelectConversation(b.id)"
         :class="[
           'w-full px-4 py-3 flex items-center gap-3.5 text-left border-b border-[#fff8ee]/7 transition-colors cursor-pointer',
-          b.is_pinned ? 'bg-[#0e152a]/55' : 'hover:bg-white/[0.03]'
+          b.is_pinned ? 'bg-[#0f172e]/55' : 'hover:bg-white/[0.03]'
         ]"
       >
-        <div class="relative w-12 h-12 rounded-[14px] border border-[#fff8ee]/14 bg-[#0f162c] flex items-center justify-center shrink-0">
+        <div class="relative w-12 h-12 rounded-[15px] border border-[#fff8ee]/14 bg-[#0f162c] flex items-center justify-center shrink-0">
           <BotGroupAvatar
             v-if="isGroup(b)"
             :members="resolveGroupMembers(b)"
@@ -371,28 +319,34 @@ function openCreateGroup() {
         <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-1.5 min-w-0">
-              <span class="text-[15px] font-semibold text-[#fff8ee] truncate">{{ b.name }}</span>
+              <span class="text-[15.5px] font-semibold text-[#fff8ee] truncate">{{ b.name }}</span>
               <span
-                :class="[
-                  'px-1.5 py-0.5 rounded text-[9.5px] border shrink-0',
-                  isGroup(b)
-                    ? 'bg-[#f2b880]/15 border-[#f2b880]/40 text-[#ffe2be]'
-                    : 'bg-white/5 border-[#fff8ee]/14 text-slate-400'
-                ]"
+                v-if="isGroup(b)"
+                class="px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-[#f2b880]/15 border border-[#f2b880]/40 text-[#ffe2be] shrink-0 whitespace-nowrap"
               >
-                {{ isGroup(b) ? '群聊' : b.bot_mode === 'companion' ? '伴聊' : '助理' }}
+                群聊
               </span>
-              <span v-if="b.is_pinned" class="text-[9.5px] text-[#f2b880] shrink-0">置顶</span>
+              <svg
+                v-if="b.is_pinned"
+                viewBox="0 0 24 24"
+                width="11"
+                height="11"
+                fill="currentColor"
+                class="text-[#f2b880]/65 shrink-0"
+                aria-label="已置顶"
+              >
+                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
+              </svg>
             </div>
-            <span class="font-mono text-[11px] text-slate-500 shrink-0">
+            <span class="font-mono text-[11px] text-slate-500 shrink-0 whitespace-nowrap">
               {{ formatChatTime(b.updated_at) }}
             </span>
           </div>
 
-          <div class="mt-0.5 text-[12.5px] text-slate-400 truncate">
+          <div class="mt-0.5 text-[13px] text-slate-400 truncate">
             <template v-if="botDraftPreview(b)">
-              <span class="text-rose-400 font-medium">[草稿] </span>
-              <span>{{ botDraftPreview(b) }}</span>
+              <span class="text-rose-400 font-semibold">[草稿] </span>
+              <span class="text-slate-200">{{ botDraftPreview(b) }}</span>
             </template>
             <template v-else>
               <span v-if="(b.unread_count || 0) > 0" class="text-[#f2b880] font-medium">[{{ b.unread_count }}条] </span>
