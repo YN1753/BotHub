@@ -1,5 +1,6 @@
 package uk.starryheavens.vesper.bothub.ui.components
 
+import android.util.LruCache
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -197,6 +198,46 @@ private val HEADING_REGEX = Regex("""^(#{1,4})\s+(.+)$""")
 private val UL_REGEX = Regex("""^[-*+]\s+(.+)$""")
 private val OL_REGEX = Regex("""^(\d+)\.\s+(.+)$""")
 
+private val markdownBlockCache = LruCache<String, List<MdBlock>>(96)
+private val inlineAnnotatedCache = LruCache<String, AnnotatedString>(256)
+
+private fun parseMarkdownBlocksCached(raw: String): List<MdBlock> {
+    if (raw.isBlank()) return emptyList()
+    if (raw.length <= 16_384) {
+        synchronized(markdownBlockCache) {
+            markdownBlockCache.get(raw)?.let { return it }
+        }
+    }
+    val parsed = parseMarkdownBlocks(raw)
+    if (raw.length <= 16_384) {
+        synchronized(markdownBlockCache) {
+            markdownBlockCache.put(raw, parsed)
+        }
+    }
+    return parsed
+}
+
+private fun parseInlineMarkdownCached(
+    text: String,
+    codeBg: Color,
+    codeFg: Color,
+    linkColor: Color,
+    boldColor: Color
+): AnnotatedString {
+    if (text.length <= 4_096) {
+        synchronized(inlineAnnotatedCache) {
+            inlineAnnotatedCache.get(text)?.let { return it }
+        }
+    }
+    val built = parseInlineMarkdown(text, codeBg, codeFg, linkColor, boldColor)
+    if (text.length <= 4_096) {
+        synchronized(inlineAnnotatedCache) {
+            inlineAnnotatedCache.put(text, built)
+        }
+    }
+    return built
+}
+
 /**
  * Order matters:
  * 1. Inline code (`...`)
@@ -329,7 +370,7 @@ fun RichMarkdownText(
     modifier: Modifier = Modifier,
     textColor: Color = MaterialTheme.colorScheme.onSurface
 ) {
-    val blocks = remember(markdown) { parseMarkdownBlocks(markdown) }
+    val blocks = remember(markdown) { parseMarkdownBlocksCached(markdown) }
     val uriHandler = LocalUriHandler.current
     val clipboard = LocalClipboardManager.current
     val codeBg = Color(0xFF151E38)
@@ -362,7 +403,7 @@ fun RichMarkdownText(
                         )
                     }
                     val annotated = remember(block.text) {
-                        parseInlineMarkdown(block.text, codeBg, codeFg, linkColor, boldColor)
+                        parseInlineMarkdownCached(block.text, codeBg, codeFg, linkColor, boldColor)
                     }
                     InlineLinkedText(
                         annotated = annotated,
@@ -374,7 +415,7 @@ fun RichMarkdownText(
 
                 is MdBlock.Paragraph -> {
                     val annotated = remember(block.text) {
-                        parseInlineMarkdown(block.text, codeBg, codeFg, linkColor, boldColor)
+                        parseInlineMarkdownCached(block.text, codeBg, codeFg, linkColor, boldColor)
                     }
                     InlineLinkedText(
                         annotated = annotated,
@@ -389,7 +430,7 @@ fun RichMarkdownText(
 
                 is MdBlock.BulletItem -> {
                     val annotated = remember(block.text) {
-                        parseInlineMarkdown(block.text, codeBg, codeFg, linkColor, boldColor)
+                        parseInlineMarkdownCached(block.text, codeBg, codeFg, linkColor, boldColor)
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -440,7 +481,7 @@ fun RichMarkdownText(
 
                 is MdBlock.Quote -> {
                     val annotated = remember(block.text) {
-                        parseInlineMarkdown(block.text, codeBg, codeFg, linkColor, boldColor)
+                        parseInlineMarkdownCached(block.text, codeBg, codeFg, linkColor, boldColor)
                     }
                     Row(
                         modifier = Modifier
@@ -570,7 +611,7 @@ fun RichMarkdownText(
                                     block.headers.indices.forEach { colIdx ->
                                         val cellText = row.getOrNull(colIdx).orEmpty()
                                         val cellAnnotated = remember(cellText) {
-                                            parseInlineMarkdown(cellText, codeBg, codeFg, linkColor, boldColor)
+                                            parseInlineMarkdownCached(cellText, codeBg, codeFg, linkColor, boldColor)
                                         }
                                         InlineLinkedText(
                                             annotated = cellAnnotated,

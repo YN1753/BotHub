@@ -110,6 +110,24 @@ private val GROKBOT_PALETTES = mapOf(
         eyeInk = Color(0xFF1A1228),
         blush = Color(0xFFFB7185)
     ),
+    "cyan" to BotPaletteUi(
+        ring = Color(0xFF38BDF8),
+        shellHi = Color(0xFFFFFFFF),
+        shellMid = Color(0xFFE0F7FE),
+        shellDeep = Color(0xFF9CD8F2),
+        aurora = Color(0xFF22D3EE),
+        eyeInk = Color(0xFF0E1D2A),
+        blush = Color(0xFFFB7185)
+    ),
+    "rose" to BotPaletteUi(
+        ring = Color(0xFFFB7185),
+        shellHi = Color(0xFFFFFFFF),
+        shellMid = Color(0xFFFFE7EC),
+        shellDeep = Color(0xFFF3AFC0),
+        aurora = Color(0xFFF472B6),
+        eyeInk = Color(0xFF261018),
+        blush = Color(0xFFFB923C)
+    ),
     "obsidian" to BotPaletteUi(
         ring = Color(0xFF38BDF8),
         shellHi = Color(0xFF374669),
@@ -126,7 +144,8 @@ fun parseBotAvatarStyle(raw: String?): Pair<String, BotPaletteUi> {
     val clean = (raw ?: "cyan").trim().lowercase()
     val (shape, colorKey) = if (clean.contains(":")) {
         val parts = clean.split(":", limit = 2)
-        val s = parts[0].takeIf { it in setOf("butler", "sentinel", "radar", "critic", "swarm", "visor") } ?: "butler"
+        val rawShape = if (parts[0] == "scholar") "visor" else parts[0]
+        val s = rawShape.takeIf { it in setOf("butler", "sentinel", "radar", "critic", "swarm", "visor") } ?: "butler"
         val c = parts[1].takeIf { GROKBOT_PALETTES.containsKey(it) } ?: "gold"
         s to c
     } else {
@@ -135,6 +154,8 @@ fun parseBotAvatarStyle(raw: String?): Pair<String, BotPaletteUi> {
             "emerald" -> "radar" to "emerald"
             "amber" -> "critic" to "amber"
             "violet" -> "swarm" to "violet"
+            "cyan" -> "visor" to "cyan"
+            "rose" -> "critic" to "rose"
             else -> "butler" to "gold"
         }
     }
@@ -250,16 +271,24 @@ fun GrokBotAvatar(
         (h % 37) * 0.17f
     }
 
-    val infinite = rememberInfiniteTransition(label = "grokbot_loop")
-    val masterPhase by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = (2.0 * PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 5600, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "master_phase"
-    )
+    // Only run 60/120Hz infinite animation when interactive or actively thinking/working/blocked.
+    // Static list rows in Chats/Contacts/History use resting phase (0 GPU redraws/sec when idle!).
+    val shouldAnimate = interactive || state != "idle" || isListening || activeStunt != null
+    val masterPhase = if (shouldAnimate) {
+        val infinite = rememberInfiniteTransition(label = "grokbot_loop")
+        val animated by infinite.animateFloat(
+            initialValue = 0f,
+            targetValue = (2.0 * PI).toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 5600, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "master_phase"
+        )
+        animated
+    } else {
+        0f
+    }
 
     val p = masterPhase + seedPhase
     val floatWave = sin(p * 1.5f)

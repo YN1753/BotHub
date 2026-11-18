@@ -1,5 +1,7 @@
 package uk.starryheavens.vesper.bothub.data
 
+import androidx.compose.runtime.Immutable
+
 private val MD_LINK_STRIP_REGEX = Regex("""\[([^\]\n]+)\]\(https?://[^\s)]+\)""")
 private val MD_HEADING_STRIP_REGEX = Regex("""(?m)^#{1,6}\s+""")
 private val MD_DECORATION_STRIP_REGEX = Regex("""(\*\*|__|`+)""")
@@ -15,6 +17,7 @@ private fun cleanMarkdownPreview(raw: String): String {
         .trim()
 }
 
+@Immutable
 data class NotificationItem(
     val id: Long,
     val moduleId: String,
@@ -38,6 +41,7 @@ data class NotificationItem(
     }
 }
 
+@Immutable
 data class AssetItem(
     val id: String,
     val name: String,
@@ -59,6 +63,7 @@ data class AssetItem(
         get() = if (isPerpetual) "长期" else "${daysLeft}天"
 }
 
+@Immutable
 data class TaskItem(
     val id: String,
     val name: String,
@@ -101,6 +106,7 @@ data class AppVersionInfo(
     val apkUrl: String
 )
 
+@Immutable
 data class BootstrapPayload(
     val bots: List<BotItem>,
     val notifications: List<NotificationItem>,
@@ -108,6 +114,7 @@ data class BootstrapPayload(
     val stashItems: List<StashItemUi> = emptyList()
 )
 
+@Immutable
 data class AgentSessionSummary(
     val id: String,
     val title: String,
@@ -131,6 +138,7 @@ fun formatImTime(raw: String): String {
     return clean.take(10)
 }
 
+@Immutable
 data class BotItem(
     val id: String,
     val name: String,
@@ -244,6 +252,7 @@ data class AgentHistoryMessage(
     }
 }
 
+@Immutable
 data class DashboardSnapshot(
     val version: String,
     val totalAssets: Int,
@@ -302,6 +311,7 @@ data class SharePreviewInfo(
         get() = kind.shareHeaderLabel
 }
 
+@Immutable
 data class StashItemUi(
     val id: String,
     val kind: String,
@@ -326,6 +336,7 @@ data class StashItemUi(
         get() = ShareKind.fromWireKind(kind)
 }
 
+@Immutable
 data class ChatTurnUi(
     val id: String,
     val role: String,
