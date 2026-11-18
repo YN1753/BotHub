@@ -263,6 +263,19 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun fetchBootstrap(): Result<BootstrapPayload> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/app/bootstrap").get().build()
+            val json = executeJson(req, "同步失败")
+            BootstrapPayload(
+                bots = JsonMappers.parseBots(json.optJSONArray("bots")),
+                notifications = JsonMappers.parseNotifications(json.optJSONArray("notifications")),
+                dashboard = JsonMappers.parseDashboard(json),
+                stashItems = JsonMappers.parseStashItems(json.optJSONArray("stash"))
+            )
+        }
+    }
+
     suspend fun triggerTask(taskId: String): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val req = requestBuilder("/api/tasks/$taskId/run")

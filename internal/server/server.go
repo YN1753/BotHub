@@ -1,9 +1,12 @@
 package server
 
 import (
+	"compress/gzip"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -186,6 +189,8 @@ func (s *Server) Handler() http.Handler {
 
 	// BotHub v2 Native Push Stream, Inbox & Webhooks
 	mux.HandleFunc("GET /api/v2/app/version", s.handleV2AppVersion)
+	mux.HandleFunc("GET /api/v2/app/apk", s.handleV2AppApk)
+	mux.HandleFunc("GET /api/v2/app/bootstrap", s.requireAuth(s.handleV2AppBootstrap))
 	mux.HandleFunc("POST /api/v2/auth/token", s.handleV2AuthToken)
 	mux.HandleFunc("POST /api/v2/auth/token/rotate", s.requireAuth(s.handleV2RotateAppToken))
 	mux.HandleFunc("POST /api/v2/auth/web-session", s.requireAuth(s.handleV2WebSession))
@@ -223,7 +228,97 @@ func (s *Server) Handler() http.Handler {
 	// Embedded Static Single Binary SPA Router
 	mux.Handle("GET /", s.spaFileServer())
 
-	return withSecurityHeaders(mux)
+	return withSecurityHeaders(withGzip(mux))
+}
+
+var gzipWriterPool = sync.Pool{
+	New: func() any {
+		w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+		return w
+	},
+}
+
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gw          *gzip.Writer
+	wroteHeader bool
+	useGzip     bool
+}
+
+func (g *gzipResponseWriter) WriteHeader(code int) {
+	if g.wroteHeader {
+		return
+	}
+	g.wroteHeader = true
+	if code >= 200 && code != http.StatusNoContent && code != http.StatusNotModified && (code < 300 || code >= 400) {
+		g.useGzip = true
+		g.Header().Del("Content-Length")
+		g.Header().Set("Content-Encoding", "gzip")
+		g.Header().Add("Vary", "Accept-Encoding")
+	}
+	g.ResponseWriter.WriteHeader(code)
+}
+
+func (g *gzipResponseWriter) Write(b []byte) (int, error) {
+	if !g.wroteHeader {
+		if g.Header().Get("Content-Type") == "" {
+			g.Header().Set("Content-Type", http.DetectContentType(b))
+		}
+		g.WriteHeader(http.StatusOK)
+	}
+	if g.useGzip {
+		return g.gw.Write(b)
+	}
+	return g.ResponseWriter.Write(b)
+}
+
+func (g *gzipResponseWriter) Flush() {
+	if g.useGzip {
+		_ = g.gw.Flush()
+	}
+	if f, ok := g.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func shouldSkipGzip(r *http.Request) bool {
+	if r.Method == http.MethodHead {
+		return true
+	}
+	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		return true
+	}
+	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+		return true
+	}
+	p := r.URL.Path
+	return p == "/api/v2/events" ||
+		p == "/api/events" ||
+		p == "/api/agent/chat" ||
+		p == "/api/v2/app/apk" ||
+		strings.HasSuffix(p, ".apk") ||
+		strings.HasSuffix(p, ".png") ||
+		strings.HasSuffix(p, ".webp")
+}
+
+func withGzip(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if shouldSkipGzip(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		gw := gzipWriterPool.Get().(*gzip.Writer)
+		gw.Reset(w)
+		grw := &gzipResponseWriter{ResponseWriter: w, gw: gw}
+		defer func() {
+			if grw.useGzip {
+				_ = gw.Close()
+			}
+			gzipWriterPool.Put(gw)
+		}()
+
+		next.ServeHTTP(grw, r)
+	})
 }
 
 func withSecurityHeaders(next http.Handler) http.Handler {

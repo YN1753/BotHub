@@ -3,6 +3,8 @@ package uk.starryheavens.vesper.bothub.ui.sheets
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,11 +22,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -37,6 +36,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -49,7 +50,9 @@ import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.BuildConfig
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.UrlUtils
+import uk.starryheavens.vesper.bothub.ui.ApkUpdater
 import uk.starryheavens.vesper.bothub.ui.BiometricAuthHelper
+import uk.starryheavens.vesper.bothub.ui.OtaUpdateState
 import uk.starryheavens.vesper.bothub.ui.PasskeyOutcome
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
@@ -57,6 +60,8 @@ import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
 import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
+import java.io.File
+import java.util.Locale
 
 private const val LATEST_APK_URL =
     "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk"
@@ -97,6 +102,7 @@ fun SettingsPairingSheet(
     var sheetHint by remember { mutableStateOf("") }
     var remoteVersion by remember { mutableStateOf("") }
     var remoteApkUrl by remember { mutableStateOf(LATEST_APK_URL) }
+    var otaState by remember { mutableStateOf<OtaUpdateState>(OtaUpdateState.Idle) }
 
     val localVersionClean = remember { BuildConfig.VERSION_NAME.removePrefix("v").trim() }
     val remoteVersionClean = remoteVersion.removePrefix("v").trim()
@@ -115,6 +121,51 @@ fun SettingsPairingSheet(
                 if (info.apkUrl.isNotEmpty()) {
                     remoteApkUrl = info.apkUrl
                 }
+            }
+        }
+    }
+
+    fun installDownloadedApk(apkFile: File) {
+        if (!ApkUpdater.canInstallPackages(context)) {
+            otaState = OtaUpdateState.NeedPermission(apkFile)
+            ApkUpdater.openInstallPermissionSettings(context)
+            return
+        }
+        ApkUpdater.triggerPackageInstaller(context, apkFile)
+            .onSuccess {
+                otaState = OtaUpdateState.ReadyToInstall(apkFile)
+            }
+            .onFailure { err ->
+                otaState = OtaUpdateState.Failed(err.message ?: "调起安装器失败")
+            }
+    }
+
+    fun startInAppUpdate(forceDownloadEvenIfSame: Boolean = false) {
+        if (otaState is OtaUpdateState.Downloading || otaState is OtaUpdateState.Checking) return
+        scope.launch {
+            otaState = OtaUpdateState.Checking
+            api.fetchAppVersion(serverUrl).onSuccess { info ->
+                remoteVersion = info.version
+                if (info.apkUrl.isNotEmpty()) {
+                    remoteApkUrl = info.apkUrl
+                }
+            }
+            val latestClean = remoteVersion.removePrefix("v").trim()
+            if (!forceDownloadEvenIfSame && latestClean.isNotEmpty() && latestClean == localVersionClean) {
+                otaState = OtaUpdateState.UpToDate(localVersionClean)
+                return@launch
+            }
+
+            otaState = OtaUpdateState.Downloading(percent = 1, downloadedMb = 0f, totalMb = 0f)
+            ApkUpdater.downloadUpdateApk(
+                context = context.applicationContext,
+                serverUrl = serverUrl,
+                fallbackApkUrl = remoteApkUrl,
+                onProgress = { progress -> otaState = progress }
+            ).onSuccess { apkFile ->
+                installDownloadedApk(apkFile)
+            }.onFailure { err ->
+                otaState = OtaUpdateState.Failed(err.message ?: "下载失败")
             }
         }
     }
@@ -324,7 +375,7 @@ fun SettingsPairingSheet(
                     )
                 }
             } else {
-                // 1. Connected Server Row (Clean, zero wrapping!)
+                // 1. Connected Server Row
                 SpecularGlassCard(
                     cornerRadius = 17.dp,
                     accentTint = Color(0xFF34D399),
@@ -387,42 +438,17 @@ fun SettingsPairingSheet(
                     }
                 }
 
-                if (hasNewerRelease) {
-                    SpecularGlassCard(
-                        cornerRadius = 15.dp,
-                        accentTint = Color(0xFFF2B880),
-                        onClick = {
-                            runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(remoteApkUrl)))
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "发现新版本 v$remoteVersionClean",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFFFFE2BE),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowRight,
-                                contentDescription = null,
-                                tint = Color(0xFFFFE2BE),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
+                // 2. Native In-App OTA Update Card (Zero Browser Redirect!)
+                if (hasNewerRelease || otaState !is OtaUpdateState.Idle) {
+                    InAppOtaStatusCard(
+                        otaState = otaState,
+                        remoteVersionClean = remoteVersionClean,
+                        onStartDownload = { startInAppUpdate(forceDownloadEvenIfSame = true) },
+                        onInstallFile = { file -> installDownloadedApk(file) }
+                    )
                 }
 
-                // 2. Clean Concise Toggles (Zero technical jargon!)
+                // 3. Clean Concise Toggles
                 SpecularGlassCard(
                     cornerRadius = 18.dp,
                     modifier = Modifier.fillMaxWidth()
@@ -480,7 +506,7 @@ fun SettingsPairingSheet(
                     }
                 }
 
-                // 3. Clean Action Buttons
+                // 4. Clean Action Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -516,13 +542,15 @@ fun SettingsPairingSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TactileSecondaryButton(
-                        text = "检查更新",
-                        minHeight = 44.dp,
-                        onClick = {
-                            runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(remoteApkUrl)))
-                            }
+                        text = when (otaState) {
+                            is OtaUpdateState.Downloading -> "下载中..."
+                            is OtaUpdateState.Checking -> "检查中..."
+                            else -> if (hasNewerRelease) "立即更新" else "检查更新"
                         },
+                        accent = hasNewerRelease,
+                        enabled = otaState !is OtaUpdateState.Downloading && otaState !is OtaUpdateState.Checking,
+                        minHeight = 44.dp,
+                        onClick = { startInAppUpdate(forceDownloadEvenIfSame = false) },
                         modifier = Modifier.weight(1f)
                     )
                     TactileSecondaryButton(
@@ -536,6 +564,225 @@ fun SettingsPairingSheet(
             }
 
             Spacer(modifier = Modifier.height(10.dp))
+        }
+    }
+}
+
+@Composable
+private fun InAppOtaStatusCard(
+    otaState: OtaUpdateState,
+    remoteVersionClean: String,
+    onStartDownload: () -> Unit,
+    onInstallFile: (File) -> Unit
+) {
+    val accent = when (otaState) {
+        is OtaUpdateState.Failed -> Color(0xFFFB7185)
+        is OtaUpdateState.UpToDate -> Color(0xFF34D399)
+        else -> Color(0xFFF2B880)
+    }
+
+    SpecularGlassCard(
+        cornerRadius = 16.dp,
+        accentTint = accent,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            when (otaState) {
+                is OtaUpdateState.Idle -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "发现新版本 v$remoteVersionClean",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFFFE2BE),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 10.dp)
+                        )
+                        TactilePrimaryButton(
+                            text = "立即更新",
+                            cornerRadius = 999.dp,
+                            minHeight = 33.dp,
+                            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 5.dp),
+                            onClick = onStartDownload
+                        )
+                    }
+                }
+
+                is OtaUpdateState.Checking -> {
+                    Text(
+                        text = "正在检查新版本...",
+                        fontSize = 13.sp,
+                        color = Color(0xFFFFF8EE)
+                    )
+                }
+
+                is OtaUpdateState.Downloading -> {
+                    val fraction by animateFloatAsState(
+                        targetValue = if (otaState.percent > 0) {
+                            (otaState.percent / 100f).coerceIn(0.04f, 1f)
+                        } else {
+                            0.35f
+                        },
+                        animationSpec = tween(120),
+                        label = "otaProgress"
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (otaState.percent > 0) "正在下载更新 ${otaState.percent}%" else "正在下载更新...",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFFFE2BE),
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                        val sizeLabel = if (otaState.totalMb > 0f) {
+                            String.format(Locale.US, "%.1f / %.1f MB", otaState.downloadedMb, otaState.totalMb)
+                        } else {
+                            String.format(Locale.US, "%.1f MB", otaState.downloadedMb)
+                        }
+                        Text(
+                            text = sizeLabel,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = Color(0xFF94A3B8),
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color(0xFF141C34))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(fraction)
+                                .height(5.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(Color(0xFFE09A58), Color(0xFFFCE0C0))
+                                    )
+                                )
+                        )
+                    }
+                }
+
+                is OtaUpdateState.NeedPermission -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "授权安装应用后点击继续",
+                            fontSize = 13.sp,
+                            color = Color(0xFFFFE2BE),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 10.dp)
+                        )
+                        TactilePrimaryButton(
+                            text = "继续安装",
+                            cornerRadius = 999.dp,
+                            minHeight = 33.dp,
+                            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 5.dp),
+                            onClick = { onInstallFile(otaState.apkFile) }
+                        )
+                    }
+                }
+
+                is OtaUpdateState.ReadyToInstall -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "下载完成",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFFFF8EE)
+                        )
+                        TactilePrimaryButton(
+                            text = "立即安装",
+                            cornerRadius = 999.dp,
+                            minHeight = 33.dp,
+                            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 5.dp),
+                            onClick = { onInstallFile(otaState.apkFile) }
+                        )
+                    }
+                }
+
+                is OtaUpdateState.UpToDate -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "当前已是最新版本 (v${otaState.version})",
+                            fontSize = 12.5.sp,
+                            color = Color(0xFFA7F3D0),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "重下覆盖",
+                            fontSize = 11.5.sp,
+                            color = Color(0xFF94A3B8),
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.clickable { onStartDownload() }
+                        )
+                    }
+                }
+
+                is OtaUpdateState.Failed -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "更新失败: ${otaState.message}",
+                            fontSize = 12.5.sp,
+                            color = Color(0xFFFDA4AF),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 10.dp)
+                        )
+                        TactileSecondaryButton(
+                            text = "重试",
+                            cornerRadius = 999.dp,
+                            minHeight = 32.dp,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                            onClick = onStartDownload
+                        )
+                    }
+                }
+            }
         }
     }
 }

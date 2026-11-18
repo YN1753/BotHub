@@ -101,6 +101,13 @@ data class AppVersionInfo(
     val apkUrl: String
 )
 
+data class BootstrapPayload(
+    val bots: List<BotItem>,
+    val notifications: List<NotificationItem>,
+    val dashboard: DashboardSnapshot,
+    val stashItems: List<StashItemUi> = emptyList()
+)
+
 data class AgentSessionSummary(
     val id: String,
     val title: String,

@@ -358,40 +358,52 @@ class BotHubViewModel(
         viewModelScope.launch {
             isRefreshing = true
             try {
-                coroutineScope {
-                    launch {
-                        api.fetchNotifications(afterId = 0L, limit = 50).onSuccess { list ->
-                            notifications = list
-                            prefs.saveCachedNotifications(list)
-                            val maxId = list.maxOfOrNull { it.id } ?: 0L
-                            prefs.advanceLastEventId(maxId)
-                            resolvePendingNotificationIfPresent(list)
-                        }
+                val bootRes = api.fetchBootstrap()
+                if (bootRes.isSuccess) {
+                    val payload = bootRes.getOrThrow()
+                    notifications = payload.notifications
+                    prefs.saveCachedNotifications(payload.notifications)
+                    val maxId = payload.notifications.maxOfOrNull { it.id } ?: 0L
+                    prefs.advanceLastEventId(maxId)
+                    resolvePendingNotificationIfPresent(payload.notifications)
+
+                    dashboard = payload.dashboard
+
+                    val firstLoad = bots.isEmpty()
+                    bots = payload.bots
+                    if (firstLoad && payload.bots.isNotEmpty()) {
+                        val chosen = payload.bots.find { it.id == activeBotId } ?: payload.bots.first()
+                        activeBotId = chosen.id
                     }
-                    launch {
-                        api.fetchDashboard().onSuccess { snap ->
-                            dashboard = snap
-                        }
-                    }
-                    launch {
-                        api.fetchBots().onSuccess { list ->
-                            val firstLoad = bots.isEmpty()
-                            bots = list
-                            if (firstLoad && list.isNotEmpty() && chatMessages.isEmpty()) {
-                                val chosen = list.find { it.id == activeBotId } ?: list.first()
-                                activeBotId = chosen.id
-                                loadBotTimeline(chosen.id)
-                            }
-                        }
-                    }
-                    launch {
-                        api.fetchAgentSessions().onSuccess { sess ->
-                            agentSessions = sess
-                        }
-                    }
-                    launch {
+
+                    if (stashQuery.isBlank() && stashFilter == "all") {
+                        stashItems = payload.stashItems
+                    } else if (selectedTab == BotHubTab.STASH) {
                         api.fetchStashItems(query = stashQuery, filter = stashFilter, limit = 80).onSuccess { items ->
                             stashItems = items
+                        }
+                    }
+                } else {
+                    coroutineScope {
+                        launch {
+                            api.fetchNotifications(afterId = 0L, limit = 50).onSuccess { list ->
+                                notifications = list
+                                prefs.saveCachedNotifications(list)
+                                val maxId = list.maxOfOrNull { it.id } ?: 0L
+                                prefs.advanceLastEventId(maxId)
+                                resolvePendingNotificationIfPresent(list)
+                            }
+                        }
+                        launch {
+                            api.fetchDashboard().onSuccess { snap -> dashboard = snap }
+                        }
+                        launch {
+                            api.fetchBots().onSuccess { list -> bots = list }
+                        }
+                        launch {
+                            api.fetchStashItems(query = stashQuery, filter = stashFilter, limit = 80).onSuccess { items ->
+                                stashItems = items
+                            }
                         }
                     }
                 }

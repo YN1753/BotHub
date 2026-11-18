@@ -2,8 +2,10 @@ package server
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -357,5 +359,62 @@ func TestV2WebSessionBridge(t *testing.T) {
 	h.ServeHTTP(statusRec, statusReq)
 	if statusRec.Code != http.StatusOK || !strings.Contains(statusRec.Body.String(), `"authenticated":true`) {
 		t.Fatalf("expected authenticated:true using minted cookie, got %d: %s", statusRec.Code, statusRec.Body.String())
+	}
+}
+
+func TestV2BootstrapAndGzipMiddleware(t *testing.T) {
+	s, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	appTok, err := s.ensureAppBearerToken()
+	if err != nil {
+		t.Fatalf("ensureAppBearerToken: %v", err)
+	}
+
+	h := s.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/app/bootstrap", nil)
+	req.Header.Set("Authorization", "Bearer "+appTok)
+	req.Header.Set("Accept-Encoding", "gzip")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /api/v2/app/bootstrap, got %d", rec.Code)
+	}
+	if rec.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("expected Content-Encoding: gzip, got %q", rec.Header().Get("Content-Encoding"))
+	}
+
+	gr, err := gzip.NewReader(rec.Body)
+	if err != nil {
+		t.Fatalf("gzip reader: %v", err)
+	}
+	defer gr.Close()
+	raw, err := io.ReadAll(gr)
+	if err != nil {
+		t.Fatalf("read gzip body: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("unmarshal bootstrap json: %v", err)
+	}
+	if payload["ok"] != true || payload["mirror_path"] != "/api/v2/app/apk" {
+		t.Fatalf("unexpected bootstrap payload: %+v", payload)
+	}
+	if _, hasBots := payload["bots"]; !hasBots {
+		t.Fatalf("expected bots array in bootstrap payload")
+	}
+	if _, hasStash := payload["stash"]; !hasStash {
+		t.Fatalf("expected stash array in bootstrap payload")
+	}
+
+	// Verify HEAD requests skip gzip cleanly
+	headReq := httptest.NewRequest(http.MethodHead, "/api/v2/app/version", nil)
+	headReq.Header.Set("Accept-Encoding", "gzip")
+	headRec := httptest.NewRecorder()
+	h.ServeHTTP(headRec, headReq)
+	if headRec.Header().Get("Content-Encoding") == "gzip" {
+		t.Fatalf("expected HEAD request to skip gzip Content-Encoding")
 	}
 }

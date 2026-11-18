@@ -448,11 +448,90 @@ func (s *Server) isNezhaAlertInCooldown(key string, window time.Duration) bool {
 
 func (s *Server) handleV2AppVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":         true,
-		"version":    s.version,
-		"commit":     s.commit,
-		"build_time": s.buildTime,
-		"apk_url":    "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk",
+		"ok":          true,
+		"version":     s.version,
+		"commit":      s.commit,
+		"build_time":  s.buildTime,
+		"mirror_path": "/api/v2/app/apk",
+		"apk_url":     "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk",
+	})
+}
+
+// handleV2AppApk streams the latest signed Android APK through the BotHub server so in-app OTA
+// updates work fast and reliably on domestic cellular networks without opening a browser or VPN.
+func (s *Server) handleV2AppApk(w http.ResponseWriter, r *http.Request) {
+	const fallbackLatest = "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk"
+	candidates := make([]string, 0, 2)
+	ver := strings.TrimSpace(s.version)
+	if ver != "" && ver != "dev" {
+		if !strings.HasPrefix(ver, "v") {
+			ver = "v" + ver
+		}
+		candidates = append(candidates, fmt.Sprintf("https://github.com/YN1753/BotHub/releases/download/%s/vesper-bothub-android.apk", ver))
+	}
+	candidates = append(candidates, fallbackLatest)
+
+	method := http.MethodGet
+	if r.Method == http.MethodHead {
+		method = http.MethodHead
+	}
+
+	client := &http.Client{Timeout: 180 * time.Second}
+	var upstream *http.Response
+	for _, targetURL := range candidates {
+		req, err := http.NewRequestWithContext(r.Context(), method, targetURL, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("User-Agent", "BotHub-OTA-Proxy/2.0")
+		resp, err := client.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			upstream = resp
+			break
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+	}
+	if upstream == nil {
+		writeError(w, http.StatusBadGateway, "暂时无法拉取安装包，请稍后重试")
+		return
+	}
+	defer upstream.Body.Close()
+
+	w.Header().Set("Content-Type", "application/vnd.android.package-archive")
+	w.Header().Set("Content-Disposition", `attachment; filename="bothub-android.apk"`)
+	w.Header().Set("Cache-Control", "no-store")
+	if upstream.ContentLength > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(upstream.ContentLength, 10))
+	}
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = io.Copy(w, upstream.Body)
+	}
+}
+
+// handleV2AppBootstrap returns the exact compact mobile launch state (bots, notifications,
+// stash, assets, scheduled tasks, and version metadata) in a single HTTP round-trip, eliminating
+// 4 separate requests and 10 unused heavy SQLite queries on mobile startup.
+func (s *Server) handleV2AppBootstrap(w http.ResponseWriter, r *http.Request) {
+	tasks, _ := s.schedulerTasksList()
+	bots, _ := s.store.ListBots()
+	notifications, _ := s.store.ListNotifications(0, 40, false)
+	assets, _ := s.store.ListAssets()
+	stash, _ := s.store.SearchStashItemsWithKind("", "all", "", "", 60)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"version":       s.version,
+		"mirror_path":   "/api/v2/app/apk",
+		"apk_url":       "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk",
+		"bots":          bots,
+		"notifications": notifications,
+		"stash":         stash,
+		"assets":        assets,
+		"tasks":         tasks,
+		"server_now":    store.NowShanghai(),
 	})
 }
 
