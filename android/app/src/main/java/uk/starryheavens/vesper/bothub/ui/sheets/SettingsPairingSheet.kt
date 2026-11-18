@@ -350,19 +350,21 @@ fun SettingsPairingSheet(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        Column(
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(end = 8.dp)
+                                .padding(end = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .background(Color(0xFF34D399), CircleShape)
-                            )
-                            Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.5.dp)
+                                        .background(Color(0xFF34D399), CircleShape)
+                                )
                                 Text(
                                     text = UrlUtils.formatDisplayHost(serverUrl),
                                     fontFamily = FontFamily.Monospace,
@@ -372,20 +374,22 @@ fun SettingsPairingSheet(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    text = "免密令牌已绑定 · 锁屏推送就绪",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF8C9BB5)
-                                )
                             }
+                            Text(
+                                text = "免密令牌已绑定 · 实时推送就绪",
+                                fontSize = 11.sp,
+                                color = Color(0xFF8C9BB5),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
                         TactileSecondaryButton(
-                            text = if (registeringPasskey) "录入中..." else "录入通行密钥",
+                            text = if (registeringPasskey) "录入中..." else "通行密钥",
                             accent = true,
                             cornerRadius = 999.dp,
-                            minHeight = 34.dp,
-                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
+                            minHeight = 33.dp,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
                             onClick = {
                                 val act = activity ?: return@TactileSecondaryButton
                                 if (registeringPasskey) return@TactileSecondaryButton

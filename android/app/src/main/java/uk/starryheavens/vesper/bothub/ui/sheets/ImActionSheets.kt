@@ -265,7 +265,7 @@ fun BotProfileSheet(
                     )
                 }
                 TactileSecondaryButton(
-                    text = "高级人设编排",
+                    text = "人设编排",
                     minHeight = 42.dp,
                     onClick = onOpenStudioConfig,
                     modifier = Modifier.weight(1f)

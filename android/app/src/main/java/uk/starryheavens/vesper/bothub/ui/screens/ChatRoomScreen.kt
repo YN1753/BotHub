@@ -378,10 +378,10 @@ fun ChatRoomScreen(
             if (messages.isEmpty()) {
                 item(key = "__chat_welcome__") {
                     val icebreakers = listOf(
-                        Triple("盘点资产临期风险", Icons.Default.AccountBalanceWallet, "请调用工具盘点全部数字资产与算力节点，并按到期风险给出锐评。"),
-                        Triple("探查哪吒节点脉搏", Icons.Default.MonitorHeart, "请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线状态。"),
-                        Triple("检查调度任务运行", Icons.Default.Schedule, "请列出当前所有定时调度任务的状态与下次触发时间。"),
-                        Triple("串联最近收藏干货", Icons.Default.Bookmarks, "请调用 manage_stash 检索我最近收入收藏匣的未读干货并做简要串联。")
+                        Triple("盘点资产风险", Icons.Default.AccountBalanceWallet, "请调用工具盘点全部数字资产与算力节点，并按到期风险给出锐评。"),
+                        Triple("探查节点脉搏", Icons.Default.MonitorHeart, "请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线状态。"),
+                        Triple("检查定时调度", Icons.Default.Schedule, "请列出当前所有定时调度任务的状态与下次触发时间。"),
+                        Triple("串联近期收藏", Icons.Default.Bookmarks, "请调用 manage_stash 检索我最近收入收藏匣的未读干货并做简要串联。")
                     )
                     Column(
                         modifier = Modifier

@@ -115,7 +115,7 @@ fun HubTabScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFFFFF8EE),
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    softWrap = false
                                 )
                                 Row(
                                     modifier = Modifier
@@ -138,7 +138,9 @@ fun HubTabScreen(
                                             fontWeight = FontWeight.Medium,
                                             color = Color(0xFFA7F3D0),
                                             platformStyle = NoFontPaddingStyle
-                                        )
+                                        ),
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }
@@ -153,13 +155,11 @@ fun HubTabScreen(
                             )
                         }
 
-                        TactileSecondaryButton(
-                            text = "设置",
-                            leadingIcon = Icons.Default.Settings,
-                            cornerRadius = 999.dp,
-                            minHeight = 34.dp,
-                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp),
-                            onClick = onOpenSettings
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "打开连接设置",
+                            tint = Color(0xFFF2B880),
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -254,9 +254,11 @@ fun HubTabScreen(
                         color = Color(0xFFFFF8EE)
                     )
                     Text(
-                        text = "正常期间静默巡检，仅在临期阈值时主动提醒",
+                        text = "平时静默巡检 · 临期主动提醒",
                         fontSize = 11.5.sp,
-                        color = Color(0xFF8C9BB5)
+                        color = Color(0xFF8C9BB5),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -426,9 +428,11 @@ fun HubTabScreen(
                         color = Color(0xFFFFF8EE)
                     )
                     Text(
-                        text = "监控任务无异常不发消息打扰，有告警即时推送",
+                        text = "无异常不打扰 · 有告警即时推送",
                         fontSize = 11.5.sp,
-                        color = Color(0xFF8C9BB5)
+                        color = Color(0xFF8C9BB5),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
