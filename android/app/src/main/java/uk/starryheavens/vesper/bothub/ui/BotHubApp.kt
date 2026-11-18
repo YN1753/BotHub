@@ -40,6 +40,7 @@ import uk.starryheavens.vesper.bothub.ui.screens.HubTabScreen
 import uk.starryheavens.vesper.bothub.ui.screens.InboxTabScreen
 import uk.starryheavens.vesper.bothub.ui.screens.StashTabScreen
 import uk.starryheavens.vesper.bothub.ui.sheets.AgentSessionsSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.ConsoleWebSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.NotificationDetailSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.SettingsPairingSheet
 
@@ -60,6 +61,7 @@ fun BotHubApp(
     val clipboard = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     var showStashCaptureInline by remember { mutableStateOf(false) }
+    var consoleTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val viewModel: BotHubViewModel = viewModel(
         factory = remember(context, prefs, api) {
@@ -185,7 +187,14 @@ fun BotHubApp(
                             clipboard.setText(AnnotatedString(txt))
                             viewModel.showMessage("已复制全文")
                         },
-                        onQuickPrompt = viewModel::sendAgentPrompt
+                        onQuickPrompt = viewModel::sendAgentPrompt,
+                        onOpenConsole = { entry, title ->
+                            if (!viewModel.isPaired) {
+                                viewModel.openSettings()
+                            } else {
+                                consoleTarget = entry to title
+                            }
+                        }
                     )
 
                     BotHubTab.INBOX -> InboxTabScreen(
@@ -225,7 +234,14 @@ fun BotHubApp(
                         snapshot = viewModel.dashboard,
                         onRunTask = viewModel::runTask,
                         onToggleTask = viewModel::toggleTask,
-                        onSyncAssets = viewModel::syncAssets
+                        onSyncAssets = viewModel::syncAssets,
+                        onOpenConsole = { entry, title ->
+                            if (!viewModel.isPaired) {
+                                viewModel.openSettings()
+                            } else {
+                                consoleTarget = entry to title
+                            }
+                        }
                     )
                 }
             }
@@ -259,8 +275,24 @@ fun BotHubApp(
             onZeroClickChanged = viewModel::setZeroClickCapture,
             onTestHealth = viewModel::testConnectivity,
             onUnbindServer = viewModel::unbindServer,
+            onOpenConsole = { entry, title ->
+                consoleTarget = entry to title
+            },
             onShowMessage = viewModel::showMessage,
             onDismiss = viewModel::dismissSettings
+        )
+    }
+
+    consoleTarget?.let { (entry, title) ->
+        ConsoleWebSheet(
+            serverUrl = viewModel.serverUrl,
+            entry = entry,
+            title = title,
+            api = api,
+            onDismiss = {
+                consoleTarget = null
+                viewModel.refreshAll()
+            }
         )
     }
 

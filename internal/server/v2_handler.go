@@ -455,3 +455,22 @@ func (s *Server) handleV2AppVersion(w http.ResponseWriter, r *http.Request) {
 		"apk_url":    "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk",
 	})
 }
+
+// handleV2WebSession exchanges an authenticated App Bearer Token request for a 24h web session cookie
+// so the native mobile client can seamlessly mount the Vue 3 full-featured console WebView with zero re-login.
+func (s *Server) handleV2WebSession(w http.ResponseWriter, r *http.Request) {
+	const ttl = 24 * time.Hour
+	const maxAge = 24 * 3600
+	token, err := s.issueSessionCookieWithTTL(ttl)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "签发混合工作台会话失败")
+		return
+	}
+	writeSessionCookie(w, r, token, maxAge)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":           true,
+		"cookie_name":  sessionCookieName,
+		"cookie_value": token,
+		"max_age":      maxAge,
+	})
+}

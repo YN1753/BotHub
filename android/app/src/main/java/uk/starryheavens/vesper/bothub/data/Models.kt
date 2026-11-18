@@ -1,5 +1,20 @@
 package uk.starryheavens.vesper.bothub.data
 
+private val MD_LINK_STRIP_REGEX = Regex("""\[([^\]\n]+)\]\(https?://[^\s)]+\)""")
+private val MD_HEADING_STRIP_REGEX = Regex("""(?m)^#{1,6}\s+""")
+private val MD_DECORATION_STRIP_REGEX = Regex("""(\*\*|__|`+)""")
+private val WHITESPACE_COLLAPSE_REGEX = Regex("""\s+""")
+
+private fun cleanMarkdownPreview(raw: String): String {
+    if (raw.isBlank()) return ""
+    return raw
+        .replace(MD_LINK_STRIP_REGEX, "$1")
+        .replace(MD_HEADING_STRIP_REGEX, "")
+        .replace(MD_DECORATION_STRIP_REGEX, "")
+        .replace(WHITESPACE_COLLAPSE_REGEX, " ")
+        .trim()
+}
+
 data class NotificationItem(
     val id: Long,
     val moduleId: String,
@@ -17,8 +32,10 @@ data class NotificationItem(
         get() = priority.equals("high", ignoreCase = true) ||
             priority.equals("critical", ignoreCase = true)
 
-    fun previewText(maxChars: Int = 90): String =
-        summary.ifEmpty { markdownBody.take(maxChars) }
+    fun previewText(maxChars: Int = 96): String {
+        val source = summary.ifEmpty { markdownBody }
+        return cleanMarkdownPreview(source).take(maxChars)
+    }
 }
 
 data class AssetItem(
@@ -50,6 +67,38 @@ data class TaskItem(
     val enabled: Boolean,
     val nextRunAt: String,
     val lastSummary: String
+) {
+    fun formattedSchedule(): String {
+        val shortNext = formatShortNextRun(nextRunAt)
+        return buildString {
+            if (cronExpr.isNotBlank()) append(cronExpr.trim())
+            if (shortNext.isNotEmpty()) {
+                if (isNotEmpty()) append(" · 下次 ")
+                append(shortNext)
+            }
+        }
+    }
+}
+
+private fun formatShortNextRun(raw: String): String {
+    val clean = raw.trim()
+    if (clean.isEmpty()) return ""
+    // Expected e.g. "2026-11-19 03:00:00" -> "11-19 03:00"
+    if (clean.length >= 16 && clean[4] == '-' && clean[10] == ' ') {
+        return clean.substring(5, 16)
+    }
+    return clean.take(16)
+}
+
+data class WebSessionTicket(
+    val cookieName: String,
+    val cookieValue: String,
+    val maxAge: Int
+)
+
+data class AppVersionInfo(
+    val version: String,
+    val apkUrl: String
 )
 
 data class AgentSessionSummary(

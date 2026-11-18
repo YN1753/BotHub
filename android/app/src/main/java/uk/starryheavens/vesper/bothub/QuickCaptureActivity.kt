@@ -1,8 +1,10 @@
 package uk.starryheavens.vesper.bothub
 
+import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
@@ -16,7 +18,10 @@ class QuickCaptureActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+        )
 
         val rawShared = AppIntents.extractSharedText(intent)
         if (rawShared.isBlank()) {

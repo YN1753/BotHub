@@ -20,11 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,14 +32,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.ShareTextParser
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
+import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 import uk.starryheavens.vesper.bothub.ui.components.ZeroClickCaptureRow
 
 @Composable
@@ -88,7 +88,6 @@ fun QuickCaptureSheet(
         }
     }
 
-    // Zero-click fast path: auto-submit immediately upon share sheet launch and return to source app
     LaunchedEffect(Unit) {
         if (hasToken && prefs.zeroClickCaptureEnabled) {
             submitCapture()
@@ -116,25 +115,24 @@ fun QuickCaptureSheet(
                     indication = null,
                     onClick = {}
                 ),
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            tonalElevation = 8.dp
+            shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+            color = Color(0xFF090E1D),
+            border = BorderStroke(1.dp, Color(0x28FFF8EE)),
+            tonalElevation = 0.dp
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .imePadding()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Drag Handle Indicator
                 Box(
                     modifier = Modifier
                         .width(36.dp)
                         .height(4.dp)
-                        .background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp))
+                        .background(Color(0x52CBD5E1), RoundedCornerShape(999.dp))
                         .align(Alignment.CenterHorizontally)
                 )
 
@@ -156,7 +154,7 @@ fun QuickCaptureSheet(
                                 noteInput.isNotEmpty() -> "thinking"
                                 else -> "idle"
                             },
-                            size = 36.dp,
+                            size = 34.dp,
                             interactive = true,
                             isListening = noteInput.isNotEmpty(),
                             seedKey = "quick_capture"
@@ -164,49 +162,53 @@ fun QuickCaptureSheet(
                         Text(
                             text = "BotHub 智能收藏与闪念匣",
                             style = MaterialTheme.typography.titleMedium,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = Color(0xFFFFF8EE),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
+                        color = Color(0x24F2B880),
+                        border = BorderStroke(0.5.dp, Color(0x5CF2B880))
                     ) {
                         Text(
                             text = preview.kind.shareHeaderLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFFFE2BE),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
                 }
 
                 // Parsed Title & URL Preview Card
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xCC0D1326),
+                    border = BorderStroke(1.dp, Color(0x22FFF8EE)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
                             text = preview.candidateTitle,
-                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = Color(0xFFFFF8EE),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
                         if (preview.extractedUrl.isNotEmpty()) {
                             Text(
                                 text = preview.extractedUrl,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = Color(0xFFA5B4FC),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -216,26 +218,26 @@ fun QuickCaptureSheet(
 
                 if (!hasToken) {
                     Text(
-                        text = "尚未配置服务端连接密钥，请先打开主程序完成连接。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
+                        text = "尚未配置服务端连接，请先打开主程序一键绑定。",
+                        fontSize = 13.sp,
+                        color = Color(0xFFFFE2BE)
                     )
                     Button(
                         onClick = onOpenSetup,
+                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .sizeIn(minHeight = 48.dp)
+                            .sizeIn(minHeight = 46.dp)
                     ) {
-                        Text("打开 BotHub 配置连接")
+                        Text("打开 BotHub 一键绑定", fontWeight = FontWeight.SemiBold)
                     }
                 } else {
-                    OutlinedTextField(
+                    ObsidianGlassInput(
                         value = noteInput,
                         onValueChange = { noteInput = it },
-                        label = { Text("随手批注 (可选)") },
-                        placeholder = { Text("记录一句想法，AI 提炼时一并参考...") },
+                        placeholder = "随手批注一句想法，AI 提炼时一并参考 (可选)...",
+                        singleLine = false,
                         maxLines = 3,
-                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -246,15 +248,15 @@ fun QuickCaptureSheet(
                             prefs.zeroClickCaptureEnabled = checked
                         },
                         title = "开启零点击秒收",
-                        subtitle = "下次系统分享时自动入库并秒回原应用（可在主程序设置关闭）",
+                        subtitle = "下次系统分享自动入库并秒回原应用",
                         compact = true
                     )
 
                     if (errorMsg.isNotEmpty()) {
                         Text(
                             text = errorMsg,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.error
+                            fontSize = 12.sp,
+                            color = Color(0xFFFDA4AF)
                         )
                     }
 
@@ -262,36 +264,46 @@ fun QuickCaptureSheet(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = { onForwardDeepChat(noteInput.trim()) },
-                            enabled = !saving,
-                            shape = RoundedCornerShape(12.dp),
+                        Surface(
+                            onClick = { if (!saving) onForwardDeepChat(noteInput.trim()) },
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color(0xFF11182E),
+                            border = BorderStroke(1.dp, Color(0x29FFF8EE)),
                             modifier = Modifier
                                 .weight(1f)
-                                .sizeIn(minHeight = 48.dp)
+                                .sizeIn(minHeight = 46.dp)
                         ) {
-                            Text("发给 AI 深聊")
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "发给 AI 深聊",
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFFE2E8F0)
+                                )
+                            }
                         }
+
                         Button(
                             onClick = { submitCapture() },
                             enabled = !saving,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
                                 contentColor = MaterialTheme.colorScheme.onPrimary
                             ),
                             modifier = Modifier
                                 .weight(1.25f)
-                                .sizeIn(minHeight = 48.dp)
+                                .sizeIn(minHeight = 46.dp)
                         ) {
                             Text(
                                 text = if (saving) "秒收中..." else "收入收藏匣",
+                                fontSize = 13.5.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
             }
         }
     }

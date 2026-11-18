@@ -8,6 +8,7 @@ import StarfieldBg from './components/StarfieldBg.vue'
 import LoginGate from './components/LoginGate.vue'
 import Sidebar from './components/Sidebar.vue'
 import BotWorkspace from './components/BotWorkspace.vue'
+import MobileBottomDock from './components/MobileBottomDock.vue'
 
 // On-demand route/modal code-splitting to shrink cold-boot bundle substantially
 const OpsWorkspace = lazyOverlayChunk(() => import('./components/OpsWorkspace.vue'))
@@ -27,6 +28,9 @@ const store = useAppStore()
 const mobileSidebarOpen = ref(false)
 const desktopCollapsed = ref(localStorage.getItem('bothub_sidebar_collapsed') === '1')
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
+const isAppShell = ref(
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('app_shell') === '1'
+)
 const workspaceTransition = ref<DirectionalTransitionName>('vesper-slide-forward')
 
 watch(
@@ -161,6 +165,57 @@ watch(
   async (authed) => {
     if (!authed || typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
+
+    const entry = params.get('entry')
+    if (entry) {
+      params.delete('entry')
+      const restEntry = params.toString()
+      window.history.replaceState(
+        {},
+        '',
+        window.location.pathname + (restEntry ? `?${restEntry}` : '') + window.location.hash
+      )
+      switch (entry) {
+        case 'ops':
+          store.state.workspace = 'ops'
+          break
+        case 'create_bot':
+          store.state.workspace = 'bots'
+          store.state.showCreateBotModal = true
+          break
+        case 'bot_config':
+          store.state.workspace = 'bots'
+          store.state.botView = 'config'
+          break
+        case 'create_asset':
+          store.state.workspace = 'ops'
+          store.state.editingAsset = null
+          break
+        case 'create_task':
+          store.state.workspace = 'ops'
+          store.state.editingTask = null
+          break
+        case 'skills':
+          store.state.showSkillsModal = true
+          break
+        case 'memories':
+          store.state.showMemoriesModal = true
+          break
+        case 'logs':
+          store.state.showLogsModal = true
+          break
+        case 'settings':
+          store.state.showSettingsModal = true
+          break
+        case 'inbox':
+          store.state.showInboxModal = true
+          break
+        case 'stash':
+          store.state.showWorkhubModal = true
+          break
+      }
+    }
+
     if (params.get('auto_pair_app') !== '1') return
     params.delete('auto_pair_app')
     const rest = params.toString()
@@ -196,7 +251,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="relative min-h-dvh" :data-ambient-paused="store.state.ambientMotionPaused || undefined">
+  <div
+    class="relative min-h-dvh"
+    :data-ambient-paused="store.state.ambientMotionPaused || undefined"
+    :data-app-shell="isAppShell ? '1' : undefined"
+  >
     <StarfieldBg />
 
     <!-- Initial Loading Gate -->
@@ -248,6 +307,12 @@ onBeforeUnmount(() => {
             @toggle-desktop-sidebar="toggleDesktopSidebar"
           />
         </Transition>
+
+        <MobileBottomDock
+          v-if="!isAppShell"
+          :mobile-menu-open="mobileSidebarOpen"
+          @toggle-mobile-menu="mobileSidebarOpen = !mobileSidebarOpen"
+        />
       </main>
     </div>
 

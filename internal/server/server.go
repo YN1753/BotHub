@@ -188,6 +188,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v2/app/version", s.handleV2AppVersion)
 	mux.HandleFunc("POST /api/v2/auth/token", s.handleV2AuthToken)
 	mux.HandleFunc("POST /api/v2/auth/token/rotate", s.requireAuth(s.handleV2RotateAppToken))
+	mux.HandleFunc("POST /api/v2/auth/web-session", s.requireAuth(s.handleV2WebSession))
 	mux.HandleFunc("GET /api/v2/events", s.requireAuth(s.handleV2Events))
 	mux.HandleFunc("GET /api/v2/notifications", s.requireAuth(s.handleV2ListNotifications))
 	mux.HandleFunc("POST /api/v2/notifications/{id}/read", s.requireAuth(s.handleV2MarkNotificationRead))

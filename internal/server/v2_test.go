@@ -308,3 +308,54 @@ func TestGrokBotRosterAndTimelineLifecycle(t *testing.T) {
 		t.Fatalf("expected 200 deleting bot, got %d", recDelCustom.Code)
 	}
 }
+
+func TestV2WebSessionBridge(t *testing.T) {
+	s, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	h := s.Handler()
+
+	// 1. Unauthenticated call must fail with 401
+	unauthReq := httptest.NewRequest(http.MethodPost, "/api/v2/auth/web-session", nil)
+	unauthRec := httptest.NewRecorder()
+	h.ServeHTTP(unauthRec, unauthReq)
+	if unauthRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without Bearer token, got %d", unauthRec.Code)
+	}
+
+	// 2. Mint App Bearer Token and exchange for WebView session cookie
+	appTok, err := s.ensureAppBearerToken()
+	if err != nil || appTok == "" {
+		t.Fatalf("ensureAppBearerToken failed: %v", err)
+	}
+
+	authReq := httptest.NewRequest(http.MethodPost, "/api/v2/auth/web-session", nil)
+	authReq.Header.Set("Authorization", "Bearer "+appTok)
+	authRec := httptest.NewRecorder()
+	h.ServeHTTP(authRec, authReq)
+	if authRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from web-session, got %d: %s", authRec.Code, authRec.Body.String())
+	}
+
+	var body struct {
+		OK          bool   `json:"ok"`
+		CookieName  string `json:"cookie_name"`
+		CookieValue string `json:"cookie_value"`
+		MaxAge      int    `json:"max_age"`
+	}
+	if err := json.Unmarshal(authRec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal web-session: %v", err)
+	}
+	if !body.OK || body.CookieName != sessionCookieName || body.CookieValue == "" {
+		t.Fatalf("unexpected web-session payload: %+v", body)
+	}
+
+	// 3. Verify returned cookie authenticates standard web API endpoints without Bearer header
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	statusReq.AddCookie(&http.Cookie{Name: body.CookieName, Value: body.CookieValue})
+	statusRec := httptest.NewRecorder()
+	h.ServeHTTP(statusRec, statusReq)
+	if statusRec.Code != http.StatusOK || !strings.Contains(statusRec.Body.String(), `"authenticated":true`) {
+		t.Fatalf("expected authenticated:true using minted cookie, got %d: %s", statusRec.Code, statusRec.Body.String())
+	}
+}

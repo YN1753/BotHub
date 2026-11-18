@@ -15,14 +15,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -37,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.TaskItem
 import uk.starryheavens.vesper.bothub.ui.components.MetricMiniCard
+import uk.starryheavens.vesper.bothub.ui.components.ObsidianSwitch
 
 @Composable
 fun HubTabScreen(
@@ -44,6 +47,7 @@ fun HubTabScreen(
     onRunTask: (TaskItem) -> Unit,
     onToggleTask: (TaskItem, Boolean) -> Unit,
     onSyncAssets: () -> Unit,
+    onOpenConsole: (String, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val expiringCount = snapshot?.expiringCount ?: 0
@@ -80,15 +84,63 @@ fun HubTabScreen(
             }
         }
 
-        // Section 1: Digital Assets with Visual Runway Progress Bars
+        // Polyglot Hybrid Studio Bridge Card (Full Nezha Telemetry + Asset/Task CRUD)
         item {
-            Spacer(modifier = Modifier.height(4.dp))
+            Surface(
+                onClick = { onOpenConsole("ops", "全量资产与哪吒实时工作台") },
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xCC0E152B),
+                border = BorderStroke(1.dp, Color(0x38F2B880)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .background(Color(0xFF34D399), CircleShape)
+                        )
+                        Column {
+                            Text(
+                                text = "打开全功能资产与哪吒监控工作台",
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFFFE2BE)
+                            )
+                            Text(
+                                text = "免密直达 · 节点负载监控 · 资产与调度完整增删改",
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                    }
+                    Icon(
+                        Icons.Default.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = Color(0xFFF2B880),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+
+        // Section 1: Digital Assets with Annual Runway Progress Scale
+        item {
+            Spacer(modifier = Modifier.height(2.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "数字资产与续费守望",
                         style = MaterialTheme.typography.titleSmall,
@@ -97,36 +149,65 @@ fun HubTabScreen(
                         color = Color(0xFFFFF8EE)
                     )
                     Text(
-                        text = "VPS · 域名 · 会员订阅到期倒计时",
+                        text = "VPS · 域名 · 订阅按年周期比例显示剩余额度",
                         fontSize = 11.5.sp,
                         color = Color(0xFF94A3B8)
                     )
                 }
 
-                Surface(
-                    onClick = onSyncAssets,
-                    shape = RoundedCornerShape(999.dp),
-                    color = Color(0x22F2B880),
-                    border = BorderStroke(1.dp, Color(0x52F2B880)),
-                    modifier = Modifier.sizeIn(minHeight = 36.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Surface(
+                        onClick = { onOpenConsole("create_asset", "新增数字资产") },
+                        shape = RoundedCornerShape(999.dp),
+                        color = Color(0xFF10172C),
+                        border = BorderStroke(1.dp, Color(0x26FFF8EE)),
+                        modifier = Modifier.sizeIn(minHeight = 34.dp)
                     ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = null,
-                            tint = Color(0xFFFFE2BE),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = "嗅探同步",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFFFFE2BE)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = null,
+                                tint = Color(0xFFCBD5E1),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = "新增",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0)
+                            )
+                        }
+                    }
+
+                    Surface(
+                        onClick = onSyncAssets,
+                        shape = RoundedCornerShape(999.dp),
+                        color = Color(0x22F2B880),
+                        border = BorderStroke(1.dp, Color(0x52F2B880)),
+                        modifier = Modifier.sizeIn(minHeight = 34.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = null,
+                                tint = Color(0xFFFFE2BE),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = "嗅探",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFFFE2BE)
+                            )
+                        }
                     }
                 }
             }
@@ -153,16 +234,17 @@ fun HubTabScreen(
 
         items(assets, key = { it.id }) { asset ->
             val isPermanent = asset.dueDate.startsWith("2099") || asset.daysLeft > 3650
+            val isMultiYear = !isPermanent && asset.daysLeft > 365
             val barColor = when {
-                isPermanent -> Color(0xFF34D399)
-                asset.daysLeft <= 3 -> Color(0xFFFB7185)
-                asset.daysLeft <= 7 -> Color(0xFFFBBF24)
+                isPermanent || isMultiYear -> Color(0xFF34D399)
+                asset.daysLeft <= 7 -> Color(0xFFFB7185)
+                asset.daysLeft <= 30 -> Color(0xFFFBBF24)
                 else -> Color(0xFFF2B880)
             }
             val progressFraction = when {
                 isPermanent -> 1f
-                asset.daysLeft <= 0 -> 0.06f
-                else -> (asset.daysLeft.toFloat() / 90f).coerceIn(0.08f, 1f)
+                asset.daysLeft <= 0 -> 0.04f
+                else -> (asset.daysLeft.toFloat() / 365f).coerceIn(0.06f, 1f)
             }
 
             Surface(
@@ -191,7 +273,9 @@ fun HubTabScreen(
                             color = Color(0xFFFFF8EE),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 10.dp)
                         )
                         Surface(
                             shape = RoundedCornerShape(6.dp),
@@ -223,7 +307,9 @@ fun HubTabScreen(
                             color = Color(0xFF94A3B8),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 12.dp)
                         )
                         if (!isPermanent && asset.dueDate.isNotEmpty()) {
                             Text(
@@ -235,7 +321,7 @@ fun HubTabScreen(
                         }
                     }
 
-                    // Thin Visual Runway Progress Bar
+                    // Annual Runway Progress Bar (365-day scale)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -255,22 +341,55 @@ fun HubTabScreen(
             }
         }
 
-        // Section 2: Automation & Scheduled Tasks (Non-squishing Two-Tier Card)
+        // Section 2: Automation & Scheduled Tasks
         item {
             Spacer(modifier = Modifier.height(6.dp))
-            Column {
-                Text(
-                    text = "自动化情报与调度引擎",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFFFF8EE)
-                )
-                Text(
-                    text = "可随时启停周期任务或立即手动触发执行",
-                    fontSize = 11.5.sp,
-                    color = Color(0xFF94A3B8)
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "自动化情报与调度引擎",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFFFF8EE)
+                    )
+                    Text(
+                        text = "可随时启停周期任务或立即手动触发执行",
+                        fontSize = 11.5.sp,
+                        color = Color(0xFF94A3B8)
+                    )
+                }
+
+                Surface(
+                    onClick = { onOpenConsole("create_task", "创建自动化调度任务") },
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color(0xFF10172C),
+                    border = BorderStroke(1.dp, Color(0x26FFF8EE)),
+                    modifier = Modifier.sizeIn(minHeight = 34.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            tint = Color(0xFFCBD5E1),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "新建任务",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFE2E8F0)
+                        )
+                    }
+                }
             }
         }
 
@@ -303,7 +422,7 @@ fun HubTabScreen(
                                 .weight(1f)
                                 .padding(end = 10.dp)
                         )
-                        Switch(
+                        ObsidianSwitch(
                             checked = task.enabled,
                             onCheckedChange = { checked -> onToggleTask(task, checked) }
                         )
@@ -321,13 +440,7 @@ fun HubTabScreen(
                             verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             Text(
-                                text = buildString {
-                                    if (task.cronExpr.isNotBlank()) append(task.cronExpr)
-                                    if (task.nextRunAt.isNotBlank()) {
-                                        if (isNotEmpty()) append(" · 下次 ")
-                                        append(task.nextRunAt.takeLast(11))
-                                    }
-                                },
+                                text = task.formattedSchedule(),
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.5.sp,
                                 color = Color(0xFF94A3B8),

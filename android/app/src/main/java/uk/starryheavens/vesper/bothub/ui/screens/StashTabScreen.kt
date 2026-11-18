@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -39,7 +40,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.StashItemUi
+import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 
 @Composable
 fun StashTabScreen(
@@ -172,12 +173,12 @@ fun StashTabScreen(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
+                    ObsidianGlassInput(
                         value = captureInput,
                         onValueChange = { captureInput = it },
-                        placeholder = { Text("粘贴链接、B站分享文案或输入随手闪念...") },
+                        placeholder = "粘贴链接、B站分享文案或输入随手闪念...",
+                        singleLine = false,
                         maxLines = 3,
-                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                     Row(
@@ -185,12 +186,11 @@ fun StashTabScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedTextField(
+                        ObsidianGlassInput(
                             value = captureNote,
                             onValueChange = { captureNote = it },
-                            placeholder = { Text("个人附注 (可选)") },
+                            placeholder = "个人附注 (可选)",
                             singleLine = true,
-                            shape = RoundedCornerShape(14.dp),
                             modifier = Modifier.weight(1f)
                         )
                         Button(
@@ -205,7 +205,7 @@ fun StashTabScreen(
                             },
                             enabled = captureInput.isNotBlank(),
                             shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.sizeIn(minHeight = 48.dp)
+                            modifier = Modifier.sizeIn(minHeight = 46.dp)
                         ) {
                             Text("投喂提炼", fontWeight = FontWeight.SemiBold)
                         }
@@ -459,17 +459,24 @@ fun StashTabScreen(
                                             modifier = Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.Top
                                         ) {
-                                            Text(
-                                                text = "• ",
-                                                color = Color(0xFFF2B880),
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(14.dp)
+                                                    .padding(top = 7.5.dp),
+                                                contentAlignment = Alignment.TopStart
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(4.5.dp)
+                                                        .background(Color(0xFFF2B880), CircleShape)
+                                                )
+                                            }
                                             Text(
                                                 text = pt,
                                                 fontSize = 13.sp,
                                                 lineHeight = 19.sp,
-                                                color = Color(0xFFCBD5E1)
+                                                color = Color(0xFFCBD5E1),
+                                                modifier = Modifier.weight(1f)
                                             )
                                         }
                                     }

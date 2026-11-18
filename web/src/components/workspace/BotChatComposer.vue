@@ -365,7 +365,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="relative px-3 sm:px-6 pt-1 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] sm:pb-5">
+  <div class="relative px-3 sm:px-6 pt-1 pb-2.5 [[data-app-shell='1']_&]:pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] sm:pb-5">
     <BotRelayStrip :steps="relaySteps" />
 
     <BotComposerDropdown

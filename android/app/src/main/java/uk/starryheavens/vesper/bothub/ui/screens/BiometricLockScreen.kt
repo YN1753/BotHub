@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -40,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.ui.BiometricAuthHelper
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
+import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 import uk.starryheavens.vesper.bothub.ui.components.VesperBrandEmblem
 
 @Composable
@@ -142,10 +142,11 @@ fun BiometricLockScreen(
             }
             if (showPassUnlock) {
                 Spacer(modifier = Modifier.height(14.dp))
-                OutlinedTextField(
+                ObsidianGlassInput(
                     value = fallbackPass,
                     onValueChange = { fallbackPass = it },
-                    label = { Text("兜底访问密码") },
+                    label = "兜底访问密码",
+                    placeholder = "输入控制台访问密钥...",
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()

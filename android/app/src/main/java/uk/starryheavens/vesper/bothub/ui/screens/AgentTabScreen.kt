@@ -11,9 +11,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -88,6 +90,7 @@ fun AgentTabScreen(
     onStop: () -> Unit,
     onCopyText: (String) -> Unit,
     onQuickPrompt: (String) -> Unit,
+    onOpenConsole: (String, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
@@ -179,6 +182,27 @@ fun AgentTabScreen(
                         }
                     }
                 }
+                item(key = "__bot_studio__") {
+                    Surface(
+                        onClick = { onOpenConsole("create_bot", "精灵编排工坊") },
+                        shape = RoundedCornerShape(999.dp),
+                        color = Color(0x660D1326),
+                        border = BorderStroke(1.dp, Color(0x26FFF8EE)),
+                        modifier = Modifier.sizeIn(minHeight = 40.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = "+ 编排",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                    }
+                }
             }
         } else if (bots.isEmpty()) {
             // Fallback persona strip when server has 0 persistent bots
@@ -232,10 +256,10 @@ fun AgentTabScreen(
             if (messages.isEmpty()) {
                 item {
                     val starters = listOf(
-                        "盘点资产与临期风险" to "请调用工具盘点全部数字资产与算力节点，并按到期风险给出锐评。",
+                        "盘点资产临期风险" to "请调用工具盘点全部数字资产与算力节点，并按到期风险给出锐评。",
                         "探查哪吒节点脉搏" to "请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线状态。",
                         "检查调度任务运行" to "请列出当前所有定时调度任务的状态与下次触发时间。",
-                        "检索最近收藏干货" to "请调用 manage_stash 检索我最近收入收藏匣的未读干货并做简要串联。"
+                        "串联最近收藏干货" to "请调用 manage_stash 检索我最近收入收藏匣的未读干货并做简要串联。"
                     )
                     Column(
                         modifier = Modifier
@@ -306,7 +330,9 @@ fun AgentTabScreen(
                         ) {
                             starters.chunked(2).forEach { pair ->
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(IntrinsicSize.Min),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     pair.forEach { (title, prompt) ->
@@ -320,21 +346,25 @@ fun AgentTabScreen(
                                             border = BorderStroke(1.dp, Color(0x22FFF8EE)),
                                             modifier = Modifier
                                                 .weight(1f)
+                                                .fillMaxHeight()
                                                 .sizeIn(minHeight = 52.dp)
                                         ) {
                                             Row(
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
                                                 Text(
                                                     text = title,
                                                     style = MaterialTheme.typography.labelLarge,
-                                                    fontSize = 12.5.sp,
+                                                    fontSize = 12.sp,
                                                     fontWeight = FontWeight.Medium,
                                                     color = Color(0xFFE2E8F0),
-                                                    maxLines = 2,
-                                                    modifier = Modifier.weight(1f)
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .padding(end = 4.dp)
                                                 )
                                                 Icon(
                                                     Icons.Default.KeyboardArrowRight,

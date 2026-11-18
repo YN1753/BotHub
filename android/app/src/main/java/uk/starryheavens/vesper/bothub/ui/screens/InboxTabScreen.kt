@@ -37,17 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.NotificationItem
-
-private fun formatModuleBadge(moduleId: String): Pair<String, Color> {
-    return when (moduleId.lowercase()) {
-        "morning" -> "晨间简报" to Color(0xFFF2B880)
-        "radar" -> "技术雷达" to Color(0xFFA5B4FC)
-        "asset_watcher" -> "资产预警" to Color(0xFFFBBF24)
-        "nezha_webhook" -> "探针告警" to Color(0xFFFB7185)
-        "system_test" -> "通道自检" to Color(0xFF34D399)
-        else -> moduleId.ifBlank { "系统情报" } to Color(0xFF94A3B8)
-    }
-}
+import uk.starryheavens.vesper.bothub.ui.components.formatModuleBadge
 
 private fun formatShortTimestamp(raw: String): String {
     val clean = raw.trim()

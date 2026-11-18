@@ -131,6 +131,40 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun mintWebSession(): Result<WebSessionTicket> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/auth/web-session")
+                .post(emptyJsonBody)
+                .build()
+            val json = executeJson(req, "签发混合工作台会话失败")
+            val cookieName = json.optString("cookie_name", "bothub_session").trim()
+            val cookieValue = json.optString("cookie_value", "").trim()
+            val maxAge = json.optInt("max_age", 86400)
+            if (cookieValue.isEmpty()) {
+                throw IllegalStateException("服务端未返回有效工作台会话")
+            }
+            WebSessionTicket(cookieName = cookieName, cookieValue = cookieValue, maxAge = maxAge)
+        }
+    }
+
+    suspend fun fetchAppVersion(serverUrlOverride: String? = null): Result<AppVersionInfo> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder(
+                "/api/v2/app/version",
+                baseUrlOverride = serverUrlOverride,
+                includeAuth = false
+            ).get().build()
+            val json = executeJson(req, "查询版本信息失败")
+            AppVersionInfo(
+                version = json.optString("version", "").trim(),
+                apkUrl = json.optString(
+                    "apk_url",
+                    "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk"
+                ).trim()
+            )
+        }
+    }
+
     suspend fun fetchPasskeyStatus(serverUrl: String): Result<Boolean> = withContext(Dispatchers.IO) {
         runCatching {
             val cleanUrl = UrlUtils.normalizeServerUrl(serverUrl, prefs.serverUrl)

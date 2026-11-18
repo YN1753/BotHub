@@ -11,16 +11,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -36,19 +40,27 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -58,6 +70,131 @@ import uk.starryheavens.vesper.bothub.data.UrlUtils
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.GrokBotGroupCluster
+
+fun formatModuleBadge(moduleId: String): Pair<String, Color> {
+    return when (moduleId.trim().lowercase()) {
+        "morning" -> "晨间简报" to Color(0xFFF2B880)
+        "radar" -> "技术雷达" to Color(0xFFA5B4FC)
+        "asset_watcher" -> "资产预警" to Color(0xFFFBBF24)
+        "nezha_webhook" -> "探针告警" to Color(0xFFFB7185)
+        "system_test" -> "通道自检" to Color(0xFF34D399)
+        else -> moduleId.ifBlank { "系统情报" } to Color(0xFF94A3B8)
+    }
+}
+
+@Composable
+fun ObsidianSheetDragHandle(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        HorizontalDivider(thickness = 0.8.dp, color = Color(0x28FFF8EE))
+        Spacer(modifier = Modifier.height(10.dp))
+        Box(
+            modifier = Modifier
+                .width(36.dp)
+                .height(4.dp)
+                .background(Color(0x52CBD5E1), RoundedCornerShape(999.dp))
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+    }
+}
+
+@Composable
+fun ObsidianSwitch(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        modifier = modifier,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = Color(0xFF090C16),
+            checkedTrackColor = Color(0xFFF2B880),
+            checkedBorderColor = Color.Transparent,
+            uncheckedThumbColor = Color(0xFF94A3B8),
+            uncheckedTrackColor = Color(0xFF141C34),
+            uncheckedBorderColor = Color(0x38FFF8EE)
+        )
+    )
+}
+
+@Composable
+fun ObsidianGlassInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    label: String = "",
+    singleLine: Boolean = true,
+    maxLines: Int = if (singleLine) 1 else 4,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
+) {
+    var focused by remember { mutableStateOf(false) }
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        if (label.isNotEmpty()) {
+            Text(
+                text = label,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (focused) Color(0xFFFFE2BE) else Color(0xFF94A3B8),
+                modifier = Modifier.padding(start = 4.dp)
+            )
+        }
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = Color(0xE6080D1C),
+            border = BorderStroke(
+                1.dp,
+                if (focused) Color(0x85F2B880) else Color(0x26FFF8EE)
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .sizeIn(minHeight = 46.dp)
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = singleLine,
+                maxLines = maxLines,
+                visualTransformation = visualTransformation,
+                keyboardOptions = keyboardOptions,
+                textStyle = TextStyle(
+                    color = Color(0xFFFFF8EE),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                ),
+                cursorBrush = SolidColor(Color(0xFFF2B880)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .onFocusChanged { focused = it.isFocused },
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (value.isEmpty()) {
+                            Text(
+                                text = placeholder,
+                                fontSize = 13.5.sp,
+                                color = Color(0xFF64748B),
+                                maxLines = maxLines,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        inner()
+                    }
+                }
+            )
+        }
+    }
+}
 
 @Composable
 fun BotAvatarOrCluster(
@@ -114,7 +251,7 @@ fun BotHubTopBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xD9070B16))
+            .background(Color(0xE6070B16))
             .statusBarsPadding()
     ) {
         Row(
@@ -122,106 +259,111 @@ fun BotHubTopBar(
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            when (selectedTab) {
-                BotHubTab.AGENT -> {
-                    // Dynamic-Island Identity Capsule (tapping opens Session History)
-                    Surface(
-                        onClick = onOpenSessions,
-                        shape = RoundedCornerShape(999.dp),
-                        color = Color(0xFF0E1428),
-                        border = BorderStroke(1.dp, Color(0x24FFF8EE)),
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .sizeIn(minHeight = 42.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(start = 6.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Box(modifier = Modifier.weight(1f)) {
+                when (selectedTab) {
+                    BotHubTab.AGENT -> {
+                        // Dynamic-Island Identity Capsule (elastic width without artificial 168dp cutoff)
+                        Surface(
+                            onClick = onOpenSessions,
+                            shape = RoundedCornerShape(999.dp),
+                            color = Color(0xFF0E1428),
+                            border = BorderStroke(1.dp, Color(0x26FFF8EE)),
+                            modifier = Modifier.sizeIn(minHeight = 42.dp)
                         ) {
-                            if (activeBot != null) {
-                                BotAvatarOrCluster(
-                                    bot = activeBot,
-                                    allBots = allBots,
-                                    state = if (isStreaming) "working" else activeBot.state,
-                                    size = 30.dp,
-                                    interactive = false,
-                                    defaultSeedKey = "bothub_top"
-                                )
-                            } else {
-                                VesperBrandEmblem(size = 28.dp)
-                            }
-                            Column(modifier = Modifier.widthIn(max = 168.dp)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Text(
-                                        text = activeBot?.name ?: "BotHub",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFFFFF8EE),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                            Row(
+                                modifier = Modifier.padding(start = 6.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (activeBot != null) {
+                                    BotAvatarOrCluster(
+                                        bot = activeBot,
+                                        allBots = allBots,
+                                        state = if (isStreaming) "working" else activeBot.state,
+                                        size = 30.dp,
+                                        interactive = false,
+                                        defaultSeedKey = "bothub_top"
                                     )
-                                    Icon(
-                                        Icons.Default.KeyboardArrowDown,
-                                        contentDescription = "历史会话",
-                                        tint = Color(0xFF94A3B8),
-                                        modifier = Modifier.size(15.dp)
-                                    )
+                                } else {
+                                    VesperBrandEmblem(size = 28.dp)
                                 }
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .background(
-                                                color = if (isStreaming) Color(0xFFF2B880) else Color(0xFF34D399),
-                                                shape = CircleShape
-                                            )
-                                    )
-                                    Text(
-                                        text = if (isStreaming) {
-                                            "正在推演"
-                                        } else {
-                                            activeBot?.roleTitle?.ifBlank { "轻触查看历史会话" } ?: "智能中枢"
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontSize = 10.5.sp,
-                                        color = if (isStreaming) Color(0xFFFFE2BE) else Color(0xFF94A3B8),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                Column {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = activeBot?.name ?: "BotHub",
+                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                            ),
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFFFF8EE),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Icon(
+                                            Icons.Default.KeyboardArrowDown,
+                                            contentDescription = "历史会话",
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .background(
+                                                    color = if (isStreaming) Color(0xFFF2B880) else Color(0xFF34D399),
+                                                    shape = CircleShape
+                                                )
+                                        )
+                                        Text(
+                                            text = if (isStreaming) {
+                                                "正在推演"
+                                            } else {
+                                                activeBot?.roleTitle?.ifBlank { "轻触查看历史会话" } ?: "智能中枢"
+                                            },
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                            ),
+                                            fontSize = 10.5.sp,
+                                            color = if (isStreaming) Color(0xFFFFE2BE) else Color(0xFF94A3B8),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                BotHubTab.INBOX -> {
-                    HeaderBrandTitle(
-                        title = "情报收件箱",
-                        subtitle = if (unreadInboxCount > 0) "$unreadInboxCount 条未读推送" else "锁屏实时直连中"
-                    )
-                }
+                    BotHubTab.INBOX -> {
+                        HeaderBrandTitle(
+                            title = "情报收件箱",
+                            subtitle = if (unreadInboxCount > 0) "$unreadInboxCount 条未读推送" else "锁屏实时直连中"
+                        )
+                    }
 
-                BotHubTab.STASH -> {
-                    HeaderBrandTitle(
-                        title = "收藏与闪念",
-                        subtitle = "系统分享秒收 · AI 自动提炼"
-                    )
-                }
+                    BotHubTab.STASH -> {
+                        HeaderBrandTitle(
+                            title = "收藏与闪念",
+                            subtitle = "系统分享秒收 · AI 自动提炼"
+                        )
+                    }
 
-                BotHubTab.HUB -> {
-                    HeaderBrandTitle(
-                        title = "资产与调度",
-                        subtitle = UrlUtils.formatDisplayHost(serverUrl)
-                    )
+                    BotHubTab.HUB -> {
+                        HeaderBrandTitle(
+                            title = "资产与调度",
+                            subtitle = UrlUtils.formatDisplayHost(serverUrl)
+                        )
+                    }
                 }
             }
 
@@ -293,16 +435,22 @@ private fun HeaderBrandTitle(
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         VesperBrandEmblem(size = 30.dp)
-        Column {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                ),
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFFFF8EE)
+                color = Color(0xFFFFF8EE),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                ),
                 fontSize = 11.sp,
                 color = Color(0xFF94A3B8),
                 maxLines = 1,
@@ -342,7 +490,9 @@ private fun HeaderPillAction(
             )
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                ),
                 fontWeight = FontWeight.Medium,
                 color = if (accent) Color(0xFFFFE2BE) else Color(0xFFE2E8F0)
             )
@@ -375,7 +525,9 @@ private fun HeaderIconCircle(
 }
 
 /**
- * Custom compact obsidian-champagne bottom navigation dock (single inset, zero M3 double-padding bloat).
+ * Custom compact obsidian-champagne bottom navigation dock.
+ * Uses fixed icon slot geometry and PlatformTextStyle(includeFontPadding = false)
+ * so OEM handwritten fonts never distort badge roundness or shift label baselines.
  */
 @Composable
 fun BotHubBottomBar(
@@ -385,10 +537,12 @@ fun BotHubBottomBar(
     onSelectTab: (BotHubTab) -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
+    val noPadStyle = remember { PlatformTextStyle(includeFontPadding = false) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xEB080C1A))
+            .background(Color(0xF0080C1A))
             .navigationBarsPadding()
     ) {
         HorizontalDivider(thickness = 0.5.dp, color = Color(0x1FFFF8EE))
@@ -396,7 +550,7 @@ fun BotHubBottomBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             BotHubTab.entries.forEach { tab ->
@@ -413,7 +567,7 @@ fun BotHubBottomBar(
                     BotHubTab.HUB -> Icons.Default.Dns
                 }
                 val pillBg by animateColorAsState(
-                    targetValue = if (isSelected) Color(0x26F2B880) else Color.Transparent,
+                    targetValue = if (isSelected) Color(0x24F2B880) else Color.Transparent,
                     animationSpec = tween(180),
                     label = "navPillBg"
                 )
@@ -426,7 +580,7 @@ fun BotHubBottomBar(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .sizeIn(minHeight = 48.dp)
+                        .height(50.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(pillBg)
                         .clickable(
@@ -438,44 +592,60 @@ fun BotHubBottomBar(
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
                             onSelectTab(tab)
-                        }
-                        .padding(vertical = 5.dp),
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        Box(contentAlignment = Alignment.TopEnd) {
+                        Box(
+                            modifier = Modifier
+                                .width(40.dp)
+                                .height(22.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
                                 tabIcon,
                                 contentDescription = tab.contentDescription,
                                 tint = fgColor,
-                                modifier = Modifier
-                                    .padding(horizontal = 8.dp)
-                                    .size(20.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                             if (badgeCount > 0) {
                                 Box(
                                     modifier = Modifier
-                                        .background(Color(0xFFF2B880), CircleShape)
-                                        .padding(horizontal = 4.5.dp, vertical = 0.5.dp)
+                                        .align(Alignment.TopEnd)
+                                        .offset(x = 2.dp, y = (-2).dp)
+                                        .defaultMinSize(minWidth = 15.dp, minHeight = 15.dp)
+                                        .height(15.dp)
+                                        .background(Color(0xFFF2B880), RoundedCornerShape(999.dp))
+                                        .padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = if (badgeCount > 99) "99+" else badgeCount.toString(),
-                                        fontSize = 9.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF090C16)
+                                        style = TextStyle(
+                                            fontSize = 9.5.sp,
+                                            lineHeight = 10.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF090C16),
+                                            platformStyle = noPadStyle
+                                        ),
+                                        maxLines = 1
                                     )
                                 }
                             }
                         }
                         Text(
                             text = tab.label,
-                            fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = fgColor,
+                            style = TextStyle(
+                                fontSize = 11.sp,
+                                lineHeight = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = fgColor,
+                                platformStyle = noPadStyle
+                            ),
                             maxLines = 1
                         )
                     }
@@ -501,7 +671,9 @@ fun MetricMiniCard(
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                ),
                 fontSize = 11.sp,
                 color = Color(0xFF94A3B8),
                 maxLines = 1,
@@ -510,10 +682,13 @@ fun MetricMiniCard(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = value,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = accentColor
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor,
+                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                )
             )
         }
     }
@@ -524,14 +699,14 @@ fun ZeroClickCaptureRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     title: String = "系统分享零点击秒收",
-    subtitle: String = "开启后在任意应用点击系统分享将自动收入收藏匣并立即返回原应用",
+    subtitle: String = "任意应用点击系统分享即自动入库并秒回原应用",
     compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = Color(0x990D1326),
+        color = Color(0xB30D1326),
         border = BorderStroke(1.dp, Color(0x1FFFF8EE))
     ) {
         Row(
@@ -545,22 +720,25 @@ fun ZeroClickCaptureRow(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(end = 12.dp)
+                    .padding(end = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = Color(0xFFFFF8EE)
                 )
-                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    color = Color(0xFF94A3B8)
                 )
             }
-            Switch(
+            ObsidianSwitch(
                 checked = checked,
                 onCheckedChange = onCheckedChange
             )
