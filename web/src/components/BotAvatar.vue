@@ -184,11 +184,11 @@ const eyeOffsetY = computed(() => {
 })
 
 const sizeClass = computed(() => {
-  if (props.size === 'xs') return 'w-3.5 h-3.5'
-  if (props.size === 'sm') return 'w-7 h-7'
-  if (props.size === 'lg') return 'w-12 h-12'
-  if (props.size === 'xl') return 'w-24 h-24'
-  return 'w-9 h-9'
+  if (props.size === 'xs') return 'w-4 h-4'
+  if (props.size === 'sm') return 'w-8 h-8'
+  if (props.size === 'lg') return 'w-14 h-14'
+  if (props.size === 'xl') return 'w-28 h-28'
+  return 'w-10 h-10'
 })
 
 const inlineVars = computed(() => {
@@ -313,7 +313,6 @@ const inlineVars = computed(() => {
         cy="51.8"
         rx="12.5"
         ry="2.2"
-        :fill="palette.shadow"
         class="bot-ground-shadow"
       />
 
@@ -478,6 +477,12 @@ const inlineVars = computed(() => {
               :d="bodyPath"
               :stroke="`url(#${uid}-rim)`"
               stroke-width="0.9"
+              fill="none"
+            />
+            <path
+              :d="bodyPath"
+              class="bot-light-outline"
+              stroke-width="0.85"
               fill="none"
             />
 

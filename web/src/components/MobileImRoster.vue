@@ -218,8 +218,8 @@ function openCreateGroup() {
             @click="handleSelectConversation(g.id)"
             class="w-full px-4 py-2.5 flex items-center gap-3 text-left hover:bg-white/[0.03] cursor-pointer"
           >
-            <div class="w-11 h-11 rounded-xl border border-[#fff8ee]/14 bg-[#101830] flex items-center justify-center shrink-0">
-              <BotGroupAvatar :members="resolveGroupMembers(g)" :fallback-style="g.avatar_style" :state="g.state" size="sm" />
+            <div class="w-11 h-11 flex items-center justify-center shrink-0">
+              <BotGroupAvatar :members="resolveGroupMembers(g)" :fallback-style="g.avatar_style" :state="g.state" size="md" />
             </div>
             <div class="flex-1 min-w-0">
               <div class="text-[14.5px] font-semibold text-[#fff8ee] truncate">{{ g.name }}</div>
@@ -240,9 +240,9 @@ function openCreateGroup() {
           @click="handleSelectConversation(f.id)"
           class="w-full px-4 py-2.5 flex items-center gap-3 text-left hover:bg-white/[0.03] cursor-pointer"
         >
-          <div class="relative w-11 h-11 rounded-xl border border-[#fff8ee]/14 bg-[#0e152b] flex items-center justify-center shrink-0">
-            <BotAvatar :avatar-style="f.avatar_style" :state="f.state" size="sm" :seed-key="f.id" />
-            <span :class="['absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-[#050811]', botStateDotClass(f.state)]" />
+          <div class="relative w-11 h-11 flex items-center justify-center shrink-0">
+            <BotAvatar :avatar-style="f.avatar_style" :state="f.state" size="md" :seed-key="f.id" />
+            <span :class="['absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-[#050811]', botStateDotClass(f.state)]" />
           </div>
           <div class="flex-1 min-w-0">
             <div class="text-[14.5px] font-semibold text-[#fff8ee] truncate">{{ f.name }}</div>
@@ -261,11 +261,11 @@ function openCreateGroup() {
         @click="store.state.showInboxModal = true"
         class="w-full px-4 py-3 flex items-center gap-3.5 text-left border-b border-[#fff8ee]/8 hover:bg-white/[0.04] cursor-pointer"
       >
-        <div class="relative w-12 h-12 rounded-[15px] border border-[#f2b880]/30 bg-[#101830] flex items-center justify-center shrink-0">
-          <VesperBrandIcon :size="32" />
+        <div class="relative w-12 h-12 flex items-center justify-center shrink-0">
+          <VesperBrandIcon class="w-10 h-10" />
           <span
             v-if="inboxUnread > 0"
-            class="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-rose-500 text-white font-mono text-[10px] font-bold leading-none inline-flex items-center justify-center"
+            class="absolute -top-0.5 -right-0.5 min-w-[17px] h-[17px] px-1 rounded-full bg-rose-500 text-white font-mono text-[10px] font-bold leading-none inline-flex items-center justify-center"
           >
             {{ inboxUnread > 99 ? '99+' : inboxUnread }}
           </span>
@@ -295,7 +295,7 @@ function openCreateGroup() {
           b.is_pinned ? 'bg-[#0f172e]/55' : 'hover:bg-white/[0.03]'
         ]"
       >
-        <div class="relative w-12 h-12 rounded-[15px] border border-[#fff8ee]/14 bg-[#0f162c] flex items-center justify-center shrink-0">
+        <div class="relative w-12 h-12 flex items-center justify-center shrink-0">
           <BotGroupAvatar
             v-if="isGroup(b)"
             :members="resolveGroupMembers(b)"
@@ -305,7 +305,7 @@ function openCreateGroup() {
           />
           <template v-else>
             <BotAvatar :avatar-style="b.avatar_style" :state="b.state" size="md" :seed-key="b.id" />
-            <span :class="['absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-[#050811]', botStateDotClass(b.state)]" />
+            <span :class="['absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-[#050811]', botStateDotClass(b.state)]" />
           </template>
 
           <span

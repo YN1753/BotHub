@@ -28,57 +28,8 @@ fun VesperBrandEmblem(
 ) {
     Canvas(modifier = modifier.size(size)) {
         val u = this.size.minDimension / 64f
-        val corner = CornerRadius(15f * u, 15f * u)
 
-        // 1. Deep Twilight Nebula Squircle Base + Bevel
-        drawRoundRect(
-            brush = Brush.linearGradient(
-                0.0f to Color(0xFF131D42),
-                0.52f to Color(0xFF080C1C),
-                1.0f to Color(0xFF04060D),
-                start = Offset(8f * u, 4f * u),
-                end = Offset(56f * u, 60f * u)
-            ),
-            size = this.size,
-            cornerRadius = corner
-        )
-        drawRoundRect(
-            brush = Brush.radialGradient(
-                0.0f to Color(0x47818CF8),
-                0.55f to Color(0x14818CF8),
-                1.0f to Color.Transparent,
-                center = Offset(15f * u, 13f * u),
-                radius = 30f * u
-            ),
-            size = this.size,
-            cornerRadius = corner
-        )
-        drawRoundRect(
-            brush = Brush.radialGradient(
-                0.0f to Color(0x4DF2B880),
-                0.50f to Color(0x1AF2B880),
-                1.0f to Color.Transparent,
-                center = Offset(46f * u, 48f * u),
-                radius = 34f * u
-            ),
-            size = this.size,
-            cornerRadius = corner
-        )
-        drawRoundRect(
-            brush = Brush.linearGradient(
-                0.0f to Color(0x52FFE6C7),
-                0.50f to Color(0x0FFFFFFF),
-                1.0f to Color(0x38F2B880),
-                start = Offset(8f * u, 2f * u),
-                end = Offset(56f * u, 62f * u)
-            ),
-            topLeft = Offset(0.6f * u, 0.6f * u),
-            size = Size(62.8f * u, 62.8f * u),
-            cornerRadius = CornerRadius(14.4f * u, 14.4f * u),
-            style = Stroke(width = 1.0f * u)
-        )
-
-        // 2. Companion Star
+        // 1. Companion Star (Transparent background — zero outer dark box)
         val smallStar = Path().apply {
             moveTo(14.2f * u, 14.8f * u)
             quadraticBezierTo(14.2f * u, 17.2f * u, 16.6f * u, 17.2f * u)
@@ -167,6 +118,11 @@ fun VesperBrandEmblem(
                 center = Offset(37.3f * u, 29.4f * u)
             )
         }
+        drawPath(
+            path = mochiBody,
+            color = Color(0x3864748B),
+            style = Stroke(width = 0.9f * u)
+        )
 
         // 5. Orbital Ring Front Crossing
         rotate(degrees = -22f, pivot = orbitPivot) {

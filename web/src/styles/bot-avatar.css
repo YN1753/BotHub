@@ -7,11 +7,13 @@
     translate3d(calc(var(--m-tx, 0%) * var(--peek-mult)), calc(var(--m-ty, 0%) * var(--peek-mult)), 0)
     scale(var(--m-sc, 0.72))
     rotate(var(--m-rot, 0deg));
-  filter: drop-shadow(0 2px 3.5px rgba(3, 5, 13, 0.68));
+  filter: drop-shadow(0 2px 3.5px var(--mochi-item-shadow, rgba(3, 5, 13, 0.68)));
 }
 
 .mochi-cluster-item.is-front-lead {
-  filter: drop-shadow(0 -1.5px 4px rgba(3, 5, 13, 0.74)) drop-shadow(0 4px 8px rgba(3, 5, 13, 0.55));
+  filter:
+    drop-shadow(0 -1.5px 4px var(--mochi-lead-shadow-a, rgba(3, 5, 13, 0.74)))
+    drop-shadow(0 4px 8px var(--mochi-lead-shadow-b, rgba(3, 5, 13, 0.55)));
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -81,7 +83,23 @@
 }
 
 .bot-svg {
-  filter: drop-shadow(0 6px 11px rgba(3, 6, 15, 0.52));
+  filter: drop-shadow(0 6px 11px var(--bot-svg-shadow, rgba(3, 6, 15, 0.52)));
+}
+
+.bot-ground-shadow {
+  fill: var(--bot-ground-shadow, rgba(4, 7, 16, 0.58));
+}
+
+.bot-cluster-ground-shadow {
+  background: var(--bot-cluster-shadow, rgba(0, 0, 0, 0.55));
+}
+
+.bot-light-outline {
+  stroke: transparent;
+}
+
+html[data-color-mode="light"] .bot-light-outline {
+  stroke: rgba(71, 85, 105, 0.18);
 }
 
 .bot-float-rig,

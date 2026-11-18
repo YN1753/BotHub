@@ -48,6 +48,7 @@ import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.data.BotItem
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -441,6 +442,7 @@ fun GrokBotAvatar(
         state == "thinking" -> Color(0xFFFBBF24)
         else -> palette.aurora
     }
+    val isLightTheme = BotHubThemeTokens.isLight
 
     val eyeColor = if (state == "blocked" && activeStunt == null) {
         if (palette.isDarkBody) Color(0xFFFDA4AF) else Color(0xFFBE123C)
@@ -486,7 +488,7 @@ fun GrokBotAvatar(
                 center = Offset(28f, 29f)
             )
             drawOval(
-                color = Color(0x8803060F),
+                color = if (isLightTheme) Color(0x22334155) else Color(0x8803060F),
                 topLeft = Offset(16f, 50.2f),
                 size = Size(24f, 3.6f)
             )

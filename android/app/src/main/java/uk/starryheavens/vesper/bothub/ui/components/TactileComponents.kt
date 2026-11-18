@@ -628,6 +628,7 @@ fun SpiritSquircleAvatar(
     avatarStyleOverride: String? = null,
     state: String = bot?.state ?: "idle",
     containerSize: Dp = 48.dp,
+    @Suppress("UNUSED_PARAMETER")
     cornerRadius: Dp = 14.dp,
     showPresenceDot: Boolean = false,
     interactive: Boolean = false,
@@ -636,43 +637,8 @@ fun SpiritSquircleAvatar(
     modifier: Modifier = Modifier
 ) {
     val theme = BotHubThemeTokens
-    val styleRaw = (avatarStyleOverride ?: bot?.avatarStyle ?: "butler:gold").lowercase()
     val isGroup = bot?.isGroup == true
-
-    val (bgTop, bgBottom, rimAccent) = remember(styleRaw, isGroup, theme.isLight) {
-        if (theme.isLight) {
-            when {
-                isGroup -> Triple(Color(0xFFEEF2FF), Color(0xFFE0E7FF), Color(0x476366F1))
-                styleRaw.contains("emerald") || styleRaw.contains("radar") ->
-                    Triple(Color(0xFFECFDF5), Color(0xFFD1FAE5), Color(0x4710B981))
-                styleRaw.contains("indigo") || styleRaw.contains("sentinel") || styleRaw.contains("cyan") ->
-                    Triple(Color(0xFFEFF6FF), Color(0xFFDBEAFE), Color(0x473B82F6))
-                styleRaw.contains("violet") || styleRaw.contains("swarm") ->
-                    Triple(Color(0xFFF5F3FF), Color(0xFFEDE9FE), Color(0x478B5CF6))
-                styleRaw.contains("rose") || styleRaw.contains("critic") || styleRaw.contains("amber") ->
-                    Triple(Color(0xFFFFF1F2), Color(0xFFFFE4E6), Color(0x47F43F5E))
-                else ->
-                    Triple(Color(0xFFFFFBEB), Color(0xFFFEF3C7), Color(0x47D97706))
-            }
-        } else {
-            when {
-                isGroup -> Triple(Color(0xFF1A203D), Color(0xFF0E1326), Color(0x4DF2B880))
-                styleRaw.contains("emerald") || styleRaw.contains("radar") ->
-                    Triple(Color(0xFF112928), Color(0xFF0A1719), Color(0x4734D399))
-                styleRaw.contains("indigo") || styleRaw.contains("sentinel") || styleRaw.contains("cyan") ->
-                    Triple(Color(0xFF162142), Color(0xFF0C1226), Color(0x47818CF8))
-                styleRaw.contains("violet") || styleRaw.contains("swarm") ->
-                    Triple(Color(0xFF23183E), Color(0xFF120D24), Color(0x47C084FC))
-                styleRaw.contains("rose") || styleRaw.contains("critic") || styleRaw.contains("amber") ->
-                    Triple(Color(0xFF2B1920), Color(0xFF150D13), Color(0x47FB7185))
-                else ->
-                    Triple(Color(0xFF261D18), Color(0xFF130F12), Color(0x4DF2B880))
-            }
-        }
-    }
-
-    val shape = RoundedCornerShape(cornerRadius)
-    val innerSize = containerSize * 0.86f
+    val innerSize = containerSize
     val clickMod = if (onClick != null) {
         Modifier.tactileClickable(pressedScale = 0.94f, onClick = onClick)
     } else {
@@ -683,22 +649,7 @@ fun SpiritSquircleAvatar(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(clickMod)
-                .shadow(
-                    elevation = if (theme.isLight) 2.dp else 4.dp,
-                    shape = shape,
-                    ambientColor = if (theme.isLight) Color(0x220F172A) else Color(0x77000000),
-                    spotColor = if (theme.isLight) Color(0x2A0F172A) else Color(0x88000000)
-                )
-                .clip(shape)
-                .background(Brush.verticalGradient(listOf(bgTop, bgBottom)), shape)
-                .border(
-                    BorderStroke(
-                        0.75.dp,
-                        specularRimBrush(rimAccent, rimAccent.copy(alpha = 0.14f), theme.rimSubtle)
-                    ),
-                    shape
-                ),
+                .then(clickMod),
             contentAlignment = Alignment.Center
         ) {
             if (isGroup && bot != null) {

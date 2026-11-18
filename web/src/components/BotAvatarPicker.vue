@@ -62,8 +62,8 @@ function triggerPreviewStunt(kind: BotStuntKind) {
   <div class="modal-section flex flex-col gap-3.5">
     <div class="flex items-center justify-between gap-3 flex-wrap">
       <div class="flex items-center gap-3.5 min-w-0">
-        <div class="well-recessed relative flex items-center justify-center p-2 rounded-2xl">
-          <BotAvatar ref="previewAvatarRef" :avatar-style="modelValue" :state="previewState" size="lg" focusable />
+        <div class="relative flex items-center justify-center p-1">
+          <BotAvatar ref="previewAvatarRef" :avatar-style="modelValue" :state="previewState" size="xl" class="!w-16 !h-16" focusable />
         </div>
         <div class="min-w-0">
           <div class="text-xs font-semibold text-white truncate">

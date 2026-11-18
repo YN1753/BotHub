@@ -126,10 +126,10 @@ function handleMemberClick(id: string) {
 }
 
 const containerSizeClass = computed(() => {
-  if (props.size === 'sm') return 'w-8 h-7'
-  if (props.size === 'lg') return 'w-14 h-12'
-  if (props.size === 'xl') return 'w-32 h-28 sm:w-36 sm:h-30'
-  return 'w-10 h-9'
+  if (props.size === 'sm') return 'w-9 h-8'
+  if (props.size === 'lg') return 'w-16 h-14'
+  if (props.size === 'xl') return 'w-36 h-30 sm:w-40 sm:h-32'
+  return 'w-11 h-10'
 })
 
 const isHeroInteractive = computed(() => props.size === 'xl' || props.size === 'lg')
@@ -156,7 +156,7 @@ const isHeroInteractive = computed(() => props.size === 'xl' || props.size === '
     <!-- Shared Soft Cozy Ground Shadow Under the Cuddle Pile -->
     <span
       aria-hidden="true"
-      class="pointer-events-none absolute left-1/2 -bottom-0.5 -translate-x-1/2 w-[76%] h-[14%] rounded-full bg-black/55 blur-[3px]"
+      class="bot-cluster-ground-shadow pointer-events-none absolute left-1/2 -bottom-0.5 -translate-x-1/2 w-[76%] h-[14%] rounded-full blur-[3px]"
     />
 
     <div

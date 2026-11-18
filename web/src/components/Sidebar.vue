@@ -152,7 +152,7 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2 min-w-0">
             <span
-              class="relative w-7 h-7 rounded-xl inline-flex items-center justify-center shrink-0 shadow-[0_3px_10px_rgba(0,0,0,0.45)]"
+              class="relative w-7 h-7 rounded-xl inline-flex items-center justify-center shrink-0 shadow-sm"
               :title="!isOnline ? '设备已离线' : store.state.sseConnected ? '实时通道在线' : '通道重连中'"
               aria-hidden="true"
             >
