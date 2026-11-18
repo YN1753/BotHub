@@ -119,7 +119,7 @@ fun VesperBrandEmblem(
             )
         }
         drawPath(
-            path = mochiBody,
+            path = mochiPath,
             color = Color(0x3864748B),
             style = Stroke(width = 0.9f * u)
         )
