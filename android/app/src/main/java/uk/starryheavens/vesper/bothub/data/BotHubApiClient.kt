@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import okhttp3.Call
+import okhttp3.ConnectionPool
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -11,6 +12,8 @@ import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.io.InterruptedIOException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
@@ -20,9 +23,11 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
     private val emptyJsonBody: RequestBody = "{}".toRequestBody(jsonMedia)
 
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(25, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .connectionPool(ConnectionPool(6, 3, TimeUnit.MINUTES))
         .build()
 
     private val sseHttpClient: OkHttpClient = httpClient.newBuilder()
@@ -52,15 +57,28 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
     }
 
     private fun executeJson(request: Request, errorPrefix: String): JSONObject {
-        httpClient.newCall(request).execute().use { resp ->
-            val raw = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) {
-                throw IllegalStateException(
-                    JsonMappers.extractApiError(raw, "$errorPrefix (${resp.code})")
-                )
+        val isIdempotentGet = request.method.equals("GET", ignoreCase = true)
+        var lastIoError: IOException? = null
+        val maxAttempts = if (isIdempotentGet) 2 else 1
+        for (attempt in 1..maxAttempts) {
+            try {
+                httpClient.newCall(request).execute().use { resp ->
+                    val raw = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) {
+                        throw IllegalStateException(
+                            JsonMappers.extractApiError(raw, "$errorPrefix (${resp.code})")
+                        )
+                    }
+                    return if (raw.isBlank()) JSONObject() else JSONObject(raw)
+                }
+            } catch (ioe: IOException) {
+                if (ioe is InterruptedIOException || attempt >= maxAttempts) {
+                    throw ioe
+                }
+                lastIoError = ioe
             }
-            return if (raw.isBlank()) JSONObject() else JSONObject(raw)
         }
+        throw (lastIoError ?: IllegalStateException(errorPrefix))
     }
 
     private fun executeUnit(request: Request, errorPrefix: String) {
@@ -370,7 +388,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
 
     suspend fun fetchBotMessages(botId: String): Result<List<AgentHistoryMessage>> = withContext(Dispatchers.IO) {
         runCatching {
-            val req = requestBuilder("/api/v2/bots/$botId/messages").get().build()
+            val req = requestBuilder("/api/v2/bots/$botId/messages?compact=1&limit=60").get().build()
             val json = executeJson(req, "加载 Bot 对话流失败")
             JsonMappers.parseHistoryMessages(json.optJSONArray("messages"))
         }

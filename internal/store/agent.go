@@ -199,7 +199,7 @@ func (s *Store) ListBotMessagesByThread(botID, threadID string, limit int) ([]Ag
 		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(thread_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, COALESCE(reply_to_id,0), COALESCE(reply_preview,''), COALESCE(model_used,''), created_at
 		FROM (
 			SELECT id, session_id, bot_id, thread_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, model_used, created_at
-			FROM agent_messages WHERE bot_id = ? AND COALESCE(thread_id,'') = ? ORDER BY id DESC LIMIT ?
+			FROM agent_messages WHERE bot_id = ? AND thread_id = ? ORDER BY id DESC LIMIT ?
 		) sub ORDER BY id ASC`, botID, threadID, limit)
 	if err != nil {
 		return nil, err
@@ -222,7 +222,7 @@ func (s *Store) DeleteBotMessage(botID string, msgID int64) error {
 }
 
 func (s *Store) DeleteBotMessagesAfterID(botID, threadID string, afterID int64) error {
-	_, err := s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ? AND COALESCE(thread_id,'') = ? AND id > ?`,
+	_, err := s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ? AND thread_id = ? AND id > ?`,
 		strings.TrimSpace(botID), strings.TrimSpace(threadID), afterID)
 	return err
 }
@@ -233,7 +233,7 @@ func (s *Store) ClearBotMessages(botID string) error {
 }
 
 func (s *Store) ClearBotMessagesInThread(botID, threadID string) error {
-	_, err := s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ? AND COALESCE(thread_id,'') = ?`, botID, strings.TrimSpace(threadID))
+	_, err := s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ? AND thread_id = ?`, botID, strings.TrimSpace(threadID))
 	return err
 }
 
@@ -242,7 +242,7 @@ func (s *Store) ClearBotMessagesInThread(botID, threadID string) error {
 func (s *Store) ListBotThreads(botID string) ([]BotThread, error) {
 	rows, err := s.db.Query(`
 		SELECT t.id, t.bot_id, t.title, COALESCE(t.summary,''), COALESCE(t.archived,0), t.created_at, t.updated_at,
-			(SELECT COUNT(*) FROM agent_messages m WHERE m.bot_id = t.bot_id AND COALESCE(m.thread_id,'') = t.id) AS msg_count
+			(SELECT COUNT(*) FROM agent_messages m WHERE m.bot_id = t.bot_id AND m.thread_id = t.id) AS msg_count
 		FROM bot_threads t WHERE t.bot_id = ? ORDER BY t.archived ASC, t.updated_at DESC`, strings.TrimSpace(botID))
 	if err != nil {
 		return nil, err

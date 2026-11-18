@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -80,5 +81,35 @@ VALUES ('existing', 'LegacyBot', 'Ops', 'working', 'Hello', '2026-11-15 10:00:00
 	bot, err := st.GetBot("existing")
 	if err != nil || bot == nil || bot.State != "idle" {
 		t.Fatalf("expected legacy bot to load and reset crashed working->idle after migration, err=%v bot=%+v", err, bot)
+	}
+}
+
+func TestBotMessagesQueryPlanUsesCompositeDescendingIndex(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "plan.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer st.Close()
+
+	rows, err := st.db.Query(`EXPLAIN QUERY PLAN SELECT id, content FROM agent_messages WHERE bot_id = 'butler' AND thread_id = '' ORDER BY id DESC LIMIT 60`)
+	if err != nil {
+		t.Fatalf("EXPLAIN QUERY PLAN: %v", err)
+	}
+	defer rows.Close()
+
+	var planDetails []string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notused, &detail); err == nil {
+			planDetails = append(planDetails, detail)
+		}
+	}
+	joined := strings.Join(planDetails, " | ")
+	if !strings.Contains(joined, "idx_agent_messages_bot_thread_desc") {
+		t.Fatalf("expected query plan to use idx_agent_messages_bot_thread_desc, got: %s", joined)
+	}
+	if strings.Contains(joined, "USE TEMP B-TREE") {
+		t.Fatalf("expected zero TEMP B-TREE sort on bot message lookup, got: %s", joined)
 	}
 }

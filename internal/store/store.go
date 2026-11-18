@@ -59,7 +59,7 @@ func Open(dbPath string) (*Store, error) {
 			return nil, fmt.Errorf("create db dir: %w", err)
 		}
 	}
-	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbPath))
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=temp_store(MEMORY)&_pragma=cache_size(-16000)&_pragma=mmap_size(67108864)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
@@ -370,8 +370,11 @@ END;`
 	if err := s.migrateScopedMemoriesTable(); err != nil {
 		return err
 	}
+	_, _ = s.db.Exec(`UPDATE agent_messages SET thread_id = '' WHERE thread_id IS NULL`)
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot ON agent_messages(bot_id, id ASC)`)
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot_thread ON agent_messages(bot_id, thread_id, id ASC)`)
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_messages_bot_thread_desc ON agent_messages(bot_id, thread_id, id DESC)`)
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_bots_list ON bots(is_pinned DESC, sort_order ASC, updated_at DESC)`)
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_todos_status_due ON todos(status, due_at)`)
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_todos_bot ON todos(bot_id, updated_at DESC)`)
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_notes_bot ON notes(bot_id, updated_at DESC)`)

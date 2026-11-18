@@ -417,4 +417,26 @@ func TestV2BootstrapAndGzipMiddleware(t *testing.T) {
 	if headRec.Header().Get("Content-Encoding") == "gzip" {
 		t.Fatalf("expected HEAD request to skip gzip Content-Encoding")
 	}
+
+	// Verify ?compact=1&limit=10 on /api/v2/bots/{id}/messages omits unused heavy desktop slices
+	if err := s.store.SaveBot(store.Bot{ID: "test_bot", Name: "TestBot", RoleTitle: "Helper", SystemPrompt: "Hi"}); err != nil {
+		t.Fatalf("SaveBot: %v", err)
+	}
+	msgReq := httptest.NewRequest(http.MethodGet, "/api/v2/bots/test_bot/messages?compact=1&limit=10", nil)
+	msgReq.Header.Set("Authorization", "Bearer "+appTok)
+	msgRec := httptest.NewRecorder()
+	h.ServeHTTP(msgRec, msgReq)
+	if msgRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from compact bot messages, got %d: %s", msgRec.Code, msgRec.Body.String())
+	}
+	var compactPayload map[string]any
+	if err := json.Unmarshal(msgRec.Body.Bytes(), &compactPayload); err != nil {
+		t.Fatalf("unmarshal compact bot messages: %v", err)
+	}
+	if _, hasThreads := compactPayload["threads"]; hasThreads {
+		t.Fatalf("expected compact=1 to omit threads array")
+	}
+	if _, hasMemories := compactPayload["memories"]; hasMemories {
+		t.Fatalf("expected compact=1 to omit memories array")
+	}
 }

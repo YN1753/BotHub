@@ -31,11 +31,45 @@ func (s *Server) handleGetBotMessages(w http.ResponseWriter, r *http.Request) {
 		bot.ActiveThreadID = threadID
 	}
 
-	msgs, err := s.store.ListBotMessagesByThread(id, threadID, 120)
+	limit := 120
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		if n, convErr := strconv.Atoi(rawLimit); convErr == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	compact := r.URL.Query().Get("compact") == "1"
+
+	msgs, err := s.store.ListBotMessagesByThread(id, threadID, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "读取 Bot 对话流失败: "+err.Error())
 		return
 	}
+
+	if bot.UnreadCount > 0 || bot.State == store.BotStateDone {
+		_ = s.store.ClearBotUnread(id)
+		bot.UnreadCount = 0
+		if bot.State == store.BotStateDone {
+			bot.State = store.BotStateIdle
+		}
+		if s.push != nil && s.push.Hub() != nil {
+			s.push.Hub().PublishEvent("bot_state", map[string]any{
+				"bot_id":       id,
+				"state":        bot.State,
+				"unread_count": 0,
+			})
+		}
+	}
+
+	if compact {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":        true,
+			"bot":       bot,
+			"thread_id": threadID,
+			"messages":  msgs,
+		})
+		return
+	}
+
 	threads, _ := s.store.ListBotThreads(id)
 	memScopes := []string{"bot:" + id}
 	if bot.MemoryPolicy != store.MemoryPolicyIsolated {
@@ -44,14 +78,6 @@ func (s *Server) handleGetBotMessages(w http.ResponseWriter, r *http.Request) {
 	memories, _ := s.store.ListScopedMemories(memScopes, "", 60)
 	executions, _ := s.store.ListBotExecutions(id, 40)
 
-	_ = s.store.ClearBotUnread(id)
-	if s.push != nil && s.push.Hub() != nil {
-		s.push.Hub().PublishEvent("bot_state", map[string]any{
-			"bot_id":       id,
-			"state":        store.BotStateIdle,
-			"unread_count": 0,
-		})
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":         true,
 		"bot":        bot,
