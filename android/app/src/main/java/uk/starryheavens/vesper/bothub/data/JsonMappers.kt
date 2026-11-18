@@ -92,7 +92,7 @@ object JsonMappers {
             id = b.optString("id"),
             name = b.optString("name"),
             roleTitle = b.optString("role_title"),
-            avatarStyle = b.optString("avatar_style", "cyan"),
+            avatarStyle = b.optString("avatar_style", "butler:gold"),
             model = b.optString("model", "deepseek-flash"),
             enableThinking = b.optBoolean("enable_thinking", true),
             state = b.optString("state", "idle"),
@@ -100,7 +100,14 @@ object JsonMappers {
             lastSummary = b.optString("last_summary", ""),
             isGroup = b.optBoolean("is_group", false),
             memberIds = optStringList(b, "member_ids"),
-            botMode = b.optString("bot_mode", "worker")
+            botMode = b.optString("bot_mode", "worker"),
+            isPinned = b.optBoolean("is_pinned", false),
+            isBuiltin = b.optBoolean("is_builtin", false),
+            traits = b.optString("traits", ""),
+            systemPrompt = b.optString("system_prompt", ""),
+            groupMode = b.optString("group_mode", "smart"),
+            announcement = b.optString("announcement", ""),
+            updatedAt = b.optString("updated_at", "")
         )
     }
 
@@ -150,14 +157,15 @@ object JsonMappers {
             for (i in 0 until arr.length()) {
                 val m = arr.optJSONObject(i) ?: continue
                 val role = m.optString("role")
-                if (role == "user" || role == "assistant") {
+                val msgKind = m.optString("msg_kind", "chat")
+                if (role == "user" || role == "assistant" || (role == "system" && msgKind == "system")) {
                     add(
                         AgentHistoryMessage(
                             id = m.optLong("id"),
                             role = role,
                             content = m.optString("content", ""),
                             reasoningContent = m.optString("reasoning_content", ""),
-                            msgKind = m.optString("msg_kind", "chat"),
+                            msgKind = msgKind,
                             senderBotId = m.optString("sender_bot_id", "")
                         )
                     )

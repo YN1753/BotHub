@@ -9,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -321,6 +322,97 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
             val req = requestBuilder("/api/v2/bots/$botId/messages").get().build()
             val json = executeJson(req, "加载 Bot 对话流失败")
             JsonMappers.parseHistoryMessages(json.optJSONArray("messages"))
+        }
+    }
+
+    suspend fun clearBotMessages(botId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/bots/$botId/messages")
+                .delete()
+                .build()
+            executeUnit(req, "清空聊天记录失败")
+        }
+    }
+
+    suspend fun updateBotPin(botId: String, pinned: Boolean): Result<BotItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject().put("is_pinned", pinned).toString()
+            val req = requestBuilder("/api/v2/bots/$botId")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "更新置顶状态失败")
+            JsonMappers.parseBot(json.optJSONObject("bot") ?: JSONObject())
+        }
+    }
+
+    suspend fun createAiFriend(
+        name: String,
+        roleTitle: String,
+        avatarStyle: String,
+        botMode: String,
+        traits: String,
+        systemPrompt: String
+    ): Result<BotItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            val defaultTools = if (botMode == "companion") {
+                JSONArray()
+            } else {
+                JSONArray()
+                    .put("list_assets")
+                    .put("query_nezha_nodes")
+                    .put("list_tasks")
+                    .put("manage_stash")
+                    .put("fetch_webpage")
+            }
+            val payload = JSONObject()
+                .put("name", name.trim())
+                .put("role_title", roleTitle.trim())
+                .put("avatar_style", avatarStyle)
+                .put("bot_mode", botMode)
+                .put("traits", traits.trim())
+                .put("system_prompt", systemPrompt.trim())
+                .put("allowed_tools", defaultTools.toString())
+                .put("enable_thinking", botMode != "companion")
+                .toString()
+            val req = requestBuilder("/api/v2/bots")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "创建 AI 好友失败")
+            JsonMappers.parseBot(json.optJSONObject("bot") ?: JSONObject())
+        }
+    }
+
+    suspend fun createGroupChat(
+        sourceBotId: String = "",
+        memberIds: List<String>,
+        name: String = "",
+        groupMode: String = "smart",
+        carryContext: Boolean = false
+    ): Result<BotItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            val arr = JSONArray()
+            memberIds.forEach { arr.put(it) }
+            val payload = JSONObject()
+                .put("source_bot_id", sourceBotId)
+                .put("member_ids", arr)
+                .put("name", name.trim())
+                .put("group_mode", groupMode)
+                .put("carry_context", carryContext)
+                .toString()
+            val req = requestBuilder("/api/v2/bots/adhoc-group")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "发起群聊失败")
+            JsonMappers.parseBot(json.optJSONObject("bot") ?: JSONObject())
+        }
+    }
+
+    suspend fun deleteBot(botId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/bots/$botId")
+                .delete()
+                .build()
+            executeUnit(req, "删除好友或群聊失败")
         }
     }
 

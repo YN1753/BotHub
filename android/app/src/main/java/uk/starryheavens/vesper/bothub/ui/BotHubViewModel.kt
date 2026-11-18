@@ -68,6 +68,24 @@ class BotHubViewModel(
     var activeBotId by mutableStateOf("butler")
         private set
 
+    var inChatRoom by mutableStateOf(false)
+        private set
+
+    var showServiceFeed by mutableStateOf(false)
+        private set
+
+    var imSearchQuery by mutableStateOf("")
+        private set
+
+    var inspectingBotProfile by mutableStateOf<BotItem?>(null)
+        private set
+
+    var showCreateFriendSheet by mutableStateOf(false)
+        private set
+
+    var createGroupSourceBotId by mutableStateOf<String?>(null)
+        private set
+
     var sessionId by mutableStateOf("")
         private set
 
@@ -142,14 +160,78 @@ class BotHubViewModel(
     }
 
     fun selectTab(tab: BotHubTab, triggerRefresh: Boolean = false) {
+        inChatRoom = false
+        showServiceFeed = false
         selectedTab = tab
         if (triggerRefresh) {
             when (tab) {
-                BotHubTab.INBOX, BotHubTab.HUB -> refreshAll()
+                BotHubTab.AGENT, BotHubTab.INBOX, BotHubTab.HUB -> refreshAll()
                 BotHubTab.STASH -> refreshStash()
-                BotHubTab.AGENT -> Unit
             }
         }
+    }
+
+    fun updateImSearchQuery(q: String) {
+        imSearchQuery = q
+    }
+
+    fun openChatRoom(botId: String) {
+        inspectingBotProfile = null
+        showServiceFeed = false
+        if (botId.isNotBlank()) {
+            val changedBot = activeBotId != botId
+            activeBotId = botId
+            bots = bots.map { if (it.id == botId) it.copy(unreadCount = 0) else it }
+            if (changedBot || chatMessages.isEmpty()) {
+                sessionId = ""
+                loadBotTimeline(botId)
+            }
+        }
+        inChatRoom = true
+    }
+
+    fun closeChatRoom() {
+        inChatRoom = false
+        if (prefs.bearerToken.isNotEmpty()) {
+            viewModelScope.launch {
+                api.fetchBots().onSuccess { bots = it }
+            }
+        }
+    }
+
+    fun openServiceFeed() {
+        inChatRoom = false
+        showServiceFeed = true
+        refreshAll()
+    }
+
+    fun closeServiceFeed() {
+        showServiceFeed = false
+    }
+
+    fun openBotProfile(bot: BotItem) {
+        inspectingBotProfile = bot
+    }
+
+    fun dismissBotProfile() {
+        inspectingBotProfile = null
+    }
+
+    fun openCreateFriend() {
+        showCreateFriendSheet = true
+    }
+
+    fun dismissCreateFriend() {
+        showCreateFriendSheet = false
+    }
+
+    fun openCreateGroup(sourceBotId: String = "") {
+        inspectingBotProfile = null
+        createGroupSourceBotId = sourceBotId
+    }
+
+    fun dismissCreateGroup() {
+        createGroupSourceBotId = null
     }
 
     fun openSettings() {
@@ -235,12 +317,16 @@ class BotHubViewModel(
     fun handleSharedText(rawText: String) {
         if (rawText.isBlank()) return
         selectedTab = BotHubTab.AGENT
+        showServiceFeed = false
+        inChatRoom = true
         sendAgentPrompt("请抓取并深度总结以下分享内容或网页链接的核心要点与技术价值：\n$rawText")
     }
 
     fun handleOpenNotificationFromTray(notificationId: Long) {
         if (notificationId <= 0L) return
-        selectedTab = BotHubTab.INBOX
+        inChatRoom = false
+        selectedTab = BotHubTab.AGENT
+        showServiceFeed = true
         val existing = notifications.find { it.id == notificationId }
         if (existing != null) {
             pendingNotificationId = null
@@ -330,8 +416,111 @@ class BotHubViewModel(
     }
 
     fun selectBot(botId: String) {
-        activeBotId = botId
-        loadBotTimeline(botId)
+        openChatRoom(botId)
+    }
+
+    fun togglePinBot(bot: BotItem) {
+        val nextPinned = !bot.isPinned
+        bots = bots.map { if (it.id == bot.id) it.copy(isPinned = nextPinned) else it }
+        viewModelScope.launch {
+            api.updateBotPin(bot.id, nextPinned).onSuccess { updated ->
+                bots = bots.map { if (it.id == bot.id) updated else it }
+                showMessage(if (nextPinned) "已置顶聊天" else "已取消置顶")
+            }.onFailure { err ->
+                bots = bots.map { if (it.id == bot.id) bot else it }
+                showMessage(err.message ?: "置顶操作失败")
+            }
+        }
+    }
+
+    fun clearActiveChatHistory() {
+        if (isStreaming) return
+        val targetId = activeBotId
+        chatMessages.clear()
+        if (targetId.isNotBlank() && sessionId.isEmpty()) {
+            viewModelScope.launch {
+                api.clearBotMessages(targetId).onSuccess {
+                    showMessage("已清空当前聊天记录")
+                    refreshAll()
+                }.onFailure { err ->
+                    showMessage(err.message ?: "清空记录失败")
+                }
+            }
+        } else {
+            sessionId = ""
+            showMessage("已开启全新对话")
+        }
+    }
+
+    fun createNewFriend(
+        name: String,
+        roleTitle: String,
+        avatarStyle: String,
+        botMode: String,
+        traits: String,
+        systemPrompt: String
+    ) {
+        viewModelScope.launch {
+            api.createAiFriend(
+                name = name,
+                roleTitle = roleTitle,
+                avatarStyle = avatarStyle,
+                botMode = botMode,
+                traits = traits,
+                systemPrompt = systemPrompt
+            ).onSuccess { created ->
+                showCreateFriendSheet = false
+                bots = listOf(created) + bots.filterNot { it.id == created.id }
+                showMessage("已添加 AI 好友「${created.name}」")
+                openChatRoom(created.id)
+            }.onFailure { err ->
+                showMessage(err.message ?: "添加 AI 好友失败")
+            }
+        }
+    }
+
+    fun createNewGroup(
+        sourceBotId: String,
+        memberIds: List<String>,
+        name: String,
+        groupMode: String,
+        carryContext: Boolean
+    ) {
+        viewModelScope.launch {
+            api.createGroupChat(
+                sourceBotId = sourceBotId,
+                memberIds = memberIds,
+                name = name,
+                groupMode = groupMode,
+                carryContext = carryContext
+            ).onSuccess { created ->
+                createGroupSourceBotId = null
+                bots = listOf(created) + bots.filterNot { it.id == created.id }
+                showMessage("已发起群聊「${created.name}」")
+                openChatRoom(created.id)
+            }.onFailure { err ->
+                showMessage(err.message ?: "发起群聊失败")
+            }
+        }
+    }
+
+    fun deleteFriendOrGroup(bot: BotItem) {
+        if (bot.isBuiltin) {
+            showMessage("内置核心好友不支持删除")
+            return
+        }
+        viewModelScope.launch {
+            api.deleteBot(bot.id).onSuccess {
+                inspectingBotProfile = null
+                if (activeBotId == bot.id) {
+                    inChatRoom = false
+                }
+                bots = bots.filterNot { it.id == bot.id }
+                showMessage("已移除「${bot.name}」")
+            }.onFailure { err ->
+                showMessage(err.message ?: "移除失败")
+            }
+        }
     }
 
     fun loadBotTimeline(botId: String) {
@@ -550,7 +739,13 @@ class BotHubViewModel(
 
     fun diagnoseNotificationWithAi(item: NotificationItem) {
         selectedNotification = null
+        showServiceFeed = false
         selectedTab = BotHubTab.AGENT
+        val butler = bots.firstOrNull { !it.isGroup } ?: bots.firstOrNull()
+        if (butler != null) {
+            activeBotId = butler.id
+        }
+        inChatRoom = true
         sendAgentPrompt("请帮我分析这条通知并给出排查或处置建议：\n\n标题：${item.title}\n\n${item.markdownBody}")
     }
 
@@ -627,6 +822,12 @@ class BotHubViewModel(
 
     fun askAiAboutStashItem(item: StashItemUi) {
         selectedTab = BotHubTab.AGENT
+        showServiceFeed = false
+        val target = bots.find { it.id == activeBotId } ?: bots.firstOrNull { !it.isGroup } ?: bots.firstOrNull()
+        if (target != null) {
+            activeBotId = target.id
+        }
+        inChatRoom = true
         val summaryBlock = buildString {
             append("请结合我收藏匣中的这条内容继续深入分析：\n")
             append("标题：${item.title.ifEmpty { item.rawInput.take(60) }}\n")

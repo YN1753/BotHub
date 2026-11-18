@@ -31,10 +31,13 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.Inbox
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.PeopleOutline
+import androidx.compose.material.icons.filled.PersonAddAlt1
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -235,132 +238,67 @@ fun BotAvatarOrCluster(
 @Composable
 fun BotHubTopBar(
     selectedTab: BotHubTab,
-    activeBot: BotItem?,
     allBots: List<BotItem>,
-    isStreaming: Boolean,
+    isRefreshing: Boolean = false,
     serverUrl: String,
-    unreadInboxCount: Int = 0,
+    totalUnreadMessages: Int = 0,
     showStashCapture: Boolean = false,
-    onOpenSessions: () -> Unit = {},
-    onNewSession: () -> Unit = {},
+    onCreateFriend: () -> Unit = {},
+    onCreateGroup: () -> Unit = {},
+    onQuickCaptureStash: () -> Unit = {},
     onMarkAllRead: () -> Unit = {},
     onToggleStashCapture: () -> Unit = {},
     onRefresh: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
+    var showPlusMenu by remember { mutableStateOf(false) }
+    val friendCount = remember(allBots) { allBots.count { !it.isGroup } }
+    val groupCount = remember(allBots) { allBots.count { it.isGroup } }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xE6070B16))
+            .background(Color(0xF0070B16))
             .statusBarsPadding()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+                .padding(horizontal = 14.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Box(modifier = Modifier.weight(1f)) {
                 when (selectedTab) {
                     BotHubTab.AGENT -> {
-                        // Dynamic-Island Identity Capsule (elastic width without artificial 168dp cutoff)
-                        Surface(
-                            onClick = onOpenSessions,
-                            shape = RoundedCornerShape(999.dp),
-                            color = Color(0xFF0E1428),
-                            border = BorderStroke(1.dp, Color(0x26FFF8EE)),
-                            modifier = Modifier.sizeIn(minHeight = 42.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(start = 6.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                if (activeBot != null) {
-                                    BotAvatarOrCluster(
-                                        bot = activeBot,
-                                        allBots = allBots,
-                                        state = if (isStreaming) "working" else activeBot.state,
-                                        size = 30.dp,
-                                        interactive = false,
-                                        defaultSeedKey = "bothub_top"
-                                    )
-                                } else {
-                                    VesperBrandEmblem(size = 28.dp)
-                                }
-                                Column {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        Text(
-                                            text = activeBot?.name ?: "BotHub",
-                                            style = MaterialTheme.typography.titleSmall.copy(
-                                                platformStyle = PlatformTextStyle(includeFontPadding = false)
-                                            ),
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFFFFF8EE),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Icon(
-                                            Icons.Default.KeyboardArrowDown,
-                                            contentDescription = "历史会话",
-                                            tint = Color(0xFF94A3B8),
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(6.dp)
-                                                .background(
-                                                    color = if (isStreaming) Color(0xFFF2B880) else Color(0xFF34D399),
-                                                    shape = CircleShape
-                                                )
-                                        )
-                                        Text(
-                                            text = if (isStreaming) {
-                                                "正在推演"
-                                            } else {
-                                                activeBot?.roleTitle?.ifBlank { "轻触查看历史会话" } ?: "智能中枢"
-                                            },
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                platformStyle = PlatformTextStyle(includeFontPadding = false)
-                                            ),
-                                            fontSize = 10.5.sp,
-                                            color = if (isStreaming) Color(0xFFFFE2BE) else Color(0xFF94A3B8),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
+                        val headerTitle = when {
+                            isRefreshing -> "收取中..."
+                            totalUnreadMessages > 0 -> "消息 ($totalUnreadMessages)"
+                            else -> "消息"
                         }
+                        HeaderBrandTitle(
+                            title = headerTitle,
+                            subtitle = "${UrlUtils.formatDisplayHost(serverUrl)} · 实时在线"
+                        )
                     }
 
                     BotHubTab.INBOX -> {
                         HeaderBrandTitle(
-                            title = "情报收件箱",
-                            subtitle = if (unreadInboxCount > 0) "$unreadInboxCount 条未读推送" else "锁屏实时直连中"
+                            title = "通讯录",
+                            subtitle = "$friendCount 位 AI 好友 · $groupCount 个群聊"
                         )
                     }
 
                     BotHubTab.STASH -> {
                         HeaderBrandTitle(
-                            title = "收藏与闪念",
+                            title = "收藏",
                             subtitle = "系统分享秒收 · AI 自动提炼"
                         )
                     }
 
                     BotHubTab.HUB -> {
                         HeaderBrandTitle(
-                            title = "资产与调度",
+                            title = "中枢",
                             subtitle = UrlUtils.formatDisplayHost(serverUrl)
                         )
                     }
@@ -373,29 +311,91 @@ fun BotHubTopBar(
             ) {
                 when (selectedTab) {
                     BotHubTab.AGENT -> {
-                        HeaderPillAction(
-                            label = "新对话",
-                            icon = Icons.Default.Add,
-                            accent = true,
-                            onClick = onNewSession
-                        )
-                    }
-                    BotHubTab.INBOX -> {
-                        if (unreadInboxCount > 0) {
-                            HeaderPillAction(
-                                label = "已读",
-                                icon = Icons.Default.DoneAll,
-                                accent = true,
-                                onClick = onMarkAllRead
-                            )
-                        } else {
+                        // WeChat / QQ Top-Right "+" Quick Menu
+                        Box {
                             HeaderIconCircle(
-                                icon = Icons.Default.Refresh,
-                                contentDescription = "刷新收件箱",
-                                onClick = onRefresh
+                                icon = Icons.Default.Add,
+                                contentDescription = "快捷菜单",
+                                onClick = { showPlusMenu = true }
                             )
+                            DropdownMenu(
+                                expanded = showPlusMenu,
+                                onDismissRequest = { showPlusMenu = false },
+                                modifier = Modifier.background(Color(0xFF101830))
+                            ) {
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.GroupAdd,
+                                            contentDescription = null,
+                                            tint = Color(0xFFFFE2BE),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    },
+                                    text = { Text("发起群聊", color = Color(0xFFFFF8EE)) },
+                                    onClick = {
+                                        showPlusMenu = false
+                                        onCreateGroup()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.PersonAddAlt1,
+                                            contentDescription = null,
+                                            tint = Color(0xFFC7D2FE),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    },
+                                    text = { Text("添加 AI 好友", color = Color(0xFFFFF8EE)) },
+                                    onClick = {
+                                        showPlusMenu = false
+                                        onCreateFriend()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.BookmarkBorder,
+                                            contentDescription = null,
+                                            tint = Color(0xFFA7F3D0),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    },
+                                    text = { Text("秒收链接 / 闪念", color = Color(0xFFFFF8EE)) },
+                                    onClick = {
+                                        showPlusMenu = false
+                                        onQuickCaptureStash()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.DoneAll,
+                                            contentDescription = null,
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    },
+                                    text = { Text("服务通知全部已读", color = Color(0xFFCBD5E1)) },
+                                    onClick = {
+                                        showPlusMenu = false
+                                        onMarkAllRead()
+                                    }
+                                )
+                            }
                         }
                     }
+
+                    BotHubTab.INBOX -> {
+                        HeaderPillAction(
+                            label = "加好友",
+                            icon = Icons.Default.PersonAddAlt1,
+                            accent = true,
+                            onClick = onCreateFriend
+                        )
+                    }
+
                     BotHubTab.STASH -> {
                         HeaderPillAction(
                             label = if (showStashCapture) "收起" else "秒收",
@@ -404,6 +404,7 @@ fun BotHubTopBar(
                             onClick = onToggleStashCapture
                         )
                     }
+
                     BotHubTab.HUB -> {
                         HeaderIconCircle(
                             icon = Icons.Default.Refresh,
@@ -532,7 +533,7 @@ private fun HeaderIconCircle(
 @Composable
 fun BotHubBottomBar(
     selectedTab: BotHubTab,
-    unreadInboxCount: Int,
+    unreadMessagesCount: Int,
     unreadStashCount: Int,
     onSelectTab: (BotHubTab) -> Unit
 ) {
@@ -556,13 +557,13 @@ fun BotHubBottomBar(
             BotHubTab.entries.forEach { tab ->
                 val isSelected = selectedTab == tab
                 val badgeCount = when (tab) {
-                    BotHubTab.INBOX -> unreadInboxCount
+                    BotHubTab.AGENT -> unreadMessagesCount
                     BotHubTab.STASH -> unreadStashCount
                     else -> 0
                 }
                 val tabIcon = when (tab) {
                     BotHubTab.AGENT -> Icons.Default.ChatBubbleOutline
-                    BotHubTab.INBOX -> Icons.Default.Inbox
+                    BotHubTab.INBOX -> Icons.Default.PeopleOutline
                     BotHubTab.STASH -> Icons.Default.BookmarkBorder
                     BotHubTab.HUB -> Icons.Default.Dns
                 }
@@ -616,9 +617,12 @@ fun BotHubBottomBar(
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
                                         .offset(x = 2.dp, y = (-2).dp)
-                                        .defaultMinSize(minWidth = 15.dp, minHeight = 15.dp)
-                                        .height(15.dp)
-                                        .background(Color(0xFFF2B880), RoundedCornerShape(999.dp))
+                                        .defaultMinSize(minWidth = 16.dp, minHeight = 16.dp)
+                                        .height(16.dp)
+                                        .background(
+                                            if (tab == BotHubTab.AGENT) Color(0xFFF43F5E) else Color(0xFFF2B880),
+                                            RoundedCornerShape(999.dp)
+                                        )
                                         .padding(horizontal = 4.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -629,7 +633,7 @@ fun BotHubBottomBar(
                                             lineHeight = 10.sp,
                                             fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF090C16),
+                                            color = if (tab == BotHubTab.AGENT) Color.White else Color(0xFF090C16),
                                             platformStyle = noPadStyle
                                         ),
                                         maxLines = 1

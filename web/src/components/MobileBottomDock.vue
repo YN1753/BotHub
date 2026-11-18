@@ -2,123 +2,104 @@
 import { computed } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 
+export type MobileImTab = 'chats' | 'contacts' | 'stash' | 'ops'
+
 defineProps<{
-  mobileMenuOpen: boolean
+  activeTab: MobileImTab
 }>()
 
 const emit = defineEmits<{
-  toggleMobileMenu: []
+  selectTab: [tab: MobileImTab]
 }>()
 
 const store = useAppStore()
 
-const botUnreadTotal = computed(() =>
-  store.state.bots.reduce((sum, b) => sum + (b.unread_count || 0), 0)
-)
-
-const inboxUnread = computed(() => store.unreadInboxCount.value)
-
-function switchWorkspace(target: 'bots' | 'ops') {
-  store.state.showInboxModal = false
-  store.state.showWorkhubModal = false
-  store.state.workspace = target
-}
-
-function openInbox() {
-  store.state.showWorkhubModal = false
-  store.state.showInboxModal = true
-}
-
-function openStash() {
-  store.state.showInboxModal = false
-  store.state.showWorkhubModal = true
-}
+const totalUnreadMessages = computed(() => {
+  const botUnread = store.state.bots.reduce((sum, b) => sum + (b.unread_count || 0), 0)
+  return botUnread + store.unreadInboxCount.value
+})
 </script>
 
 <template>
   <nav
     aria-label="移动端主导航"
-    class="md:hidden shrink-0 border-t border-[#fff8ee]/12 bg-[#080c1a]/94 backdrop-blur-2xl px-2.5 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom,0.375rem))]"
+    class="md:hidden shrink-0 border-t border-[#fff8ee]/12 bg-[#080c1a]/95 backdrop-blur-2xl px-2.5 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom,0.375rem))]"
   >
-    <div class="grid grid-cols-5 gap-1">
+    <div class="grid grid-cols-4 gap-1">
       <button
         type="button"
-        @click="switchWorkspace('bots')"
+        @click="emit('selectTab', 'chats')"
         :class="[
-          'relative min-h-[48px] rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer',
-          store.state.workspace === 'bots' && !store.state.showInboxModal && !store.state.showWorkhubModal && !mobileMenuOpen
+          'relative min-h-[49px] rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer',
+          activeTab === 'chats' && !store.state.showWorkhubModal
             ? 'bg-[#f2b880]/15 text-[#ffe2be]'
             : 'text-slate-400 hover:text-slate-200'
         ]"
       >
-        <span class="relative inline-flex items-center justify-center w-8 h-5">
+        <span class="relative inline-flex items-center justify-center w-9 h-5">
           <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
           <span
-            v-if="botUnreadTotal > 0"
-            class="absolute -top-1 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-[#f2b880] text-[#090c16] font-mono text-[9.5px] font-bold leading-none inline-flex items-center justify-center"
+            v-if="totalUnreadMessages > 0"
+            class="absolute -top-1 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-500 text-white font-mono text-[9.5px] font-bold leading-none inline-flex items-center justify-center"
           >
-            {{ botUnreadTotal > 99 ? '99+' : botUnreadTotal }}
+            {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
           </span>
         </span>
-        <span class="text-[11px] font-medium leading-tight">对话</span>
+        <span class="text-[11px] font-medium leading-tight">消息</span>
       </button>
 
       <button
         type="button"
-        @click="openInbox"
+        @click="emit('selectTab', 'contacts')"
         :class="[
-          'relative min-h-[48px] rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer',
-          store.state.showInboxModal
+          'relative min-h-[49px] rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer',
+          activeTab === 'contacts' && !store.state.showWorkhubModal
             ? 'bg-[#f2b880]/15 text-[#ffe2be]'
             : 'text-slate-400 hover:text-slate-200'
         ]"
       >
-        <span class="relative inline-flex items-center justify-center w-8 h-5">
+        <span class="relative inline-flex items-center justify-center w-9 h-5">
           <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
-            <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
-            <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
           </svg>
-          <span
-            v-if="inboxUnread > 0"
-            class="absolute -top-1 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-[#f2b880] text-[#090c16] font-mono text-[9.5px] font-bold leading-none inline-flex items-center justify-center"
-          >
-            {{ inboxUnread > 99 ? '99+' : inboxUnread }}
-          </span>
         </span>
-        <span class="text-[11px] font-medium leading-tight">情报箱</span>
+        <span class="text-[11px] font-medium leading-tight">好友</span>
       </button>
 
       <button
         type="button"
-        @click="openStash"
+        @click="emit('selectTab', 'stash')"
         :class="[
-          'relative min-h-[48px] rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer',
+          'relative min-h-[49px] rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer',
           store.state.showWorkhubModal
             ? 'bg-[#f2b880]/15 text-[#ffe2be]'
             : 'text-slate-400 hover:text-slate-200'
         ]"
       >
-        <span class="relative inline-flex items-center justify-center w-8 h-5">
+        <span class="relative inline-flex items-center justify-center w-9 h-5">
           <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
             <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
           </svg>
         </span>
-        <span class="text-[11px] font-medium leading-tight">收藏匣</span>
+        <span class="text-[11px] font-medium leading-tight">收藏</span>
       </button>
 
       <button
         type="button"
-        @click="switchWorkspace('ops')"
+        @click="emit('selectTab', 'ops')"
         :class="[
-          'relative min-h-[48px] rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer',
-          store.state.workspace === 'ops' && !store.state.showInboxModal && !store.state.showWorkhubModal && !mobileMenuOpen
+          'relative min-h-[49px] rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer',
+          activeTab === 'ops' && !store.state.showWorkhubModal
             ? 'bg-[#f2b880]/15 text-[#ffe2be]'
             : 'text-slate-400 hover:text-slate-200'
         ]"
       >
-        <span class="relative inline-flex items-center justify-center w-8 h-5">
+        <span class="relative inline-flex items-center justify-center w-9 h-5">
           <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
             <rect width="20" height="8" x="2" y="2" rx="2" ry="2" />
             <rect width="20" height="8" x="2" y="14" rx="2" ry="2" />
@@ -127,27 +108,6 @@ function openStash() {
           </svg>
         </span>
         <span class="text-[11px] font-medium leading-tight">中枢</span>
-      </button>
-
-      <button
-        type="button"
-        @click="emit('toggleMobileMenu')"
-        :class="[
-          'relative min-h-[48px] rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors cursor-pointer',
-          mobileMenuOpen
-            ? 'bg-[#f2b880]/15 text-[#ffe2be]'
-            : 'text-slate-400 hover:text-slate-200'
-        ]"
-      >
-        <span class="relative inline-flex items-center justify-center w-8 h-5">
-          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
-            <rect x="3" y="3" width="7" height="7" rx="1.5" />
-            <rect x="14" y="3" width="7" height="7" rx="1.5" />
-            <rect x="14" y="14" width="7" height="7" rx="1.5" />
-            <rect x="3" y="14" width="7" height="7" rx="1.5" />
-          </svg>
-        </span>
-        <span class="text-[11px] font-medium leading-tight">工坊</span>
       </button>
     </div>
   </nav>

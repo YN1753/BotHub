@@ -34,15 +34,27 @@ import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 import uk.starryheavens.vesper.bothub.ui.components.BotHubBottomBar
 import uk.starryheavens.vesper.bothub.ui.components.BotHubTopBar
 import uk.starryheavens.vesper.bothub.ui.components.StarfieldBackdrop
-import uk.starryheavens.vesper.bothub.ui.screens.AgentTabScreen
 import uk.starryheavens.vesper.bothub.ui.screens.BiometricLockScreen
+import uk.starryheavens.vesper.bothub.ui.screens.ChatRoomScreen
+import uk.starryheavens.vesper.bothub.ui.screens.ContactsTabScreen
 import uk.starryheavens.vesper.bothub.ui.screens.HubTabScreen
-import uk.starryheavens.vesper.bothub.ui.screens.InboxTabScreen
+import uk.starryheavens.vesper.bothub.ui.screens.ImChatsTabScreen
+import uk.starryheavens.vesper.bothub.ui.screens.ServiceFeedScreen
 import uk.starryheavens.vesper.bothub.ui.screens.StashTabScreen
 import uk.starryheavens.vesper.bothub.ui.sheets.AgentSessionsSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.BotProfileSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.ChatInfoSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.ConsoleWebSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.CreateFriendSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.CreateGroupSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.NotificationDetailSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.SettingsPairingSheet
+
+private enum class ImPageLevel {
+    ROOT_TABS,
+    CHAT_ROOM,
+    SERVICE_FEED
+}
 
 @Composable
 fun BotHubApp(
@@ -61,6 +73,7 @@ fun BotHubApp(
     val clipboard = LocalClipboardManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     var showStashCaptureInline by remember { mutableStateOf(false) }
+    var showChatInfoSheet by remember { mutableStateOf(false) }
     var consoleTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val viewModel: BotHubViewModel = viewModel(
@@ -68,6 +81,14 @@ fun BotHubApp(
             BotHubViewModel.factory(context.applicationContext, prefs, api)
         }
     )
+
+    fun launchConsole(entry: String, title: String) {
+        if (!viewModel.isPaired) {
+            viewModel.openSettings()
+        } else {
+            consoleTarget = entry to title
+        }
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.uiEvents.collect { msg ->
@@ -111,141 +132,275 @@ fun BotHubApp(
     }
 
     val unreadInbox = viewModel.notifications.count { it.isUnread }
+    val unreadBots = viewModel.bots.sumOf { it.unreadCount }
+    val totalUnreadMessages = unreadInbox + unreadBots
     val unreadStash = viewModel.stashItems.count { it.isUnread }
+    val activeBot = viewModel.bots.find { it.id == viewModel.activeBotId }
+    val otherUnreadWhileInChat = unreadInbox + viewModel.bots
+        .filter { it.id != viewModel.activeBotId }
+        .sumOf { it.unreadCount }
+
+    val pageLevel = when {
+        viewModel.inChatRoom -> ImPageLevel.CHAT_ROOM
+        viewModel.showServiceFeed -> ImPageLevel.SERVICE_FEED
+        else -> ImPageLevel.ROOT_TABS
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         StarfieldBackdrop()
 
-        Scaffold(
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding(),
-            containerColor = Color.Transparent,
-            snackbarHost = { SnackbarHost(snackbarHostState) },
-            topBar = {
-                BotHubTopBar(
-                    selectedTab = viewModel.selectedTab,
-                    activeBot = viewModel.bots.find { it.id == viewModel.activeBotId },
-                    allBots = viewModel.bots,
-                    isStreaming = viewModel.isStreaming,
-                    serverUrl = viewModel.serverUrl,
-                    unreadInboxCount = unreadInbox,
-                    showStashCapture = showStashCaptureInline,
-                    onOpenSessions = viewModel::openSessions,
-                    onNewSession = viewModel::startNewSession,
-                    onMarkAllRead = viewModel::markAllNotificationsRead,
-                    onToggleStashCapture = { showStashCaptureInline = !showStashCaptureInline },
-                    onRefresh = viewModel::refreshAll,
-                    onOpenSettings = viewModel::openSettings
-                )
+        // WeChat / QQ Two-Level Navigation: Root IM Tabs <-> Full-Screen Push Chat / Service Feed
+        AnimatedContent(
+            targetState = pageLevel,
+            transitionSpec = {
+                val pushing = targetState != ImPageLevel.ROOT_TABS
+                if (pushing) {
+                    (slideInHorizontally(tween(240)) { it } + fadeIn(tween(180))) togetherWith
+                        (slideOutHorizontally(tween(240)) { -it / 4 } + fadeOut(tween(180)))
+                } else {
+                    (slideInHorizontally(tween(220)) { -it / 4 } + fadeIn(tween(160))) togetherWith
+                        (slideOutHorizontally(tween(220)) { it } + fadeOut(tween(160)))
+                }
             },
-            bottomBar = {
-                BotHubBottomBar(
-                    selectedTab = viewModel.selectedTab,
-                    unreadInboxCount = unreadInbox,
-                    unreadStashCount = unreadStash,
-                    onSelectTab = { tab -> viewModel.selectTab(tab, triggerRefresh = true) }
-                )
-            }
-        ) { innerPadding ->
-            val contentModifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+            label = "imRootPushTransition"
+        ) { level ->
+            when (level) {
+                ImPageLevel.CHAT_ROOM -> {
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        containerColor = Color.Transparent,
+                        snackbarHost = { SnackbarHost(snackbarHostState) }
+                    ) { _ ->
+                        ChatRoomScreen(
+                            activeBot = activeBot,
+                            allBots = viewModel.bots,
+                            otherUnreadCount = otherUnreadWhileInChat,
+                            activeModel = viewModel.activeModel,
+                            enableThinking = viewModel.enableThinking,
+                            messages = viewModel.messages,
+                            inputText = viewModel.inputText,
+                            isStreaming = viewModel.isStreaming,
+                            onBack = viewModel::closeChatRoom,
+                            onInputChange = viewModel::updateInputText,
+                            onSendPrompt = viewModel::sendAgentPrompt,
+                            onStop = { viewModel.stopAgentStream(notifyUser = true) },
+                            onModelChange = viewModel::updateModel,
+                            onThinkingChange = viewModel::updateThinking,
+                            onCopyText = { txt ->
+                                clipboard.setText(AnnotatedString(txt))
+                                viewModel.showMessage("已复制消息内容")
+                            },
+                            onOpenChatInfo = { showChatInfoSheet = true },
+                            onOpenBotProfile = viewModel::openBotProfile,
+                            onInviteToGroup = {
+                                viewModel.openCreateGroup(
+                                    sourceBotId = if (activeBot?.isGroup == true) "" else viewModel.activeBotId
+                                )
+                            },
+                            onOpenSessions = viewModel::openSessions,
+                            onClearHistory = viewModel::clearActiveChatHistory
+                        )
+                    }
+                }
 
-            AnimatedContent(
-                targetState = viewModel.selectedTab,
-                transitionSpec = {
-                    val forward = targetState.ordinal >= initialState.ordinal
-                    val enterOffset = { fullWidth: Int -> if (forward) fullWidth / 12 else -fullWidth / 12 }
-                    val exitOffset = { fullWidth: Int -> if (forward) -fullWidth / 12 else fullWidth / 12 }
-                    (fadeIn(tween(190)) + slideInHorizontally(tween(210), enterOffset)) togetherWith
-                        (fadeOut(tween(140)) + slideOutHorizontally(tween(190), exitOffset))
-                },
-                label = "botHubTabTransition"
-            ) { currentTab ->
-                when (currentTab) {
-                    BotHubTab.AGENT -> AgentTabScreen(
-                        modifier = contentModifier,
-                        activePersona = viewModel.activePersona,
-                        activeModel = viewModel.activeModel,
-                        enableThinking = viewModel.enableThinking,
-                        bots = viewModel.bots,
-                        activeBotId = viewModel.activeBotId,
-                        onSelectBot = viewModel::selectBot,
-                        onPersonaChange = viewModel::updatePersona,
-                        onModelChange = viewModel::updateModel,
-                        onThinkingChange = viewModel::updateThinking,
-                        onOpenSessions = viewModel::openSessions,
-                        onNewSession = viewModel::startNewSession,
-                        messages = viewModel.messages,
-                        inputText = viewModel.inputText,
-                        onInputChange = viewModel::updateInputText,
-                        isStreaming = viewModel.isStreaming,
-                        onSend = { viewModel.sendAgentPrompt(viewModel.inputText) },
-                        onStop = { viewModel.stopAgentStream(notifyUser = true) },
-                        onCopyText = { txt ->
-                            clipboard.setText(AnnotatedString(txt))
-                            viewModel.showMessage("已复制全文")
+                ImPageLevel.SERVICE_FEED -> {
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        containerColor = Color.Transparent,
+                        snackbarHost = { SnackbarHost(snackbarHostState) }
+                    ) { _ ->
+                        ServiceFeedScreen(
+                            notifications = viewModel.notifications,
+                            onBack = viewModel::closeServiceFeed,
+                            onSelectNotification = viewModel::selectNotification,
+                            onMarkAllRead = viewModel::markAllNotificationsRead,
+                            onRefresh = viewModel::refreshAll
+                        )
+                    }
+                }
+
+                ImPageLevel.ROOT_TABS -> {
+                    Scaffold(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .imePadding(),
+                        containerColor = Color.Transparent,
+                        snackbarHost = { SnackbarHost(snackbarHostState) },
+                        topBar = {
+                            BotHubTopBar(
+                                selectedTab = viewModel.selectedTab,
+                                allBots = viewModel.bots,
+                                isRefreshing = viewModel.isRefreshing,
+                                serverUrl = viewModel.serverUrl,
+                                totalUnreadMessages = totalUnreadMessages,
+                                showStashCapture = showStashCaptureInline,
+                                onCreateFriend = viewModel::openCreateFriend,
+                                onCreateGroup = { viewModel.openCreateGroup("") },
+                                onQuickCaptureStash = {
+                                    viewModel.selectTab(BotHubTab.STASH)
+                                    showStashCaptureInline = true
+                                },
+                                onMarkAllRead = viewModel::markAllNotificationsRead,
+                                onToggleStashCapture = { showStashCaptureInline = !showStashCaptureInline },
+                                onRefresh = viewModel::refreshAll,
+                                onOpenSettings = viewModel::openSettings
+                            )
                         },
-                        onQuickPrompt = viewModel::sendAgentPrompt,
-                        onOpenConsole = { entry, title ->
-                            if (!viewModel.isPaired) {
-                                viewModel.openSettings()
-                            } else {
-                                consoleTarget = entry to title
+                        bottomBar = {
+                            BotHubBottomBar(
+                                selectedTab = viewModel.selectedTab,
+                                unreadMessagesCount = totalUnreadMessages,
+                                unreadStashCount = unreadStash,
+                                onSelectTab = { tab -> viewModel.selectTab(tab, triggerRefresh = true) }
+                            )
+                        }
+                    ) { innerPadding ->
+                        val contentModifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+
+                        AnimatedContent(
+                            targetState = viewModel.selectedTab,
+                            transitionSpec = {
+                                val forward = targetState.ordinal >= initialState.ordinal
+                                val enterOffset = { fullWidth: Int -> if (forward) fullWidth / 14 else -fullWidth / 14 }
+                                val exitOffset = { fullWidth: Int -> if (forward) -fullWidth / 14 else fullWidth / 14 }
+                                (fadeIn(tween(170)) + slideInHorizontally(tween(190), enterOffset)) togetherWith
+                                    (fadeOut(tween(130)) + slideOutHorizontally(tween(170), exitOffset))
+                            },
+                            label = "imRootTabTransition"
+                        ) { currentTab ->
+                            when (currentTab) {
+                                BotHubTab.AGENT -> ImChatsTabScreen(
+                                    modifier = contentModifier,
+                                    bots = viewModel.bots,
+                                    notifications = viewModel.notifications,
+                                    activeBotId = viewModel.activeBotId,
+                                    isStreaming = viewModel.isStreaming,
+                                    searchQuery = viewModel.imSearchQuery,
+                                    onSearchQueryChange = viewModel::updateImSearchQuery,
+                                    onOpenChat = viewModel::openChatRoom,
+                                    onOpenServiceFeed = viewModel::openServiceFeed,
+                                    onTogglePinBot = viewModel::togglePinBot,
+                                    onOpenBotProfile = viewModel::openBotProfile,
+                                    onCreateFriend = viewModel::openCreateFriend,
+                                    onCreateGroup = { viewModel.openCreateGroup("") }
+                                )
+
+                                BotHubTab.INBOX -> ContactsTabScreen(
+                                    modifier = contentModifier,
+                                    bots = viewModel.bots,
+                                    unreadInboxCount = unreadInbox,
+                                    onOpenProfile = viewModel::openBotProfile,
+                                    onOpenChat = viewModel::openChatRoom,
+                                    onCreateFriend = viewModel::openCreateFriend,
+                                    onCreateGroup = { viewModel.openCreateGroup("") },
+                                    onOpenServiceFeed = viewModel::openServiceFeed,
+                                    onOpenConsole = ::launchConsole
+                                )
+
+                                BotHubTab.STASH -> StashTabScreen(
+                                    modifier = contentModifier,
+                                    items = viewModel.stashItems,
+                                    query = viewModel.stashQuery,
+                                    activeFilter = viewModel.stashFilter,
+                                    loading = viewModel.stashLoading,
+                                    showCaptureBar = showStashCaptureInline,
+                                    onDismissCaptureBar = { showStashCaptureInline = false },
+                                    onQueryChange = viewModel::updateStashQuery,
+                                    onFilterChange = viewModel::updateStashFilter,
+                                    onCapture = viewModel::captureStashItem,
+                                    onOpenUrl = { item ->
+                                        if (item.url.isNotBlank()) {
+                                            runCatching {
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.url)))
+                                            }
+                                        }
+                                        viewModel.markStashItemRead(item)
+                                    },
+                                    onTogglePin = viewModel::toggleStashPin,
+                                    onReprocess = viewModel::reprocessStashItem,
+                                    onDelete = viewModel::deleteStashItem,
+                                    onAskAi = viewModel::askAiAboutStashItem
+                                )
+
+                                BotHubTab.HUB -> HubTabScreen(
+                                    modifier = contentModifier,
+                                    snapshot = viewModel.dashboard,
+                                    onRunTask = viewModel::runTask,
+                                    onToggleTask = viewModel::toggleTask,
+                                    onSyncAssets = viewModel::syncAssets,
+                                    onOpenConsole = ::launchConsole
+                                )
                             }
                         }
-                    )
-
-                    BotHubTab.INBOX -> InboxTabScreen(
-                        modifier = contentModifier,
-                        notifications = viewModel.notifications,
-                        onSelectNotification = viewModel::selectNotification,
-                        onMarkAllRead = viewModel::markAllNotificationsRead
-                    )
-
-                    BotHubTab.STASH -> StashTabScreen(
-                        modifier = contentModifier,
-                        items = viewModel.stashItems,
-                        query = viewModel.stashQuery,
-                        activeFilter = viewModel.stashFilter,
-                        loading = viewModel.stashLoading,
-                        showCaptureBar = showStashCaptureInline,
-                        onDismissCaptureBar = { showStashCaptureInline = false },
-                        onQueryChange = viewModel::updateStashQuery,
-                        onFilterChange = viewModel::updateStashFilter,
-                        onCapture = viewModel::captureStashItem,
-                        onOpenUrl = { item ->
-                            if (item.url.isNotBlank()) {
-                                runCatching {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.url)))
-                                }
-                            }
-                            viewModel.markStashItemRead(item)
-                        },
-                        onTogglePin = viewModel::toggleStashPin,
-                        onReprocess = viewModel::reprocessStashItem,
-                        onDelete = viewModel::deleteStashItem,
-                        onAskAi = viewModel::askAiAboutStashItem
-                    )
-
-                    BotHubTab.HUB -> HubTabScreen(
-                        modifier = contentModifier,
-                        snapshot = viewModel.dashboard,
-                        onRunTask = viewModel::runTask,
-                        onToggleTask = viewModel::toggleTask,
-                        onSyncAssets = viewModel::syncAssets,
-                        onOpenConsole = { entry, title ->
-                            if (!viewModel.isPaired) {
-                                viewModel.openSettings()
-                            } else {
-                                consoleTarget = entry to title
-                            }
-                        }
-                    )
+                    }
                 }
             }
         }
+    }
+
+    // Bottom Sheets & Overlays
+    viewModel.inspectingBotProfile?.let { profileBot ->
+        val freshBot = viewModel.bots.find { it.id == profileBot.id } ?: profileBot
+        BotProfileSheet(
+            bot = freshBot,
+            allBots = viewModel.bots,
+            onSendMessage = { viewModel.openChatRoom(freshBot.id) },
+            onTogglePin = { viewModel.togglePinBot(freshBot) },
+            onStartGroupWithBot = { viewModel.openCreateGroup(freshBot.id) },
+            onOpenStudioConfig = {
+                viewModel.dismissBotProfile()
+                viewModel.selectBot(freshBot.id)
+                launchConsole("bot_config", "高级人设编排 · ${freshBot.name}")
+            },
+            onDeleteBot = { viewModel.deleteFriendOrGroup(freshBot) },
+            onDismiss = viewModel::dismissBotProfile
+        )
+    }
+
+    if (viewModel.showCreateFriendSheet) {
+        CreateFriendSheet(
+            onSubmit = viewModel::createNewFriend,
+            onOpenAdvancedStudio = {
+                viewModel.dismissCreateFriend()
+                launchConsole("create_bot", "高级 AI 好友编排")
+            },
+            onDismiss = viewModel::dismissCreateFriend
+        )
+    }
+
+    viewModel.createGroupSourceBotId?.let { srcId ->
+        CreateGroupSheet(
+            allBots = viewModel.bots,
+            sourceBotId = srcId,
+            onSubmit = viewModel::createNewGroup,
+            onDismiss = viewModel::dismissCreateGroup
+        )
+    }
+
+    if (showChatInfoSheet) {
+        ChatInfoSheet(
+            activeBot = activeBot,
+            allBots = viewModel.bots,
+            activeModel = viewModel.activeModel,
+            enableThinking = viewModel.enableThinking,
+            onModelChange = viewModel::updateModel,
+            onThinkingChange = viewModel::updateThinking,
+            onTogglePin = { if (activeBot != null) viewModel.togglePinBot(activeBot) },
+            onInviteToGroup = {
+                viewModel.openCreateGroup(
+                    sourceBotId = if (activeBot?.isGroup == true) "" else viewModel.activeBotId
+                )
+            },
+            onOpenMemberProfile = viewModel::openBotProfile,
+            onOpenSessions = viewModel::openSessions,
+            onOpenStudioConfig = {
+                launchConsole("bot_config", "高级设定 · ${activeBot?.name ?: "AI"}")
+            },
+            onClearHistory = viewModel::clearActiveChatHistory,
+            onDismiss = { showChatInfoSheet = false }
+        )
     }
 
     viewModel.selectedNotification?.let { item ->
@@ -275,11 +430,19 @@ fun BotHubApp(
             onZeroClickChanged = viewModel::setZeroClickCapture,
             onTestHealth = viewModel::testConnectivity,
             onUnbindServer = viewModel::unbindServer,
-            onOpenConsole = { entry, title ->
-                consoleTarget = entry to title
-            },
+            onOpenConsole = ::launchConsole,
             onShowMessage = viewModel::showMessage,
             onDismiss = viewModel::dismissSettings
+        )
+    }
+
+    if (viewModel.showSessionsSheet) {
+        AgentSessionsSheet(
+            sessions = viewModel.agentSessions,
+            currentSessionId = viewModel.sessionId,
+            onSelectSession = viewModel::loadAgentSession,
+            onNewSession = viewModel::startNewSession,
+            onDismiss = viewModel::dismissSessions
         )
     }
 
@@ -293,16 +456,6 @@ fun BotHubApp(
                 consoleTarget = null
                 viewModel.refreshAll()
             }
-        )
-    }
-
-    if (viewModel.showSessionsSheet) {
-        AgentSessionsSheet(
-            sessions = viewModel.agentSessions,
-            currentSessionId = viewModel.sessionId,
-            onSelectSession = viewModel::loadAgentSession,
-            onNewSession = viewModel::startNewSession,
-            onDismiss = viewModel::dismissSessions
         )
     }
 }

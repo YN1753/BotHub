@@ -8,7 +8,8 @@ import StarfieldBg from './components/StarfieldBg.vue'
 import LoginGate from './components/LoginGate.vue'
 import Sidebar from './components/Sidebar.vue'
 import BotWorkspace from './components/BotWorkspace.vue'
-import MobileBottomDock from './components/MobileBottomDock.vue'
+import MobileImRoster from './components/MobileImRoster.vue'
+import MobileBottomDock, { type MobileImTab } from './components/MobileBottomDock.vue'
 
 // On-demand route/modal code-splitting to shrink cold-boot bundle substantially
 const OpsWorkspace = lazyOverlayChunk(() => import('./components/OpsWorkspace.vue'))
@@ -31,7 +32,21 @@ const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 const isAppShell = ref(
   typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('app_shell') === '1'
 )
+const mobileImTab = ref<MobileImTab>('chats')
+const mobileInChatRoom = ref(isAppShell.value)
 const workspaceTransition = ref<DirectionalTransitionName>('vesper-slide-forward')
+
+function handleSelectMobileImTab(tab: MobileImTab) {
+  mobileInChatRoom.value = false
+  if (tab === 'stash') {
+    store.state.showWorkhubModal = true
+    return
+  }
+  store.state.showWorkhubModal = false
+  store.state.showInboxModal = false
+  mobileImTab.value = tab
+  store.state.workspace = tab === 'ops' ? 'ops' : 'bots'
+}
 
 watch(
   () => store.state.workspace,
@@ -291,12 +306,19 @@ onBeforeUnmount(() => {
         :inert="mobileSidebarOpen || undefined"
         class="workspace-island flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden md:rounded-[24px] md:border md:border-[#fff8ee]/12"
       >
+        <MobileImRoster
+          v-if="!isAppShell && store.state.workspace === 'bots' && !mobileInChatRoom"
+          :mode="mobileImTab === 'contacts' ? 'contacts' : 'chats'"
+          @enter-chat="mobileInChatRoom = true"
+        />
+
         <Transition :name="workspaceTransition" mode="out-in">
           <BotWorkspace
             v-if="store.state.workspace === 'bots'"
             key="bots"
+            :class="!isAppShell && !mobileInChatRoom ? 'hidden md:flex' : ''"
             :desktop-collapsed="desktopCollapsed"
-            @open-mobile-menu="mobileSidebarOpen = true"
+            @open-mobile-menu="isAppShell ? (mobileSidebarOpen = true) : (mobileInChatRoom = false)"
             @toggle-desktop-sidebar="toggleDesktopSidebar"
           />
           <OpsWorkspace
@@ -309,9 +331,9 @@ onBeforeUnmount(() => {
         </Transition>
 
         <MobileBottomDock
-          v-if="!isAppShell"
-          :mobile-menu-open="mobileSidebarOpen"
-          @toggle-mobile-menu="mobileSidebarOpen = !mobileSidebarOpen"
+          v-if="!isAppShell && !(store.state.workspace === 'bots' && mobileInChatRoom)"
+          :active-tab="store.state.workspace === 'ops' ? 'ops' : mobileImTab"
+          @select-tab="handleSelectMobileImTab"
         />
       </main>
     </div>

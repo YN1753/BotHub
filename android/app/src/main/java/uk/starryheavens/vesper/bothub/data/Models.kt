@@ -109,6 +109,22 @@ data class AgentSessionSummary(
     val updatedAt: String
 )
 
+fun formatImTime(raw: String): String {
+    val clean = raw.trim()
+    if (clean.isEmpty()) return ""
+    // Format "2026-11-18 08:05:11" -> "08:05" if today, else "11-18"
+    if (clean.length >= 16 && clean[4] == '-' && clean[10] == ' ') {
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            .format(java.util.Date())
+        return if (clean.startsWith(today)) {
+            clean.substring(11, 16)
+        } else {
+            clean.substring(5, 10)
+        }
+    }
+    return clean.take(10)
+}
+
 data class BotItem(
     val id: String,
     val name: String,
@@ -121,7 +137,14 @@ data class BotItem(
     val lastSummary: String,
     val isGroup: Boolean = false,
     val memberIds: List<String> = emptyList(),
-    val botMode: String = "worker"
+    val botMode: String = "worker",
+    val isPinned: Boolean = false,
+    val isBuiltin: Boolean = false,
+    val traits: String = "",
+    val systemPrompt: String = "",
+    val groupMode: String = "smart",
+    val announcement: String = "",
+    val updatedAt: String = ""
 ) {
     fun resolveGroupMembers(allBots: List<BotItem>): List<BotItem> {
         val specialists = allBots.filter { !it.isGroup }
@@ -138,12 +161,41 @@ data class BotItem(
 
     fun statusLabel(isStreamingThisBot: Boolean): String {
         return when (liveState(isStreamingThisBot)) {
-            "thinking" -> "思考中"
-            "working" -> "执行中"
-            "blocked" -> "需关注"
-            "done" -> "已完成"
-            else -> if (isGroup) "协作群组" else roleTitle.ifEmpty { "待命中" }
+            "thinking" -> "对方正在思考..."
+            "working" -> if (isGroup) "群成员协作中..." else "对方正在输入..."
+            "blocked" -> "等待确认"
+            "done" -> "在线"
+            else -> if (isGroup) "协同群聊" else roleTitle.ifEmpty { "在线" }
         }
+    }
+
+    fun modeBadgeLabel(): String {
+        if (isGroup) return "群聊"
+        return when (botMode.lowercase()) {
+            "companion" -> "伴聊"
+            "worker" -> "助理"
+            else -> "全能"
+        }
+    }
+
+    fun groupModeLabel(): String {
+        return when (groupMode.lowercase()) {
+            "sequential" -> "轮流接力"
+            "parallel" -> "全员并发"
+            "mention_only" -> "仅@点名"
+            else -> "智能协同"
+        }
+    }
+
+    fun conversationSnippet(isStreamingThisBot: Boolean): String {
+        if (isStreamingThisBot) {
+            return if (isGroup) "群成员正在协作发言..." else "对方正在输入..."
+        }
+        val base = cleanMarkdownPreview(lastSummary)
+            .ifEmpty { traits.trim() }
+            .ifEmpty { roleTitle.trim() }
+            .ifEmpty { if (isGroup) "点击进入群聊开始讨论" else "点击打个招呼吧" }
+        return base
     }
 }
 
