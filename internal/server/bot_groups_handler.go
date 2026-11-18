@@ -64,6 +64,8 @@ func (s *Server) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request
 	}
 
 	var changedNames []string
+	var addedNames []string
+	var removedNames []string
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 	if action == "" {
 		action = "add"
@@ -80,6 +82,7 @@ func (s *Server) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request
 			curSet[bid] = true
 			current = append(current, bid)
 			changedNames = append(changedNames, b.Name)
+			addedNames = append(addedNames, b.Name)
 		}
 	case "remove":
 		rmSet := make(map[string]bool, len(req.BotIDs))
@@ -88,6 +91,7 @@ func (s *Server) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request
 			rmSet[bid] = true
 			if b, ok := botMap[bid]; ok && curSet[bid] {
 				changedNames = append(changedNames, b.Name)
+				removedNames = append(removedNames, b.Name)
 			}
 		}
 		var next []string
@@ -102,9 +106,21 @@ func (s *Server) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request
 		var next []string
 		for _, bid := range req.BotIDs {
 			bid = strings.TrimSpace(bid)
-			if _, ok := botMap[bid]; ok && !seen[bid] {
+			if b, ok := botMap[bid]; ok && !seen[bid] {
 				seen[bid] = true
 				next = append(next, bid)
+				if !curSet[bid] {
+					addedNames = append(addedNames, b.Name)
+					changedNames = append(changedNames, b.Name)
+				}
+			}
+		}
+		for _, mid := range current {
+			if !seen[mid] {
+				if b, ok := botMap[mid]; ok {
+					removedNames = append(removedNames, b.Name)
+					changedNames = append(changedNames, b.Name)
+				}
 			}
 		}
 		current = next
@@ -118,11 +134,21 @@ func (s *Server) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request
 	}
 	rawMembers, _ := json.Marshal(current)
 	groupBot.MemberIDs = string(rawMembers)
-	if len(changedNames) > 0 {
-		if action == "add" {
-			groupBot.LastSummary = fmt.Sprintf("已邀请 %s 加入群聊", strings.Join(changedNames, "、"))
-		} else if action == "remove" {
-			groupBot.LastSummary = fmt.Sprintf("%s 已移出群聊", strings.Join(changedNames, "、"))
+
+	var noticeParts []string
+	if len(addedNames) > 0 {
+		noticeParts = append(noticeParts, fmt.Sprintf("你邀请了「%s」加入群聊", strings.Join(addedNames, "、")))
+	}
+	if len(removedNames) > 0 {
+		noticeParts = append(noticeParts, fmt.Sprintf("「%s」已被移出群聊", strings.Join(removedNames, "、")))
+	}
+	if len(noticeParts) > 0 {
+		if action == "add" && len(removedNames) == 0 {
+			groupBot.LastSummary = fmt.Sprintf("已邀请 %s 加入群聊", strings.Join(addedNames, "、"))
+		} else if action == "remove" && len(addedNames) == 0 {
+			groupBot.LastSummary = fmt.Sprintf("%s 已移出群聊", strings.Join(removedNames, "、"))
+		} else {
+			groupBot.LastSummary = strings.Join(noticeParts, "；")
 		}
 	}
 	if err := s.store.SaveBot(*groupBot); err != nil {
@@ -131,12 +157,8 @@ func (s *Server) handleUpdateGroupMembers(w http.ResponseWriter, r *http.Request
 	}
 
 	var sysMsg *store.AgentMessage
-	if len(changedNames) > 0 {
-		if action == "add" {
-			sysMsg = s.appendGroupSystemNotice(groupBot.ID, fmt.Sprintf("你邀请了「%s」加入群聊", strings.Join(changedNames, "、")))
-		} else if action == "remove" {
-			sysMsg = s.appendGroupSystemNotice(groupBot.ID, fmt.Sprintf("「%s」已被移出群聊", strings.Join(changedNames, "、")))
-		}
+	if len(noticeParts) > 0 {
+		sysMsg = s.appendGroupSystemNotice(groupBot.ID, strings.Join(noticeParts, "；"))
 	}
 
 	updated, _ := s.store.GetBot(groupBot.ID)

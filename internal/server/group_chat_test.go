@@ -138,6 +138,18 @@ func TestGroupMembershipAnnouncementAndAdhocGroup(t *testing.T) {
 		t.Fatalf("expected remaining members butler,radar, got %q", gotMembers)
 	}
 
+	setBody, _ := json.Marshal(map[string]any{
+		"action":  "set",
+		"bot_ids": []string{"butler", "sentinel"},
+	})
+	reqSet := httptest.NewRequest(http.MethodPost, "/api/v2/bots/"+groupID+"/members", bytes.NewReader(setBody))
+	reqSet.SetPathValue("id", groupID)
+	recSet := httptest.NewRecorder()
+	s.handleUpdateGroupMembers(recSet, reqSet)
+	if recSet.Code != http.StatusOK || !strings.Contains(recSet.Body.String(), "移出群聊") {
+		t.Fatalf("set members failed: %d: %s", recSet.Code, recSet.Body.String())
+	}
+
 	// 5. Update group announcement & verify system notice generated
 	annBody, _ := json.Marshal(map[string]any{
 		"announcement": "先查资产续费周期再对比开源替代品",

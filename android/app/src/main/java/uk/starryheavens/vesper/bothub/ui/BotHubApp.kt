@@ -48,6 +48,7 @@ import uk.starryheavens.vesper.bothub.ui.sheets.ChatInfoSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.CreateFriendSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.CreateGroupSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.EditBotSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.ManageGroupMembersSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.NotificationDetailSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.SettingsPairingSheet
 
@@ -75,6 +76,7 @@ fun BotHubApp(
     val snackbarHostState = remember { SnackbarHostState() }
     var showStashCaptureInline by remember { mutableStateOf(false) }
     var showChatInfoSheet by remember { mutableStateOf(false) }
+    var chatSearchOpenToken by remember { mutableStateOf(0) }
     var editingBot by remember { mutableStateOf<BotItem?>(null) }
 
     val viewModel: BotHubViewModel = viewModel(
@@ -184,12 +186,15 @@ fun BotHubApp(
                             },
                             onDeleteTurn = viewModel::deleteChatTurn,
                             onForwardMessage = viewModel::forwardMessageToBot,
+                            searchOpenToken = chatSearchOpenToken,
                             onOpenChatInfo = { showChatInfoSheet = true },
                             onOpenBotProfile = viewModel::openBotProfile,
                             onInviteToGroup = {
-                                viewModel.openCreateGroup(
-                                    sourceBotId = if (activeBot?.isGroup == true) "" else viewModel.activeBotId
-                                )
+                                if (activeBot?.isGroup == true) {
+                                    viewModel.openManageGroupMembers(activeBot)
+                                } else {
+                                    viewModel.openCreateGroup(viewModel.activeBotId)
+                                }
                             },
                             onClearHistory = viewModel::clearActiveChatHistory
                         )
@@ -385,11 +390,14 @@ fun BotHubApp(
                 if (activeBot != null) viewModel.togglePinBot(activeBot)
             },
             onInviteToGroup = {
-                viewModel.openCreateGroup(
-                    sourceBotId = if (activeBot?.isGroup == true) "" else viewModel.activeBotId
-                )
+                if (activeBot?.isGroup == true) {
+                    viewModel.openManageGroupMembers(activeBot)
+                } else {
+                    viewModel.openCreateGroup(viewModel.activeBotId)
+                }
             },
             onOpenMemberProfile = viewModel::openBotProfile,
+            onSearchInChat = { chatSearchOpenToken += 1 },
             onEditBot = {
                 if (activeBot != null) editingBot = activeBot
             },
@@ -411,6 +419,16 @@ fun BotHubApp(
             sourceBotId = srcId,
             onSubmit = viewModel::createNewGroup,
             onDismiss = viewModel::dismissCreateGroup
+        )
+    }
+
+    viewModel.managingGroupBot?.let { grp ->
+        val freshGroup = viewModel.bots.find { it.id == grp.id } ?: grp
+        ManageGroupMembersSheet(
+            groupBot = freshGroup,
+            allBots = viewModel.bots,
+            onSubmit = { memberIds -> viewModel.saveGroupMembers(freshGroup.id, memberIds) },
+            onDismiss = viewModel::dismissManageGroupMembers
         )
     }
 

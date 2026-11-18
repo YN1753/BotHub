@@ -231,10 +231,25 @@ fun StashTabScreen(
                             )
                             if (!loading && query.isBlank()) {
                                 Text(
-                                    text = "在任意 App 点击「系统分享 -> BotHub」或右上角「秒收」即可自动抓取并提炼干货",
+                                    text = "在任意 App 分享链接至 BotHub，或一键粘贴剪贴板秒收",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Color(0xFF94A3B8),
                                     textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                TactileSecondaryButton(
+                                    text = "粘贴剪贴板秒收",
+                                    leadingIcon = Icons.Default.ContentPaste,
+                                    accent = true,
+                                    cornerRadius = 999.dp,
+                                    minHeight = 36.dp,
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 7.dp),
+                                    onClick = {
+                                        val clip = clipboard.getText()?.text?.trim().orEmpty()
+                                        if (clip.isNotEmpty()) {
+                                            onCapture(clip, "")
+                                        }
+                                    }
                                 )
                             }
                         }

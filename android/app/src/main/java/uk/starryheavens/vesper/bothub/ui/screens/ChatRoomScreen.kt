@@ -50,9 +50,11 @@ import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -137,14 +139,13 @@ fun ChatRoomScreen(
     onCopyText: (String) -> Unit,
     onDeleteTurn: (ChatTurnUi) -> Unit = {},
     onForwardMessage: (BotItem, String, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
+    searchOpenToken: Int = 0,
     onOpenChatInfo: () -> Unit,
     onOpenBotProfile: (BotItem) -> Unit,
     onInviteToGroup: () -> Unit,
     onClearHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    BackHandler(onBack = onBack)
-
     val haptics = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
@@ -154,6 +155,71 @@ fun ChatRoomScreen(
     var quoteTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     var forwardPayload by remember { mutableStateOf<Pair<String, String>?>(null) }
     var dismissAnnouncement by remember(activeBot?.id) { mutableStateOf(false) }
+    var showSearchBar by remember(activeBot?.id) { mutableStateOf(false) }
+    var searchQuery by remember(activeBot?.id) { mutableStateOf("") }
+    var activeMatchCursor by remember(activeBot?.id) { mutableStateOf(0) }
+
+    BackHandler {
+        if (showSearchBar) {
+            showSearchBar = false
+            searchQuery = ""
+        } else {
+            onBack()
+        }
+    }
+
+    LaunchedEffect(searchOpenToken) {
+        if (searchOpenToken > 0) {
+            showSearchBar = true
+        }
+    }
+
+    val normalizedSearch = searchQuery.trim().lowercase()
+    val searchMatchIndices = remember(messages, normalizedSearch) {
+        if (normalizedSearch.isEmpty()) {
+            emptyList()
+        } else {
+            messages.mapIndexedNotNull { idx, turn ->
+                if (turn.content.lowercase().contains(normalizedSearch) ||
+                    turn.reasoning.lowercase().contains(normalizedSearch)
+                ) {
+                    idx
+                } else {
+                    null
+                }
+            }
+        }
+    }
+    val safeMatchCursor = if (searchMatchIndices.isEmpty()) {
+        0
+    } else {
+        activeMatchCursor.coerceIn(0, searchMatchIndices.lastIndex)
+    }
+    val activeMatchedTurnId = if (searchMatchIndices.isNotEmpty()) {
+        messages.getOrNull(searchMatchIndices[safeMatchCursor])?.id
+    } else {
+        null
+    }
+    val matchedTurnIds = remember(messages, searchMatchIndices) {
+        searchMatchIndices.mapNotNull { messages.getOrNull(it)?.id }.toSet()
+    }
+
+    LaunchedEffect(normalizedSearch) {
+        activeMatchCursor = if (searchMatchIndices.isNotEmpty()) {
+            searchMatchIndices.lastIndex
+        } else {
+            0
+        }
+    }
+
+    LaunchedEffect(activeMatchedTurnId, showSearchBar) {
+        if (showSearchBar && activeMatchedTurnId != null) {
+            val targetIdx = messages.indexOfFirst { it.id == activeMatchedTurnId }
+            if (targetIdx >= 0) {
+                listState.animateScrollToItem(targetIdx)
+            }
+        }
+    }
 
     val isGroup = activeBot?.isGroup == true
     val groupMembers = remember(activeBot, allBots) {
@@ -317,29 +383,174 @@ fun ChatRoomScreen(
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .tactileClickable(pressedScale = 0.92f, hapticOnTap = true, onClick = onOpenChatInfo)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.verticalGradient(listOf(Color(0xFF16203C), Color(0xFF0C1224))),
-                            CircleShape
-                        )
-                        .border(
-                            BorderStroke(
-                                0.85.dp,
-                                specularRimBrush(Color(0x33FFF8EE), Color(0x14FFF8EE), Color(0x06FFF8EE))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .tactileClickable(pressedScale = 0.92f, hapticOnTap = true) {
+                                showSearchBar = !showSearchBar
+                                if (!showSearchBar) searchQuery = ""
+                            }
+                            .clip(CircleShape)
+                            .background(
+                                Brush.verticalGradient(
+                                    if (showSearchBar) {
+                                        listOf(Color(0x33F2B880), Color(0x1AC88A4E))
+                                    } else {
+                                        listOf(Color(0xFF16203C), Color(0xFF0C1224))
+                                    }
+                                ),
+                                CircleShape
+                            )
+                            .border(
+                                BorderStroke(
+                                    0.85.dp,
+                                    if (showSearchBar) {
+                                        specularRimBrush(Color(0x88F2B880), Color(0x33F2B880), Color.Transparent)
+                                    } else {
+                                        specularRimBrush(Color(0x33FFF8EE), Color(0x14FFF8EE), Color(0x06FFF8EE))
+                                    }
+                                ),
+                                CircleShape
                             ),
-                            CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "查找聊天内容",
+                            tint = if (showSearchBar) Color(0xFFFFE2BE) else Color(0xFFCBD5E1),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .tactileClickable(pressedScale = 0.92f, hapticOnTap = true, onClick = onOpenChatInfo)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.verticalGradient(listOf(Color(0xFF16203C), Color(0xFF0C1224))),
+                                CircleShape
+                            )
+                            .border(
+                                BorderStroke(
+                                    0.85.dp,
+                                    specularRimBrush(Color(0x33FFF8EE), Color(0x14FFF8EE), Color(0x06FFF8EE))
+                                ),
+                                CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreHoriz,
+                            contentDescription = "聊天详情",
+                            tint = Color(0xFFFFF8EE),
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = showSearchBar,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xF00B1124))
+                        .border(0.85.dp, Color(0x45F2B880), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.MoreHoriz,
-                        contentDescription = "聊天详情",
-                        tint = Color(0xFFFFF8EE),
-                        modifier = Modifier.size(19.dp)
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = Color(0xFFF2B880),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            color = Color(0xFFFFF8EE),
+                            fontSize = 13.5.sp
+                        ),
+                        cursorBrush = SolidColor(Color(0xFFF2B880)),
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { inner ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (searchQuery.isEmpty()) {
+                                    Text(
+                                        text = "查找聊天内容...",
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF64748B),
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                                inner()
+                            }
+                        }
+                    )
+                    if (normalizedSearch.isNotEmpty()) {
+                        Text(
+                            text = if (searchMatchIndices.isEmpty()) {
+                                "无匹配"
+                            } else {
+                                "${safeMatchCursor + 1}/${searchMatchIndices.size}"
+                            },
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = if (searchMatchIndices.isEmpty()) Color(0xFFFDA4AF) else Color(0xFFFFE2BE),
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                        if (searchMatchIndices.size > 1) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = "上一条",
+                                tint = Color(0xFFCBD5E1),
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clickable {
+                                        activeMatchCursor = if (safeMatchCursor > 0) {
+                                            safeMatchCursor - 1
+                                        } else {
+                                            searchMatchIndices.lastIndex
+                                        }
+                                    }
+                            )
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "下一条",
+                                tint = Color(0xFFCBD5E1),
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clickable {
+                                        activeMatchCursor = (safeMatchCursor + 1) % searchMatchIndices.size
+                                    }
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "关闭搜索",
+                        tint = Color(0xFF94A3B8),
+                        modifier = Modifier
+                            .size(17.dp)
+                            .clickable {
+                                showSearchBar = false
+                                searchQuery = ""
+                            }
                     )
                 }
             }
@@ -473,6 +684,8 @@ fun ChatRoomScreen(
 
                     "user" -> {
                         var showUserMenu by remember { mutableStateOf(false) }
+                        val isActiveHit = msg.id == activeMatchedTurnId
+                        val isSearchHit = msg.id in matchedTurnIds
                         val userShape = RoundedCornerShape(
                             topStart = 18.dp,
                             topEnd = 4.dp,
@@ -497,12 +710,18 @@ fun ChatRoomScreen(
                                     )
                                     .border(
                                         BorderStroke(
-                                            0.85.dp,
-                                            specularRimBrush(
-                                                Color(0x78F2B880),
-                                                Color(0x2CF2B880),
-                                                Color(0x12F2B880)
-                                            )
+                                            if (isActiveHit) 1.5.dp else 0.85.dp,
+                                            if (isActiveHit) {
+                                                SolidColor(Color(0xFFF6C692))
+                                            } else if (isSearchHit) {
+                                                SolidColor(Color(0x99F2B880))
+                                            } else {
+                                                specularRimBrush(
+                                                    Color(0x78F2B880),
+                                                    Color(0x2CF2B880),
+                                                    Color(0x12F2B880)
+                                                )
+                                            }
                                         ),
                                         userShape
                                     )
@@ -563,6 +782,8 @@ fun ChatRoomScreen(
                     else -> {
                         var expandReasoning by remember { mutableStateOf(false) }
                         var showBubbleMenu by remember { mutableStateOf(false) }
+                        val isActiveHit = msg.id == activeMatchedTurnId
+                        val isSearchHit = msg.id in matchedTurnIds
                         val isLiveTurn = isStreaming && msg.id == lastAssistantId
                         val isLatestReply = msg.id == lastAssistantId && !isLiveTurn
                         val avatarLiveState = when {
@@ -643,12 +864,18 @@ fun ChatRoomScreen(
                                             )
                                             .border(
                                                 BorderStroke(
-                                                    0.85.dp,
-                                                    specularRimBrush(
-                                                        Color(0x36FFF8EE),
-                                                        Color(0x14FFF8EE),
-                                                        Color(0x06FFF8EE)
-                                                    )
+                                                    if (isActiveHit) 1.5.dp else 0.85.dp,
+                                                    if (isActiveHit) {
+                                                        SolidColor(Color(0xFFF6C692))
+                                                    } else if (isSearchHit) {
+                                                        SolidColor(Color(0x99F2B880))
+                                                    } else {
+                                                        specularRimBrush(
+                                                            Color(0x36FFF8EE),
+                                                            Color(0x14FFF8EE),
+                                                            Color(0x06FFF8EE)
+                                                        )
+                                                    }
                                                 ),
                                                 aiShape
                                             )
@@ -1194,7 +1421,7 @@ fun ChatRoomScreen(
                         onModelChange(if (isPool) "deepseek-flash" else "free-pool")
                     },
                     PlusActionTile(
-                        label = "拉人建群",
+                        label = if (isGroup) "群成员" else "拉人建群",
                         icon = Icons.Default.GroupAdd,
                         accent = Color(0xFF38BDF8)
                     ) {

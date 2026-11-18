@@ -92,6 +92,9 @@ class BotHubViewModel(
     var createGroupSourceBotId by mutableStateOf<String?>(null)
         private set
 
+    var managingGroupBot by mutableStateOf<BotItem?>(null)
+        private set
+
     var sessionId by mutableStateOf("")
         private set
 
@@ -270,6 +273,12 @@ class BotHubViewModel(
             }
             activeBotId = botId
             prefs.lastActiveBotId = botId
+            bots.find { it.id == botId }?.let { cachedBot ->
+                if (cachedBot.model.isNotBlank()) {
+                    activeModel = cachedBot.model
+                }
+                enableThinking = cachedBot.enableThinking
+            }
             val nextBots = bots.map { if (it.id == botId && it.unreadCount != 0) it.copy(unreadCount = 0) else it }
             if (nextBots != bots) {
                 bots = nextBots
@@ -342,6 +351,39 @@ class BotHubViewModel(
 
     fun dismissCreateGroup() {
         createGroupSourceBotId = null
+    }
+
+    fun openManageGroupMembers(groupBot: BotItem) {
+        inspectingBotProfile = null
+        managingGroupBot = groupBot
+    }
+
+    fun dismissManageGroupMembers() {
+        managingGroupBot = null
+    }
+
+    fun saveGroupMembers(groupId: String, memberIds: List<String>) {
+        if (groupId.isBlank() || memberIds.isEmpty()) return
+        val optimistic = bots.map {
+            if (it.id == groupId) it.copy(memberIds = memberIds) else it
+        }
+        bots = optimistic
+        prefs.saveCachedBots(optimistic)
+        managingGroupBot = null
+        viewModelScope.launch {
+            api.updateGroupMembers(groupId, memberIds).onSuccess { updated ->
+                val synced = bots.map { if (it.id == groupId) updated else it }
+                bots = synced
+                prefs.saveCachedBots(synced)
+                showMessage("已更新群成员 (${updated.memberIds.size})")
+                if (activeBotId == groupId) {
+                    loadBotTimeline(groupId)
+                }
+            }.onFailure { err ->
+                showMessage(err.message ?: "更新群成员失败")
+                refreshAll(silent = true)
+            }
+        }
     }
 
     fun openSettings() {
@@ -840,11 +882,41 @@ class BotHubViewModel(
     fun updateModel(model: String) {
         activeModel = model
         prefs.activeModel = model
+        val targetId = activeBotId
+        if (sessionId.isEmpty() && targetId.isNotBlank()) {
+            val optimistic = bots.map { if (it.id == targetId) it.copy(model = model) else it }
+            bots = optimistic
+            prefs.saveCachedBots(optimistic)
+            if (prefs.isLikelyPaired) {
+                viewModelScope.launch {
+                    api.updateBotPreferences(botId = targetId, model = model).onSuccess { updated ->
+                        val synced = bots.map { if (it.id == targetId) updated else it }
+                        bots = synced
+                        prefs.saveCachedBots(synced)
+                    }
+                }
+            }
+        }
     }
 
     fun updateThinking(enabled: Boolean) {
         enableThinking = enabled
         prefs.enableThinking = enabled
+        val targetId = activeBotId
+        if (sessionId.isEmpty() && targetId.isNotBlank()) {
+            val optimistic = bots.map { if (it.id == targetId) it.copy(enableThinking = enabled) else it }
+            bots = optimistic
+            prefs.saveCachedBots(optimistic)
+            if (prefs.isLikelyPaired) {
+                viewModelScope.launch {
+                    api.updateBotPreferences(botId = targetId, enableThinking = enabled).onSuccess { updated ->
+                        val synced = bots.map { if (it.id == targetId) updated else it }
+                        bots = synced
+                        prefs.saveCachedBots(synced)
+                    }
+                }
+            }
+        }
     }
 
     fun updateInputText(text: String) {

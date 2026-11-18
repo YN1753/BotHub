@@ -898,6 +898,7 @@ fun ChatInfoSheet(
     onTogglePin: () -> Unit,
     onInviteToGroup: () -> Unit,
     onOpenMemberProfile: (BotItem) -> Unit,
+    onSearchInChat: () -> Unit = {},
     onEditBot: () -> Unit,
     onClearHistory: () -> Unit,
     onDismiss: () -> Unit
@@ -1006,7 +1007,7 @@ fun ChatInfoSheet(
                                 )
                             }
                             Text(
-                                text = "添加",
+                                text = if (isGroup) "管理" else "添加",
                                 fontSize = 11.sp,
                                 color = Color(0xFF94A3B8),
                                 maxLines = 1,
@@ -1022,6 +1023,31 @@ fun ChatInfoSheet(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onDismiss()
+                                onSearchInChat()
+                            }
+                            .padding(horizontal = 15.dp, vertical = 13.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("查找聊天内容", fontSize = 14.sp, color = Color(0xFFFFF8EE))
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = Color(0xFFF2B880),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = Color(0x14FFF8EE),
+                        modifier = Modifier.padding(horizontal = 15.dp)
+                    )
+
                     if (activeBot != null) {
                         Row(
                             modifier = Modifier
@@ -1143,6 +1169,157 @@ fun ChatInfoSheet(
             )
 
             Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+}
+
+/**
+ * 6. Manage Existing Group Members Sheet ("管理群成员").
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ManageGroupMembersSheet(
+    groupBot: BotItem,
+    allBots: List<BotItem>,
+    onSubmit: (memberIds: List<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val candidates = remember(allBots) { allBots.filter { !it.isGroup } }
+    val selectedIds = remember(groupBot.id, groupBot.memberIds) {
+        mutableStateListOf<String>().apply {
+            addAll(groupBot.memberIds)
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = Color(0xFF080D1B),
+        tonalElevation = 0.dp,
+        dragHandle = { ObsidianSheetDragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "群成员管理",
+                    fontSize = 17.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFFF8EE),
+                    maxLines = 1,
+                    softWrap = false
+                )
+
+                TactilePrimaryButton(
+                    text = "保存 (${selectedIds.size})",
+                    enabled = selectedIds.isNotEmpty(),
+                    cornerRadius = 999.dp,
+                    minHeight = 36.dp,
+                    contentPadding = PaddingValues(horizontal = 15.dp, vertical = 6.dp),
+                    onClick = {
+                        if (selectedIds.isNotEmpty()) {
+                            onSubmit(selectedIds.toList())
+                        }
+                    }
+                )
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 16.dp)
+            ) {
+                items(candidates, key = { "mgr_${it.id}" }) { friend ->
+                    val checked = selectedIds.contains(friend.id)
+                    SpecularGlassCard(
+                        cornerRadius = 15.dp,
+                        accentTint = if (checked) Color(0xFFF2B880) else null,
+                        onClick = {
+                            if (checked) {
+                                if (selectedIds.size > 1) selectedIds.remove(friend.id)
+                            } else {
+                                selectedIds.add(friend.id)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (checked) {
+                                            Brush.verticalGradient(listOf(Color(0xFFF6C692), Color(0xFFDF9855)))
+                                        } else {
+                                            Brush.verticalGradient(listOf(Color(0xFF141C34), Color(0xFF0C1122)))
+                                        },
+                                        CircleShape
+                                    )
+                                    .border(
+                                        0.8.dp,
+                                        if (checked) Color(0x80FFE8CC) else Color(0x28FFF8EE),
+                                        CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (checked) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = Color(0xFF090C16),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+
+                            SpiritSquircleAvatar(
+                                bot = friend,
+                                allBots = allBots,
+                                containerSize = 40.dp,
+                                cornerRadius = 12.dp
+                            )
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = friend.name,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFFFFF8EE),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (friend.roleTitle.isNotBlank()) {
+                                    Text(
+                                        text = friend.roleTitle,
+                                        fontSize = 11.5.sp,
+                                        color = Color(0xFF8C9BB5),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

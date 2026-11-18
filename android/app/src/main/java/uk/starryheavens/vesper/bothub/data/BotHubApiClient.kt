@@ -451,6 +451,42 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun updateBotPreferences(
+        botId: String,
+        model: String? = null,
+        enableThinking: Boolean? = null
+    ): Result<BotItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+            if (!model.isNullOrBlank()) payload.put("model", model.trim())
+            if (enableThinking != null) payload.put("enable_thinking", enableThinking)
+            val req = requestBuilder("/api/v2/bots/$botId")
+                .post(jsonBody(payload.toString()))
+                .build()
+            val json = executeJson(req, "同步模型偏好失败")
+            JsonMappers.parseBot(json.optJSONObject("bot") ?: JSONObject())
+        }
+    }
+
+    suspend fun updateGroupMembers(
+        groupId: String,
+        memberIds: List<String>
+    ): Result<BotItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            val arr = JSONArray()
+            memberIds.forEach { arr.put(it) }
+            val payload = JSONObject()
+                .put("action", "set")
+                .put("bot_ids", arr)
+                .toString()
+            val req = requestBuilder("/api/v2/bots/$groupId/members")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "更新群成员失败")
+            JsonMappers.parseBot(json.optJSONObject("bot") ?: JSONObject())
+        }
+    }
+
     suspend fun updateBotDetails(
         botId: String,
         name: String,
