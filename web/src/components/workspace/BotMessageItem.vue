@@ -35,6 +35,15 @@ const emit = defineEmits<{
 }>()
 
 const expandedUser = ref(false)
+const touchActionsOpen = ref(false)
+
+function handleTouchMessageTap(e: MouseEvent) {
+  const target = e.target as HTMLElement | null
+  if (!target) return
+  if (target.closest('a, button, summary, details, pre, code')) return
+  if (typeof window !== 'undefined' && window.getSelection()?.toString()) return
+  touchActionsOpen.value = !touchActionsOpen.value
+}
 
 const isLongUserMessage = computed(() => {
   const c = props.message.content
@@ -69,6 +78,8 @@ function closeDetailsMenu(e: Event) {
   <div
     v-else-if="message.role === 'user'"
     :data-msg-id="message.localId"
+    :data-touch-open="touchActionsOpen ? 'true' : undefined"
+    @click="handleTouchMessageTap"
     :class="[
       'reveal-host max-w-[780px] w-full mx-auto flex flex-col items-end gap-1 rounded-2xl transition-shadow',
       message.isLiveNew ? 'msg-enter-user' : '',
@@ -143,6 +154,9 @@ function closeDetailsMenu(e: Event) {
   <article
     v-else
     :data-msg-id="message.localId"
+    :data-is-last="isLast ? 'true' : undefined"
+    :data-touch-open="touchActionsOpen ? 'true' : undefined"
+    @click="handleTouchMessageTap"
     :class="[
       'reveal-host max-w-[780px] w-full mx-auto flex items-start gap-3 sm:gap-3.5 rounded-2xl transition-shadow',
       message.isLiveNew ? 'msg-enter-bot' : '',

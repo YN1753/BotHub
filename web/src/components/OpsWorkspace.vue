@@ -259,8 +259,11 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
           @toggle-desktop-sidebar="emit('toggleDesktopSidebar')"
         />
         <div class="min-w-0">
-          <h1 class="text-base md:text-lg font-semibold text-white truncate">全局资产守望与调度引擎</h1>
-          <p class="text-xs text-slate-400/90 truncate">VPS / 域名 / 订阅到期台账与后台自动化调度</p>
+          <h1 class="text-base md:text-lg font-semibold text-white truncate">
+            <span class="sm:hidden">资产与调度</span>
+            <span class="hidden sm:inline">全局资产守望与调度引擎</span>
+          </h1>
+          <p class="hidden sm:block text-xs text-slate-400/90 truncate">VPS / 域名 / 订阅到期台账与后台自动化调度</p>
         </div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
@@ -285,11 +288,11 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
 
     <div class="cq-container flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
       <div class="max-w-6xl mx-auto flex flex-col gap-6">
-        <!-- Asymmetric Bento Cockpit: CSS Conic-Gradient Health Radar + Interactive Filter Tiles -->
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-3">
+        <!-- Asymmetric Bento Cockpit: 2-Column Compact Mobile Grid -> 4-Column Desktop Grid -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
           <div
             @pointermove="trackSpotlight"
-            class="luxury-card lg:col-span-2 rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap"
+            class="luxury-card col-span-2 rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3 sm:gap-4 flex-wrap sm:flex-nowrap"
           >
             <div class="flex items-center gap-3.5 min-w-0">
               <div

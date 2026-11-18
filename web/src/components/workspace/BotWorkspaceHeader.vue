@@ -166,19 +166,36 @@ onBeforeUnmount(() => {
             <span>{{ botStateLabel(bot?.state) }}</span>
           </span>
 
-          <!-- Inline Topic Pill (Replaces Full-Width Thread Bar Clutter) -->
+          <!-- Inline Topic Pill (Compact chevron on mobile when on main timeline; full label when custom thread active or on sm+) -->
           <template v-if="bot && store.state.botView === 'stream'">
-            <span class="h-3.5 w-px bg-[#fff8ee]/12 shrink-0" aria-hidden="true" />
+            <span
+              :class="[
+                'h-3.5 w-px bg-[#fff8ee]/12 shrink-0',
+                !store.state.activeThreadId ? 'hidden sm:inline-block' : ''
+              ]"
+              aria-hidden="true"
+            />
             <button
               type="button"
               :aria-expanded="topicMenuOpen"
+              aria-label="切换或新建独立话题"
               title="切换或新建独立话题"
               @click.stop="topicMenuOpen = !topicMenuOpen"
-              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.07] cursor-pointer max-w-[7.5rem] sm:max-w-[9.5rem]"
+              class="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.07] cursor-pointer max-w-[6.5rem] sm:max-w-[9.5rem]"
             >
-              <span class="text-[#f2b880]/80 font-mono">#</span>
-              <span class="truncate">{{ activeThreadTitle }}</span>
-              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" :class="['shrink-0 text-slate-400 transition-transform duration-150', topicMenuOpen ? 'rotate-180 text-[#f2b880]' : '']">
+              <span
+                :class="[
+                  'text-[#f2b880]/80 font-mono',
+                  !store.state.activeThreadId ? 'hidden sm:inline' : ''
+                ]"
+              >#</span>
+              <span
+                :class="[
+                  'truncate',
+                  !store.state.activeThreadId ? 'hidden sm:inline' : ''
+                ]"
+              >{{ activeThreadTitle }}</span>
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" :class="['shrink-0 text-slate-400 transition-transform duration-150', topicMenuOpen ? 'rotate-180 text-[#f2b880]' : '']">
                 <polyline points="6 9 12 15 18 9" />
               </svg>
             </button>
@@ -265,13 +282,34 @@ onBeforeUnmount(() => {
       <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="Bot 子视图" />
     </div>
 
-    <!-- Right Compact Collaboration & More Capsule -->
+    <!-- Right Compact Collaboration, Mobile Quick Workhub & More Capsule -->
     <div v-if="bot" class="flex items-center gap-1.5 shrink-0">
+      <button
+        type="button"
+        title="收藏与个人行动台"
+        aria-label="收藏与个人行动台"
+        @click="store.state.workhubTab = store.unreadStashCount.value > 0 ? 'stash' : 'todos'; store.state.showWorkhubModal = true"
+        class="sm:hidden btn-tactile relative min-h-[38px] min-w-[38px] inline-flex items-center justify-center rounded-full text-slate-300 cursor-pointer shrink-0"
+      >
+        <span
+          v-if="store.unreadStashCount.value > 0 || store.pendingTodoCount.value > 0"
+          :class="[
+            'absolute top-1.5 right-1.5 w-2 h-2 rounded-full',
+            store.unreadStashCount.value > 0 ? 'bg-rose-400' : 'bg-cyan-400'
+          ]"
+          aria-hidden="true"
+        />
+        <svg viewBox="0 0 24 24" width="14.5" height="14.5" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+        </svg>
+      </button>
+
       <button
         type="button"
         @click="store.state.showGroupDrawer = true"
         :title="isGroupBot ? '管理群成员与协作策略' : '拉人发起协同群聊'"
-        class="btn-tactile-gold min-h-[38px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 rounded-full text-xs font-medium cursor-pointer shrink-0"
+        aria-label="协同成员设置"
+        class="btn-tactile-gold min-h-[38px] min-w-[38px] sm:min-h-[34px] inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 rounded-full text-xs font-medium cursor-pointer shrink-0"
       >
         <svg viewBox="0 0 24 24" width="13.5" height="13.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -373,35 +411,16 @@ onBeforeUnmount(() => {
     </div>
   </header>
 
-  <!-- Slim Mobile Subview + Quick Stash/Todo Bar (<640px) -->
+  <!-- Clean Full-Width Mobile Subview Segmented Bar (<640px) -->
   <div
     v-if="bot"
-    class="sm:hidden px-3.5 pb-1.5 flex items-center justify-between gap-2 shrink-0"
+    class="sm:hidden px-3.5 pb-1.5 flex items-center shrink-0"
   >
-    <div class="min-w-0 flex-1 overflow-x-auto no-scrollbar">
-      <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="移动端 Bot 子视图" />
-    </div>
-    <div class="flex items-center gap-1.5 shrink-0">
-      <button
-        type="button"
-        title="收藏与闪念匣"
-        aria-label="收藏与闪念匣"
-        @click="store.state.workhubTab = 'stash'; store.state.showWorkhubModal = true"
-        class="btn-tactile relative min-h-[36px] inline-flex items-center gap-1 px-2.5 rounded-full text-[11px] cursor-pointer"
-      >
-        <span v-if="store.unreadStashCount.value > 0" class="w-1.5 h-1.5 rounded-full bg-rose-400" aria-hidden="true" />
-        <span>闪念</span>
-      </button>
-      <button
-        type="button"
-        title="个人行动台"
-        aria-label="个人行动台"
-        @click="store.state.workhubTab = 'todos'; store.state.showWorkhubModal = true"
-        class="btn-tactile relative min-h-[36px] inline-flex items-center gap-1 px-2.5 rounded-full text-[11px] cursor-pointer"
-      >
-        <span v-if="store.pendingTodoCount.value > 0" class="w-1.5 h-1.5 rounded-full bg-cyan-400" aria-hidden="true" />
-        <span>行动</span>
-      </button>
-    </div>
+    <SegmentedTabs
+      v-model="store.state.botView"
+      :items="VIEW_TABS"
+      aria-label="移动端 Bot 子视图"
+      class="w-full"
+    />
   </div>
 </template>

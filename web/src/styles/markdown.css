@@ -9,11 +9,12 @@
   margin: 0.8rem 0 0.35rem;
   font-weight: 600;
   color: #fbf7f0;
+  text-wrap: balance;
 }
 .md-body h1 { font-size: 1.15rem; }
 .md-body h2 { font-size: 1.05rem; }
 .md-body h3, .md-body h4 { font-size: 0.95rem; }
-.md-body p { margin: 0.4rem 0; }
+.md-body p { margin: 0.4rem 0; text-wrap: pretty; }
 .md-body ul, .md-body ol {
   margin: 0.4rem 0 0.55rem 1.25rem;
   padding: 0;

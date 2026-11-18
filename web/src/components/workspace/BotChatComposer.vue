@@ -449,13 +449,13 @@ function handleComposerKeydown(e: KeyboardEvent) {
           @input="syncMentionAndSlash"
           @compositionend="handleCompositionEnd"
           @keydown="handleComposerKeydown"
-          class="auto-size-textarea composer-textarea w-full bg-transparent border-0 text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none min-h-[24px] max-h-[160px] overflow-y-auto leading-relaxed"
+          class="auto-size-textarea composer-textarea w-full bg-transparent border-0 text-base sm:text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none min-h-[24px] max-h-[160px] overflow-y-auto leading-relaxed"
         />
       </div>
 
-      <div class="flex items-center justify-between gap-2 pt-1.5">
-        <div class="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
-          <div class="min-w-[132px] max-w-[196px] shrink-0">
+      <div class="flex items-center justify-between gap-2 pt-1">
+        <div class="flex items-center gap-1.5 min-w-0 flex-1 flex-nowrap">
+          <div class="min-w-0 max-w-[138px] sm:max-w-[196px] shrink">
             <CustomSelect v-model="modelValueProxy" :options="store.modelOptions.value" compact aria-label="选择推理模型" />
           </div>
           <button

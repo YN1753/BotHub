@@ -37,7 +37,7 @@ const state = reactive({
   authenticated: false,
   oidcEnabled: false,
   oidcProviderName: 'Vesper Auth',
-  version: 'v2.36.0',
+  version: 'v2.37.0',
   commit: '',
   buildTime: '',
   uptimeSec: 0,
