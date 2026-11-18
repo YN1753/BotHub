@@ -256,13 +256,22 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 	}
 
 	botID := strings.TrimSpace(task.BotID)
+	prevSummary := ""
+	prevUnread := 0
 	if botID != "" {
+		if b, bErr := s.store.GetBot(botID); bErr == nil && b != nil {
+			prevUnread = b.UnreadCount
+			if !strings.HasPrefix(strings.TrimSpace(b.LastSummary), "正在执行例程:") {
+				prevSummary = b.LastSummary
+			}
+		}
 		workLabel := "正在执行例程: " + task.Name
 		_ = s.store.SetBotState(botID, store.BotStateWorking, workLabel)
 		if s.hub != nil {
 			s.hub.PublishEvent("bot_state", map[string]any{
 				"bot_id":       botID,
 				"state":        store.BotStateWorking,
+				"unread_count": prevUnread,
 				"last_summary": workLabel,
 			})
 		}
@@ -299,14 +308,8 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 
 	if botID != "" {
 		cleanSummary := notifier.StripEmoji(summary)
-		finalState := store.BotStateIdle
-		if runErr != nil {
-			finalState = store.BotStateBlocked
-		} else if task.Type != "bot_prompt" {
-			finalState = store.BotStateDone
-		}
 
-		// Record per-Bot routine execution audit log cleanly
+		// Always record per-Bot routine execution audit log for Studio / Hub telemetry
 		s.store.RecordBotExecution(store.BotExecutionLog{
 			BotID:         botID,
 			ExecType:      "routine",
@@ -317,13 +320,19 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 			DurationMs:    durationMs,
 		})
 
-		if task.Type != "bot_prompt" || runErr != nil {
+		shouldAlertInChat := runErr != nil || (task.Type == "asset_watcher" && res.ItemsPushed > 0)
+		if shouldAlertInChat {
+			finalState := store.BotStateDone
+			report := fmt.Sprintf("### 临期资产提醒 · %s\n\n%s\n\n详细续费清单已同步至「服务通知」。", task.Name, cleanSummary)
+			if runErr != nil {
+				finalState = store.BotStateBlocked
+				report = fmt.Sprintf("### 例程异常告警 · %s\n\n%s", task.Name, cleanSummary)
+			}
+
 			targetThread := ""
 			if b, bErr := s.store.GetBot(botID); bErr == nil && b != nil {
 				targetThread = strings.TrimSpace(b.ActiveThreadID)
 			}
-			report := fmt.Sprintf("### 例程主动汇报: %s\n\n- **执行状态**: %s (%dms)\n- **结果摘要**: %s",
-				task.Name, status, durationMs, cleanSummary)
 			msg := store.AgentMessage{
 				SessionID:   "bot:" + botID,
 				BotID:       botID,
@@ -351,6 +360,23 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 					"state":        finalState,
 					"unread_count": unread,
 					"last_summary": cleanSummary,
+				})
+			}
+		} else if task.Type != "bot_prompt" {
+			// Silent-on-OK: when monitoring finds 0 alerts (or content digests already pushed to 服务通知),
+			// restore the Bot cleanly to idle without polluting chat history or unread badges.
+			_ = s.store.SetBotState(botID, store.BotStateIdle, prevSummary)
+			updatedBot, _ := s.store.GetBot(botID)
+			unread := prevUnread
+			if updatedBot != nil {
+				unread = updatedBot.UnreadCount
+			}
+			if s.hub != nil {
+				s.hub.PublishEvent("bot_state", map[string]any{
+					"bot_id":       botID,
+					"state":        store.BotStateIdle,
+					"unread_count": unread,
+					"last_summary": prevSummary,
 				})
 			}
 		}

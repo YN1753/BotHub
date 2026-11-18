@@ -389,7 +389,31 @@ END;`
 		return err
 	}
 	s.migrateStashToolOnce()
+	s.cleanupNoisyRoutineLogs()
 	return nil
+}
+
+func (s *Store) cleanupNoisyRoutineLogs() {
+	_, _ = s.db.Exec(`DELETE FROM agent_messages
+		WHERE msg_kind = 'routine'
+		  AND content LIKE '### 例程主动汇报:%'
+		  AND content LIKE '%- **执行状态**: success%'`)
+
+	_, _ = s.db.Exec(`UPDATE bots SET
+		unread_count = 0,
+		state = 'idle',
+		last_summary = COALESCE((
+			SELECT SUBSTR(TRIM(REPLACE(m.content, CHAR(10), ' ')), 1, 64)
+			FROM agent_messages m
+			WHERE m.bot_id = bots.id
+			  AND m.role IN ('user', 'assistant')
+			  AND COALESCE(m.thread_id, '') = COALESCE(bots.active_thread_id, '')
+			ORDER BY m.id DESC LIMIT 1
+		), '')
+		WHERE last_summary LIKE '巡检 %发送 0 项临期强提醒%'
+		   OR last_summary = '抓取完成，暂无新增条目'
+		   OR last_summary LIKE '正在执行例程:%'
+		   OR last_summary LIKE '已推送 %（城市:%'`)
 }
 
 func (s *Store) migrateScopedMemoriesTable() error {

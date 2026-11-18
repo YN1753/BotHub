@@ -713,6 +713,21 @@ func (e *Engine) maybeAutoSummarizeThread(actingBot *store.Bot, timelineBotID, t
 	_, _, _ = e.SummarizeThreadToMemory(ctx, actingBot, th, msgs, false)
 }
 
+func isSilentRoutineReply(raw string) bool {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return true
+	}
+	upper := strings.ToUpper(trimmed)
+	if upper == "[SILENT_OK]" || upper == "SILENT_OK" {
+		return true
+	}
+	if strings.Contains(upper, "[SILENT_OK]") && len([]rune(trimmed)) <= 32 {
+		return true
+	}
+	return false
+}
+
 // RunBotRoutine implements modules.BotRoutineExecutor so cron tasks wake up any Bot cleanly
 // with its own personality, scoped memories, and tools without storing artificial user prompts.
 func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName string) (string, error) {
@@ -721,10 +736,20 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 		return "", fmt.Errorf("未找到例程绑定 Bot: %s", botID)
 	}
 
+	prevSummary := ""
+	if !strings.HasPrefix(strings.TrimSpace(bot.LastSummary), "正在执行例程:") {
+		prevSummary = bot.LastSummary
+	}
+	prevUnread := bot.UnreadCount
+
 	threadID := strings.TrimSpace(bot.ActiveThreadID)
 	history, _ := e.store.ListBotMessagesByThread(bot.ID, threadID, 20)
+	prevMaxID := int64(0)
+	if len(history) > 0 {
+		prevMaxID = history[len(history)-1].ID
+	}
 	nowStr := store.NowShanghai()
-	routinePrompt := fmt.Sprintf("[后台定时例程「%s」于 %s 自动触发，请用你本人的口吻与工具能力完成以下指令并直接输出给用户]\n%s", taskName, nowStr, strings.TrimSpace(prompt))
+	routinePrompt := fmt.Sprintf("[后台定时例程「%s」于 %s 自动触发，请用你本人的口吻与工具能力完成以下指令并直接输出给用户；若本指令属于状态监控、健康检查或异常巡检性质，且当前各项指标均正常无需报警，请仅输出 [SILENT_OK]，不要输出例行正常汇报]\n%s", taskName, nowStr, strings.TrimSpace(prompt))
 
 	req := ChatRequest{
 		BotID:    bot.ID,
@@ -764,6 +789,20 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 	}
 	if err != nil {
 		return "", err
+	}
+
+	if isSilentRoutineReply(resp.Content) {
+		_ = e.store.DeleteBotMessagesAfterID(bot.ID, threadID, prevMaxID)
+		_ = e.store.SetBotState(bot.ID, store.BotStateIdle, prevSummary)
+		if e.hub != nil {
+			e.hub.PublishEvent("bot_state", map[string]any{
+				"bot_id":       bot.ID,
+				"state":        store.BotStateIdle,
+				"unread_count": prevUnread,
+				"last_summary": prevSummary,
+			})
+		}
+		return "", nil
 	}
 
 	summary := truncateTitle(resp.Content)

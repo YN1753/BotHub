@@ -2,6 +2,7 @@ package uk.starryheavens.vesper.bothub.ui.sheets
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -25,13 +25,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -42,18 +42,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
-import uk.starryheavens.vesper.bothub.ui.components.BotAvatarOrCluster
+import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianSwitch
+import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
+import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
+import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
+import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
+import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
 
 /**
  * 1. WeChat Contact / Group Profile Card Sheet ("好友 / 群聊资料卡").
@@ -78,8 +88,8 @@ fun BotProfileSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
-        containerColor = Color(0xFF090E1D),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = Color(0xFF080D1B),
         tonalElevation = 0.dp,
         dragHandle = { ObsidianSheetDragHandle() }
     ) {
@@ -88,35 +98,26 @@ fun BotProfileSheet(
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(13.dp)
         ) {
-            // WeChat Contact Header: Avatar + Name + ID/Model + Mode Tag
+            // WeChat Contact Header: Duotone Squircle Avatar + Name + ID/Model + Mode Tag
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFF101830),
-                    border = BorderStroke(1.dp, Color(0x2EFFF8EE)),
-                    modifier = Modifier.size(64.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        BotAvatarOrCluster(
-                            bot = bot,
-                            allBots = allBots,
-                            state = bot.state,
-                            size = 54.dp,
-                            interactive = true,
-                            defaultSeedKey = bot.id
-                        )
-                    }
-                }
+                SpiritSquircleAvatar(
+                    bot = bot,
+                    allBots = allBots,
+                    containerSize = 64.dp,
+                    cornerRadius = 18.dp,
+                    showPresenceDot = true,
+                    interactive = true
+                )
 
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -126,19 +127,25 @@ fun BotProfileSheet(
                             text = bot.name,
                             fontSize = 19.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFFF8EE)
+                            color = Color(0xFFFFF8EE),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = Color(0x24F2B880),
-                            border = BorderStroke(0.5.dp, Color(0x5CF2B880))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0x28F2B880))
+                                .border(0.5.dp, Color(0x5CF2B880), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
                         ) {
                             Text(
                                 text = if (bot.isGroup) bot.groupModeLabel() else bot.modeBadgeLabel(),
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFFFFE2BE),
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                style = TextStyle(
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFFFFE2BE),
+                                    platformStyle = NoFontPaddingStyle
+                                )
                             )
                         }
                     }
@@ -147,58 +154,56 @@ fun BotProfileSheet(
                         text = "ID: ${bot.id} · 引擎: ${bot.model.ifBlank { "主力模型" }}",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
-                        color = Color(0xFF94A3B8)
+                        color = Color(0xFF8C9BB5)
                     )
                 }
             }
 
             // Signature / Bio Card
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xCC0D1326),
-                border = BorderStroke(1.dp, Color(0x20FFF8EE)),
+            SpecularGlassCard(
+                cornerRadius = 18.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     ProfileFieldRow(
                         label = if (bot.isGroup) "群聊定位" else "专长头衔",
                         value = bot.roleTitle.ifBlank { "全能 AI 伙伴" }
                     )
                     if (bot.traits.isNotBlank()) {
-                        HorizontalDivider(thickness = 0.5.dp, color = Color(0x16FFF8EE))
+                        HorizontalDivider(thickness = 0.5.dp, color = Color(0x14FFF8EE))
                         ProfileFieldRow(
                             label = "性格签名",
                             value = bot.traits
                         )
                     }
                     if (bot.isGroup && members.isNotEmpty()) {
-                        HorizontalDivider(thickness = 0.5.dp, color = Color(0x16FFF8EE))
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        HorizontalDivider(thickness = 0.5.dp, color = Color(0x14FFF8EE))
+                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                             Text(
                                 text = "群成员 (${members.size})",
                                 fontSize = 11.5.sp,
-                                color = Color(0xFF94A3B8)
+                                color = Color(0xFF8C9BB5)
                             )
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 items(members, key = { it.id }) { m ->
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        GrokBotAvatar(
-                                            avatarStyle = m.avatarStyle,
-                                            state = m.state,
-                                            size = 34.dp,
-                                            interactive = false,
-                                            seedKey = m.id
+                                        SpiritSquircleAvatar(
+                                            bot = m,
+                                            allBots = allBots,
+                                            containerSize = 40.dp,
+                                            cornerRadius = 12.dp
                                         )
                                         Text(
                                             text = m.name,
                                             fontSize = 10.5.sp,
                                             color = Color(0xFFCBD5E1),
+                                            textAlign = TextAlign.Center,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.width(50.dp)
@@ -212,17 +217,15 @@ fun BotProfileSheet(
             }
 
             // Pin Switch Row
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xCC0D1326),
-                border = BorderStroke(1.dp, Color(0x20FFF8EE)),
+            SpecularGlassCard(
+                cornerRadius = 16.dp,
+                onClick = onTogglePin,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onTogglePin() }
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                        .padding(horizontal = 15.dp, vertical = 11.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -232,27 +235,21 @@ fun BotProfileSheet(
                         fontWeight = FontWeight.Medium,
                         color = Color(0xFFFFF8EE)
                     )
-                    ObsidianSwitch(
+                    TactileToggle(
                         checked = bot.isPinned,
                         onCheckedChange = { onTogglePin() }
                     )
                 }
             }
 
-            // Primary Action: WeChat "发消息"
-            Button(
+            // Jewel Primary Action: WeChat "发消息 / 进入群聊"
+            TactilePrimaryButton(
+                text = if (bot.isGroup) "进入群聊" else "发消息",
+                leadingIcon = Icons.Default.ChatBubble,
+                minHeight = 48.dp,
                 onClick = onSendMessage,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .sizeIn(minHeight = 48.dp)
-            ) {
-                Text(
-                    text = if (bot.isGroup) "进入群聊" else "发消息",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+                modifier = Modifier.fillMaxWidth()
+            )
 
             // Secondary Actions Row
             Row(
@@ -260,23 +257,26 @@ fun BotProfileSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (!bot.isGroup) {
-                    ProfileSecondaryBtn(
-                        label = "拉人建群",
-                        modifier = Modifier.weight(1f),
-                        onClick = onStartGroupWithBot
+                    TactileSecondaryButton(
+                        text = "拉人建群",
+                        minHeight = 42.dp,
+                        onClick = onStartGroupWithBot,
+                        modifier = Modifier.weight(1f)
                     )
                 }
-                ProfileSecondaryBtn(
-                    label = "高级人设编排",
-                    modifier = Modifier.weight(1f),
-                    onClick = onOpenStudioConfig
+                TactileSecondaryButton(
+                    text = "高级人设编排",
+                    minHeight = 42.dp,
+                    onClick = onOpenStudioConfig,
+                    modifier = Modifier.weight(1f)
                 )
                 if (!bot.isBuiltin) {
-                    ProfileSecondaryBtn(
-                        label = if (bot.isGroup) "解散群聊" else "删除好友",
+                    TactileSecondaryButton(
+                        text = if (bot.isGroup) "解散群聊" else "删除好友",
                         danger = true,
-                        modifier = Modifier.weight(1f),
-                        onClick = onDeleteBot
+                        minHeight = 42.dp,
+                        onClick = onDeleteBot,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
@@ -295,47 +295,16 @@ private fun ProfileFieldRow(label: String, value: String) {
         Text(
             text = label,
             fontSize = 12.sp,
-            color = Color(0xFF94A3B8),
+            color = Color(0xFF8C9BB5),
             modifier = Modifier.width(56.dp)
         )
         Text(
             text = value,
             fontSize = 13.sp,
-            color = Color(0xFFE2E8F0),
+            lineHeight = 19.sp,
+            color = Color(0xFFE6ECF8),
             modifier = Modifier.weight(1f)
         )
-    }
-}
-
-@Composable
-private fun ProfileSecondaryBtn(
-    label: String,
-    modifier: Modifier = Modifier,
-    danger: Boolean = false,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        color = if (danger) Color(0x1AF43F5E) else Color(0xFF11182E),
-        border = BorderStroke(
-            1.dp,
-            if (danger) Color(0x4DFB7185) else Color(0x24FFF8EE)
-        ),
-        modifier = modifier.sizeIn(minHeight = 42.dp)
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp)
-        ) {
-            Text(
-                text = label,
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (danger) Color(0xFFFDA4AF) else Color(0xFFE2E8F0),
-                maxLines = 1
-            )
-        }
     }
 }
 
@@ -381,8 +350,8 @@ fun CreateFriendSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
-        containerColor = Color(0xFF090E1D),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = Color(0xFF080D1B),
         tonalElevation = 0.dp,
         dragHandle = { ObsidianSheetDragHandle() }
     ) {
@@ -402,7 +371,7 @@ fun CreateFriendSheet(
                 Text(
                     text = "添加新的 AI 好友",
                     fontSize = 17.5.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     color = Color(0xFFFFF8EE)
                 )
                 Text(
@@ -417,33 +386,50 @@ fun CreateFriendSheet(
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(avatarOptions) { (styleId, label) ->
                     val active = selectedAvatar == styleId
-                    Surface(
-                        onClick = { selectedAvatar = styleId },
-                        shape = RoundedCornerShape(14.dp),
-                        color = if (active) Color(0x26F2B880) else Color(0xFF0E152B),
-                        border = BorderStroke(
-                            1.dp,
-                            if (active) Color(0x85F2B880) else Color(0x20FFF8EE)
-                        )
+                    val itemShape = RoundedCornerShape(15.dp)
+                    Column(
+                        modifier = Modifier
+                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                selectedAvatar = styleId
+                            }
+                            .clip(itemShape)
+                            .background(
+                                Brush.verticalGradient(
+                                    if (active) {
+                                        listOf(Color(0x33F2B880), Color(0x1AC88A4E))
+                                    } else {
+                                        listOf(Color(0xFF141D37), Color(0xFF0B1020))
+                                    }
+                                ),
+                                itemShape
+                            )
+                            .border(
+                                BorderStroke(
+                                    0.85.dp,
+                                    if (active) {
+                                        specularRimBrush(Color(0x88F2B880), Color(0x40F2B880), Color.Transparent)
+                                    } else {
+                                        specularRimBrush(Color(0x28FFF8EE), Color(0x10FFF8EE), Color.Transparent)
+                                    }
+                                ),
+                                itemShape
+                            )
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            GrokBotAvatar(
-                                avatarStyle = styleId,
-                                state = if (active) "working" else "idle",
-                                size = 36.dp,
-                                interactive = false,
-                                seedKey = styleId
-                            )
-                            Text(
-                                text = label,
-                                fontSize = 10.5.sp,
-                                color = if (active) Color(0xFFFFE2BE) else Color(0xFF94A3B8)
-                            )
-                        }
+                        GrokBotAvatar(
+                            avatarStyle = styleId,
+                            state = if (active) "working" else "idle",
+                            size = 36.dp,
+                            interactive = false,
+                            seedKey = styleId
+                        )
+                        Text(
+                            text = label,
+                            fontSize = 10.5.sp,
+                            color = if (active) Color(0xFFFFE2BE) else Color(0xFF94A3B8)
+                        )
                     }
                 }
             }
@@ -455,29 +441,15 @@ fun CreateFriendSheet(
             ) {
                 modeOptions.forEach { (mid, mLabel) ->
                     val active = selectedMode == mid
-                    Surface(
+                    TactileSecondaryButton(
+                        text = mLabel,
+                        accent = active,
+                        cornerRadius = 11.dp,
+                        minHeight = 38.dp,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 7.dp),
                         onClick = { selectedMode = mid },
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (active) Color(0x26F2B880) else Color(0xFF0E152B),
-                        border = BorderStroke(
-                            1.dp,
-                            if (active) Color(0x7AF2B880) else Color(0x20FFF8EE)
-                        ),
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
-                        ) {
-                            Text(
-                                text = mLabel,
-                                fontSize = 11.5.sp,
-                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (active) Color(0xFFFFE2BE) else Color(0xFF94A3B8),
-                                maxLines = 1
-                            )
-                        }
-                    }
+                    )
                 }
             }
 
@@ -518,7 +490,10 @@ fun CreateFriendSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Button(
+            TactilePrimaryButton(
+                text = "添加好友并开始聊天",
+                enabled = name.isNotBlank(),
+                minHeight = 48.dp,
                 onClick = {
                     val cleanName = name.trim()
                     if (cleanName.isNotEmpty()) {
@@ -535,14 +510,8 @@ fun CreateFriendSheet(
                         )
                     }
                 },
-                enabled = name.isNotBlank(),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .sizeIn(minHeight = 48.dp)
-            ) {
-                Text("添加好友并开始聊天", fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold)
-            }
+                modifier = Modifier.fillMaxWidth()
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
         }
@@ -586,8 +555,8 @@ fun CreateGroupSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
-        containerColor = Color(0xFF090E1D),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = Color(0xFF080D1B),
         tonalElevation = 0.dp,
         dragHandle = { ObsidianSheetDragHandle() }
     ) {
@@ -607,29 +576,28 @@ fun CreateGroupSheet(
                     Text(
                         text = if (sourceBotId.isNotBlank()) "拉 AI 好友进群协同" else "发起 AI 协作群聊",
                         fontSize = 17.5.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         color = Color(0xFFFFF8EE)
                     )
                     Text(
                         text = "至少勾选 2 位 AI 好友组建群聊",
                         fontSize = 11.5.sp,
-                        color = Color(0xFF94A3B8)
+                        color = Color(0xFF8C9BB5)
                     )
                 }
 
-                Button(
+                TactilePrimaryButton(
+                    text = "完成 (${selectedIds.size})",
+                    enabled = selectedIds.size >= 2,
+                    cornerRadius = 999.dp,
+                    minHeight = 36.dp,
+                    contentPadding = PaddingValues(horizontal = 15.dp, vertical = 6.dp),
                     onClick = {
                         if (selectedIds.size >= 2) {
                             onSubmit(sourceBotId, selectedIds.toList(), groupName, groupMode, carryContext)
                         }
-                    },
-                    enabled = selectedIds.size >= 2,
-                    shape = RoundedCornerShape(999.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                    modifier = Modifier.sizeIn(minHeight = 38.dp)
-                ) {
-                    Text("完成 (${selectedIds.size})", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                }
+                    }
+                )
             }
 
             ObsidianGlassInput(
@@ -645,52 +613,37 @@ fun CreateGroupSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 modes.forEach { (mid, mLabel) ->
-                    val active = groupMode == mid
-                    Surface(
+                    TactileSecondaryButton(
+                        text = mLabel,
+                        accent = groupMode == mid,
+                        cornerRadius = 11.dp,
+                        minHeight = 38.dp,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 7.dp),
                         onClick = { groupMode = mid },
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (active) Color(0x26F2B880) else Color(0xFF0E152B),
-                        border = BorderStroke(
-                            1.dp,
-                            if (active) Color(0x7AF2B880) else Color(0x20FFF8EE)
-                        ),
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = mLabel,
-                                fontSize = 12.sp,
-                                color = if (active) Color(0xFFFFE2BE) else Color(0xFF94A3B8)
-                            )
-                        }
-                    }
+                    )
                 }
             }
 
             if (sourceBotId.isNotBlank()) {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = Color(0xCC0D1326),
-                    border = BorderStroke(1.dp, Color(0x20FFF8EE)),
+                SpecularGlassCard(
+                    cornerRadius = 15.dp,
+                    onClick = { carryContext = !carryContext },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { carryContext = !carryContext }
-                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "携带最近 4 条单聊上下文入群",
                             fontSize = 13.sp,
-                            color = Color(0xFFE2E8F0)
+                            color = Color(0xFFE6ECF8)
                         )
-                        ObsidianSwitch(
+                        TactileToggle(
                             checked = carryContext,
                             onCheckedChange = { carryContext = it }
                         )
@@ -708,18 +661,14 @@ fun CreateGroupSheet(
                 items(candidates, key = { it.id }) { friend ->
                     val checked = selectedIds.contains(friend.id)
                     val locked = friend.id == sourceBotId
-                    Surface(
+                    SpecularGlassCard(
+                        cornerRadius = 15.dp,
+                        accentTint = if (checked) Color(0xFFF2B880) else null,
                         onClick = {
                             if (!locked) {
                                 if (checked) selectedIds.remove(friend.id) else selectedIds.add(friend.id)
                             }
                         },
-                        shape = RoundedCornerShape(14.dp),
-                        color = if (checked) Color(0x22F2B880) else Color(0xCC0D1326),
-                        border = BorderStroke(
-                            1.dp,
-                            if (checked) Color(0x73F2B880) else Color(0x1FFFF8EE)
-                        ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -730,22 +679,25 @@ fun CreateGroupSheet(
                             Box(
                                 modifier = Modifier
                                     .size(22.dp)
+                                    .clip(CircleShape)
                                     .background(
-                                        color = if (checked) Color(0xFFF2B880) else Color.Transparent,
-                                        shape = CircleShape
-                                    )
-                                    .then(
-                                        if (!checked) {
-                                            Modifier.background(Color(0xFF141C34), CircleShape)
+                                        if (checked) {
+                                            Brush.verticalGradient(listOf(Color(0xFFF6C692), Color(0xFFDF9855)))
                                         } else {
-                                            Modifier
-                                        }
+                                            Brush.verticalGradient(listOf(Color(0xFF141C34), Color(0xFF0C1122)))
+                                        },
+                                        CircleShape
+                                    )
+                                    .border(
+                                        0.8.dp,
+                                        if (checked) Color(0x80FFE8CC) else Color(0x28FFF8EE),
+                                        CircleShape
                                     ),
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (checked) {
                                     Icon(
-                                        Icons.Default.Check,
+                                        imageVector = Icons.Default.Check,
                                         contentDescription = null,
                                         tint = Color(0xFF090C16),
                                         modifier = Modifier.size(14.dp)
@@ -753,25 +705,24 @@ fun CreateGroupSheet(
                                 }
                             }
 
-                            GrokBotAvatar(
-                                avatarStyle = friend.avatarStyle,
-                                state = friend.state,
-                                size = 36.dp,
-                                interactive = false,
-                                seedKey = friend.id
+                            SpiritSquircleAvatar(
+                                bot = friend,
+                                allBots = allBots,
+                                containerSize = 40.dp,
+                                cornerRadius = 12.dp
                             )
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = friend.name,
                                     fontSize = 14.5.sp,
-                                    fontWeight = FontWeight.Medium,
+                                    fontWeight = FontWeight.SemiBold,
                                     color = Color(0xFFFFF8EE)
                                 )
                                 Text(
                                     text = friend.roleTitle.ifBlank { "AI 好友" },
                                     fontSize = 11.5.sp,
-                                    color = Color(0xFF94A3B8),
+                                    color = Color(0xFF8C9BB5),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -817,8 +768,8 @@ fun ChatInfoSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
-        containerColor = Color(0xFF090E1D),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = Color(0xFF080D1B),
         tonalElevation = 0.dp,
         dragHandle = { ObsidianSheetDragHandle() }
     ) {
@@ -833,15 +784,13 @@ fun ChatInfoSheet(
             Text(
                 text = if (isGroup) "群聊信息 (${members.size})" else "聊天详情",
                 fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 color = Color(0xFFFFF8EE)
             )
 
             // WeChat Avatar Grid + "+" Add Member Tile
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = Color(0xCC0D1326),
-                border = BorderStroke(1.dp, Color(0x20FFF8EE)),
+            SpecularGlassCard(
+                cornerRadius = 18.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 LazyRow(
@@ -852,31 +801,22 @@ fun ChatInfoSheet(
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(5.dp),
-                            modifier = Modifier.clickable {
+                            modifier = Modifier.tactileClickable(pressedScale = 0.93f) {
                                 onDismiss()
                                 onOpenMemberProfile(m)
                             }
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(0xFF131C36),
-                                border = BorderStroke(1.dp, Color(0x24FFF8EE)),
-                                modifier = Modifier.size(48.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    GrokBotAvatar(
-                                        avatarStyle = m.avatarStyle,
-                                        state = m.state,
-                                        size = 40.dp,
-                                        interactive = false,
-                                        seedKey = m.id
-                                    )
-                                }
-                            }
+                            SpiritSquircleAvatar(
+                                bot = m,
+                                allBots = allBots,
+                                containerSize = 48.dp,
+                                cornerRadius = 14.dp
+                            )
                             Text(
                                 text = m.name,
                                 fontSize = 11.sp,
                                 color = Color(0xFFCBD5E1),
+                                textAlign = TextAlign.Center,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.width(52.dp)
@@ -884,30 +824,39 @@ fun ChatInfoSheet(
                         }
                     }
 
-                    // "+" Invite to Group Button (Just like WeChat!)
                     item(key = "__invite_plus__") {
+                        val plusShape = RoundedCornerShape(14.dp)
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(5.dp),
-                            modifier = Modifier.clickable {
+                            modifier = Modifier.tactileClickable(pressedScale = 0.93f) {
                                 onDismiss()
                                 onInviteToGroup()
                             }
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(0xFF11182E),
-                                border = BorderStroke(1.dp, Color(0x38FFF8EE)),
-                                modifier = Modifier.size(48.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = "拉人建群",
-                                        tint = Color(0xFF94A3B8),
-                                        modifier = Modifier.size(22.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(plusShape)
+                                    .background(
+                                        Brush.verticalGradient(listOf(Color(0xFF151E39), Color(0xFF0C1224))),
+                                        plusShape
                                     )
-                                }
+                                    .border(
+                                        BorderStroke(
+                                            0.85.dp,
+                                            specularRimBrush(Color(0x38FFF8EE), Color(0x16FFF8EE), Color.Transparent)
+                                        ),
+                                        plusShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "拉人建群",
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(22.dp)
+                                )
                             }
                             Text(
                                 text = "拉人建群",
@@ -920,10 +869,8 @@ fun ChatInfoSheet(
             }
 
             // Chat Preferences Card
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = Color(0xCC0D1326),
-                border = BorderStroke(1.dp, Color(0x20FFF8EE)),
+            SpecularGlassCard(
+                cornerRadius = 18.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -932,20 +879,20 @@ fun ChatInfoSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onTogglePin() }
-                                .padding(horizontal = 14.dp, vertical = 11.dp),
+                                .padding(horizontal = 15.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("置顶聊天", fontSize = 14.sp, color = Color(0xFFFFF8EE))
-                            ObsidianSwitch(
+                            TactileToggle(
                                 checked = activeBot.isPinned,
                                 onCheckedChange = { onTogglePin() }
                             )
                         }
                         HorizontalDivider(
                             thickness = 0.5.dp,
-                            color = Color(0x16FFF8EE),
-                            modifier = Modifier.padding(horizontal = 14.dp)
+                            color = Color(0x14FFF8EE),
+                            modifier = Modifier.padding(horizontal = 15.dp)
                         )
                     }
 
@@ -953,15 +900,15 @@ fun ChatInfoSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onThinkingChange(!enableThinking) }
-                            .padding(horizontal = 14.dp, vertical = 11.dp),
+                            .padding(horizontal = 15.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
                             Text("深度思考推演", fontSize = 14.sp, color = Color(0xFFFFF8EE))
-                            Text("展示思维链并提升复杂问题准确率", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                            Text("展示思维链并提升复杂问题准确率", fontSize = 11.sp, color = Color(0xFF8C9BB5))
                         }
-                        ObsidianSwitch(
+                        TactileToggle(
                             checked = enableThinking,
                             onCheckedChange = onThinkingChange
                         )
@@ -969,8 +916,8 @@ fun ChatInfoSheet(
 
                     HorizontalDivider(
                         thickness = 0.5.dp,
-                        color = Color(0x16FFF8EE),
-                        modifier = Modifier.padding(horizontal = 14.dp)
+                        color = Color(0x14FFF8EE),
+                        modifier = Modifier.padding(horizontal = 15.dp)
                     )
 
                     val isPool = activeModel == "free-pool"
@@ -980,22 +927,33 @@ fun ChatInfoSheet(
                             .clickable {
                                 onModelChange(if (isPool) "deepseek-flash" else "free-pool")
                             }
-                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                            .padding(horizontal = 15.dp, vertical = 13.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("对话模型路由", fontSize = 14.sp, color = Color(0xFFFFF8EE))
-                        Text(
-                            text = if (isPool) "免费模型池 >" else "主力引擎 >",
-                            fontSize = 12.5.sp,
-                            color = Color(0xFFFFE2BE)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = if (isPool) "免费模型池" else "主力引擎",
+                                fontSize = 12.5.sp,
+                                color = Color(0xFFFFE2BE)
+                            )
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = Color(0xFFF2B880),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
 
                     HorizontalDivider(
                         thickness = 0.5.dp,
-                        color = Color(0x16FFF8EE),
-                        modifier = Modifier.padding(horizontal = 14.dp)
+                        color = Color(0x14FFF8EE),
+                        modifier = Modifier.padding(horizontal = 15.dp)
                     )
 
                     Row(
@@ -1005,18 +963,23 @@ fun ChatInfoSheet(
                                 onDismiss()
                                 onOpenSessions()
                             }
-                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                            .padding(horizontal = 15.dp, vertical = 13.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("查找历史临时会话", fontSize = 14.sp, color = Color(0xFFFFF8EE))
-                        Text(">", fontSize = 13.sp, color = Color(0xFF64748B))
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = Color(0xFF5D6D89),
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
 
                     HorizontalDivider(
                         thickness = 0.5.dp,
-                        color = Color(0x16FFF8EE),
-                        modifier = Modifier.padding(horizontal = 14.dp)
+                        color = Color(0x14FFF8EE),
+                        modifier = Modifier.padding(horizontal = 15.dp)
                     )
 
                     Row(
@@ -1026,7 +989,7 @@ fun ChatInfoSheet(
                                 onDismiss()
                                 onOpenStudioConfig()
                             }
-                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                            .padding(horizontal = 15.dp, vertical = 13.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1035,33 +998,26 @@ fun ChatInfoSheet(
                             fontSize = 14.sp,
                             color = Color(0xFFFFF8EE)
                         )
-                        Text(">", fontSize = 13.sp, color = Color(0xFF64748B))
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = Color(0xFF5D6D89),
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }
 
-            // Clear Chat History (WeChat Red Action Row)
-            Surface(
+            TactileSecondaryButton(
+                text = "清空聊天记录",
+                danger = true,
+                minHeight = 46.dp,
                 onClick = {
                     onDismiss()
                     onClearHistory()
                 },
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0x1AF43F5E),
-                border = BorderStroke(1.dp, Color(0x47FB7185)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .sizeIn(minHeight = 46.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "清空聊天记录",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFFFDA4AF)
-                    )
-                }
-            }
+                modifier = Modifier.fillMaxWidth()
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
         }

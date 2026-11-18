@@ -1,17 +1,20 @@
 package uk.starryheavens.vesper.bothub.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -27,23 +30,21 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.ChatBubbleOutline
-import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PeopleOutline
 import androidx.compose.material.icons.filled.PersonAddAlt1
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,18 +55,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.BotItem
@@ -91,13 +95,13 @@ fun ObsidianSheetDragHandle(modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        HorizontalDivider(thickness = 0.8.dp, color = Color(0x28FFF8EE))
+        SpecularHairline()
         Spacer(modifier = Modifier.height(10.dp))
         Box(
             modifier = Modifier
-                .width(36.dp)
+                .width(38.dp)
                 .height(4.dp)
-                .background(Color(0x52CBD5E1), RoundedCornerShape(999.dp))
+                .background(Color(0x5CCBD5E1), RoundedCornerShape(999.dp))
         )
         Spacer(modifier = Modifier.height(6.dp))
     }
@@ -110,19 +114,11 @@ fun ObsidianSwitch(
     enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    Switch(
+    TactileToggle(
         checked = checked,
         onCheckedChange = onCheckedChange,
         enabled = enabled,
-        modifier = modifier,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = Color(0xFF090C16),
-            checkedTrackColor = Color(0xFFF2B880),
-            checkedBorderColor = Color.Transparent,
-            uncheckedThumbColor = Color(0xFF94A3B8),
-            uncheckedTrackColor = Color(0xFF141C34),
-            uncheckedBorderColor = Color(0x38FFF8EE)
-        )
+        modifier = modifier
     )
 }
 
@@ -139,6 +135,13 @@ fun ObsidianGlassInput(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default
 ) {
     var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(14.dp)
+    val borderColor by animateColorAsState(
+        targetValue = if (focused) Color(0x88F2B880) else Color(0x22FFF8EE),
+        animationSpec = tween(160),
+        label = "inputFocusBorder"
+    )
+
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(5.dp)
@@ -146,22 +149,28 @@ fun ObsidianGlassInput(
         if (label.isNotEmpty()) {
             Text(
                 text = label,
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (focused) Color(0xFFFFE2BE) else Color(0xFF94A3B8),
+                style = TextStyle(
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (focused) Color(0xFFFFE2BE) else Color(0xFF94A3B8),
+                    platformStyle = NoFontPaddingStyle
+                ),
                 modifier = Modifier.padding(start = 4.dp)
             )
         }
-        Surface(
-            shape = RoundedCornerShape(14.dp),
-            color = Color(0xE6080D1C),
-            border = BorderStroke(
-                1.dp,
-                if (focused) Color(0x85F2B880) else Color(0x26FFF8EE)
-            ),
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .sizeIn(minHeight = 46.dp)
+                .clip(shape)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xF0070B16), Color(0xF00C1224))
+                    ),
+                    shape
+                )
+                .border(0.9.dp, borderColor, shape),
+            contentAlignment = Alignment.CenterStart
         ) {
             BasicTextField(
                 value = value,
@@ -186,7 +195,7 @@ fun ObsidianGlassInput(
                             Text(
                                 text = placeholder,
                                 fontSize = 13.5.sp,
-                                color = Color(0xFF64748B),
+                                color = Color(0xFF5A6A85),
                                 maxLines = maxLines,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -235,6 +244,9 @@ fun BotAvatarOrCluster(
     }
 }
 
+/**
+ * Clean, Breathable WeChat / QQ Single-Line IM Top Header with Floating Glass "+" Popover.
+ */
 @Composable
 fun BotHubTopBar(
     selectedTab: BotHubTab,
@@ -258,17 +270,27 @@ fun BotHubTopBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xF0070B16))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xF8060913), Color(0xEB080C1A))
+                )
+            )
             .statusBarsPadding()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 9.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Box(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 10.dp)
+            ) {
                 when (selectedTab) {
                     BotHubTab.AGENT -> {
                         val headerTitle = when {
@@ -276,114 +298,116 @@ fun BotHubTopBar(
                             totalUnreadMessages > 0 -> "消息 ($totalUnreadMessages)"
                             else -> "消息"
                         }
-                        HeaderBrandTitle(
-                            title = headerTitle,
-                            subtitle = "${UrlUtils.formatDisplayHost(serverUrl)} · 实时在线"
+                        Text(
+                            text = headerTitle,
+                            style = TextStyle(
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFFF8EE),
+                                platformStyle = NoFontPaddingStyle
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        OnlineStatusChip(
+                            label = "在线",
+                            dotColor = Color(0xFF34D399),
+                            onClick = onOpenSettings
                         )
                     }
 
                     BotHubTab.INBOX -> {
-                        HeaderBrandTitle(
-                            title = "通讯录",
-                            subtitle = "$friendCount 位 AI 好友 · $groupCount 个群聊"
+                        Text(
+                            text = "通讯录",
+                            style = TextStyle(
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFFF8EE),
+                                platformStyle = NoFontPaddingStyle
+                            )
                         )
+                        SubtleCountPill("$friendCount 好友 · $groupCount 群聊")
                     }
 
                     BotHubTab.STASH -> {
-                        HeaderBrandTitle(
-                            title = "收藏",
-                            subtitle = "系统分享秒收 · AI 自动提炼"
+                        Text(
+                            text = "收藏",
+                            style = TextStyle(
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFFF8EE),
+                                platformStyle = NoFontPaddingStyle
+                            )
                         )
+                        SubtleCountPill("智能提炼匣")
                     }
 
                     BotHubTab.HUB -> {
-                        HeaderBrandTitle(
-                            title = "中枢",
-                            subtitle = UrlUtils.formatDisplayHost(serverUrl)
+                        VesperBrandEmblem(size = 25.dp)
+                        Text(
+                            text = "中枢",
+                            style = TextStyle(
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFFF8EE),
+                                platformStyle = NoFontPaddingStyle
+                            )
                         )
+                        SubtleCountPill(UrlUtils.formatDisplayHost(serverUrl))
                     }
                 }
             }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 when (selectedTab) {
                     BotHubTab.AGENT -> {
-                        // WeChat / QQ Top-Right "+" Quick Menu
                         Box {
                             HeaderIconCircle(
                                 icon = Icons.Default.Add,
                                 contentDescription = "快捷菜单",
+                                accent = showPlusMenu,
                                 onClick = { showPlusMenu = true }
                             )
-                            DropdownMenu(
+                            FloatingGlassPopover(
                                 expanded = showPlusMenu,
                                 onDismissRequest = { showPlusMenu = false },
-                                modifier = Modifier.background(Color(0xFF101830))
-                            ) {
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.GroupAdd,
-                                            contentDescription = null,
-                                            tint = Color(0xFFFFE2BE),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    },
-                                    text = { Text("发起群聊", color = Color(0xFFFFF8EE)) },
-                                    onClick = {
-                                        showPlusMenu = false
-                                        onCreateGroup()
-                                    }
+                                offsetY = 42.dp,
+                                items = listOf(
+                                    GlassMenuAction(
+                                        label = "发起群聊",
+                                        icon = Icons.Default.GroupAdd,
+                                        iconTint = Color(0xFFFFE2BE),
+                                        onClick = onCreateGroup
+                                    ),
+                                    GlassMenuAction(
+                                        label = "添加 AI 好友",
+                                        icon = Icons.Default.PersonAddAlt1,
+                                        iconTint = Color(0xFFA5B4FC),
+                                        onClick = onCreateFriend
+                                    ),
+                                    GlassMenuAction(
+                                        label = "秒收链接 / 闪念",
+                                        icon = Icons.Default.BookmarkBorder,
+                                        iconTint = Color(0xFF34D399),
+                                        onClick = onQuickCaptureStash
+                                    ),
+                                    GlassMenuAction(
+                                        label = "服务通知全已读",
+                                        icon = Icons.Default.DoneAll,
+                                        iconTint = Color(0xFF94A3B8),
+                                        onClick = onMarkAllRead
+                                    ),
+                                    GlassMenuAction(
+                                        label = "连接与守护设置",
+                                        icon = Icons.Default.Settings,
+                                        iconTint = Color(0xFFFBBF24),
+                                        onClick = onOpenSettings
+                                    )
                                 )
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.PersonAddAlt1,
-                                            contentDescription = null,
-                                            tint = Color(0xFFC7D2FE),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    },
-                                    text = { Text("添加 AI 好友", color = Color(0xFFFFF8EE)) },
-                                    onClick = {
-                                        showPlusMenu = false
-                                        onCreateFriend()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.BookmarkBorder,
-                                            contentDescription = null,
-                                            tint = Color(0xFFA7F3D0),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    },
-                                    text = { Text("秒收链接 / 闪念", color = Color(0xFFFFF8EE)) },
-                                    onClick = {
-                                        showPlusMenu = false
-                                        onQuickCaptureStash()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.DoneAll,
-                                            contentDescription = null,
-                                            tint = Color(0xFF94A3B8),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    },
-                                    text = { Text("服务通知全部已读", color = Color(0xFFCBD5E1)) },
-                                    onClick = {
-                                        showPlusMenu = false
-                                        onMarkAllRead()
-                                    }
-                                )
-                            }
+                            )
                         }
                     }
 
@@ -411,124 +435,141 @@ fun BotHubTopBar(
                             contentDescription = "刷新状态",
                             onClick = onRefresh
                         )
+                        HeaderIconCircle(
+                            icon = Icons.Default.Settings,
+                            contentDescription = "连接与推送设置",
+                            accent = true,
+                            onClick = onOpenSettings
+                        )
                     }
                 }
-
-                HeaderIconCircle(
-                    icon = Icons.Default.Settings,
-                    contentDescription = "连接与推送设置",
-                    onClick = onOpenSettings
-                )
             }
         }
 
-        HorizontalDivider(thickness = 0.5.dp, color = Color(0x18FFF8EE))
+        SpecularHairline()
     }
 }
 
 @Composable
-private fun HeaderBrandTitle(
-    title: String,
-    subtitle: String
+private fun OnlineStatusChip(
+    label: String,
+    dotColor: Color,
+    onClick: () -> Unit
 ) {
+    val shape = RoundedCornerShape(999.dp)
     Row(
+        modifier = Modifier
+            .tactileClickable(pressedScale = 0.95f, onClick = onClick)
+            .clip(shape)
+            .background(Color(0x1C34D399), shape)
+            .border(0.7.dp, Color(0x3D34D399), shape)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.5.dp)
     ) {
-        VesperBrandEmblem(size = 30.dp)
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    platformStyle = PlatformTextStyle(includeFontPadding = false)
-                ),
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFFFF8EE),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+        Box(
+            modifier = Modifier
+                .size(5.5.dp)
+                .background(dotColor, CircleShape)
+        )
+        Text(
+            text = label,
+            style = TextStyle(
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFFA7F3D0),
+                platformStyle = NoFontPaddingStyle
             )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    platformStyle = PlatformTextStyle(includeFontPadding = false)
-                ),
-                fontSize = 11.sp,
+        )
+    }
+}
+
+@Composable
+private fun SubtleCountPill(text: String) {
+    val shape = RoundedCornerShape(999.dp)
+    Box(
+        modifier = Modifier
+            .clip(shape)
+            .background(Color(0x14FFFFFF), shape)
+            .border(0.6.dp, Color(0x1EFFF8EE), shape)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    ) {
+        Text(
+            text = text,
+            style = TextStyle(
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Medium,
                 color = Color(0xFF94A3B8),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+                platformStyle = NoFontPaddingStyle
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
 @Composable
 private fun HeaderPillAction(
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     accent: Boolean,
     onClick: () -> Unit
 ) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(999.dp),
-        color = if (accent) Color(0x22F2B880) else Color(0xFF10172C),
-        border = BorderStroke(
-            1.dp,
-            if (accent) Color(0x5CF2B880) else Color(0x24FFF8EE)
-        ),
-        modifier = Modifier.sizeIn(minHeight = 38.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = if (accent) Color(0xFFFFE2BE) else Color(0xFFCBD5E1),
-                modifier = Modifier.size(15.dp)
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    platformStyle = PlatformTextStyle(includeFontPadding = false)
-                ),
-                fontWeight = FontWeight.Medium,
-                color = if (accent) Color(0xFFFFE2BE) else Color(0xFFE2E8F0)
-            )
-        }
-    }
+    TactileSecondaryButton(
+        text = label,
+        leadingIcon = icon,
+        accent = accent,
+        cornerRadius = 999.dp,
+        minHeight = 35.dp,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        onClick = onClick
+    )
 }
 
 @Composable
 private fun HeaderIconCircle(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     contentDescription: String,
+    accent: Boolean = false,
     onClick: () -> Unit
 ) {
-    Surface(
-        onClick = onClick,
-        shape = CircleShape,
-        color = Color(0xFF10172C),
-        border = BorderStroke(1.dp, Color(0x22FFF8EE)),
-        modifier = Modifier.size(40.dp)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                icon,
-                contentDescription = contentDescription,
-                tint = Color(0xFFCBD5E1),
-                modifier = Modifier.size(18.dp)
-            )
+    val shape = CircleShape
+    val bgBrush = remember(accent) {
+        if (accent) {
+            Brush.verticalGradient(listOf(Color(0x33F2B880), Color(0x1AC88A4E)))
+        } else {
+            Brush.verticalGradient(listOf(Color(0xFF16203C), Color(0xFF0C1224)))
         }
+    }
+    val rim = remember(accent) {
+        if (accent) {
+            specularRimBrush(Color(0x78F2B880), Color(0x2EF2B880), Color(0x10F2B880))
+        } else {
+            specularRimBrush(Color(0x33FFF8EE), Color(0x14FFF8EE), Color(0x06FFF8EE))
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .tactileClickable(pressedScale = 0.92f, hapticOnTap = true, onClick = onClick)
+            .clip(shape)
+            .background(bgBrush, shape)
+            .border(BorderStroke(0.85.dp, rim), shape),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (accent) Color(0xFFFFE2BE) else Color(0xFFE2E8F0),
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
 /**
- * Custom compact obsidian-champagne bottom navigation dock.
- * Uses fixed icon slot geometry and PlatformTextStyle(includeFontPadding = false)
- * so OEM handwritten fonts never distort badge roundness or shift label baselines.
+ * WeChat / QQ / Telegram Flagship Bottom Navigation Dock:
+ * Outline-to-Filled Icon Morphing + Spring Scale + Soft Radial Glow (no bulky active box!).
  */
 @Composable
 fun BotHubBottomBar(
@@ -538,20 +579,23 @@ fun BotHubBottomBar(
     onSelectTab: (BotHubTab) -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
-    val noPadStyle = remember { PlatformTextStyle(includeFontPadding = false) }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xF0080C1A))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xF2080D1B), Color(0xFA050811))
+                )
+            )
             .navigationBarsPadding()
     ) {
-        HorizontalDivider(thickness = 0.5.dp, color = Color(0x1FFFF8EE))
+        SpecularHairline()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
             BotHubTab.entries.forEach { tab ->
@@ -562,28 +606,26 @@ fun BotHubBottomBar(
                     else -> 0
                 }
                 val tabIcon = when (tab) {
-                    BotHubTab.AGENT -> Icons.Default.ChatBubbleOutline
-                    BotHubTab.INBOX -> Icons.Default.PeopleOutline
-                    BotHubTab.STASH -> Icons.Default.BookmarkBorder
-                    BotHubTab.HUB -> Icons.Default.Dns
+                    BotHubTab.AGENT -> if (isSelected) Icons.Default.ChatBubble else Icons.Default.ChatBubbleOutline
+                    BotHubTab.INBOX -> if (isSelected) Icons.Default.People else Icons.Default.PeopleOutline
+                    BotHubTab.STASH -> if (isSelected) Icons.Default.Bookmark else Icons.Default.BookmarkBorder
+                    BotHubTab.HUB -> if (isSelected) Icons.Default.Dashboard else Icons.Outlined.Dashboard
                 }
-                val pillBg by animateColorAsState(
-                    targetValue = if (isSelected) Color(0x24F2B880) else Color.Transparent,
-                    animationSpec = tween(180),
-                    label = "navPillBg"
-                )
                 val fgColor by animateColorAsState(
-                    targetValue = if (isSelected) Color(0xFFFFE2BE) else Color(0xFF8C9AB6),
+                    targetValue = if (isSelected) Color(0xFFF6C692) else Color(0xFF7B8BA6),
                     animationSpec = tween(180),
-                    label = "navFg"
+                    label = "navFgColor"
+                )
+                val iconScale by animateFloatAsState(
+                    targetValue = if (isSelected) 1.09f else 1f,
+                    animationSpec = spring(dampingRatio = 0.62f, stiffness = 520f),
+                    label = "navIconScale"
                 )
 
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(50.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(pillBg)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -596,59 +638,60 @@ fun BotHubBottomBar(
                         },
                     contentAlignment = Alignment.Center
                 ) {
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .offset(y = (-5).dp)
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(Color(0x2CF2B880), Color.Transparent)
+                                    ),
+                                    CircleShape
+                                )
+                        )
+                    }
+
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .width(40.dp)
-                                .height(22.dp),
+                                .width(42.dp)
+                                .height(23.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                tabIcon,
+                                imageVector = tabIcon,
                                 contentDescription = tab.contentDescription,
                                 tint = fgColor,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier
+                                    .size(21.dp)
+                                    .graphicsLayer {
+                                        scaleX = iconScale
+                                        scaleY = iconScale
+                                    }
                             )
                             if (badgeCount > 0) {
-                                Box(
+                                CrispUnreadBadge(
+                                    count = badgeCount,
+                                    containerColor = if (tab == BotHubTab.AGENT) Color(0xFFF43F5E) else Color(0xFFF2B880),
+                                    contentColor = if (tab == BotHubTab.AGENT) Color.White else Color(0xFF090C16),
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
-                                        .offset(x = 2.dp, y = (-2).dp)
-                                        .defaultMinSize(minWidth = 16.dp, minHeight = 16.dp)
-                                        .height(16.dp)
-                                        .background(
-                                            if (tab == BotHubTab.AGENT) Color(0xFFF43F5E) else Color(0xFFF2B880),
-                                            RoundedCornerShape(999.dp)
-                                        )
-                                        .padding(horizontal = 4.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = if (badgeCount > 99) "99+" else badgeCount.toString(),
-                                        style = TextStyle(
-                                            fontSize = 9.5.sp,
-                                            lineHeight = 10.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (tab == BotHubTab.AGENT) Color.White else Color(0xFF090C16),
-                                            platformStyle = noPadStyle
-                                        ),
-                                        maxLines = 1
-                                    )
-                                }
+                                        .offset(x = 3.dp, y = (-3).dp)
+                                )
                             }
                         }
                         Text(
                             text = tab.label,
                             style = TextStyle(
-                                fontSize = 11.sp,
-                                lineHeight = 13.sp,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                fontSize = 10.5.sp,
+                                lineHeight = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 color = fgColor,
-                                platformStyle = noPadStyle
+                                platformStyle = NoFontPaddingStyle
                             ),
                             maxLines = 1
                         )
@@ -666,20 +709,21 @@ fun MetricMiniCard(
     accentColor: Color = MaterialTheme.colorScheme.primary,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    SpecularGlassCard(
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        color = Color(0xCC0D1326),
-        border = BorderStroke(1.dp, Color(0x22FFF8EE))
+        cornerRadius = 18.dp,
+        accentTint = accentColor,
+        elevation = 5.dp
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                style = TextStyle(
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF94A3B8),
+                    platformStyle = NoFontPaddingStyle
                 ),
-                fontSize = 11.sp,
-                color = Color(0xFF94A3B8),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -691,7 +735,7 @@ fun MetricMiniCard(
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = accentColor,
-                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                    platformStyle = NoFontPaddingStyle
                 )
             )
         }
@@ -707,17 +751,16 @@ fun ZeroClickCaptureRow(
     compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    SpecularGlassCard(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = Color(0xB30D1326),
-        border = BorderStroke(1.dp, Color(0x1FFFF8EE))
+        cornerRadius = 16.dp,
+        onClick = { onCheckedChange(!checked) }
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = if (compact) 10.dp else 12.dp)
-                .sizeIn(minHeight = 48.dp),
+                .sizeIn(minHeight = 46.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -729,20 +772,18 @@ fun ZeroClickCaptureRow(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.bodyMedium,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color(0xFFFFF8EE)
                 )
                 Text(
                     text = subtitle,
-                    style = MaterialTheme.typography.labelSmall,
                     fontSize = 11.5.sp,
                     lineHeight = 16.sp,
                     color = Color(0xFF94A3B8)
                 )
             }
-            ObsidianSwitch(
+            TactileToggle(
                 checked = checked,
                 onCheckedChange = onCheckedChange
             )

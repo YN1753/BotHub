@@ -73,8 +73,15 @@ func (m *BotPromptModule) RunWithTask(ctx context.Context, task store.Task) (Run
 		return RunResult{}, err
 	}
 
+	if strings.TrimSpace(reply) == "" {
+		return RunResult{
+			Summary:     "静默巡检正常，无需要报警的异常",
+			ItemsPushed: 0,
+		}, nil
+	}
+
 	itemsPushed := 0
-	if notifyInbox && m.push != nil && strings.TrimSpace(reply) != "" {
+	if notifyInbox && m.push != nil {
 		botName := botID
 		if b, bErr := m.store.GetBot(botID); bErr == nil && b != nil && strings.TrimSpace(b.Name) != "" {
 			botName = b.Name

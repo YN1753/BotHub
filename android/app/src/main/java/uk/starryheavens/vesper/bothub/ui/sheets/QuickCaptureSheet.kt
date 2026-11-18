@@ -2,6 +2,7 @@ package uk.starryheavens.vesper.bothub.ui.sheets
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -15,12 +16,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,7 +29,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,9 +41,14 @@ import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.ShareTextParser
-import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
+import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
+import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
+import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
+import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.ZeroClickCaptureRow
+import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 
 @Composable
 fun QuickCaptureSheet(
@@ -115,9 +119,9 @@ fun QuickCaptureSheet(
                     indication = null,
                     onClick = {}
                 ),
-            shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
-            color = Color(0xFF090E1D),
-            border = BorderStroke(1.dp, Color(0x28FFF8EE)),
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            color = Color(0xFF080D1B),
+            border = BorderStroke(0.9.dp, specularRimBrush(Color(0x38FFF8EE), Color(0x14FFF8EE), Color.Transparent)),
             tonalElevation = 0.dp
         ) {
             Column(
@@ -130,9 +134,9 @@ fun QuickCaptureSheet(
             ) {
                 Box(
                     modifier = Modifier
-                        .width(36.dp)
+                        .width(38.dp)
                         .height(4.dp)
-                        .background(Color(0x52CBD5E1), RoundedCornerShape(999.dp))
+                        .background(Color(0x5CCBD5E1), RoundedCornerShape(999.dp))
                         .align(Alignment.CenterHorizontally)
                 )
 
@@ -146,49 +150,51 @@ fun QuickCaptureSheet(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        GrokBotAvatar(
-                            avatarStyle = preview.kind.avatarStyle,
+                        SpiritSquircleAvatar(
+                            bot = null,
+                            allBots = emptyList(),
+                            avatarStyleOverride = preview.kind.avatarStyle,
                             state = when {
                                 saving -> "working"
                                 errorMsg.isNotEmpty() -> "blocked"
                                 noteInput.isNotEmpty() -> "thinking"
                                 else -> "idle"
                             },
-                            size = 34.dp,
+                            containerSize = 38.dp,
+                            cornerRadius = 12.dp,
                             interactive = true,
-                            isListening = noteInput.isNotEmpty(),
                             seedKey = "quick_capture"
                         )
                         Text(
                             text = "BotHub 智能收藏与闪念匣",
-                            style = MaterialTheme.typography.titleMedium,
                             fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = FontWeight.Bold,
                             color = Color(0xFFFFF8EE),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0x24F2B880),
-                        border = BorderStroke(0.5.dp, Color(0x5CF2B880))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0x24F2B880))
+                            .border(0.5.dp, Color(0x5CF2B880), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
                             text = preview.kind.shareHeaderLabel,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFFFFE2BE),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            style = TextStyle(
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFFFE2BE),
+                                platformStyle = NoFontPaddingStyle
+                            )
                         )
                     }
                 }
 
-                // Parsed Title & URL Preview Card
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xCC0D1326),
-                    border = BorderStroke(1.dp, Color(0x22FFF8EE)),
+                SpecularGlassCard(
+                    cornerRadius = 16.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -222,15 +228,12 @@ fun QuickCaptureSheet(
                         fontSize = 13.sp,
                         color = Color(0xFFFFE2BE)
                     )
-                    Button(
+                    TactilePrimaryButton(
+                        text = "打开 BotHub 一键绑定",
+                        minHeight = 46.dp,
                         onClick = onOpenSetup,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .sizeIn(minHeight = 46.dp)
-                    ) {
-                        Text("打开 BotHub 一键绑定", fontWeight = FontWeight.SemiBold)
-                    }
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 } else {
                     ObsidianGlassInput(
                         value = noteInput,
@@ -264,43 +267,21 @@ fun QuickCaptureSheet(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Surface(
-                            onClick = { if (!saving) onForwardDeepChat(noteInput.trim()) },
-                            shape = RoundedCornerShape(14.dp),
-                            color = Color(0xFF11182E),
-                            border = BorderStroke(1.dp, Color(0x29FFF8EE)),
-                            modifier = Modifier
-                                .weight(1f)
-                                .sizeIn(minHeight = 46.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "发给 AI 深聊",
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFFE2E8F0)
-                                )
-                            }
-                        }
-
-                        Button(
-                            onClick = { submitCapture() },
+                        TactileSecondaryButton(
+                            text = "发给 AI 深聊",
                             enabled = !saving,
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            modifier = Modifier
-                                .weight(1.25f)
-                                .sizeIn(minHeight = 46.dp)
-                        ) {
-                            Text(
-                                text = if (saving) "秒收中..." else "收入收藏匣",
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                            minHeight = 46.dp,
+                            onClick = { onForwardDeepChat(noteInput.trim()) },
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        TactilePrimaryButton(
+                            text = if (saving) "秒收中..." else "收入收藏匣",
+                            enabled = !saving,
+                            minHeight = 46.dp,
+                            onClick = { submitCapture() },
+                            modifier = Modifier.weight(1.25f)
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(2.dp))

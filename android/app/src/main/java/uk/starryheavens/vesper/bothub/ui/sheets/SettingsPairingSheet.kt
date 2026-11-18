@@ -3,12 +3,12 @@ package uk.starryheavens.vesper.bothub.ui.sheets
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,20 +16,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -54,11 +50,14 @@ import uk.starryheavens.vesper.bothub.BuildConfig
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.UrlUtils
 import uk.starryheavens.vesper.bothub.ui.BiometricAuthHelper
-import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.PasskeyOutcome
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianSwitch
+import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
+import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
+import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
 
 private const val LATEST_APK_URL =
     "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk"
@@ -195,8 +194,8 @@ fun SettingsPairingSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
-        containerColor = Color(0xFF090E1D),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = Color(0xFF080D1B),
         tonalElevation = 0.dp,
         dragHandle = { ObsidianSheetDragHandle() }
     ) {
@@ -208,25 +207,26 @@ fun SettingsPairingSheet(
                 .padding(horizontal = 20.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Sheet Title Header
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                GrokBotAvatar(
-                    avatarStyle = "butler:gold",
+                SpiritSquircleAvatar(
+                    bot = null,
+                    allBots = emptyList(),
+                    avatarStyleOverride = "butler:gold",
                     state = if (connecting || registeringPasskey) "working" else "idle",
-                    size = 36.dp,
+                    containerSize = 42.dp,
+                    cornerRadius = 13.dp,
                     interactive = true,
                     seedKey = "settings_spirit"
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = if (isPaired) "实时守护与连接设置" else "一键激活 BotHub 手机端",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontSize = 16.5.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
                         color = Color(0xFFFFF8EE)
                     )
                     Text(
@@ -238,16 +238,15 @@ fun SettingsPairingSheet(
                         },
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
-                        color = Color(0xFF94A3B8)
+                        color = Color(0xFF8C9BB5)
                     )
                 }
             }
 
             if (sheetHint.isNotEmpty()) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF141D38),
-                    border = BorderStroke(1.dp, Color(0x5CF2B880)),
+                SpecularGlassCard(
+                    cornerRadius = 14.dp,
+                    accentTint = Color(0xFFF2B880),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
@@ -260,39 +259,21 @@ fun SettingsPairingSheet(
             }
 
             if (!isPaired) {
-                Button(
-                    onClick = { launchVesperAuthOidcPairing() },
+                TactilePrimaryButton(
+                    text = "使用 Vesper Auth 通行证一键绑定",
                     enabled = !connecting,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .sizeIn(minHeight = 48.dp)
-                ) {
-                    Text(
-                        text = "使用 Vesper Auth 通行证一键绑定",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                    minHeight = 48.dp,
+                    onClick = { launchVesperAuthOidcPairing() },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                Surface(
-                    onClick = { if (!connecting) runPasskeyConnect() },
-                    shape = RoundedCornerShape(14.dp),
-                    color = Color(0xFF11182E),
-                    border = BorderStroke(1.dp, Color(0x2EFFF8EE)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .sizeIn(minHeight = 46.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = if (connecting) "正在调起面容 / 指纹..." else "面容 / 指纹通行密钥直连",
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFFE2E8F0)
-                        )
-                    }
-                }
+                TactileSecondaryButton(
+                    text = if (connecting) "正在调起面容 / 指纹..." else "面容 / 指纹通行密钥直连",
+                    enabled = !connecting,
+                    minHeight = 46.dp,
+                    onClick = { runPasskeyConnect() },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -309,7 +290,7 @@ fun SettingsPairingSheet(
                     Text(
                         text = if (showCustomUrlField) "收起服务器地址" else "修改服务器地址",
                         fontSize = 12.sp,
-                        color = Color(0xFF94A3B8),
+                        color = Color(0xFF8C9BB5),
                         modifier = Modifier
                             .clickable { showCustomUrlField = !showCustomUrlField }
                             .padding(vertical = 4.dp)
@@ -337,9 +318,12 @@ fun SettingsPairingSheet(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Button(
+                    TactilePrimaryButton(
+                        text = if (connecting) "验证并开启通知中..." else "验证密钥并开启通知",
+                        enabled = !connecting && passwordInput.isNotBlank(),
+                        minHeight = 46.dp,
                         onClick = {
-                            if (passwordInput.isBlank() || connecting) return@Button
+                            if (passwordInput.isBlank() || connecting) return@TactilePrimaryButton
                             scope.launch {
                                 connecting = true
                                 api.exchangeToken(urlInput, passwordInput).onSuccess {
@@ -351,25 +335,18 @@ fun SettingsPairingSheet(
                                 connecting = false
                             }
                         },
-                        enabled = !connecting && passwordInput.isNotBlank(),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .sizeIn(minHeight = 46.dp)
-                    ) {
-                        Text(if (connecting) "验证并开启通知中..." else "验证密钥并开启通知")
-                    }
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             } else {
                 // 1. Connected Server Node + Compact Passkey Enrollment Pill
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xCC0D1326),
-                    border = BorderStroke(1.dp, Color(0x26FFF8EE)),
+                SpecularGlassCard(
+                    cornerRadius = 18.dp,
+                    accentTint = Color(0xFF34D399),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -398,15 +375,20 @@ fun SettingsPairingSheet(
                                 Text(
                                     text = "免密令牌已绑定 · 锁屏推送就绪",
                                     fontSize = 11.sp,
-                                    color = Color(0xFF94A3B8)
+                                    color = Color(0xFF8C9BB5)
                                 )
                             }
                         }
 
-                        Surface(
+                        TactileSecondaryButton(
+                            text = if (registeringPasskey) "录入中..." else "录入通行密钥",
+                            accent = true,
+                            cornerRadius = 999.dp,
+                            minHeight = 34.dp,
+                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
                             onClick = {
-                                val act = activity ?: return@Surface
-                                if (registeringPasskey) return@Surface
+                                val act = activity ?: return@TactileSecondaryButton
+                                if (registeringPasskey) return@TactileSecondaryButton
                                 scope.launch {
                                     registeringPasskey = true
                                     sheetHint = ""
@@ -421,42 +403,24 @@ fun SettingsPairingSheet(
                                     }
                                     registeringPasskey = false
                                 }
-                            },
-                            shape = RoundedCornerShape(999.dp),
-                            color = Color(0x22F2B880),
-                            border = BorderStroke(1.dp, Color(0x5CF2B880)),
-                            modifier = Modifier.sizeIn(minHeight = 34.dp)
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
-                            ) {
-                                Text(
-                                    text = if (registeringPasskey) "录入中..." else "录入通行密钥",
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(0xFFFFE2BE)
-                                )
                             }
-                        }
+                        )
                     }
                 }
 
-                // Optional New Version Banner
                 if (hasNewerRelease) {
-                    Surface(
+                    SpecularGlassCard(
+                        cornerRadius = 15.dp,
+                        accentTint = Color(0xFFF2B880),
                         onClick = {
                             runCatching {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(remoteApkUrl)))
                             }
                         },
-                        shape = RoundedCornerShape(14.dp),
-                        color = Color(0x24F2B880),
-                        border = BorderStroke(1.dp, Color(0x73F2B880)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -467,7 +431,7 @@ fun SettingsPairingSheet(
                                 color = Color(0xFFFFE2BE)
                             )
                             Icon(
-                                Icons.Default.KeyboardArrowRight,
+                                imageVector = Icons.Default.KeyboardArrowRight,
                                 contentDescription = null,
                                 tint = Color(0xFFFFE2BE),
                                 modifier = Modifier.size(16.dp)
@@ -476,11 +440,9 @@ fun SettingsPairingSheet(
                     }
                 }
 
-                // 2. Unified Grouped Obsidian Glass Toggles (Zero disjointed raw ListItems)
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = Color(0xCC0D1326),
-                    border = BorderStroke(1.dp, Color(0x22FFF8EE)),
+                // 2. Unified Grouped Specular Glass Toggles (Custom 46x26dp Capsule Toggles!)
+                SpecularGlassCard(
+                    cornerRadius = 18.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -510,7 +472,7 @@ fun SettingsPairingSheet(
 
                         HorizontalDivider(
                             thickness = 0.5.dp,
-                            color = Color(0x18FFF8EE),
+                            color = Color(0x14FFF8EE),
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
 
@@ -523,7 +485,7 @@ fun SettingsPairingSheet(
 
                         HorizontalDivider(
                             thickness = 0.5.dp,
-                            color = Color(0x18FFF8EE),
+                            color = Color(0x14FFF8EE),
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
 
@@ -537,18 +499,17 @@ fun SettingsPairingSheet(
                 }
 
                 // 3. Full-Featured Hybrid Web Console Entry
-                Surface(
+                SpecularGlassCard(
+                    cornerRadius = 17.dp,
+                    accentTint = Color(0xFFF2B880),
                     onClick = {
                         onDismiss()
                         onOpenConsole("settings", "全功能系统控制台")
                     },
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xCC0E152B),
-                    border = BorderStroke(1.dp, Color(0x33F2B880)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -562,11 +523,11 @@ fun SettingsPairingSheet(
                             Text(
                                 text = "模型池路由 · 技能工坊 · 长期记忆 · 备份与安全",
                                 fontSize = 11.sp,
-                                color = Color(0xFF94A3B8)
+                                color = Color(0xFF8C9BB5)
                             )
                         }
                         Icon(
-                            Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.Default.KeyboardArrowRight,
                             contentDescription = null,
                             tint = Color(0xFFF2B880),
                             modifier = Modifier.size(18.dp)
@@ -579,14 +540,15 @@ fun SettingsPairingSheet(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    SettingsGridActionBtn(
-                        label = "测试连通性",
-                        modifier = Modifier.weight(1f),
-                        onClick = { onTestHealth(urlInput) }
+                    TactileSecondaryButton(
+                        text = "测试连通性",
+                        minHeight = 44.dp,
+                        onClick = { onTestHealth(urlInput) },
+                        modifier = Modifier.weight(1f)
                     )
-                    SettingsGridActionBtn(
-                        label = "保活白名单",
-                        modifier = Modifier.weight(1f),
+                    TactileSecondaryButton(
+                        text = "保活白名单",
+                        minHeight = 44.dp,
                         onClick = {
                             val batIntent = Intent(
                                 Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
@@ -599,7 +561,8 @@ fun SettingsPairingSheet(
                                     )
                                 }
                             }
-                        }
+                        },
+                        modifier = Modifier.weight(1f)
                     )
                 }
 
@@ -607,20 +570,22 @@ fun SettingsPairingSheet(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    SettingsGridActionBtn(
-                        label = "拉取最新 APK",
-                        modifier = Modifier.weight(1f),
+                    TactileSecondaryButton(
+                        text = "拉取最新 APK",
+                        minHeight = 44.dp,
                         onClick = {
                             runCatching {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(remoteApkUrl)))
                             }
-                        }
+                        },
+                        modifier = Modifier.weight(1f)
                     )
-                    SettingsGridActionBtn(
-                        label = "重新绑定服务端",
+                    TactileSecondaryButton(
+                        text = "重新绑定服务端",
                         danger = true,
-                        modifier = Modifier.weight(1f),
-                        onClick = onUnbindServer
+                        minHeight = 44.dp,
+                        onClick = onUnbindServer,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
@@ -641,7 +606,7 @@ private fun SettingsToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 14.dp, vertical = 11.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -663,46 +628,14 @@ private fun SettingsToggleRow(
                 text = subtitle,
                 fontSize = 11.5.sp,
                 lineHeight = 16.sp,
-                color = Color(0xFF94A3B8),
+                color = Color(0xFF8C9BB5),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         }
-        ObsidianSwitch(
+        TactileToggle(
             checked = checked,
             onCheckedChange = onCheckedChange
         )
-    }
-}
-
-@Composable
-private fun SettingsGridActionBtn(
-    label: String,
-    modifier: Modifier = Modifier,
-    danger: Boolean = false,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
-        color = if (danger) Color(0x1AF43F5E) else Color(0xFF10172C),
-        border = BorderStroke(
-            1.dp,
-            if (danger) Color(0x4DFB7185) else Color(0x24FFF8EE)
-        ),
-        modifier = modifier.sizeIn(minHeight = 44.dp)
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)
-        ) {
-            Text(
-                text = label,
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (danger) Color(0xFFFDA4AF) else Color(0xFFE2E8F0),
-                maxLines = 1
-            )
-        }
     }
 }

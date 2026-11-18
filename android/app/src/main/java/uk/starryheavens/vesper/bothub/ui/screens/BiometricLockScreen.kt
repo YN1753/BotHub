@@ -1,6 +1,7 @@
 package uk.starryheavens.vesper.bothub.ui.screens
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,15 +10,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,6 +25,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -38,8 +36,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.ui.BiometricAuthHelper
-import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
+import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
+import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.VesperBrandEmblem
 
 @Composable
@@ -89,57 +89,57 @@ fun BiometricLockScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = Color(0xFF131A2E),
-                border = BorderStroke(1.dp, Color(0x38F2B880))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Color(0xFF131A2E))
+                    .border(0.8.dp, Color(0x47F2B880), RoundedCornerShape(999.dp))
+                    .padding(start = 7.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(start = 7.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(7.dp)
-                ) {
-                    VesperBrandEmblem(size = 18.dp)
-                    Text(
-                        text = "BOTHUB",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFFFE2BE),
-                        letterSpacing = 1.sp
-                    )
-                }
+                VesperBrandEmblem(size = 18.dp)
+                Text(
+                    text = "BOTHUB",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFFFE2BE),
+                    letterSpacing = 1.sp
+                )
             }
-            Spacer(modifier = Modifier.height(18.dp))
-            GrokBotAvatar(
-                avatarStyle = "butler:gold",
+            Spacer(modifier = Modifier.height(20.dp))
+            SpiritSquircleAvatar(
+                bot = null,
+                allBots = emptyList(),
+                avatarStyleOverride = "butler:gold",
                 state = if (unlockBusy) "working" else "thinking",
-                size = 96.dp,
+                containerSize = 96.dp,
+                cornerRadius = 28.dp,
                 interactive = true,
                 seedKey = "biometric_gate"
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
             Text(
                 text = "BotHub 生物识别保护",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFFFF8EE)
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = "后台实时通知常驻运行中，刷脸或按指纹即可进入工作台",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color(0xFF8C9BB5),
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(24.dp))
-            Button(
+            TactilePrimaryButton(
+                text = "无感面容 / 指纹解锁",
+                minHeight = 48.dp,
                 onClick = { triggerBiometricUnlock() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .sizeIn(minHeight = 48.dp)
-            ) {
-                Text("无感面容 / 指纹解锁")
-            }
+                modifier = Modifier.fillMaxWidth()
+            )
             if (showPassUnlock) {
                 Spacer(modifier = Modifier.height(14.dp))
                 ObsidianGlassInput(
@@ -152,9 +152,12 @@ fun BiometricLockScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(
+                TactileSecondaryButton(
+                    text = if (unlockBusy) "验证中..." else "使用访问密码进入",
+                    enabled = !unlockBusy && fallbackPass.isNotBlank(),
+                    minHeight = 48.dp,
                     onClick = {
-                        if (fallbackPass.isBlank() || unlockBusy) return@OutlinedButton
+                        if (fallbackPass.isBlank() || unlockBusy) return@TactileSecondaryButton
                         scope.launch {
                             unlockBusy = true
                             onPasswordVerify(fallbackPass).onSuccess {
@@ -166,12 +169,8 @@ fun BiometricLockScreen(
                             unlockBusy = false
                         }
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .sizeIn(minHeight = 48.dp)
-                ) {
-                    Text(if (unlockBusy) "验证中..." else "使用访问密码进入")
-                }
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }

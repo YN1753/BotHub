@@ -1,37 +1,31 @@
 package uk.starryheavens.vesper.bothub.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,11 +34,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -53,20 +48,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.NotificationItem
 import uk.starryheavens.vesper.bothub.data.formatImTime
-import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
-import uk.starryheavens.vesper.bothub.ui.GrokBotGroupCluster
+import uk.starryheavens.vesper.bothub.ui.components.CrispUnreadBadge
+import uk.starryheavens.vesper.bothub.ui.components.FloatingGlassPopover
+import uk.starryheavens.vesper.bothub.ui.components.GlassMenuAction
+import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
+import uk.starryheavens.vesper.bothub.ui.components.RecessedSearchBar
+import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
+import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
+import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.VesperBrandEmblem
 import uk.starryheavens.vesper.bothub.ui.components.formatModuleBadge
+import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 
 /**
- * WeChat / QQ / GrokBot Style IM Conversation Roster ("消息" Tab).
- * Treats every AI Spirit and AI Group as a living contact/group conversation row,
- * alongside a pinned Official Service Channel ("服务通知") for automated intelligence pushes.
+ * WeChat / QQ / GrokBot Flagship IM Conversation Roster ("消息" Tab).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -86,7 +88,6 @@ fun ImChatsTabScreen(
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
-    val noPadStyle = remember { PlatformTextStyle(includeFontPadding = false) }
 
     val sortedBots = remember(bots, searchQuery) {
         val q = searchQuery.trim().lowercase()
@@ -114,82 +115,36 @@ fun ImChatsTabScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // IM Search Capsule (WeChat / QQ top search bar)
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = Color(0xCC0B1022),
-            border = BorderStroke(1.dp, Color(0x1FFFF8EE)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp)
-                .sizeIn(minHeight = 38.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    Icons.Default.Search,
-                    contentDescription = null,
-                    tint = Color(0xFF64748B),
-                    modifier = Modifier.size(16.dp)
-                )
-                BasicTextField(
-                    value = searchQuery,
-                    onValueChange = onSearchQueryChange,
-                    singleLine = true,
-                    textStyle = TextStyle(
-                        color = Color(0xFFFFF8EE),
-                        fontSize = 13.5.sp
-                    ),
-                    cursorBrush = SolidColor(Color(0xFFF2B880)),
-                    modifier = Modifier.weight(1f),
-                    decorationBox = { inner ->
-                        Box(contentAlignment = Alignment.CenterStart) {
-                            if (searchQuery.isEmpty()) {
-                                Text(
-                                    text = "搜索 AI 好友、群聊或近期消息...",
-                                    fontSize = 13.sp,
-                                    color = Color(0xFF64748B)
-                                )
-                            }
-                            inner()
-                        }
-                    }
-                )
-                if (searchQuery.isNotEmpty()) {
-                    Surface(
-                        onClick = { onSearchQueryChange("") },
-                        shape = CircleShape,
-                        color = Color(0x24FFFFFF),
-                        modifier = Modifier.size(18.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "清空搜索",
-                                tint = Color(0xFFCBD5E1),
-                                modifier = Modifier.size(11.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        // Recessed Dark Capsule Search Bar
+        RecessedSearchBar(
+            value = searchQuery,
+            onValueChange = onSearchQueryChange,
+            placeholder = "搜索 AI 好友、群聊或近期消息...",
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 20.dp)
         ) {
-            // 1. Official Service Account Row ("服务通知" — WeChat Official Service Notice Row)
+            // 1. Official Service Account Row ("服务通知")
             if (showServiceChannel) {
                 item(key = "__service_channel__") {
+                    val interaction = remember { MutableInteractionSource() }
+                    val pressed by interaction.collectIsPressedAsState()
+                    val rowBg by animateColorAsState(
+                        targetValue = if (pressed) Color(0x88151F3C) else Color(0x470E152B),
+                        animationSpec = tween(100),
+                        label = "serviceRowBg"
+                    )
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0x4D0D1428))
+                            .background(rowBg)
                             .combinedClickable(
+                                interactionSource = interaction,
+                                indication = null,
                                 onClick = onOpenServiceFeed
                             )
                     ) {
@@ -200,22 +155,37 @@ fun ImChatsTabScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(13.dp)
                         ) {
-                            // Service Emblem Avatar + Unread Badge
                             Box(modifier = Modifier.size(50.dp)) {
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = Color(0xFF101830),
-                                    border = BorderStroke(1.dp, Color(0x38F2B880)),
-                                    modifier = Modifier.fillMaxSize()
+                                val sqShape = RoundedCornerShape(15.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .shadow(4.dp, sqShape, ambientColor = Color(0x77000000))
+                                        .clip(sqShape)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(Color(0xFF1A2346), Color(0xFF0E1328))
+                                            ),
+                                            sqShape
+                                        )
+                                        .border(
+                                            BorderStroke(
+                                                0.8.dp,
+                                                specularRimBrush(
+                                                    Color(0x5CF2B880),
+                                                    Color(0x22A5B4FC),
+                                                    Color(0x0AFFFFFF)
+                                                )
+                                            ),
+                                            sqShape
+                                        ),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        VesperBrandEmblem(size = 34.dp)
-                                    }
+                                    VesperBrandEmblem(size = 33.dp)
                                 }
                                 if (unreadServiceCount > 0) {
-                                    ImUnreadBadge(
+                                    CrispUnreadBadge(
                                         count = unreadServiceCount,
-                                        noPadStyle = noPadStyle,
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
                                             .offset(x = 4.dp, y = (-4).dp)
@@ -242,25 +212,15 @@ fun ImChatsTabScreen(
                                                 fontSize = 15.5.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = Color(0xFFFFF8EE),
-                                                platformStyle = noPadStyle
+                                                platformStyle = NoFontPaddingStyle
                                             )
                                         )
-                                        Surface(
-                                            shape = RoundedCornerShape(5.dp),
-                                            color = Color(0x22A5B4FC),
-                                            border = BorderStroke(0.5.dp, Color(0x4DA5B4FC))
-                                        ) {
-                                            Text(
-                                                text = "订阅号",
-                                                style = TextStyle(
-                                                    fontSize = 9.5.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = Color(0xFFC7D2FE),
-                                                    platformStyle = noPadStyle
-                                                ),
-                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
-                                            )
-                                        }
+                                        ImMicroTag(
+                                            text = "订阅号",
+                                            bgColor = Color(0x24818CF8),
+                                            borderColor = Color(0x47818CF8),
+                                            textColor = Color(0xFFC7D2FE)
+                                        )
                                     }
 
                                     if (latestNotification != null) {
@@ -268,7 +228,7 @@ fun ImChatsTabScreen(
                                             text = formatImTime(latestNotification.createdAt),
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 11.sp,
-                                            color = Color(0xFF64748B)
+                                            color = Color(0xFF5D6D89)
                                         )
                                     }
                                 }
@@ -281,9 +241,9 @@ fun ImChatsTabScreen(
                                     }
                                     if (latestNotification != null) {
                                         val (modName, _) = formatModuleBadge(latestNotification.moduleId)
-                                        append("$modName: ${latestNotification.title}")
+                                        append("$modName · ${latestNotification.title}")
                                     } else {
-                                        append("晨间简报 · 技术雷达 · 资产与探针告警实时直达")
+                                        append("晨间简报 · 技术雷达 · 临期与探针异常直达")
                                     }
                                 }
 
@@ -291,7 +251,7 @@ fun ImChatsTabScreen(
                                     text = servicePreview,
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp,
-                                    color = Color(0xFF94A3B8),
+                                    color = Color(0xFF8C9BB5),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -300,37 +260,35 @@ fun ImChatsTabScreen(
 
                         HorizontalDivider(
                             thickness = 0.5.dp,
-                            color = Color(0x18FFF8EE),
-                            modifier = Modifier.padding(start = 79.dp)
+                            color = Color(0x14FFF8EE),
+                            modifier = Modifier.padding(start = 79.dp, end = 16.dp)
                         )
                     }
                 }
             }
 
-            // 2. Empty Roster Onboarding Card (if no bots exist yet)
+            // 2. Empty Roster Onboarding Card
             if (sortedBots.isEmpty()) {
                 item(key = "__empty_im__") {
-                    Surface(
-                        shape = RoundedCornerShape(18.dp),
-                        color = Color(0x990D1326),
-                        border = BorderStroke(1.dp, Color(0x20FFF8EE)),
+                    SpecularGlassCard(
+                        cornerRadius = 20.dp,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 20.dp)
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 26.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
                                 text = if (searchQuery.isNotBlank()) "未找到匹配的 AI 好友或群聊" else "还没有添加 AI 好友",
-                                fontSize = 15.sp,
+                                fontSize = 15.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color(0xFFFFF8EE)
                             )
                             Text(
-                                text = "每个 AI 都可以拥有独立性格、职责与记忆，还能拉多个 AI 组建协作群聊",
+                                text = "每个 AI 都拥有独立性格、职责与记忆，还能拉多位 AI 组建协作群聊",
                                 fontSize = 12.5.sp,
                                 lineHeight = 18.sp,
                                 color = Color(0xFF94A3B8),
@@ -338,33 +296,19 @@ fun ImChatsTabScreen(
                             )
                             if (searchQuery.isBlank()) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Surface(
-                                        onClick = onCreateFriend,
-                                        shape = RoundedCornerShape(999.dp),
-                                        color = Color(0xFFF2B880)
-                                    ) {
-                                        Text(
-                                            text = "+ 添加 AI 好友",
-                                            fontSize = 12.5.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFF090C16),
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                                        )
-                                    }
+                                    TactilePrimaryButton(
+                                        text = "+ 添加 AI 好友",
+                                        cornerRadius = 999.dp,
+                                        minHeight = 38.dp,
+                                        onClick = onCreateFriend
+                                    )
                                     if (bots.size >= 2) {
-                                        Surface(
-                                            onClick = onCreateGroup,
-                                            shape = RoundedCornerShape(999.dp),
-                                            color = Color(0xFF131B33),
-                                            border = BorderStroke(1.dp, Color(0x29FFF8EE))
-                                        ) {
-                                            Text(
-                                                text = "发起群聊",
-                                                fontSize = 12.5.sp,
-                                                color = Color(0xFFE2E8F0),
-                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                                            )
-                                        }
+                                        TactileSecondaryButton(
+                                            text = "发起群聊",
+                                            cornerRadius = 999.dp,
+                                            minHeight = 38.dp,
+                                            onClick = onCreateGroup
+                                        )
                                     }
                                 }
                             }
@@ -378,7 +322,17 @@ fun ImChatsTabScreen(
                 var showContextMenu by remember { mutableStateOf(false) }
                 val isStreamingThisBot = isStreaming && activeBotId == bot.id
                 val liveState = bot.liveState(isStreamingThisBot)
-                val rowBg = if (bot.isPinned) Color(0x660E152A) else Color.Transparent
+                val interaction = remember { MutableInteractionSource() }
+                val pressed by interaction.collectIsPressedAsState()
+                val rowBg by animateColorAsState(
+                    targetValue = when {
+                        pressed -> Color(0x73182344)
+                        bot.isPinned -> Color(0x400F172E)
+                        else -> Color.Transparent
+                    },
+                    animationSpec = tween(100),
+                    label = "chatRowBg"
+                )
 
                 Box(modifier = Modifier.fillMaxWidth()) {
                     Column(
@@ -386,6 +340,8 @@ fun ImChatsTabScreen(
                             .fillMaxWidth()
                             .background(rowBg)
                             .combinedClickable(
+                                interactionSource = interaction,
+                                indication = null,
                                 onClick = { onOpenChat(bot.id) },
                                 onLongClick = {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -400,64 +356,19 @@ fun ImChatsTabScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(13.dp)
                         ) {
-                            // Avatar (WeChat Rounded-Square Cluster for Groups, Living Spirit + Status Dot for Friends)
                             Box(modifier = Modifier.size(50.dp)) {
-                                if (bot.isGroup) {
-                                    Surface(
-                                        shape = RoundedCornerShape(14.dp),
-                                        color = Color(0xFF111932),
-                                        border = BorderStroke(1.dp, Color(0x28FFF8EE)),
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            GrokBotGroupCluster(
-                                                members = bot.resolveGroupMembers(bots),
-                                                fallbackStyle = bot.avatarStyle,
-                                                state = liveState,
-                                                size = 44.dp,
-                                                interactive = false
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    Surface(
-                                        shape = RoundedCornerShape(14.dp),
-                                        color = Color(0xFF0E152B),
-                                        border = BorderStroke(1.dp, Color(0x22FFF8EE)),
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            GrokBotAvatar(
-                                                avatarStyle = bot.avatarStyle,
-                                                state = liveState,
-                                                size = 44.dp,
-                                                interactive = false,
-                                                seedKey = bot.id
-                                            )
-                                        }
-                                    }
-                                    // Live Presence Dot (Online / Thinking / Working / Blocked)
-                                    val dotColor = when (liveState) {
-                                        "working" -> Color(0xFFF2B880)
-                                        "thinking" -> Color(0xFFFBBF24)
-                                        "blocked" -> Color(0xFFFB7185)
-                                        else -> Color(0xFF34D399)
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomEnd)
-                                            .offset(x = 2.dp, y = 2.dp)
-                                            .size(12.dp)
-                                            .background(Color(0xFF050811), CircleShape)
-                                            .padding(2.dp)
-                                            .background(dotColor, CircleShape)
-                                    )
-                                }
+                                SpiritSquircleAvatar(
+                                    bot = bot,
+                                    allBots = bots,
+                                    state = liveState,
+                                    containerSize = 50.dp,
+                                    cornerRadius = 15.dp,
+                                    showPresenceDot = true
+                                )
 
                                 if (bot.unreadCount > 0) {
-                                    ImUnreadBadge(
+                                    CrispUnreadBadge(
                                         count = bot.unreadCount,
-                                        noPadStyle = noPadStyle,
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
                                             .offset(x = 4.dp, y = (-4).dp)
@@ -465,7 +376,6 @@ fun ImChatsTabScreen(
                                 }
                             }
 
-                            // Name, Tag, Timestamp & Last Message Preview
                             Column(
                                 modifier = Modifier.weight(1f),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -488,43 +398,27 @@ fun ImChatsTabScreen(
                                                 fontSize = 15.5.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = Color(0xFFFFF8EE),
-                                                platformStyle = noPadStyle
+                                                platformStyle = NoFontPaddingStyle
                                             ),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
 
-                                        Surface(
-                                            shape = RoundedCornerShape(5.dp),
-                                            color = if (bot.isGroup) Color(0x24F2B880) else Color(0x1FFFFFFF),
-                                            border = BorderStroke(
-                                                0.5.dp,
-                                                if (bot.isGroup) Color(0x59F2B880) else Color(0x28FFF8EE)
-                                            )
-                                        ) {
-                                            Text(
-                                                text = if (bot.isGroup) {
-                                                    "群聊"
-                                                } else {
-                                                    bot.modeBadgeLabel()
-                                                },
-                                                style = TextStyle(
-                                                    fontSize = 9.5.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = if (bot.isGroup) Color(0xFFFFE2BE) else Color(0xFF94A3B8),
-                                                    platformStyle = noPadStyle
-                                                ),
-                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
-                                            )
-                                        }
+                                        ImMicroTag(
+                                            text = if (bot.isGroup) "群聊" else bot.modeBadgeLabel(),
+                                            bgColor = if (bot.isGroup) Color(0x26F2B880) else Color(0x16FFFFFF),
+                                            borderColor = if (bot.isGroup) Color(0x52F2B880) else Color(0x22FFF8EE),
+                                            textColor = if (bot.isGroup) Color(0xFFFFE2BE) else Color(0xFF94A3B8)
+                                        )
 
                                         if (bot.isPinned) {
                                             Text(
                                                 text = "置顶",
                                                 style = TextStyle(
                                                     fontSize = 9.5.sp,
+                                                    fontWeight = FontWeight.Medium,
                                                     color = Color(0xFFF2B880),
-                                                    platformStyle = noPadStyle
+                                                    platformStyle = NoFontPaddingStyle
                                                 )
                                             )
                                         }
@@ -535,7 +429,7 @@ fun ImChatsTabScreen(
                                             text = formatImTime(bot.updatedAt),
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 11.sp,
-                                            color = Color(0xFF64748B)
+                                            color = Color(0xFF5D6D89)
                                         )
                                     }
                                 }
@@ -562,7 +456,7 @@ fun ImChatsTabScreen(
                                     text = annotatedSnippet,
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp,
-                                    color = if (bot.unreadCount > 0) Color(0xFFCBD5E1) else Color(0xFF8C9AB6),
+                                    color = if (bot.unreadCount > 0) Color(0xFFD8E0F0) else Color(0xFF8493AE),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -572,42 +466,33 @@ fun ImChatsTabScreen(
                         if (index < sortedBots.lastIndex) {
                             HorizontalDivider(
                                 thickness = 0.5.dp,
-                                color = Color(0x16FFF8EE),
-                                modifier = Modifier.padding(start = 79.dp)
+                                color = Color(0x13FFF8EE),
+                                modifier = Modifier.padding(start = 79.dp, end = 16.dp)
                             )
                         }
                     }
 
-                    DropdownMenu(
+                    FloatingGlassPopover(
                         expanded = showContextMenu,
                         onDismissRequest = { showContextMenu = false },
-                        modifier = Modifier.background(Color(0xFF10172C))
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = if (bot.isPinned) "取消置顶" else "置顶该聊天",
-                                    color = Color(0xFFFFF8EE)
-                                )
-                            },
-                            onClick = {
-                                showContextMenu = false
-                                onTogglePinBot(bot)
-                            }
+                        alignment = Alignment.TopEnd,
+                        offsetX = (-14).dp,
+                        offsetY = 44.dp,
+                        items = listOf(
+                            GlassMenuAction(
+                                label = if (bot.isPinned) "取消置顶" else "置顶该聊天",
+                                icon = Icons.Default.PushPin,
+                                iconTint = Color(0xFFF2B880),
+                                onClick = { onTogglePinBot(bot) }
+                            ),
+                            GlassMenuAction(
+                                label = if (bot.isGroup) "查看群聊资料" else "查看好友资料卡",
+                                icon = Icons.Default.AccountBox,
+                                iconTint = Color(0xFFA5B4FC),
+                                onClick = { onOpenBotProfile(bot) }
+                            )
                         )
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = if (bot.isGroup) "查看群资料" else "查看好友资料卡",
-                                    color = Color(0xFFFFF8EE)
-                                )
-                            },
-                            onClick = {
-                                showContextMenu = false
-                                onOpenBotProfile(bot)
-                            }
-                        )
-                    }
+                    )
                 }
             }
         }
@@ -615,28 +500,27 @@ fun ImChatsTabScreen(
 }
 
 @Composable
-private fun ImUnreadBadge(
-    count: Int,
-    noPadStyle: PlatformTextStyle,
-    modifier: Modifier = Modifier
+private fun ImMicroTag(
+    text: String,
+    bgColor: Color,
+    borderColor: Color,
+    textColor: Color
 ) {
+    val shape = RoundedCornerShape(5.dp)
     Box(
-        modifier = modifier
-            .defaultMinSize(minWidth = 17.dp, minHeight = 17.dp)
-            .height(17.dp)
-            .background(Color(0xFFF43F5E), RoundedCornerShape(999.dp))
-            .padding(horizontal = 4.5.dp),
-        contentAlignment = Alignment.Center
+        modifier = Modifier
+            .clip(shape)
+            .background(bgColor, shape)
+            .border(0.5.dp, borderColor, shape)
+            .padding(horizontal = 5.dp, vertical = 1.5.dp)
     ) {
         Text(
-            text = if (count > 99) "99+" else count.toString(),
+            text = text,
             style = TextStyle(
-                fontSize = 10.sp,
-                lineHeight = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                platformStyle = noPadStyle
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = textColor,
+                platformStyle = NoFontPaddingStyle
             ),
             maxLines = 1
         )

@@ -221,6 +221,12 @@ func (s *Store) DeleteBotMessage(botID string, msgID int64) error {
 	return err
 }
 
+func (s *Store) DeleteBotMessagesAfterID(botID, threadID string, afterID int64) error {
+	_, err := s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ? AND COALESCE(thread_id,'') = ? AND id > ?`,
+		strings.TrimSpace(botID), strings.TrimSpace(threadID), afterID)
+	return err
+}
+
 func (s *Store) ClearBotMessages(botID string) error {
 	_, err := s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ?`, botID)
 	return err

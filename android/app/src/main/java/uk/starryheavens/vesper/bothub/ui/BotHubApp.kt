@@ -327,9 +327,11 @@ fun BotHubApp(
                                 BotHubTab.HUB -> HubTabScreen(
                                     modifier = contentModifier,
                                     snapshot = viewModel.dashboard,
+                                    serverUrl = viewModel.serverUrl,
                                     onRunTask = viewModel::runTask,
                                     onToggleTask = viewModel::toggleTask,
                                     onSyncAssets = viewModel::syncAssets,
+                                    onOpenSettings = viewModel::openSettings,
                                     onOpenConsole = ::launchConsole
                                 )
                             }
