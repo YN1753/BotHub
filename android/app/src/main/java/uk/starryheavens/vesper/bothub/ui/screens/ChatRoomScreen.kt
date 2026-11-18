@@ -8,6 +8,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -50,6 +52,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,10 +60,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -128,6 +135,7 @@ fun ChatRoomScreen(
     BackHandler(onBack = onBack)
 
     val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var showPlusDrawer by remember { mutableStateOf(false) }
     var composerFocused by remember { mutableStateOf(false) }
@@ -138,11 +146,41 @@ fun ChatRoomScreen(
     val groupMembers = remember(activeBot, allBots) {
         if (isGroup && activeBot != null) activeBot.resolveGroupMembers(allBots) else emptyList()
     }
-    val lastAssistantId = messages.lastOrNull { it.role == "assistant" }?.id
+    val lastAssistantTurn = messages.lastOrNull { it.role == "assistant" }
+    val lastAssistantId = lastAssistantTurn?.id
+    val lastStreamLen = (lastAssistantTurn?.content?.length ?: 0) + (lastAssistantTurn?.reasoning?.length ?: 0)
+
+    val isNearBottom by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val total = info.totalItemsCount
+            if (total == 0) true
+            else {
+                val lastVisible = info.visibleItemsInfo.lastOrNull()
+                lastVisible != null && lastVisible.index >= total - 2
+            }
+        }
+    }
+
+    // 0ms instant jump to latest message on room entry (zero scroll-past-history lag)
+    LaunchedEffect(activeBot?.id) {
+        if (messages.isNotEmpty()) {
+            listState.scrollToItem(messages.lastIndex, 200_000)
+        }
+    }
 
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+        if (messages.isNotEmpty() && isNearBottom) {
+            listState.scrollToItem(messages.lastIndex, 200_000)
+        }
+    }
+
+    LaunchedEffect(isStreaming, lastStreamLen) {
+        if (isStreaming && messages.isNotEmpty() && isNearBottom && !listState.isScrollInProgress) {
+            delay(75L)
+            if (!listState.isScrollInProgress) {
+                listState.scrollToItem(messages.lastIndex, 200_000)
+            }
         }
     }
 
@@ -326,21 +364,25 @@ fun ChatRoomScreen(
             HorizontalDivider(thickness = 0.5.dp, color = Color(0x14FFF8EE))
         }
 
-        // 3. IM Message Bubble Stream
-        LazyColumn(
-            state = listState,
+        // 3. IM Message Bubble Stream + Floating Scroll-to-Bottom Pill
+        Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    if (showPlusDrawer) showPlusDrawer = false
-                },
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
         ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        if (showPlusDrawer) showPlusDrawer = false
+                    },
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
+            ) {
             // Pure, uncluttered empty chat state (Avatar + Name + Bio only — zero gimmick prompt buttons!)
             if (messages.isEmpty()) {
                 item(key = "__chat_welcome__") {
@@ -509,7 +551,7 @@ fun ChatRoomScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .animateContentSize(),
+                                .then(if (!isLiveTurn) Modifier.animateContentSize() else Modifier),
                             horizontalArrangement = Arrangement.spacedBy(9.dp),
                             verticalAlignment = Alignment.Top
                         ) {
@@ -692,12 +734,53 @@ fun ChatRoomScreen(
                                         }
                                     }
 
-                                    if (isLatestReply && msg.content.isNotEmpty()) {
+                                    val hasTurnError = !isLiveTurn && (
+                                        msg.content.startsWith("[请求异常]") ||
+                                            msg.content.contains("\n[中断:")
+                                        )
+
+                                    if ((isLatestReply || hasTurnError) && msg.content.isNotEmpty()) {
                                         Row(
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier.padding(start = 4.dp, top = 1.dp)
                                         ) {
+                                            if (hasTurnError) {
+                                                val prevUserPrompt = remember(messages, msg.id) {
+                                                    val idx = messages.indexOfFirst { it.id == msg.id }
+                                                    if (idx > 0) {
+                                                        messages.subList(0, idx).lastOrNull { it.role == "user" }?.content.orEmpty()
+                                                    } else {
+                                                        ""
+                                                    }
+                                                }
+                                                if (prevUserPrompt.isNotBlank()) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                        modifier = Modifier
+                                                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                                                onSendPrompt(prevUserPrompt)
+                                                            }
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Refresh,
+                                                            contentDescription = "重试",
+                                                            tint = Color(0xFFF2B880),
+                                                            modifier = Modifier.size(12.dp)
+                                                        )
+                                                        Text(
+                                                            text = "重试",
+                                                            fontSize = 10.5.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = Color(0xFFF2B880),
+                                                            maxLines = 1,
+                                                            softWrap = false
+                                                        )
+                                                    }
+                                                }
+                                            }
+
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(3.dp),
@@ -775,6 +858,63 @@ fun ChatRoomScreen(
                             }
                         }
                     }
+                }
+            }
+            }
+
+            // Floating "回到底部" Glass Pill when scrolled up
+            androidx.compose.animation.AnimatedVisibility(
+                visible = !isNearBottom && messages.size > 3,
+                enter = fadeIn(tween(140)) + scaleIn(tween(140), initialScale = 0.88f),
+                exit = fadeOut(tween(120)) + scaleOut(tween(120), targetScale = 0.88f),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 14.dp, bottom = 12.dp)
+            ) {
+                val pillShape = RoundedCornerShape(999.dp)
+                Row(
+                    modifier = Modifier
+                        .shadow(8.dp, pillShape, ambientColor = Color(0xAA000000))
+                        .tactileClickable(pressedScale = 0.92f, hapticOnTap = true) {
+                            scope.launch {
+                                if (messages.isNotEmpty()) {
+                                    listState.animateScrollToItem(messages.lastIndex)
+                                }
+                            }
+                        }
+                        .clip(pillShape)
+                        .background(
+                            Brush.verticalGradient(listOf(Color(0xF2192444), Color(0xF20D1326))),
+                            pillShape
+                        )
+                        .border(
+                            BorderStroke(
+                                0.85.dp,
+                                specularRimBrush(Color(0x78F2B880), Color(0x2CF2B880), Color.Transparent)
+                            ),
+                            pillShape
+                        )
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = "回到底部",
+                        tint = Color(0xFFFFE2BE),
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = if (isStreaming) "新回复" else "回到底部",
+                        style = TextStyle(
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFFFF8EE),
+                            platformStyle = NoFontPaddingStyle
+                        ),
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
             }
         }

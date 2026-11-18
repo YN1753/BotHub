@@ -44,12 +44,12 @@ import uk.starryheavens.vesper.bothub.data.AssetItem
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.TaskItem
 import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
-import uk.starryheavens.vesper.bothub.ui.components.MetricMiniCard
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
 import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
 import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.TactileSegmentedControl
 import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
 
 @Composable
@@ -70,279 +70,281 @@ fun HubTabScreen(
     onDeleteAsset: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val assets = snapshot?.assets ?: emptyList()
+    val tasks = snapshot?.tasks ?: emptyList()
     val expiringCount = snapshot?.expiringCount ?: 0
+    val activeTasksCount = snapshot?.activeTasks ?: tasks.count { it.enabled }
+
+    var selectedSegment by remember { mutableStateOf(0) }
     var showAssetSheet by remember { mutableStateOf(false) }
     var editingAsset by remember { mutableStateOf<AssetItem?>(null) }
 
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // 1. Summary Tiles
-        item(key = "__hub_metrics__") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MetricMiniCard(
-                    modifier = Modifier.weight(1f),
-                    label = "资产总数",
-                    value = (snapshot?.totalAssets ?: 0).toString(),
-                    accentColor = Color(0xFFFFE2BE)
-                )
-                MetricMiniCard(
-                    modifier = Modifier.weight(1f),
-                    label = "7天临期",
-                    value = expiringCount.toString(),
-                    accentColor = if (expiringCount > 0) Color(0xFFFBBF24) else Color(0xFF34D399)
-                )
-                MetricMiniCard(
-                    modifier = Modifier.weight(1f),
-                    label = "定时任务",
-                    value = (snapshot?.activeTasks ?: 0).toString(),
-                    accentColor = Color(0xFFA5B4FC)
-                )
-            }
-        }
+    Column(modifier = modifier) {
+        TactileSegmentedControl(
+            options = listOf(
+                "资产 (${assets.size})",
+                "定时任务 ($activeTasksCount/${tasks.size})"
+            ),
+            selectedIndex = selectedSegment,
+            onSelect = { selectedSegment = it },
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+        )
 
-        // 2. Section 1: Assets (Native Add / Edit / Delete right on tap!)
-        item(key = "__hub_assets_hdr__") {
-            Spacer(modifier = Modifier.height(2.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "资产",
-                    fontSize = 15.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFF8EE),
-                    maxLines = 1,
-                    softWrap = false
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TactileSecondaryButton(
-                        text = "添加",
-                        leadingIcon = Icons.Default.Add,
-                        cornerRadius = 999.dp,
-                        minHeight = 33.dp,
-                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
-                        onClick = {
-                            editingAsset = null
-                            showAssetSheet = true
-                        }
-                    )
-                    TactileSecondaryButton(
-                        text = "同步",
-                        leadingIcon = Icons.Default.Refresh,
-                        accent = true,
-                        cornerRadius = 999.dp,
-                        minHeight = 33.dp,
-                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
-                        onClick = onSyncAssets
-                    )
-                }
-            }
-        }
-
-        val assets = snapshot?.assets ?: emptyList()
-        if (assets.isEmpty()) {
-            item(key = "__hub_assets_empty__") {
-                SpecularGlassCard(
-                    cornerRadius = 16.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "暂无记录",
-                        fontSize = 13.sp,
-                        color = Color(0xFF94A3B8),
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-            }
-        }
-
-        items(assets, key = { it.id }) { asset ->
-            val isPermanent = asset.dueDate.startsWith("2099") || asset.daysLeft > 3650
-            val isMultiYear = !isPermanent && asset.daysLeft > 365
-            val barColor = when {
-                isPermanent || isMultiYear -> Color(0xFF34D399)
-                asset.daysLeft <= 7 -> Color(0xFFFB7185)
-                asset.daysLeft <= 30 -> Color(0xFFFBBF24)
-                else -> Color(0xFFF2B880)
-            }
-            val progressFraction = when {
-                isPermanent -> 1f
-                asset.daysLeft <= 0 -> 0.04f
-                else -> (asset.daysLeft.toFloat() / 365f).coerceIn(0.06f, 1f)
-            }
-
-            SpecularGlassCard(
-                cornerRadius = 18.dp,
-                accentTint = if (asset.isExpiringSoon && !isPermanent) barColor else null,
-                onClick = {
-                    editingAsset = asset
-                    showAssetSheet = true
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (selectedSegment == 0) {
+                item(key = "__hub_assets_hdr__") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = asset.name,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFFFF8EE),
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(end = 10.dp)
-                        )
-                        CrispTagPill(
-                            text = if (isPermanent) "长期" else asset.dueBadgeLabel,
-                            bgColor = barColor.copy(alpha = 0.14f),
-                            borderColor = barColor.copy(alpha = 0.42f),
-                            textColor = barColor
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = listOf(asset.spec, asset.price)
-                                .filter { it.isNotBlank() }
-                                .joinToString(" · ")
-                                .ifEmpty { "—" },
-                            fontSize = 12.5.sp,
-                            color = Color(0xFF8C9BB5),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(end = 12.dp)
-                        )
-                        if (!isPermanent && asset.dueDate.isNotEmpty()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Text(
-                                text = asset.dueDate.take(10),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                color = Color(0xFF5D6D89),
+                                text = "共 ${assets.size} 项",
+                                fontSize = 12.5.sp,
+                                color = Color(0xFF94A3B8),
                                 maxLines = 1,
                                 softWrap = false
                             )
+                            CrispTagPill(
+                                text = if (expiringCount > 0) "${expiringCount}项临期" else "状态正常",
+                                bgColor = if (expiringCount > 0) Color(0x26FBBF24) else Color(0x2234D399),
+                                borderColor = if (expiringCount > 0) Color(0x52FBBF24) else Color(0x4734D399),
+                                textColor = if (expiringCount > 0) Color(0xFFFDE68A) else Color(0xFFA7F3D0)
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TactileSecondaryButton(
+                                text = "添加",
+                                leadingIcon = Icons.Default.Add,
+                                cornerRadius = 999.dp,
+                                minHeight = 32.dp,
+                                contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
+                                onClick = {
+                                    editingAsset = null
+                                    showAssetSheet = true
+                                }
+                            )
+                            TactileSecondaryButton(
+                                text = "同步",
+                                leadingIcon = Icons.Default.Refresh,
+                                accent = true,
+                                cornerRadius = 999.dp,
+                                minHeight = 32.dp,
+                                contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
+                                onClick = onSyncAssets
+                            )
                         }
                     }
+                }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(3.5.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(Color(0xFF141C34))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(progressFraction)
-                                .height(3.5.dp)
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(
-                                    Brush.horizontalGradient(
-                                        listOf(barColor.copy(alpha = 0.72f), barColor)
-                                    )
-                                )
-                        )
+                if (assets.isEmpty()) {
+                    item(key = "__hub_assets_empty__") {
+                        SpecularGlassCard(
+                            cornerRadius = 16.dp,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "暂无资产记录，点击右上角「添加」录入到期提醒",
+                                fontSize = 13.sp,
+                                color = Color(0xFF94A3B8),
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
                     }
                 }
-            }
-        }
 
-        // 3. Section 2: Scheduled Tasks
-        item(key = "__hub_tasks_hdr__") {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "定时任务",
-                fontSize = 15.5.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFFFFF8EE),
-                maxLines = 1,
-                softWrap = false
-            )
-        }
-
-        val tasks = snapshot?.tasks ?: emptyList()
-        items(tasks, key = { it.id }) { task ->
-            SpecularGlassCard(
-                cornerRadius = 18.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = task.name,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (task.enabled) Color(0xFFFFF8EE) else Color(0xFF8C9BB5),
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(end = 10.dp)
-                        )
-                        TactileToggle(
-                            checked = task.enabled,
-                            onCheckedChange = { checked -> onToggleTask(task, checked) }
-                        )
+                items(assets, key = { it.id }) { asset ->
+                    val isPermanent = asset.dueDate.startsWith("2099") || asset.daysLeft > 3650
+                    val isMultiYear = !isPermanent && asset.daysLeft > 365
+                    val barColor = when {
+                        isPermanent || isMultiYear -> Color(0xFF34D399)
+                        asset.daysLeft <= 7 -> Color(0xFFFB7185)
+                        asset.daysLeft <= 30 -> Color(0xFFFBBF24)
+                        else -> Color(0xFFF2B880)
+                    }
+                    val progressFraction = when {
+                        isPermanent -> 1f
+                        asset.daysLeft <= 0 -> 0.04f
+                        else -> (asset.daysLeft.toFloat() / 365f).coerceIn(0.06f, 1f)
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    SpecularGlassCard(
+                        cornerRadius = 17.dp,
+                        accentTint = if (asset.isExpiringSoon && !isPermanent) barColor else null,
+                        onClick = {
+                            editingAsset = asset
+                            showAssetSheet = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = task.formattedSchedule(),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.5.sp,
-                            color = Color(0xFF8C9BB5),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(end = 10.dp)
-                        )
+                        Column(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                            verticalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = asset.name,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFFFFF8EE),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 10.dp)
+                                )
+                                CrispTagPill(
+                                    text = if (isPermanent) "长期" else asset.dueBadgeLabel,
+                                    bgColor = barColor.copy(alpha = 0.14f),
+                                    borderColor = barColor.copy(alpha = 0.42f),
+                                    textColor = barColor
+                                )
+                            }
 
-                        TactileSecondaryButton(
-                            text = "运行",
-                            leadingIcon = Icons.Default.PlayArrow,
-                            accent = true,
-                            cornerRadius = 999.dp,
-                            minHeight = 33.dp,
-                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
-                            onClick = { onRunTask(task) }
-                        )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = listOf(asset.spec, asset.price)
+                                        .filter { it.isNotBlank() }
+                                        .joinToString(" · ")
+                                        .ifEmpty { "点击编辑详情" },
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF8C9BB5),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 12.dp)
+                                )
+                                if (!isPermanent && asset.dueDate.isNotEmpty()) {
+                                    Text(
+                                        text = asset.dueDate.take(10),
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF5D6D89),
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(Color(0xFF141C34))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(progressFraction)
+                                        .height(3.dp)
+                                        .clip(RoundedCornerShape(999.dp))
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                listOf(barColor.copy(alpha = 0.72f), barColor)
+                                            )
+                                        )
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                if (tasks.isEmpty()) {
+                    item(key = "__hub_tasks_empty__") {
+                        SpecularGlassCard(
+                            cornerRadius = 16.dp,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "暂无定时任务",
+                                fontSize = 13.sp,
+                                color = Color(0xFF94A3B8),
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
+                }
+
+                items(tasks, key = { it.id }) { task ->
+                    SpecularGlassCard(
+                        cornerRadius = 17.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                            verticalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = task.name,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (task.enabled) Color(0xFFFFF8EE) else Color(0xFF8C9BB5),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 10.dp)
+                                )
+                                TactileToggle(
+                                    checked = task.enabled,
+                                    onCheckedChange = { checked -> onToggleTask(task, checked) }
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = task.formattedSchedule(),
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.5.sp,
+                                    color = Color(0xFF8C9BB5),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 10.dp)
+                                )
+
+                                TactileSecondaryButton(
+                                    text = "运行",
+                                    leadingIcon = Icons.Default.PlayArrow,
+                                    accent = true,
+                                    cornerRadius = 999.dp,
+                                    minHeight = 31.dp,
+                                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
+                                    onClick = { onRunTask(task) }
+                                )
+                            }
+                        }
                     }
                 }
             }

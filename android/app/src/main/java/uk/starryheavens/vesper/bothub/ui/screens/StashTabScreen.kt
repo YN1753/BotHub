@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
@@ -47,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -83,15 +85,15 @@ fun StashTabScreen(
     onAskAi: (StashItemUi) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val clipboard = LocalClipboardManager.current
     var captureInput by remember { mutableStateOf("") }
     var captureNote by remember { mutableStateOf("") }
 
     val filters = listOf(
-        "unread" to "未读",
         "all" to "全部",
+        "unread" to "未读",
         "pinned" to "置顶",
-        "note" to "闪念",
-        "archived" to "归档"
+        "note" to "闪念"
     )
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -118,10 +120,36 @@ fun StashTabScreen(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "快速添加收藏",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFFFF8EE)
+                        )
+                        TactileSecondaryButton(
+                            text = "粘贴剪贴板",
+                            leadingIcon = Icons.Default.ContentPaste,
+                            accent = true,
+                            cornerRadius = 999.dp,
+                            minHeight = 29.dp,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            onClick = {
+                                val clip = clipboard.getText()?.text?.trim().orEmpty()
+                                if (clip.isNotEmpty()) {
+                                    captureInput = clip
+                                }
+                            }
+                        )
+                    }
                     ObsidianGlassInput(
                         value = captureInput,
                         onValueChange = { captureInput = it },
-                        placeholder = "粘贴链接、B站分享文案或输入随手闪念...",
+                        placeholder = "输入链接、分享文案或随手笔记...",
                         singleLine = false,
                         maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
@@ -134,12 +162,12 @@ fun StashTabScreen(
                         ObsidianGlassInput(
                             value = captureNote,
                             onValueChange = { captureNote = it },
-                            placeholder = "个人附注 (可选)",
+                            placeholder = "备注 (可选)",
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
                         TactilePrimaryButton(
-                            text = "投喂提炼",
+                            text = "保存",
                             enabled = captureInput.isNotBlank(),
                             minHeight = 46.dp,
                             onClick = {
@@ -273,16 +301,11 @@ fun StashTabScreen(
                                     )
                                 }
                                 if (item.pinned) {
-                                    Text(
-                                        text = "置顶",
-                                        style = TextStyle(
-                                            fontSize = 10.5.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFFFBBF24),
-                                            platformStyle = NoFontPaddingStyle
-                                        ),
-                                        maxLines = 1,
-                                        softWrap = false
+                                    Icon(
+                                        imageVector = Icons.Default.Bookmark,
+                                        contentDescription = "已置顶",
+                                        tint = Color(0xFFFBBF24),
+                                        modifier = Modifier.size(12.dp)
                                     )
                                 }
                                 if (item.status == "processing") {
@@ -431,20 +454,20 @@ fun StashTabScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 TactilePrimaryButton(
-                                    text = if (item.url.isNotEmpty()) "打开原链" else "标为已阅",
+                                    text = if (item.url.isNotEmpty()) "打开链接" else "标为已读",
                                     leadingIcon = if (item.url.isNotEmpty()) Icons.Default.OpenInNew else null,
                                     cornerRadius = 12.dp,
-                                    minHeight = 40.dp,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
+                                    minHeight = 38.dp,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                     onClick = { onOpenUrl(item) },
                                     modifier = Modifier.weight(1f)
                                 )
 
                                 TactileSecondaryButton(
-                                    text = "AI 深聊",
+                                    text = "发到聊天",
                                     cornerRadius = 12.dp,
-                                    minHeight = 40.dp,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
+                                    minHeight = 38.dp,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                     onClick = { onAskAi(item) },
                                     modifier = Modifier.weight(1f)
                                 )
@@ -456,12 +479,14 @@ fun StashTabScreen(
                                     onClick = { onTogglePin(item) }
                                 )
 
-                                CompactStashIconBtn(
-                                    icon = Icons.Default.Refresh,
-                                    tint = Color(0xFFCBD5E1),
-                                    contentDescription = "重新提炼",
-                                    onClick = { onReprocess(item) }
-                                )
+                                if (item.status == "failed" || item.aiTldr.isEmpty()) {
+                                    CompactStashIconBtn(
+                                        icon = Icons.Default.Refresh,
+                                        tint = Color(0xFFCBD5E1),
+                                        contentDescription = "重新提炼",
+                                        onClick = { onReprocess(item) }
+                                    )
+                                }
 
                                 CompactStashIconBtn(
                                     icon = Icons.Default.DeleteOutline,

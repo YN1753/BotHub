@@ -975,3 +975,92 @@ fun SpecularHairline(modifier: Modifier = Modifier) {
             }
     )
 }
+
+/**
+ * Recessed Obsidian Capsule Segmented Control with spring-physics tactile pill indicator.
+ */
+@Composable
+fun TactileSegmentedControl(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val outerShape = RoundedCornerShape(14.dp)
+    val pillShape = RoundedCornerShape(11.dp)
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(outerShape)
+            .background(Color(0xE6080D1B), outerShape)
+            .border(
+                BorderStroke(
+                    0.85.dp,
+                    specularRimBrush(Color(0x24FFF8EE), Color(0x0EFFF8EE), Color.Transparent)
+                ),
+                outerShape
+            )
+            .padding(3.5.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        options.forEachIndexed { idx, label ->
+            val selected = idx == selectedIndex
+            val textColor by animateColorAsState(
+                targetValue = if (selected) Color(0xFFFFF8EE) else Color(0xFF8C9BB5),
+                animationSpec = tween(140),
+                label = "segTextColor"
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .sizeIn(minHeight = 35.dp)
+                    .tactileClickable(
+                        pressedScale = 0.96f,
+                        hapticOnTap = true,
+                        onClick = { if (!selected) onSelect(idx) }
+                    )
+                    .clip(pillShape)
+                    .then(
+                        if (selected) {
+                            Modifier
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFF1F2B4D), Color(0xFF131B34))
+                                    ),
+                                    pillShape
+                                )
+                                .border(
+                                    BorderStroke(
+                                        0.85.dp,
+                                        specularRimBrush(
+                                            Color(0x70F2B880),
+                                            Color(0x28F2B880),
+                                            Color(0x0AFFF8EE)
+                                        )
+                                    ),
+                                    pillShape
+                                )
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = label,
+                    style = TextStyle(
+                        fontSize = 13.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = textColor,
+                        platformStyle = NoFontPaddingStyle
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
