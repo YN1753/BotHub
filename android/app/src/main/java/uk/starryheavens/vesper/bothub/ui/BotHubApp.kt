@@ -71,6 +71,7 @@ fun BotHubApp(
     prefs: BotHubPrefs,
     api: BotHubApiClient,
     sharedText: String? = null,
+    sharedAutoSend: Boolean = false,
     onSharedTextConsumed: () -> Unit = {},
     requestedTab: BotHubTab? = null,
     onRequestedTabConsumed: () -> Unit = {},
@@ -146,11 +147,12 @@ fun BotHubApp(
         viewModel.handlePairPayload(payload.first, payload.second)
     }
 
-    LaunchedEffect(sharedText) {
+    LaunchedEffect(sharedText, sharedAutoSend) {
         if (!sharedText.isNullOrBlank()) {
             val captured = sharedText
+            val autoSend = sharedAutoSend
             onSharedTextConsumed()
-            viewModel.handleSharedText(captured)
+            viewModel.handleSharedText(captured, autoSend = autoSend)
         }
     }
 

@@ -31,6 +31,7 @@ import uk.starryheavens.vesper.bothub.ui.theme.VesperBotHubTheme
 class MainActivity : FragmentActivity() {
 
     private var sharedTextState by mutableStateOf<String?>(null)
+    private var sharedAutoSendState by mutableStateOf(false)
     private var requestedTabState by mutableStateOf<BotHubTab?>(null)
     private var requestedNotificationIdState by mutableStateOf<Long?>(null)
     private var requestedBotIdState by mutableStateOf<String?>(null)
@@ -60,7 +61,11 @@ class MainActivity : FragmentActivity() {
                     prefs = prefs,
                     api = api,
                     sharedText = sharedTextState,
-                    onSharedTextConsumed = { sharedTextState = null },
+                    sharedAutoSend = sharedAutoSendState,
+                    onSharedTextConsumed = {
+                        sharedTextState = null
+                        sharedAutoSendState = false
+                    },
                     requestedTab = requestedTabState,
                     onRequestedTabConsumed = { requestedTabState = null },
                     requestedNotificationId = requestedNotificationIdState,
@@ -111,13 +116,16 @@ class MainActivity : FragmentActivity() {
         val deepChat = intent.getStringExtra(AppIntents.EXTRA_DEEP_CHAT_TEXT)?.trim()
         if (!deepChat.isNullOrEmpty()) {
             sharedTextState = deepChat
+            sharedAutoSendState = intent.getBooleanExtra(AppIntents.EXTRA_DEEP_CHAT_AUTO_SEND, false)
             intent.removeExtra(AppIntents.EXTRA_DEEP_CHAT_TEXT)
+            intent.removeExtra(AppIntents.EXTRA_DEEP_CHAT_AUTO_SEND)
             return
         }
 
-        val shared = AppIntents.extractSharedText(intent)
+        val shared = AppIntents.extractSharedText(intent, this)
         if (shared.isNotEmpty()) {
             sharedTextState = shared
+            sharedAutoSendState = false
             intent.removeExtra(Intent.EXTRA_TEXT)
             intent.removeExtra(Intent.EXTRA_SUBJECT)
             return

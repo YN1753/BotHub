@@ -53,7 +53,6 @@ import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
 import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.ZeroClickCaptureRow
-import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 @Composable
@@ -70,28 +69,29 @@ fun QuickCaptureSheet(
     val theme = BotHubThemeTokens
     val scope = rememberCoroutineScope()
     val preview = remember(rawShared) { ShareTextParser.parse(rawShared) }
-    var noteInput by remember { mutableStateOf("") }
+    var noteInput by remember(rawShared) { mutableStateOf("") }
     var zeroClick by remember { mutableStateOf(prefs.zeroClickCaptureEnabled) }
-    var saving by remember { mutableStateOf(false) }
-    var savedMsg by remember { mutableStateOf("") }
-    var errorMsg by remember { mutableStateOf("") }
+    var saving by remember(rawShared) { mutableStateOf(false) }
+    var savingTodo by remember(rawShared) { mutableStateOf(false) }
+    var savedMsg by remember(rawShared) { mutableStateOf("") }
+    var errorMsg by remember(rawShared) { mutableStateOf("") }
 
     var hasToken by remember { mutableStateOf(prefs.isLikelyPaired) }
 
     fun submitCapture() {
-        if (saving || !hasToken) return
+        if (saving || savingTodo || !hasToken) return
         saving = true
         errorMsg = ""
         scope.launch {
             api.createStashItem(rawInput = rawShared, userNote = noteInput).fold(
                 onSuccess = { (_, deduplicated) ->
                     val toastText = if (deduplicated) {
-                        "该链接已在收藏匣，已合并最新批注"
+                        "该内容已在 BotHub 收藏匣，已合并批注"
                     } else {
-                        "已秒收入收藏匣，后台正异步提炼要点"
+                        "已收入 BotHub 收藏匣，后台正在提炼要点"
                     }
                     savedMsg = toastText
-                    delay(460L)
+                    delay(320L)
                     onSaved(toastText)
                 },
                 onFailure = { err ->
@@ -102,7 +102,39 @@ fun QuickCaptureSheet(
         }
     }
 
-    LaunchedEffect(Unit) {
+    fun submitTodo() {
+        if (saving || savingTodo || !hasToken) return
+        savingTodo = true
+        errorMsg = ""
+        val cleanTitle = preview.candidateTitle.ifBlank { rawShared.take(60) }.take(72)
+        val notesParts = buildList {
+            if (noteInput.isNotBlank()) add(noteInput.trim())
+            if (preview.extractedUrl.isNotBlank()) add(preview.extractedUrl)
+            if (rawShared.length > cleanTitle.length && preview.extractedUrl.isBlank()) {
+                add(rawShared.take(600))
+            }
+        }
+        scope.launch {
+            api.createTodo(
+                title = cleanTitle,
+                notes = notesParts.joinToString("\n\n"),
+                priority = "normal"
+            ).fold(
+                onSuccess = {
+                    val toastText = "已添加至 BotHub 个人待办"
+                    savedMsg = toastText
+                    delay(320L)
+                    onSaved(toastText)
+                },
+                onFailure = { err ->
+                    savingTodo = false
+                    errorMsg = err.message ?: "添加待办失败，请重试"
+                }
+            )
+        }
+    }
+
+    LaunchedEffect(rawShared) {
         val warmToken = withContext(Dispatchers.IO) { prefs.warmUpCredentials() }
         hasToken = warmToken.isNotEmpty()
         if (hasToken && prefs.zeroClickCaptureEnabled) {
@@ -112,6 +144,7 @@ fun QuickCaptureSheet(
 
     val scrimInteraction = remember { MutableInteractionSource() }
     val sheetInteraction = remember { MutableInteractionSource() }
+    val busy = saving || savingTodo
 
     Box(
         modifier = modifier
@@ -131,9 +164,9 @@ fun QuickCaptureSheet(
                     indication = null,
                     onClick = {}
                 ),
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
             color = theme.sheetBg,
-            border = BorderStroke(0.9.dp, specularRimBrush(theme.rimHighlight, theme.rimMid, Color.Transparent)),
+            border = BorderStroke(1.dp, theme.divider),
             tonalElevation = 0.dp
         ) {
             Column(
@@ -141,14 +174,14 @@ fun QuickCaptureSheet(
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .imePadding()
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .width(38.dp)
+                        .width(36.dp)
                         .height(4.dp)
-                        .background(theme.textMuted.copy(alpha = 0.42f), RoundedCornerShape(999.dp))
+                        .background(theme.textMuted.copy(alpha = 0.36f), RoundedCornerShape(999.dp))
                         .align(Alignment.CenterHorizontally)
                 )
 
@@ -167,18 +200,18 @@ fun QuickCaptureSheet(
                             allBots = emptyList(),
                             avatarStyleOverride = preview.kind.avatarStyle,
                             state = when {
-                                saving -> "working"
+                                busy -> "working"
                                 errorMsg.isNotEmpty() -> "blocked"
                                 noteInput.isNotEmpty() -> "thinking"
                                 else -> "idle"
                             },
-                            containerSize = 38.dp,
-                            cornerRadius = 12.dp,
+                            containerSize = 36.dp,
+                            cornerRadius = 10.dp,
                             interactive = true,
                             seedKey = "quick_capture"
                         )
                         Text(
-                            text = "快速收藏",
+                            text = "快速收藏到 BotHub",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = theme.textPrimary,
@@ -191,14 +224,14 @@ fun QuickCaptureSheet(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(theme.accent.copy(alpha = 0.14f))
-                            .border(0.5.dp, theme.accent.copy(alpha = 0.38f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                            .background(theme.accent.copy(alpha = 0.12f))
+                            .border(1.dp, theme.accent.copy(alpha = 0.30f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = preview.kind.shareHeaderLabel,
                             style = TextStyle(
-                                fontSize = 10.5.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = if (theme.isLight) theme.accentDeep else theme.accentLight,
                                 platformStyle = NoFontPaddingStyle
@@ -211,12 +244,12 @@ fun QuickCaptureSheet(
 
                 if (savedMsg.isNotEmpty()) {
                     SpecularGlassCard(
-                        cornerRadius = 14.dp,
+                        cornerRadius = 12.dp,
                         accentTint = Color(0xFF10B981),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
@@ -236,7 +269,7 @@ fun QuickCaptureSheet(
                 }
 
                 SpecularGlassCard(
-                    cornerRadius = 16.dp,
+                    cornerRadius = 12.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -255,7 +288,7 @@ fun QuickCaptureSheet(
                             Text(
                                 text = preview.extractedUrl,
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
+                                fontSize = 11.5.sp,
                                 color = theme.accent,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -280,7 +313,7 @@ fun QuickCaptureSheet(
                     ObsidianGlassInput(
                         value = noteInput,
                         onValueChange = { noteInput = it },
-                        placeholder = "随手批注一句想法，AI 提炼时一并参考 (可选)...",
+                        placeholder = "随手批注一句想法或提问 (可选)...",
                         singleLine = false,
                         maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
@@ -293,7 +326,7 @@ fun QuickCaptureSheet(
                             prefs.zeroClickCaptureEnabled = checked
                         },
                         title = "开启零点击秒收",
-                        subtitle = "下次系统分享自动入库并秒回原应用",
+                        subtitle = "下次系统分享自动入库并弹 Toast 提示",
                         compact = true
                     )
 
@@ -301,28 +334,36 @@ fun QuickCaptureSheet(
                         Text(
                             text = errorMsg,
                             fontSize = 12.sp,
-                            color = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFDA4AF)
+                            color = if (theme.isLight) Color(0xFFBE123C) else Color(0xFFFB7185)
                         )
                     }
+
+                    TactilePrimaryButton(
+                        text = if (saving) "正在收入收藏匣..." else "收入收藏匣",
+                        enabled = !busy,
+                        minHeight = 46.dp,
+                        onClick = { submitCapture() },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         TactileSecondaryButton(
-                            text = "发给 AI 深聊",
-                            enabled = !saving,
-                            minHeight = 46.dp,
-                            onClick = { onForwardDeepChat(noteInput.trim()) },
+                            text = if (savingTodo) "添加中..." else "转为待办",
+                            enabled = !busy,
+                            minHeight = 44.dp,
+                            onClick = { submitTodo() },
                             modifier = Modifier.weight(1f)
                         )
 
-                        TactilePrimaryButton(
-                            text = if (saving) "秒收中..." else "收入收藏匣",
-                            enabled = !saving,
-                            minHeight = 46.dp,
-                            onClick = { submitCapture() },
-                            modifier = Modifier.weight(1.25f)
+                        TactileSecondaryButton(
+                            text = "发给 AI 深聊",
+                            enabled = !busy,
+                            minHeight = 44.dp,
+                            onClick = { onForwardDeepChat(noteInput.trim()) },
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }

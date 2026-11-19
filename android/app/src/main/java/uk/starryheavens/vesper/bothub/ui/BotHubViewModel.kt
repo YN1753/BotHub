@@ -756,12 +756,33 @@ class BotHubViewModel(
         }
     }
 
-    fun handleSharedText(rawText: String) {
-        if (rawText.isBlank()) return
-        selectedTab = BotHubTab.AGENT
-        showServiceFeed = false
-        inChatRoom = true
-        sendAgentPrompt("请抓取并深度总结以下分享内容或网页链接的核心要点与技术价值：\n$rawText")
+    fun handleSharedText(rawText: String, autoSend: Boolean = false) {
+        val clean = rawText.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            val token = withContext(Dispatchers.IO) { prefs.warmUpCredentials() }
+            if (token.isEmpty()) {
+                showSettingsSheet = true
+                showMessage("请先连接服务端")
+                return@launch
+            }
+            isPaired = true
+            selectedTab = BotHubTab.AGENT
+            showServiceFeed = false
+            if (activeBotId.isBlank()) {
+                val fallbackId = bots.firstOrNull()?.id ?: prefs.lastActiveBotId
+                if (fallbackId.isNotBlank()) {
+                    activeBotId = fallbackId
+                }
+            }
+            inChatRoom = true
+            if (autoSend) {
+                sendAgentPrompt(clean)
+            } else {
+                updateInputText(clean)
+                showMessage("已填入输入框，可补充要求后发送")
+            }
+        }
     }
 
     fun handleOpenNotificationFromTray(notificationId: Long) {
