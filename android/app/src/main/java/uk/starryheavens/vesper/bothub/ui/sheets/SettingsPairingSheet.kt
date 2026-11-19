@@ -33,7 +33,9 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,10 +53,16 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.BuildConfig
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.UrlUtils
+import uk.starryheavens.vesper.bothub.notify.NotificationHelper
+import uk.starryheavens.vesper.bothub.sync.PushConnectionStatus
+import uk.starryheavens.vesper.bothub.sync.RealtimePushService
 import uk.starryheavens.vesper.bothub.ui.ApkUpdater
 import uk.starryheavens.vesper.bothub.ui.BiometricAuthHelper
 import uk.starryheavens.vesper.bothub.ui.OtaUpdateState
@@ -72,6 +80,9 @@ import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 import uk.starryheavens.vesper.bothub.ui.theme.encodeThemePreference
 import uk.starryheavens.vesper.bothub.ui.theme.parseThemePreference
 import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private const val LATEST_APK_URL =
@@ -95,6 +106,7 @@ fun SettingsPairingSheet(
     onThemeSelected: (String) -> Unit = {},
     onOpenModelConfig: () -> Unit = {},
     onTestHealth: (String) -> Unit,
+    onTestPush: () -> Unit = {},
     onUnbindServer: () -> Unit,
     onShowMessage: (String) -> Unit,
     onDismiss: () -> Unit
@@ -104,6 +116,45 @@ fun SettingsPairingSheet(
     val activity = remember(context) { BiometricAuthHelper.findFragmentActivity(context) }
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val connectionStatus by RealtimePushService.connectionStatus.collectAsState()
+    val lastHeartbeatAtMs by RealtimePushService.lastHeartbeatAtMs.collectAsState()
+    var notifPermissionGranted by remember {
+        mutableStateOf(NotificationHelper.hasNotificationPermission(context))
+    }
+    var batteryOptIgnored by remember {
+        mutableStateOf(NotificationHelper.isIgnoringBatteryOptimizations(context))
+    }
+
+    DisposableEffect(context) {
+        notifPermissionGranted = NotificationHelper.hasNotificationPermission(context)
+        batteryOptIgnored = NotificationHelper.isIgnoringBatteryOptimizations(context)
+        val owner = context as? LifecycleOwner
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notifPermissionGranted = NotificationHelper.hasNotificationPermission(context)
+                batteryOptIgnored = NotificationHelper.isIgnoringBatteryOptimizations(context)
+            }
+        }
+        owner?.lifecycle?.addObserver(observer)
+        onDispose {
+            owner?.lifecycle?.removeObserver(observer)
+        }
+    }
+
+    fun openBatteryOptimizationSettings() {
+        val batIntent = Intent(
+            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            Uri.parse("package:${context.packageName}")
+        )
+        runCatching { context.startActivity(batIntent) }.onFailure {
+            runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                )
+            }
+        }
+    }
 
     var urlInput by remember(serverUrl) {
         mutableStateOf(UrlUtils.normalizeServerUrl(serverUrl, UrlUtils.DEFAULT_SERVER_URL))
@@ -527,6 +578,27 @@ fun SettingsPairingSheet(
                     }
                 }
 
+                // 3.2 Push Channel & System Permission Diagnostics Strip
+                PushDiagnosticsCard(
+                    realtimeServiceEnabled = realtimeServiceEnabled,
+                    connectionStatus = connectionStatus,
+                    lastHeartbeatAtMs = lastHeartbeatAtMs,
+                    notifPermissionGranted = notifPermissionGranted,
+                    batteryOptIgnored = batteryOptIgnored,
+                    onReconnectRealtime = {
+                        if (realtimeServiceEnabled) {
+                            RealtimePushService.forceReconnect(context)
+                            onShowMessage("正在重新连接实时通道")
+                        }
+                    },
+                    onOpenNotifSettings = {
+                        NotificationHelper.openSystemNotificationSettings(context)
+                    },
+                    onOpenBatterySettings = {
+                        openBatteryOptimizationSettings()
+                    }
+                )
+
                 // 3.5 AI Model Channels & Dual Pools Entry
                 SpecularGlassCard(
                     cornerRadius = 18.dp,
@@ -574,21 +646,10 @@ fun SettingsPairingSheet(
                         modifier = Modifier.weight(1f)
                     )
                     TactileSecondaryButton(
-                        text = "省电白名单",
+                        text = "测试推送",
+                        accent = true,
                         minHeight = 44.dp,
-                        onClick = {
-                            val batIntent = Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                            runCatching { context.startActivity(batIntent) }.onFailure {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                    )
-                                }
-                            }
-                        },
+                        onClick = onTestPush,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1066,6 +1127,181 @@ private fun SettingsToggleRow(
         TactileToggle(
             checked = checked,
             onCheckedChange = onCheckedChange
+        )
+    }
+}
+
+private val HEARTBEAT_TIME_FORMAT: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
+
+private fun formatHeartbeatClock(epochMs: Long): String {
+    if (epochMs <= 0L) return ""
+    return runCatching {
+        Instant.ofEpochMilli(epochMs)
+            .atZone(ZoneId.systemDefault())
+            .format(HEARTBEAT_TIME_FORMAT)
+    }.getOrDefault("")
+}
+
+@Composable
+private fun PushDiagnosticsCard(
+    realtimeServiceEnabled: Boolean,
+    connectionStatus: PushConnectionStatus,
+    lastHeartbeatAtMs: Long,
+    notifPermissionGranted: Boolean,
+    batteryOptIgnored: Boolean,
+    onReconnectRealtime: () -> Unit,
+    onOpenNotifSettings: () -> Unit,
+    onOpenBatterySettings: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    val greenTone = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
+    val amberTone = if (theme.isLight) Color(0xFFD97706) else Color(0xFFFBBF24)
+    val redTone = if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185)
+
+    val (channelLabel, channelTone, channelClickable) = when {
+        !realtimeServiceEnabled -> Triple("未开启", theme.textMuted, false)
+        connectionStatus == PushConnectionStatus.CONNECTED -> Triple("在线", greenTone, false)
+        connectionStatus == PushConnectionStatus.CONNECTING -> Triple("连接中", amberTone, true)
+        else -> Triple("断开 · 重连", amberTone, true)
+    }
+
+    val notifLabel = if (notifPermissionGranted) "已开启" else "未授权 · 去开启"
+    val notifTone = if (notifPermissionGranted) greenTone else redTone
+
+    val batteryLabel = if (batteryOptIgnored) "已豁免" else "受限 · 去设置"
+    val batteryTone = if (batteryOptIgnored) greenTone else amberTone
+
+    val heartbeatText = if (realtimeServiceEnabled && connectionStatus == PushConnectionStatus.CONNECTED && lastHeartbeatAtMs > 0L) {
+        val clock = formatHeartbeatClock(lastHeartbeatAtMs)
+        if (clock.isNotEmpty()) "心跳 $clock" else "实时在线"
+    } else if (!realtimeServiceEnabled) {
+        "后台通道已暂停"
+    } else {
+        "点异常项可直达设置"
+    }
+
+    SpecularGlassCard(
+        cornerRadius = 16.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "推送通道诊断",
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = theme.textPrimary,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                Text(
+                    text = heartbeatText,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.5.sp,
+                    color = theme.textMuted,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                PushDiagnosticPill(
+                    label = "实时通道",
+                    status = channelLabel,
+                    tone = channelTone,
+                    clickable = channelClickable,
+                    onClick = onReconnectRealtime,
+                    modifier = Modifier.weight(1f)
+                )
+                PushDiagnosticPill(
+                    label = "通知权限",
+                    status = notifLabel,
+                    tone = notifTone,
+                    clickable = !notifPermissionGranted,
+                    onClick = onOpenNotifSettings,
+                    modifier = Modifier.weight(1f)
+                )
+                PushDiagnosticPill(
+                    label = "省电白名单",
+                    status = batteryLabel,
+                    tone = batteryTone,
+                    clickable = !batteryOptIgnored,
+                    onClick = onOpenBatterySettings,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PushDiagnosticPill(
+    label: String,
+    status: String,
+    tone: Color,
+    clickable: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val theme = BotHubThemeTokens
+    val shape = RoundedCornerShape(10.dp)
+    Column(
+        modifier = modifier
+            .clip(shape)
+            .background(theme.inputTop, shape)
+            .border(
+                width = 1.dp,
+                color = if (clickable) tone.copy(alpha = 0.45f) else theme.divider,
+                shape = shape
+            )
+            .then(
+                if (clickable) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
+            .padding(horizontal = 8.dp, vertical = 7.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(tone, CircleShape)
+            )
+            Text(
+                text = label,
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = theme.textMuted,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Text(
+            text = status,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = tone,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

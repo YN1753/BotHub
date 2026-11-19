@@ -35,6 +35,7 @@ import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
+import uk.starryheavens.vesper.bothub.sync.RealtimePushService
 import uk.starryheavens.vesper.bothub.ui.components.BotHubBottomBar
 import uk.starryheavens.vesper.bothub.ui.components.BotHubSnackbarHost
 import uk.starryheavens.vesper.bothub.ui.components.BotHubTopBar
@@ -75,6 +76,8 @@ fun BotHubApp(
     onRequestedTabConsumed: () -> Unit = {},
     requestedNotificationId: Long? = null,
     onRequestedNotificationIdConsumed: () -> Unit = {},
+    requestedBotId: String? = null,
+    onRequestedBotIdConsumed: () -> Unit = {},
     pairPayload: Pair<String, String>? = null,
     onPairPayloadConsumed: () -> Unit = {}
 ) {
@@ -101,13 +104,39 @@ fun BotHubApp(
     DisposableEffect(context, viewModel) {
         val owner = context as? LifecycleOwner
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.onAppForegrounded()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    RealtimePushService.isAppInForeground = true
+                    RealtimePushService.activeViewingBotId = if (viewModel.inChatRoom && viewModel.sessionId.isEmpty()) {
+                        viewModel.activeBotId
+                    } else {
+                        ""
+                    }
+                    viewModel.onAppForegrounded()
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    RealtimePushService.isAppInForeground = false
+                    RealtimePushService.activeViewingBotId = ""
+                }
+                else -> Unit
             }
         }
         owner?.lifecycle?.addObserver(observer)
         onDispose {
             owner?.lifecycle?.removeObserver(observer)
+            RealtimePushService.activeViewingBotId = ""
+        }
+    }
+
+    LaunchedEffect(viewModel.inChatRoom, viewModel.activeBotId, viewModel.sessionId) {
+        RealtimePushService.activeViewingBotId = if (
+            RealtimePushService.isAppInForeground &&
+            viewModel.inChatRoom &&
+            viewModel.sessionId.isEmpty()
+        ) {
+            viewModel.activeBotId
+        } else {
+            ""
         }
     }
 
@@ -135,6 +164,13 @@ fun BotHubApp(
         val notifId = requestedNotificationId ?: return@LaunchedEffect
         onRequestedNotificationIdConsumed()
         viewModel.handleOpenNotificationFromTray(notifId)
+    }
+
+    LaunchedEffect(requestedBotId) {
+        val botId = requestedBotId ?: return@LaunchedEffect
+        onRequestedBotIdConsumed()
+        viewModel.selectTab(BotHubTab.AGENT)
+        viewModel.openChatRoom(botId)
     }
 
     VesperBotHubTheme(themeId = viewModel.appThemeId) {
@@ -553,6 +589,7 @@ fun BotHubApp(
             onThemeSelected = viewModel::setAppTheme,
             onOpenModelConfig = viewModel::openModelConfig,
             onTestHealth = viewModel::testConnectivity,
+            onTestPush = viewModel::triggerTestPush,
             onUnbindServer = viewModel::unbindServer,
             onShowMessage = viewModel::showMessage,
             onDismiss = viewModel::dismissSettings

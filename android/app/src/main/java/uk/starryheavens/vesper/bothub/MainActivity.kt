@@ -33,6 +33,7 @@ class MainActivity : FragmentActivity() {
     private var sharedTextState by mutableStateOf<String?>(null)
     private var requestedTabState by mutableStateOf<BotHubTab?>(null)
     private var requestedNotificationIdState by mutableStateOf<Long?>(null)
+    private var requestedBotIdState by mutableStateOf<String?>(null)
     private var pairPayloadState by mutableStateOf<Pair<String, String>?>(null)
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -64,6 +65,8 @@ class MainActivity : FragmentActivity() {
                     onRequestedTabConsumed = { requestedTabState = null },
                     requestedNotificationId = requestedNotificationIdState,
                     onRequestedNotificationIdConsumed = { requestedNotificationIdState = null },
+                    requestedBotId = requestedBotIdState,
+                    onRequestedBotIdConsumed = { requestedBotIdState = null },
                     pairPayload = pairPayloadState,
                     onPairPayloadConsumed = { pairPayloadState = null }
                 )
@@ -78,6 +81,17 @@ class MainActivity : FragmentActivity() {
             PushSyncWorker.schedulePeriodicSync(applicationContext)
             RealtimePushService.syncWithPrefs(applicationContext, prefs)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        RealtimePushService.isAppInForeground = true
+    }
+
+    override fun onPause() {
+        RealtimePushService.isAppInForeground = false
+        RealtimePushService.activeViewingBotId = ""
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -106,6 +120,14 @@ class MainActivity : FragmentActivity() {
             sharedTextState = shared
             intent.removeExtra(Intent.EXTRA_TEXT)
             intent.removeExtra(Intent.EXTRA_SUBJECT)
+            return
+        }
+
+        val botId = intent.getStringExtra(AppIntents.EXTRA_BOT_ID)?.trim()
+        if (!botId.isNullOrEmpty()) {
+            requestedBotIdState = botId
+            intent.removeExtra(AppIntents.EXTRA_BOT_ID)
+            intent.removeExtra(AppIntents.EXTRA_OPEN_TAB)
             return
         }
 

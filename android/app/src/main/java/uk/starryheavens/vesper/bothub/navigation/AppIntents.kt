@@ -8,12 +8,14 @@ object AppIntents {
     const val EXTRA_DEEP_CHAT_TEXT = "extra_deep_chat_text"
     const val EXTRA_OPEN_TAB = "open_tab"
     const val EXTRA_NOTIFICATION_ID = "notification_id"
+    const val EXTRA_BOT_ID = "open_bot_id"
 
     fun createMainActivityIntent(
         context: Context,
         deepChatText: String? = null,
         openTab: BotHubTab? = null,
-        notificationId: Long? = null
+        notificationId: Long? = null,
+        botId: String? = null
     ): Intent {
         return Intent(context, MainActivity::class.java).apply {
             addFlags(
@@ -29,6 +31,9 @@ object AppIntents {
             }
             if (notificationId != null && notificationId > 0L) {
                 putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+            }
+            if (!botId.isNullOrBlank()) {
+                putExtra(EXTRA_BOT_ID, botId.trim())
             }
         }
     }

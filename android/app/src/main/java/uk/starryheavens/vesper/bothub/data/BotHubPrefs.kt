@@ -92,6 +92,10 @@ class BotHubPrefs(context: Context) {
         get() = prefs.getLong("last_event_id", 0L)
         set(value) = prefs.edit().putLong("last_event_id", value).apply()
 
+    var lastNotifiedBotMsgId: Long
+        get() = prefs.getLong("last_notified_bot_msg_id", 0L)
+        set(value) = prefs.edit().putLong("last_notified_bot_msg_id", value).apply()
+
     var activePersona: String
         get() = prefs.getString("active_persona", "grok") ?: "grok"
         set(value) = prefs.edit().putString("active_persona", value).apply()
@@ -123,6 +127,12 @@ class BotHubPrefs(context: Context) {
     fun advanceLastEventId(candidateId: Long) {
         if (candidateId > lastEventId) {
             lastEventId = candidateId
+        }
+    }
+
+    fun advanceLastNotifiedBotMsgId(candidateId: Long) {
+        if (candidateId > lastNotifiedBotMsgId) {
+            lastNotifiedBotMsgId = candidateId
         }
     }
 

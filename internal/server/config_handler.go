@@ -50,7 +50,7 @@ func (s *Server) handleTestPush(w http.ResponseWriter, r *http.Request) {
 	channelName := "原生 APP 通知通道 (Inbox + SSE)"
 	now := store.NowShanghai()
 	content := fmt.Sprintf("### BotHub 通知链路自检\n\n- **活跃通道**：`%s`\n- **触发时间**：`%s`\n- **链路状态**：正常直连\n\n---\n*来自 BotHub*", channelName, now)
-	if err := s.push.SendMarkdown(ctx, "system_test", "BotHub 原生 APP 通知测试", content); err != nil {
+	if err := s.push.SendWithPriority(ctx, "system_test", "BotHub 原生 APP 通知测试", content, "high"); err != nil {
 		writeError(w, http.StatusBadGateway, "推送失败: "+err.Error())
 		return
 	}

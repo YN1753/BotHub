@@ -31,7 +31,9 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         .build()
 
     private val sseHttpClient: OkHttpClient = httpClient.newBuilder()
-        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .pingInterval(20, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     private fun jsonBody(rawJson: String): RequestBody = rawJson.toRequestBody(jsonMedia)
@@ -1129,6 +1131,16 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
             val json = executeJson(req, "连通性检测失败")
             val elapsed = System.currentTimeMillis() - started
             elapsed to json.optString("version", "unknown")
+        }
+    }
+
+    suspend fun triggerTestPush(): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/test-push")
+                .post(emptyJsonBody)
+                .build()
+            val json = executeJson(req, "发送测试推送失败")
+            json.optString("message", "测试通知已发送").ifBlank { "测试通知已发送" }
         }
     }
 

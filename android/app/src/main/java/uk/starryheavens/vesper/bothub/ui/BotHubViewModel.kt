@@ -44,8 +44,8 @@ import uk.starryheavens.vesper.bothub.data.SkillItemUi
 import uk.starryheavens.vesper.bothub.data.StashItemUi
 import uk.starryheavens.vesper.bothub.data.TaskItem
 import uk.starryheavens.vesper.bothub.data.TodoItemUi
-import uk.starryheavens.vesper.bothub.data.WorkNoteItemUi
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
+import uk.starryheavens.vesper.bothub.notify.NotificationHelper
 import uk.starryheavens.vesper.bothub.sync.RealtimePushService
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicLong
@@ -714,6 +714,27 @@ class BotHubViewModel(
                 showMessage("连通正常 (${ms}ms · $ver)")
             }.onFailure { err ->
                 showMessage("连通测试失败: ${err.message}")
+            }
+        }
+    }
+
+    fun triggerTestPush() {
+        if (!NotificationHelper.hasNotificationPermission(appContext)) {
+            showMessage("系统通知权限未开启，请先点上方通知权限开启")
+            return
+        }
+        viewModelScope.launch {
+            if (prefs.bearerToken.isEmpty()) {
+                showMessage("请先连接服务端")
+                return@launch
+            }
+            if (prefs.realtimeServiceEnabled) {
+                RealtimePushService.syncWithPrefs(appContext, prefs)
+            }
+            api.triggerTestPush().onSuccess { msg ->
+                showMessage(msg.ifBlank { "测试通知已发送" })
+            }.onFailure { err ->
+                showMessage("测试推送失败: ${err.message}")
             }
         }
     }
@@ -1500,6 +1521,8 @@ class BotHubViewModel(
         )
 
         activeChatJob = viewModelScope.launch {
+            val streamedContent = StringBuilder()
+            var streamHadError = false
             try {
                 api.streamChat(
                     sessionId = sessionId,
@@ -1570,6 +1593,9 @@ class BotHubViewModel(
                         }
                     },
                     onContentDelta = { delta ->
+                        synchronized(streamedContent) {
+                            streamedContent.append(delta)
+                        }
                         viewModelScope.launch {
                             updateTurnById(assistantId) { cur ->
                                 cur.copy(content = cur.content + delta)
@@ -1584,6 +1610,7 @@ class BotHubViewModel(
                         }
                     },
                     onError = { err ->
+                        streamHadError = true
                         viewModelScope.launch {
                             updateTurnById(assistantId) { cur ->
                                 val fallback = if (cur.content.isEmpty()) {
@@ -1599,6 +1626,20 @@ class BotHubViewModel(
             } finally {
                 activeStreamCall = null
                 isStreaming = false
+                val replyContent = synchronized(streamedContent) { streamedContent.toString() }.trim()
+                    .ifEmpty { chatMessages.find { it.id == assistantId }?.content?.trim().orEmpty() }
+                if (!RealtimePushService.isAppInForeground && !streamHadError && replyContent.isNotEmpty()) {
+                    val notifyBotId = targetBotId.ifBlank { activeBotId }
+                    val notifyBotName = bots.find { it.id == notifyBotId }?.name ?: botDisplayName
+                    NotificationHelper.showBotMessageNotification(
+                        context = appContext,
+                        botId = notifyBotId,
+                        botName = notifyBotName,
+                        messageId = 0L,
+                        content = replyContent,
+                        isRoutine = false
+                    )
+                }
                 if (sessionId.isEmpty() && targetBotId.isNotBlank() && activeBotId == targetBotId) {
                     val snapshotTurns = chatMessages.toList()
                     val cacheKey = if (targetThreadId.isBlank()) targetBotId else "$targetBotId::$targetThreadId"
