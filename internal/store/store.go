@@ -42,9 +42,10 @@ const (
 	KeyPoolFallback      = "pool_fallback"
 	KeyAppBearerToken    = "app_bearer_token"
 	KeyNezhaWebhookToken = "nezha_webhook_token"
-	KeyAdminPassHash       = "admin_pass_hash"
-	KeySessionSecret       = "session_secret"
-	KeyDefaultButlerSeeded = "default_butler_seeded"
+	KeyAdminPassHash          = "admin_pass_hash"
+	KeySessionSecret          = "session_secret"
+	KeyDefaultButlerSeeded    = "default_butler_seeded"
+	KeyDefaultConciergeSeeded = "default_concierge_seeded"
 
 	KeyOIDCEnabled      = "oidc_enabled"
 	KeyOIDCIssuer       = "oidc_issuer"
@@ -597,15 +598,14 @@ func (s *Store) seedDefaults() error {
 		_ = s.SetConfig(KeyAdminPassHash, HashPassword(envPass))
 	}
 
-	if seeded, _ := s.GetConfig(KeyDefaultButlerSeeded); seeded != "true" {
-		existingButler, _ := s.GetBot(DefaultConciergeBotID)
-		if existingButler == nil {
+	if seeded, _ := s.GetConfig(KeyDefaultConciergeSeeded); seeded != "true" {
+		existingConcierge, _ := s.GetBot(DefaultConciergeBotID)
+		if existingConcierge == nil {
 			if err := s.SaveBot(DefaultConciergeBot()); err != nil {
 				return err
 			}
 		} else {
-			// Ensure an existing butler upgraded from an older version gains the manage_bots tool once.
-			curTools := existingButler.AllowedToolList()
+			curTools := existingConcierge.AllowedToolList()
 			hasManageBots := false
 			for _, t := range curTools {
 				if t == "manage_bots" {
@@ -616,12 +616,12 @@ func (s *Store) seedDefaults() error {
 			if !hasManageBots {
 				nextTools := append([]string{"manage_bots"}, curTools...)
 				if raw, mErr := json.Marshal(nextTools); mErr == nil {
-					existingButler.AllowedTools = string(raw)
-					_ = s.SaveBot(*existingButler)
+					existingConcierge.AllowedTools = string(raw)
+					_ = s.SaveBot(*existingConcierge)
 				}
 			}
 		}
-		_ = s.SetConfig(KeyDefaultButlerSeeded, "true")
+		_ = s.SetConfig(KeyDefaultConciergeSeeded, "true")
 	}
 
 	return nil

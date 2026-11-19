@@ -21,7 +21,7 @@ const (
 	MemoryPolicyIsolated = "isolated"
 	MemoryPolicyStandard = "standard"
 
-	DefaultConciergeBotID = "butler"
+	DefaultConciergeBotID = "concierge"
 )
 
 // DefaultConciergeBot returns the single neutral default butler/concierge Bot seeded on blank installs.
@@ -44,7 +44,6 @@ func DefaultConciergeBot() Bot {
 		"remember_fact",
 		"recall_memory",
 		"manage_memory",
-		"query_nezha_nodes",
 	})
 	return Bot{
 		ID:                DefaultConciergeBotID,
@@ -61,7 +60,7 @@ func DefaultConciergeBot() Bot {
 		SkillIDs:          "[]",
 		State:             BotStateIdle,
 		IsPinned:          true,
-		SortOrder:         0,
+		SortOrder:         -10,
 		SystemPrompt: strings.TrimSpace(`你是 BotHub 的默认总控大管家。你对用户的职业、技术栈、偏好与个人背景不做任何预设，一切关于用户的信息均以用户实际告知或长期记忆中明确记录的为准。
 
 你的核心能力与行动准则：

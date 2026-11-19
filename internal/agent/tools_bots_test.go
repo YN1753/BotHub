@@ -133,9 +133,9 @@ func TestManageBotsLifecycleCreateBotAndGroup(t *testing.T) {
 		t.Fatalf("expected 3 members after +1 -1, got %+v", grpAfter)
 	}
 
-	// 5. Guardrail: refusing to delete default butler via tool
-	if _, err := eng.ExecuteTool(ctx, "manage_bots", `{"action":"delete_bot","bot_id":"butler"}`); err == nil {
-		t.Fatalf("expected manage_bots delete_bot to refuse deleting butler")
+	// 5. Guardrail: refusing to delete default concierge butler via tool
+	if _, err := eng.ExecuteTool(ctx, "manage_bots", `{"action":"delete_bot","bot_id":"concierge"}`); err == nil {
+		t.Fatalf("expected manage_bots delete_bot to refuse deleting concierge butler")
 	}
 
 	// 6. Deleting a normal bot succeeds

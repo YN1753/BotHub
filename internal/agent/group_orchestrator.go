@@ -140,6 +140,9 @@ func selectSmartGroupMembersWithSkills(members []store.Bot, skillMap map[string]
 		limit := 2
 		if len(ranked) < limit {
 			limit = len(ranked)
+		} else if ranked[0].score >= ranked[1].score*2 {
+			// Single clear domain specialist wins without pulling in a weakly-matched generalist.
+			limit = 1
 		}
 		out := make([]store.Bot, 0, limit)
 		for i := 0; i < limit; i++ {

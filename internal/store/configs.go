@@ -48,9 +48,10 @@ var ConfigRegistry = map[string]ConfigSpec{
 	KeyOIDCAllowedSub:    {Editable: true, EnvFallback: "BOTHUB_OIDC_ALLOWED_SUB"},
 	KeyPushChannel:       {Editable: false},
 	KeyFreeModelPool:     {Editable: false},
-	KeyPasskeyUserID:       {Editable: false},
-	KeyDefaultButlerSeeded: {Editable: false},
-	KeyAdminPassHash:       {Editable: false, Sensitive: true},
+	KeyPasskeyUserID:          {Editable: false},
+	KeyDefaultButlerSeeded:    {Editable: false},
+	KeyDefaultConciergeSeeded: {Editable: false},
+	KeyAdminPassHash:          {Editable: false, Sensitive: true},
 	KeySessionSecret:     {Editable: false, Sensitive: true},
 }
 
