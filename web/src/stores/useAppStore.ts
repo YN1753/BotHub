@@ -35,6 +35,18 @@ export { mapServerMessages, type ChatMessageUI }
 
 export type MainWorkspace = 'bots' | 'ops'
 export type BotSubView = 'stream' | 'routines' | 'config' | 'activity'
+export type SideInspectorTab = 'todos' | 'notes' | 'stash' | 'assets' | 'memories'
+
+const VALID_INSPECTOR_TABS: readonly SideInspectorTab[] = ['todos', 'notes', 'stash', 'assets', 'memories']
+
+function loadSavedInspectorTab(): SideInspectorTab {
+  try {
+    const raw = localStorage.getItem('bothub_side_inspector_tab') as SideInspectorTab | null
+    return raw && VALID_INSPECTOR_TABS.includes(raw) ? raw : 'todos'
+  } catch {
+    return 'todos'
+  }
+}
 
 export interface AppDialogRequest {
   id: number
@@ -162,6 +174,9 @@ const state = reactive({
   sseConnected: false,
   soundEnabled: localStorage.getItem('bothub_sound') === '1',
   ambientMotionPaused: localStorage.getItem('bothub_ambient_paused') === '1',
+  chatWide: localStorage.getItem('bothub_chat_wide') === '1',
+  sideInspectorOpen: localStorage.getItem('bothub_side_inspector_open') === '1',
+  sideInspectorTab: loadSavedInspectorTab(),
   draftsByBot: (() => {
     try {
       const persisted = localStorage.getItem('bothub_drafts_v2') || sessionStorage.getItem('bothub_drafts')
@@ -895,6 +910,33 @@ export function useAppStore() {
     notify(state.ambientMotionPaused ? '已暂停背景漂浮与待机动效' : '已恢复背景漂浮与待机动效')
   }
 
+  function toggleChatWide() {
+    state.chatWide = !state.chatWide
+    try {
+      localStorage.setItem('bothub_chat_wide', state.chatWide ? '1' : '0')
+    } catch {
+      // ignore
+    }
+  }
+
+  function toggleSideInspector() {
+    state.sideInspectorOpen = !state.sideInspectorOpen
+    try {
+      localStorage.setItem('bothub_side_inspector_open', state.sideInspectorOpen ? '1' : '0')
+    } catch {
+      // ignore
+    }
+  }
+
+  function setSideInspectorTab(tab: SideInspectorTab) {
+    state.sideInspectorTab = tab
+    try {
+      localStorage.setItem('bothub_side_inspector_tab', tab)
+    } catch {
+      // ignore
+    }
+  }
+
   function startSSE() {
     if (sseSource || typeof EventSource === 'undefined') return
     let hadDisconnect = false
@@ -1110,6 +1152,9 @@ export function useAppStore() {
     getBotDraft,
     toggleSound,
     toggleAmbientMotion,
+    toggleChatWide,
+    toggleSideInspector,
+    setSideInspectorTab,
     playSubtleChime,
     startSSE,
     stopSSE,

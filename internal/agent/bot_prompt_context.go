@@ -144,6 +144,10 @@ func buildBotSystemPromptWithContext(bot *store.Bot, attachedSkills []store.Skil
 		sb.WriteString("- 互动与执行准则：日常对话自然真诚、像真人般有温度；当用户交代要办的事、提醒、链接收藏、闪念记录、资料检索或产出长文档时，像靠谱的个人助手一样主动调用待办(manage_todos)、收藏与闪念匣(manage_stash)、文档(manage_notes)、定时提醒(manage_tasks)及授权工具直接帮你落地。\n")
 	}
 
+	if botHasStructuredDisplayTool(bot) {
+		sb.WriteString("- 结构化展示准则：当本轮调用了 manage_assets、query_nezha_nodes、manage_todos、manage_tasks 或 workspace_briefing 等结构化查询工具时，客户端界面已自动将工具返回的 JSON 渲染为高密度可视化卡片。请勿再将每条数据的 ID、状态、费用、配置等字段逐行机械复述为超长单列清单；正文仅需精炼总结核心数字、到期/健康异常风险与可直接执行的建议。\n")
+	}
+
 	if inGroup {
 		sb.WriteString("- 群聊协作规范：你正与其他成员同在一个协同群聊里。自然接续前序成员或用户的上下文，重点给出你独特视角的补充或行动，避免重复已经说过的客套话。\n")
 	}
@@ -374,4 +378,17 @@ func budgetChatMessages(messages []apiMessage, maxRunes int) []apiMessage {
 		}
 	}
 	return cur
+}
+
+func botHasStructuredDisplayTool(bot *store.Bot) bool {
+	if bot == nil {
+		return false
+	}
+	for _, id := range bot.AllowedToolList() {
+		switch strings.TrimSpace(id) {
+		case "manage_assets", "query_nezha_nodes", "manage_todos", "manage_tasks", "workspace_briefing":
+			return true
+		}
+	}
+	return false
 }

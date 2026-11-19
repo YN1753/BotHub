@@ -50,6 +50,7 @@ const emit = defineEmits<{
 const store = useAppStore()
 const bot = store.activeBot
 const composerId = useId()
+const composerMaxWidthClass = computed(() => (store.state.chatWide ? 'max-w-[1120px]' : 'max-w-[840px]'))
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const formRef = ref<HTMLFormElement | null>(null)
@@ -386,7 +387,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
 
     <div
       v-if="isGroupBot && groupMembers.length > 0 && !centeredStage"
-      class="max-w-[780px] w-full mx-auto mb-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar"
+      :class="[composerMaxWidthClass, 'w-full mx-auto mb-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar']"
     >
       <button
         v-for="member in groupMembers"
@@ -404,7 +405,8 @@ function handleComposerKeydown(e: KeyboardEvent) {
       ref="formRef"
       @submit.prevent="emit('submitPrompt')"
       :class="[
-        'composer-dock max-w-[780px] w-full mx-auto rounded-[24px] px-4 sm:px-4.5 pt-3.5 pb-2.5 flex flex-col gap-2',
+        'composer-dock w-full mx-auto rounded-[24px] px-4 sm:px-4.5 pt-3.5 pb-2.5 flex flex-col gap-2',
+        composerMaxWidthClass,
         store.state.isStreaming ? 'is-streaming' : '',
       ]"
     >
@@ -540,7 +542,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
 
     <div
       v-if="centeredStage && starterChips && starterChips.length > 0"
-      class="max-w-[760px] w-full mx-auto mt-3.5 flex flex-wrap items-center justify-center gap-2"
+      :class="[composerMaxWidthClass, 'w-full mx-auto mt-3.5 flex flex-wrap items-center justify-center gap-2']"
     >
       <button
         v-for="chip in starterChips"

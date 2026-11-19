@@ -23,6 +23,7 @@ const BotRoutinesTab = lazyPanelChunk(() => import('./workspace/BotRoutinesTab.v
 const BotConfigTab = lazyPanelChunk(() => import('./workspace/BotConfigTab.vue'))
 const BotActivityTab = lazyPanelChunk(() => import('./workspace/BotActivityTab.vue'))
 const BotStarterPanel = lazyPanelChunk(() => import('./workspace/BotStarterPanel.vue'))
+const BotSideInspector = lazyPanelChunk(() => import('./workspace/BotSideInspector.vue'))
 
 defineProps<{
   desktopCollapsed?: boolean
@@ -498,6 +499,16 @@ function appendMention(tag: string) {
   nextTick(() => composerRef.value?.focus())
 }
 
+function handleInspectorQuote(text: string) {
+  const clean = text.trim()
+  if (!clean) return
+  inputPrompt.value = inputPrompt.value.trim()
+    ? `${inputPrompt.value.trimEnd()}\n\n${clean}`
+    : clean
+  store.state.botView = 'stream'
+  nextTick(() => composerRef.value?.focus())
+}
+
 function handleMarkdownClick(e: MouseEvent) {
   handleMarkdownCodeCopy(e, () => store.notify('代码块已复制'))
 }
@@ -625,9 +636,10 @@ async function clearTimeline() {
       <Transition :name="streamEnterTransition">
         <div
           v-show="store.state.botView === 'stream'"
-          :class="['flex-1 min-h-0 flex flex-col', isStreamEmpty ? 'overflow-y-auto py-2 sm:py-4' : '']"
+          class="flex-1 min-h-0 flex min-w-0"
         >
-          <BotThreadBar v-if="bot" :bot="bot" @carry-summary="onCarryThreadSummary" />
+          <div :class="['flex-1 min-w-0 min-h-0 flex flex-col', isStreamEmpty ? 'overflow-y-auto py-2 sm:py-4' : '']">
+            <BotThreadBar v-if="bot" :bot="bot" @carry-summary="onCarryThreadSummary" />
 
           <!-- Slide-Down In-Chat Search Bar (Cmd/Ctrl + F) -->
           <BotChatSearchBar
@@ -782,6 +794,12 @@ async function clearTimeline() {
             @clear-timeline="clearTimeline"
             @summarize-thread="handleSummarizeThread"
             @pick-starter="runQuickToolStarter"
+          />
+          </div>
+
+          <BotSideInspector
+            v-if="store.state.sideInspectorOpen"
+            @quote-to-chat="handleInspectorQuote"
           />
         </div>
       </Transition>

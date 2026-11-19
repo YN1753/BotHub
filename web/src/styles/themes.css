@@ -212,19 +212,19 @@ html[data-theme="amethyst"] {
 
 /* 5. 晴雪素白 (Daylight Frost — Light) */
 html[data-theme="daylight"] {
-  --bg-deep: #f2f5fa;
-  --bg-top: #f7f9fc;
-  --bg-bottom: #e8eef7;
+  --bg-deep: #e4ecf6;
+  --bg-top: #ebf1f9;
+  --bg-bottom: #dce6f4;
   --bg-glow-1: rgba(37, 99, 235, 0.08);
   --bg-glow-2: rgba(99, 102, 241, 0.07);
 
-  --surface-sidebar-top: rgba(255, 255, 255, 0.90);
-  --surface-sidebar-bottom: rgba(244, 247, 252, 0.95);
-  --surface-workspace-top: rgba(255, 255, 255, 0.88);
-  --surface-workspace-bottom: rgba(248, 250, 253, 0.94);
-  --surface-card-top: rgba(255, 255, 255, 0.96);
-  --surface-card-bottom: rgba(245, 248, 253, 0.98);
-  --surface-nested: #eef2f8;
+  --surface-sidebar-top: rgba(248, 250, 253, 0.94);
+  --surface-sidebar-bottom: rgba(239, 244, 251, 0.97);
+  --surface-workspace-top: #ffffff;
+  --surface-workspace-bottom: #fbfcfe;
+  --surface-card-top: rgba(255, 255, 255, 0.97);
+  --surface-card-bottom: rgba(245, 248, 253, 0.99);
+  --surface-nested: #eef3fa;
   --surface-elevated: rgba(255, 255, 255, 0.96);
   --surface-dialog-top: rgba(255, 255, 255, 0.985);
   --surface-dialog-bottom: rgba(244, 247, 252, 0.99);
@@ -235,8 +235,8 @@ html[data-theme="daylight"] {
   --surface-input-bottom: rgba(255, 255, 255, 0.98);
   --surface-bubble-ai-top: #ffffff;
   --surface-bubble-ai-bottom: #f4f7fc;
-  --surface-bubble-user-top: #dbeafe;
-  --surface-bubble-user-bottom: #c7ddfd;
+  --surface-bubble-user-top: #2563eb;
+  --surface-bubble-user-bottom: #1d4ed8;
   --surface-toast: rgba(255, 255, 255, 0.98);
 
   --backdrop-scrim: rgba(15, 23, 42, 0.36);
@@ -252,9 +252,9 @@ html[data-theme="daylight"] {
   --text-main: #0f172a;
   --text-sub: #334155;
   --text-muted: #64748b;
-  --border-glass: rgba(15, 23, 42, 0.11);
+  --border-glass: rgba(15, 23, 42, 0.14);
   --border-gold: rgba(37, 99, 235, 0.36);
-  --shadow-ambient: rgba(15, 23, 42, 0.10);
+  --shadow-ambient: rgba(15, 23, 42, 0.12);
   --hairline-top: rgba(255, 255, 255, 0.95);
 
   --bot-svg-shadow: rgba(30, 58, 138, 0.12);
@@ -273,16 +273,16 @@ html[data-theme="daylight"] {
 
 /* 6. 宣纸暖茶 (Warm Parchment — Light) */
 html[data-theme="parchment"] {
-  --bg-deep: #f4eee2;
-  --bg-top: #f8f3ea;
-  --bg-bottom: #ebe2d2;
+  --bg-deep: #eae0ce;
+  --bg-top: #efe6d6;
+  --bg-bottom: #e2d5be;
   --bg-glow-1: rgba(180, 83, 9, 0.08);
   --bg-glow-2: rgba(217, 119, 6, 0.06);
 
-  --surface-sidebar-top: rgba(253, 250, 243, 0.92);
-  --surface-sidebar-bottom: rgba(244, 237, 224, 0.96);
-  --surface-workspace-top: rgba(253, 249, 241, 0.90);
-  --surface-workspace-bottom: rgba(247, 240, 228, 0.95);
+  --surface-sidebar-top: rgba(251, 247, 239, 0.95);
+  --surface-sidebar-bottom: rgba(242, 233, 218, 0.98);
+  --surface-workspace-top: #fffdf9;
+  --surface-workspace-bottom: #fcf8ef;
   --surface-card-top: rgba(255, 252, 245, 0.97);
   --surface-card-bottom: rgba(245, 238, 225, 0.99);
   --surface-nested: #efe7d8;
@@ -296,8 +296,8 @@ html[data-theme="parchment"] {
   --surface-input-bottom: rgba(255, 252, 246, 0.98);
   --surface-bubble-ai-top: #fffdf8;
   --surface-bubble-ai-bottom: #f5ede0;
-  --surface-bubble-user-top: #f5dfc0;
-  --surface-bubble-user-bottom: #eccda2;
+  --surface-bubble-user-top: #b45309;
+  --surface-bubble-user-bottom: #92400e;
   --surface-toast: rgba(253, 249, 241, 0.985);
 
   --backdrop-scrim: rgba(44, 29, 14, 0.34);
@@ -313,9 +313,9 @@ html[data-theme="parchment"] {
   --text-main: #2c2015;
   --text-sub: #574434;
   --text-muted: #7c6753;
-  --border-glass: rgba(92, 64, 34, 0.14);
+  --border-glass: rgba(92, 64, 34, 0.17);
   --border-gold: rgba(180, 83, 9, 0.36);
-  --shadow-ambient: rgba(68, 46, 22, 0.11);
+  --shadow-ambient: rgba(68, 46, 22, 0.12);
   --hairline-top: rgba(255, 252, 245, 0.95);
 
   --bot-svg-shadow: rgba(92, 64, 34, 0.13);
@@ -388,6 +388,7 @@ html[data-color-mode="light"] [class*="bg-[#120912"],
 html[data-color-mode="light"] .bg-slate-900\/80,
 html[data-color-mode="light"] .bg-slate-900\/70,
 html[data-color-mode="light"] .bg-slate-950\/70,
+html[data-color-mode="light"] .bg-black\/15,
 html[data-color-mode="light"] .bg-black\/25,
 html[data-color-mode="light"] .bg-black\/30,
 html[data-color-mode="light"] .bg-black\/40 {
@@ -521,4 +522,56 @@ html[data-color-mode="light"] .text-indigo-300 {
 html[data-color-mode="light"] .text-sky-200,
 html[data-color-mode="light"] .text-sky-300 {
   color: #0369a1 !important;
+}
+
+/* High-Contrast Brand Gradient User Bubble & Elevated Surfaces in Light Mode */
+html[data-color-mode="light"] .msg-bubble-user {
+  color: var(--on-accent) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 12px 26px -8px rgba(var(--accent-rgb), 0.36),
+    0 4px 10px -2px var(--shadow-ambient) !important;
+}
+
+html[data-color-mode="light"] .msg-bubble-user > button {
+  color: rgba(255, 255, 255, 0.94) !important;
+}
+
+html[data-color-mode="light"] .msg-bubble-user .bg-black\/25 {
+  background-color: rgba(0, 0, 0, 0.22) !important;
+  color: rgba(255, 255, 255, 0.94) !important;
+  border-left-color: rgba(255, 255, 255, 0.72) !important;
+}
+
+html[data-color-mode="light"] .workspace-island {
+  background:
+    linear-gradient(180deg var(--in-oklab), var(--surface-workspace-top) 0%, var(--surface-workspace-bottom) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 20px 52px -14px var(--shadow-ambient);
+}
+
+html[data-color-mode="light"] .well-recessed {
+  background: var(--surface-nested);
+  border-color: var(--border-glass);
+  box-shadow:
+    inset 0 1px 2px rgba(15, 23, 42, 0.06),
+    0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+html[data-color-mode="light"] .composer-dock {
+  background:
+    linear-gradient(180deg var(--in-oklab), #ffffff 0%, var(--surface-card-bottom) 100%);
+  border-color: rgba(15, 23, 42, 0.15);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    0 18px 40px -12px rgba(15, 23, 42, 0.16),
+    0 4px 12px rgba(15, 23, 42, 0.07);
+}
+
+html[data-theme="parchment"] .composer-dock {
+  background:
+    linear-gradient(180deg var(--in-oklab), #fffdf9 0%, #f6efe2 100%);
+  border-color: rgba(92, 64, 34, 0.18);
 }

@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -57,6 +58,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -98,7 +100,10 @@ import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.BotThreadItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
+import uk.starryheavens.vesper.bothub.data.TodoItemUi
+import uk.starryheavens.vesper.bothub.data.formatHumanToolName
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
+import uk.starryheavens.vesper.bothub.ui.components.ChatStructuredToolCards
 import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
 import uk.starryheavens.vesper.bothub.ui.components.FloatingGlassPopover
 import uk.starryheavens.vesper.bothub.ui.components.GlassMenuAction
@@ -153,6 +158,10 @@ fun ChatRoomScreen(
     onCopyText: (String) -> Unit,
     onDeleteTurn: (ChatTurnUi) -> Unit = {},
     onForwardMessage: (BotItem, String, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
+    liveTodos: List<TodoItemUi> = emptyList(),
+    onConvertTurnToTodo: (ChatTurnUi) -> Unit = {},
+    onSaveTurnAsNote: (ChatTurnUi) -> Unit = {},
+    onQuickToggleTodo: (String, String) -> Unit = { _, _ -> },
     searchOpenToken: Int = 0,
     onOpenChatInfo: () -> Unit,
     onOpenBotProfile: (BotItem) -> Unit,
@@ -985,7 +994,7 @@ fun ChatRoomScreen(
                                         fontSize = 14.5.sp,
                                         lineHeight = 21.sp
                                     ),
-                                    color = theme.textPrimary
+                                    color = theme.userBubbleText
                                 )
                             }
 
@@ -1147,81 +1156,174 @@ fun ChatRoomScreen(
                                             .padding(horizontal = 13.dp, vertical = 10.dp),
                                         verticalArrangement = Arrangement.spacedBy(7.dp)
                                     ) {
-                                        if (msg.reasoning.isNotEmpty()) {
-                                            val rShape = RoundedCornerShape(10.dp)
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clip(rShape)
-                                                    .background(theme.codeBlockBg, rShape)
-                                                    .border(0.7.dp, theme.accent.copy(alpha = 0.20f), rShape)
-                                                    .clickable { expandReasoning = !expandReasoning }
-                                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        if (msg.reasoning.isNotEmpty() || msg.toolTraces.isNotEmpty() || msg.tools.isNotEmpty()) {
+                                            val toolOk = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
+                                            val toolOkText = if (theme.isLight) Color(0xFF065F46) else Color(0xFFA7F3D0)
+                                            val toolPending = if (theme.isLight) Color(0xFFD97706) else Color(0xFFFBBF24)
+                                            val toolPendingText = if (theme.isLight) Color(0xFF92400E) else Color(0xFFFDE68A)
+                                            val toolErr = if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185)
+                                            val toolErrText = if (theme.isLight) Color(0xFFBE123C) else Color(0xFFFDA4AF)
+                                            val reasonTint = if (theme.isLight) theme.accentDeep else theme.accentLight
+
+                                            LazyRow(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = if (expandReasoning) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
-                                                        contentDescription = null,
-                                                        tint = if (theme.isLight) theme.accentDeep else Color(0xFFFBBF24),
-                                                        modifier = Modifier.size(14.dp)
-                                                    )
-                                                    Text(
-                                                        text = "思考过程",
-                                                        fontSize = 11.sp,
-                                                        color = if (theme.isLight) theme.accentDeep else Color(0xFFFDE68A),
-                                                        maxLines = 1,
-                                                        softWrap = false
-                                                    )
+                                                if (msg.reasoning.isNotEmpty()) {
+                                                    item(key = "__reason_pill__") {
+                                                        val rPillShape = RoundedCornerShape(999.dp)
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .clip(rPillShape)
+                                                                .background(
+                                                                    if (expandReasoning) {
+                                                                        theme.accent.copy(alpha = 0.18f)
+                                                                    } else {
+                                                                        theme.codeBlockBg
+                                                                    },
+                                                                    rPillShape
+                                                                )
+                                                                .border(
+                                                                    0.75.dp,
+                                                                    theme.accent.copy(alpha = if (expandReasoning) 0.52f else 0.28f),
+                                                                    rPillShape
+                                                                )
+                                                                .clickable { expandReasoning = !expandReasoning }
+                                                                .padding(horizontal = 8.dp, vertical = 3.5.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Psychology,
+                                                                contentDescription = null,
+                                                                tint = reasonTint,
+                                                                modifier = Modifier.size(13.dp)
+                                                            )
+                                                            Text(
+                                                                text = "思考 · ${msg.reasoning.length}字",
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Medium,
+                                                                color = reasonTint,
+                                                                maxLines = 1,
+                                                                softWrap = false
+                                                            )
+                                                            Icon(
+                                                                imageVector = if (expandReasoning) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
+                                                                contentDescription = null,
+                                                                tint = reasonTint,
+                                                                modifier = Modifier.size(13.dp)
+                                                            )
+                                                        }
+                                                    }
                                                 }
-                                                AnimatedVisibility(
-                                                    visible = expandReasoning,
-                                                    enter = fadeIn() + expandVertically(),
-                                                    exit = fadeOut() + shrinkVertically()
+
+                                                if (msg.toolTraces.isNotEmpty()) {
+                                                    items(msg.toolTraces, key = { "tr_${it.id}_${it.name}" }) { trace ->
+                                                        val isPending = trace.status == "进行中" || trace.status == "执行中"
+                                                        val isError = trace.status.equals("error", ignoreCase = true) ||
+                                                            trace.status.contains("失败")
+                                                        val dotColor = when {
+                                                            isPending -> toolPending
+                                                            isError -> toolErr
+                                                            else -> toolOk
+                                                        }
+                                                        val labelColor = when {
+                                                            isPending -> toolPendingText
+                                                            isError -> toolErrText
+                                                            else -> toolOkText
+                                                        }
+                                                        val baseLabel = trace.displayName.ifBlank {
+                                                            formatHumanToolName(trace.name)
+                                                        }
+                                                        val pillText = if (isPending) "$baseLabel · 进行中" else baseLabel
+                                                        val tShape = RoundedCornerShape(999.dp)
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .clip(tShape)
+                                                                .background(theme.codeInlineBg, tShape)
+                                                                .border(0.7.dp, dotColor.copy(alpha = 0.28f), tShape)
+                                                                .padding(horizontal = 8.dp, vertical = 3.5.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(5.dp)
+                                                                    .background(dotColor, CircleShape)
+                                                            )
+                                                            Text(
+                                                                text = pillText,
+                                                                fontSize = 11.sp,
+                                                                color = labelColor,
+                                                                maxLines = 1,
+                                                                softWrap = false
+                                                            )
+                                                        }
+                                                    }
+                                                } else if (msg.tools.isNotEmpty()) {
+                                                    items(msg.tools) { tLabel ->
+                                                        val isPending = tLabel.contains("进行中") || tLabel.contains("执行中")
+                                                        val dotColor = if (isPending) toolPending else toolOk
+                                                        val labelColor = if (isPending) toolPendingText else toolOkText
+                                                        val tShape = RoundedCornerShape(999.dp)
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .clip(tShape)
+                                                                .background(theme.codeInlineBg, tShape)
+                                                                .border(0.7.dp, dotColor.copy(alpha = 0.28f), tShape)
+                                                                .padding(horizontal = 8.dp, vertical = 3.5.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(5.dp)
+                                                                    .background(dotColor, CircleShape)
+                                                            )
+                                                            Text(
+                                                                text = tLabel,
+                                                                fontSize = 11.sp,
+                                                                color = labelColor,
+                                                                maxLines = 1,
+                                                                softWrap = false
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        if (msg.reasoning.isNotEmpty()) {
+                                            AnimatedVisibility(
+                                                visible = expandReasoning,
+                                                enter = fadeIn() + expandVertically(),
+                                                exit = fadeOut() + shrinkVertically()
+                                            ) {
+                                                val rShape = RoundedCornerShape(10.dp)
+                                                Column(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clip(rShape)
+                                                        .background(theme.codeBlockBg, rShape)
+                                                        .border(0.7.dp, theme.accent.copy(alpha = 0.22f), rShape)
+                                                        .padding(horizontal = 10.dp, vertical = 8.dp)
                                                 ) {
                                                     Text(
                                                         text = msg.reasoning.replace("<think>", "").replace("</think>", "").trim(),
                                                         fontSize = 12.sp,
                                                         lineHeight = 18.sp,
-                                                        color = theme.textSecondary,
-                                                        modifier = Modifier.padding(top = 5.dp)
+                                                        color = theme.textSecondary
                                                     )
                                                 }
                                             }
                                         }
 
-                                        if (msg.tools.isNotEmpty()) {
-                                            val toolOk = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
-                                            val toolText = if (theme.isLight) Color(0xFF065F46) else Color(0xFFA7F3D0)
-                                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                items(msg.tools) { tLabel ->
-                                                    val tShape = RoundedCornerShape(999.dp)
-                                                    Row(
-                                                        modifier = Modifier
-                                                            .clip(tShape)
-                                                            .background(theme.codeInlineBg, tShape)
-                                                            .border(0.7.dp, toolOk.copy(alpha = 0.28f), tShape)
-                                                            .padding(horizontal = 8.dp, vertical = 3.5.dp),
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                                    ) {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(5.dp)
-                                                                .background(toolOk, CircleShape)
-                                                        )
-                                                        Text(
-                                                            text = tLabel,
-                                                            fontSize = 11.sp,
-                                                            color = toolText,
-                                                            maxLines = 1,
-                                                            softWrap = false
-                                                        )
-                                                    }
-                                                }
-                                            }
+                                        if (msg.toolTraces.isNotEmpty()) {
+                                            ChatStructuredToolCards(
+                                                traces = msg.toolTraces,
+                                                onToggleTodo = onQuickToggleTodo,
+                                                liveTodos = liveTodos
+                                            )
                                         }
 
                                         if (msg.content.isNotEmpty()) {
@@ -1389,6 +1491,18 @@ fun ChatRoomScreen(
                                                 val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
                                                 quoteTarget = sender to msg.content
                                             }
+                                        ),
+                                        GlassMenuAction(
+                                            label = "转为待办",
+                                            icon = Icons.Default.TaskAlt,
+                                            iconTint = if (theme.isLight) Color(0xFF0284C7) else Color(0xFF38BDF8),
+                                            onClick = { onConvertTurnToTodo(msg) }
+                                        ),
+                                        GlassMenuAction(
+                                            label = "存为笔记",
+                                            icon = Icons.Default.Description,
+                                            iconTint = theme.accent,
+                                            onClick = { onSaveTurnAsNote(msg) }
                                         ),
                                         GlassMenuAction(
                                             label = "转发",

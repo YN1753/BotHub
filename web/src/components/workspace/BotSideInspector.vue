@@ -1,0 +1,1149 @@
+<script setup lang="ts">
+import { ref, computed, nextTick } from 'vue'
+import { useAppStore, type SideInspectorTab } from '../../stores/useAppStore'
+import { BotHubApi } from '../../api/client'
+import { resolveScopedMemories } from '../../utils/botLook'
+import { resolveCategoryMeta } from '../../utils/assetCategories'
+import { addMonthsPlain, diffPlainDaysFromToday, todayPlainDate } from '../../utils/calendar'
+import {
+  formatDateOnly,
+  formatTime,
+  summarizeAssetsMonthlyCost,
+  summarizeAssetsYearlyCost,
+} from '../../utils/format'
+import { handleMarkdownCodeCopy, renderSafeMarkdown } from '../../utils/markdown'
+import type { AgentMemory, Asset, StashItem, TodoItem, WorkNote } from '../../types/bothub'
+import AssetCategoryIcon from '../ui/AssetCategoryIcon.vue'
+
+const emit = defineEmits<{
+  quoteToChat: [text: string]
+}>()
+
+const store = useAppStore()
+
+const TABS: Array<{ id: SideInspectorTab; label: string }> = [
+  { id: 'todos', label: '待办' },
+  { id: 'notes', label: '笔记' },
+  { id: 'stash', label: '收藏' },
+  { id: 'assets', label: '资产' },
+  { id: 'memories', label: '记忆' },
+]
+
+const activeTab = computed({
+  get: () => store.state.sideInspectorTab,
+  set: (v: SideInspectorTab) => store.setSideInspectorTab(v),
+})
+
+// ---- Todos State ----
+const newTodoTitle = ref('')
+const newTodoPriority = ref<'high' | 'normal' | 'low'>('normal')
+const todoShowAll = ref(false)
+const savingTodo = ref(false)
+const busyTodoId = ref('')
+
+const todayPrefix = computed(() => todayPlainDate())
+const visibleTodos = computed(() =>
+  store.state.todos.filter((t) => (todoShowAll.value ? true : t.status !== 'done'))
+)
+
+function isTodoOverdue(t: TodoItem): boolean {
+  return Boolean(t.status !== 'done' && t.due_at && t.due_at.slice(0, 10) < todayPrefix.value)
+}
+
+async function handleCreateTodo() {
+  const title = newTodoTitle.value.trim()
+  if (!title || savingTodo.value) return
+  savingTodo.value = true
+  newTodoTitle.value = ''
+  try {
+    const res = await BotHubApi.createTodo({
+      bot_id: store.activeBot.value?.id || '',
+      thread_id: store.state.activeThreadId || '',
+      title,
+      priority: newTodoPriority.value,
+      status: 'pending',
+    })
+    if (res?.todo) {
+      store.state.todos = [res.todo, ...store.state.todos.filter((x) => x.id !== res.todo.id)]
+    }
+    void store.refreshWorkspaceSlices(['todos'])
+    store.notify('待办已添加')
+  } catch (err: any) {
+    newTodoTitle.value = title
+    store.notify(err?.message || '添加待办失败')
+  } finally {
+    savingTodo.value = false
+  }
+}
+
+async function toggleTodoStatus(td: TodoItem) {
+  if (busyTodoId.value) return
+  const prev = td.status
+  const next = prev === 'done' ? 'pending' : 'done'
+  busyTodoId.value = td.id
+  td.status = next
+  try {
+    await BotHubApi.updateTodo(td.id, { status: next })
+    void store.refreshWorkspaceSlices(['todos'])
+  } catch (err: any) {
+    td.status = prev
+    store.notify(err?.message || '更新待办失败')
+  } finally {
+    busyTodoId.value = ''
+  }
+}
+
+async function removeTodo(td: TodoItem) {
+  if (busyTodoId.value) return
+  busyTodoId.value = td.id
+  const prev = [...store.state.todos]
+  store.state.todos = store.state.todos.filter((x) => x.id !== td.id)
+  try {
+    await BotHubApi.deleteTodo(td.id)
+    void store.refreshWorkspaceSlices(['todos'])
+    store.notify('已删除待办')
+  } catch (err: any) {
+    store.state.todos = prev
+    store.notify(err?.message || '删除待办失败')
+  } finally {
+    busyTodoId.value = ''
+  }
+}
+
+function quoteTodoToChat(td: TodoItem) {
+  const duePart = td.due_at ? `（截止 ${td.due_at}）` : ''
+  emit('quoteToChat', `请帮我跟进待办「${td.title}」${duePart}：`)
+}
+
+// ---- Notes State ----
+const noteSearch = ref('')
+const selectedNoteId = ref('')
+const noteEditing = ref(false)
+const draftNoteId = ref('')
+const draftNoteTitle = ref('')
+const draftNoteCategory = ref('deliverable')
+const draftNoteContent = ref('')
+const savingNote = ref(false)
+const noteTitleRef = ref<HTMLInputElement | null>(null)
+
+const filteredNotes = computed(() => {
+  const q = noteSearch.value.trim().toLowerCase()
+  return store.state.notes.filter((n) => {
+    if (!q) return true
+    return `${n.title} ${n.category} ${n.content}`.toLowerCase().includes(q)
+  })
+})
+
+const selectedNote = computed<WorkNote | null>(() => {
+  if (!selectedNoteId.value) return null
+  return store.state.notes.find((n) => n.id === selectedNoteId.value) || null
+})
+
+function openNoteViewer(n: WorkNote) {
+  selectedNoteId.value = n.id
+  noteEditing.value = false
+}
+
+function startNewNote() {
+  selectedNoteId.value = ''
+  draftNoteId.value = ''
+  draftNoteTitle.value = ''
+  draftNoteCategory.value = 'deliverable'
+  draftNoteContent.value = ''
+  noteEditing.value = true
+  nextTick(() => noteTitleRef.value?.focus())
+}
+
+function startEditNote(n: WorkNote) {
+  draftNoteId.value = n.id
+  draftNoteTitle.value = n.title
+  draftNoteCategory.value = n.category || 'deliverable'
+  draftNoteContent.value = n.content
+  noteEditing.value = true
+  nextTick(() => noteTitleRef.value?.focus())
+}
+
+async function handleSaveNote() {
+  const title = draftNoteTitle.value.trim()
+  if (!title || savingNote.value) return
+  savingNote.value = true
+  try {
+    let saved: WorkNote
+    if (draftNoteId.value) {
+      const res = await BotHubApi.updateNote(draftNoteId.value, {
+        title,
+        category: draftNoteCategory.value.trim() || 'deliverable',
+        content: draftNoteContent.value,
+      })
+      saved = res.note
+    } else {
+      const res = await BotHubApi.createNote({
+        bot_id: store.activeBot.value?.id || '',
+        title,
+        category: draftNoteCategory.value.trim() || 'deliverable',
+        content: draftNoteContent.value,
+      })
+      saved = res.note
+    }
+    const idx = store.state.notes.findIndex((x) => x.id === saved.id)
+    if (idx >= 0) store.state.notes.splice(idx, 1, saved)
+    else store.state.notes = [saved, ...store.state.notes]
+    selectedNoteId.value = saved.id
+    noteEditing.value = false
+    void store.refreshWorkspaceSlices(['notes'])
+    store.notify('笔记已保存')
+  } catch (err: any) {
+    store.notify(err?.message || '保存笔记失败')
+  } finally {
+    savingNote.value = false
+  }
+}
+
+function quoteNoteToChat(n: WorkNote) {
+  const body = n.content.trim().slice(0, 1400)
+  emit('quoteToChat', `参考工作文档《${n.title}》：\n\n${body}\n\n请基于以上内容：`)
+}
+
+function handleNoteMarkdownClick(e: MouseEvent) {
+  handleMarkdownCodeCopy(e, () => store.notify('代码块已复制'))
+}
+
+// ---- Stash State ----
+const stashCaptureInput = ref('')
+const stashShowAll = ref(false)
+const capturingStash = ref(false)
+const busyStashId = ref('')
+
+const visibleStash = computed(() =>
+  store.state.stash.filter((it) => {
+    if (it.status === 'archived') return false
+    return stashShowAll.value ? true : it.read_count === 0
+  })
+)
+
+async function handleCaptureStash() {
+  const raw = stashCaptureInput.value.trim()
+  if (!raw || capturingStash.value) return
+  capturingStash.value = true
+  stashCaptureInput.value = ''
+  try {
+    const res = await BotHubApi.createStash({ raw_input: raw })
+    await store.refreshWorkspaceSlices(['stash'])
+    store.notify(res.deduplicated ? '已合并至收藏匣' : '已秒收至收藏匣')
+  } catch (err: any) {
+    stashCaptureInput.value = raw
+    store.notify(err?.message || '收藏失败')
+  } finally {
+    capturingStash.value = false
+  }
+}
+
+async function markStashRead(item: StashItem) {
+  if (busyStashId.value) return
+  busyStashId.value = item.id
+  item.read_count = (item.read_count || 0) + 1
+  try {
+    await BotHubApi.updateStash(item.id, { mark_read: true })
+    void store.refreshWorkspaceSlices(['stash'])
+    store.notify('已标为已读')
+  } catch (err: any) {
+    item.read_count = Math.max(0, (item.read_count || 1) - 1)
+    store.notify(err?.message || '更新失败')
+  } finally {
+    busyStashId.value = ''
+  }
+}
+
+async function convertStashToTodo(item: StashItem) {
+  if (busyStashId.value) return
+  busyStashId.value = item.id
+  const notes: string[] = []
+  if (item.ai_tldr) notes.push(`结论：${item.ai_tldr}`)
+  if (item.url) notes.push(`链接：${item.url}`)
+  try {
+    await BotHubApi.createTodo({
+      bot_id: store.activeBot.value?.id || '',
+      title: item.title || item.raw_input.slice(0, 60),
+      notes: notes.join('\n'),
+      priority: 'normal',
+      tags: item.tags || '收藏转化',
+      status: 'pending',
+    })
+    item.read_count = (item.read_count || 0) + 1
+    await BotHubApi.updateStash(item.id, { mark_read: true }).catch(() => {})
+    await store.refreshWorkspaceSlices(['todos', 'stash'])
+    store.notify('已转为待办并标为已读')
+  } catch (err: any) {
+    store.notify(err?.message || '转待办失败')
+  } finally {
+    busyStashId.value = ''
+  }
+}
+
+async function convertStashToNote(item: StashItem) {
+  if (busyStashId.value) return
+  busyStashId.value = item.id
+  const lines: string[] = []
+  if (item.url) lines.push(`- 来源: ${item.url}`)
+  if (item.ai_tldr) lines.push(`\n## 核心提炼\n\n${item.ai_tldr}`)
+  if (Array.isArray(item.points) && item.points.length > 0) {
+    lines.push('\n## 关键要点\n')
+    item.points.forEach((p) => lines.push(`- ${p}`))
+  }
+  if (item.user_note) lines.push(`\n## 个人批注\n\n${item.user_note}`)
+  if (lines.length === 0) lines.push(item.raw_input)
+  try {
+    await BotHubApi.createNote({
+      bot_id: store.activeBot.value?.id || '',
+      title: (item.title || item.raw_input).slice(0, 48),
+      category: 'research',
+      content: lines.join('\n'),
+    })
+    await store.refreshWorkspaceSlices(['notes'])
+    store.notify('已存为工作笔记')
+  } catch (err: any) {
+    store.notify(err?.message || '存笔记失败')
+  } finally {
+    busyStashId.value = ''
+  }
+}
+
+function quoteStashToChat(item: StashItem) {
+  const parts = [`参考收藏「${item.title || item.raw_input.slice(0, 48)}」`]
+  if (item.url) parts.push(`链接：${item.url}`)
+  if (item.ai_tldr) parts.push(`摘要：${item.ai_tldr}`)
+  emit('quoteToChat', `${parts.join('\n')}\n请帮我进一步梳理：`)
+}
+
+// ---- Assets State ----
+const assetExpiringOnly = ref(false)
+const renewingAssetId = ref('')
+
+const visibleAssets = computed(() => {
+  const list = store.state.assets.filter((a) => {
+    if (!assetExpiringOnly.value) return true
+    if (a.status === '已停用' || String(a.due_date || '').startsWith('2099')) return false
+    return typeof a.days_left === 'number' && a.days_left <= 7
+  })
+  return list.toSorted((a, b) => (a.days_left ?? 9999) - (b.days_left ?? 9999))
+})
+
+const monthlyAssetCost = computed(() => summarizeAssetsMonthlyCost(visibleAssets.value))
+const yearlyAssetCost = computed(() => summarizeAssetsYearlyCost(visibleAssets.value))
+
+async function quickRenewAsset(a: Asset, months: 1 | 3 | 12) {
+  if (renewingAssetId.value) return
+  const curDate = (a.due_date || '').slice(0, 10)
+  const curDiff = diffPlainDaysFromToday(curDate)
+  const baseDate =
+    /^\d{4}-\d{2}-\d{2}$/.test(curDate) &&
+    !curDate.startsWith('2099') &&
+    curDiff !== null &&
+    curDiff >= -30
+      ? curDate
+      : todayPlainDate()
+  const nextDue = addMonthsPlain(baseDate, months)
+  const nextDays = diffPlainDaysFromToday(nextDue) ?? a.days_left
+  renewingAssetId.value = a.id
+  try {
+    await BotHubApi.updateAsset(a.id, {
+      ...a,
+      due_date: nextDue,
+      days_left: nextDays,
+      status: '生效中',
+    })
+    const stepLabel = months === 12 ? '1 年' : months === 3 ? '1 季' : '1 月'
+    store.notify(`已将「${a.name}」顺延 ${stepLabel} 至 ${nextDue}`)
+    await store.refreshWorkspaceSlices(['assets'])
+  } catch (err: any) {
+    store.notify(err?.message || '顺延到期日失败')
+  } finally {
+    renewingAssetId.value = ''
+  }
+}
+
+// ---- Memories State ----
+const memFactKey = ref('')
+const memContent = ref('')
+const memScopeMode = ref<'bot' | 'global'>('bot')
+const savingMemory = ref(false)
+const busyMemId = ref<number | null>(null)
+
+const scopedMemories = computed(() =>
+  resolveScopedMemories(store.activeBot.value, store.state.botMemories || [], store.state.memories)
+)
+
+async function handleAddMemory() {
+  const key = memFactKey.value.trim()
+  const body = memContent.value.trim()
+  if (!key || !body || savingMemory.value) return
+  savingMemory.value = true
+  const botId = store.activeBot.value?.id
+  const targetScope = memScopeMode.value === 'bot' && botId ? `bot:${botId}` : 'global'
+  try {
+    await BotHubApi.saveMemory({
+      scope: targetScope,
+      category: 'insight',
+      fact_key: key,
+      content: body,
+      importance: 3,
+      pinned: false,
+    })
+    memFactKey.value = ''
+    memContent.value = ''
+    await Promise.all([store.refreshWorkspaceSlices(['memories']), store.refreshActiveBot()])
+    store.notify('长期记忆已写入')
+  } catch (err: any) {
+    store.notify(err?.message || '写入记忆失败')
+  } finally {
+    savingMemory.value = false
+  }
+}
+
+async function toggleMemoryPin(m: AgentMemory) {
+  if (busyMemId.value !== null) return
+  const nextPin = !m.pinned
+  busyMemId.value = m.id
+  m.pinned = nextPin
+  try {
+    await BotHubApi.updateMemory(m.id, { pinned: nextPin })
+    void store.refreshWorkspaceSlices(['memories'])
+    store.notify(nextPin ? '已置顶该条记忆' : '已取消记忆置顶')
+  } catch (err: any) {
+    m.pinned = !nextPin
+    store.notify(err?.message || '更新记忆失败')
+  } finally {
+    busyMemId.value = null
+  }
+}
+
+async function removeMemory(m: AgentMemory) {
+  if (busyMemId.value !== null) return
+  busyMemId.value = m.id
+  const prevGlobal = [...store.state.memories]
+  const prevBot = [...store.state.botMemories]
+  store.state.memories = store.state.memories.filter((x) => x.id !== m.id)
+  store.state.botMemories = store.state.botMemories.filter((x) => x.id !== m.id)
+  try {
+    await BotHubApi.deleteMemory(m.id)
+    void store.refreshWorkspaceSlices(['memories'])
+    store.notify('已移除记忆')
+  } catch (err: any) {
+    store.state.memories = prevGlobal
+    store.state.botMemories = prevBot
+    store.notify(err?.message || '删除记忆失败')
+  } finally {
+    busyMemId.value = null
+  }
+}
+
+function openFullView() {
+  if (activeTab.value === 'assets') {
+    store.state.workspace = 'ops'
+    return
+  }
+  if (activeTab.value === 'memories') {
+    store.state.memoryModalDefaultScope = store.activeBot.value
+      ? `bot:${store.activeBot.value.id}`
+      : 'global'
+    store.state.showMemoriesModal = true
+    return
+  }
+  store.state.workhubTab = activeTab.value
+  store.state.showWorkhubModal = true
+}
+
+function fullViewLabel(): string {
+  if (activeTab.value === 'assets') return '资产台账'
+  if (activeTab.value === 'memories') return '记忆全景'
+  return '全屏工作台'
+}
+</script>
+
+<template>
+  <aside
+    aria-label="桌面协同副屏"
+    class="hidden lg:flex w-[376px] xl:w-[400px] shrink-0 border-l border-[#fff8ee]/10 flex-col min-h-0 bg-black/15"
+  >
+    <!-- Inspector Top Header + Full-Screen Link -->
+    <div class="px-3.5 pt-2.5 pb-2 border-b border-[#fff8ee]/8 flex flex-col gap-2 shrink-0">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <svg viewBox="0 0 24 24" width="13.5" height="13.5" fill="none" stroke="currentColor" stroke-width="2" class="text-[#f2b880] shrink-0" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <line x1="15" y1="3" x2="15" y2="21" />
+          </svg>
+          <span class="text-xs font-semibold text-white truncate">协同副屏</span>
+        </div>
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            @click="openFullView"
+            class="px-2 py-1 rounded-lg border border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-[10.5px] text-slate-300 hover:text-[#ffe2be] cursor-pointer inline-flex items-center gap-1"
+          >
+            <span>{{ fullViewLabel() }}</span>
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polyline points="15 3 21 3 21 9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            aria-label="收起协同副屏"
+            title="收起协同副屏"
+            @click="store.toggleSideInspector()"
+            class="w-6 h-6 rounded-lg inline-flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+          >
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 5 Segmented Tabs -->
+      <div role="tablist" aria-label="协同副屏面板" class="well-recessed rounded-full p-0.5 grid grid-cols-5 gap-0.5">
+        <button
+          v-for="tab in TABS"
+          :key="tab.id"
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === tab.id"
+          :data-active="activeTab === tab.id"
+          @click="activeTab = tab.id"
+          :class="[
+            'relative py-1 rounded-full text-[11px] font-medium cursor-pointer transition-colors flex items-center justify-center gap-1',
+            activeTab === tab.id
+              ? 'bg-[#f2b880] text-[#090c16] shadow-xs'
+              : 'text-slate-300 hover:text-white',
+          ]"
+        >
+          <span>{{ tab.label }}</span>
+          <span
+            v-if="tab.id === 'todos' && store.pendingTodoCount.value > 0 && activeTab !== 'todos'"
+            class="w-1.5 h-1.5 rounded-full bg-cyan-400"
+            aria-hidden="true"
+          />
+          <span
+            v-else-if="tab.id === 'stash' && store.unreadStashCount.value > 0 && activeTab !== 'stash'"
+            class="w-1.5 h-1.5 rounded-full bg-rose-400"
+            aria-hidden="true"
+          />
+          <span
+            v-else-if="tab.id === 'assets' && store.expiringAssetCount.value > 0 && activeTab !== 'assets'"
+            class="w-1.5 h-1.5 rounded-full bg-amber-400"
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+    </div>
+
+    <!-- Inspector Body -->
+    <div class="flex-1 min-h-0 overflow-y-auto px-3.5 py-3 flex flex-col gap-2.5">
+      <!-- TAB 1: TODOS -->
+      <template v-if="activeTab === 'todos'">
+        <form @submit.prevent="handleCreateTodo" class="flex flex-col gap-1.5">
+          <div class="flex items-center gap-1.5">
+            <input
+              v-model="newTodoTitle"
+              type="text"
+              placeholder="快速记待办，回车添加..."
+              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+            />
+            <button
+              type="submit"
+              :disabled="!newTodoTitle.trim() || savingTodo"
+              class="btn-jewel px-2.5 py-1.5 rounded-xl text-[11px] shrink-0 cursor-pointer disabled:opacity-40"
+            >
+              添加
+            </button>
+          </div>
+          <div class="flex items-center justify-between gap-2 text-[10.5px]">
+            <div class="flex items-center gap-1">
+              <button
+                v-for="p in (['high', 'normal', 'low'] as const)"
+                :key="p"
+                type="button"
+                @click="newTodoPriority = p"
+                :class="[
+                  'px-2 py-0.5 rounded-full border cursor-pointer',
+                  newTodoPriority === p
+                    ? 'border-[#f2b880]/50 bg-[#f2b880]/15 text-[#ffe2be]'
+                    : 'border-[#fff8ee]/10 text-slate-400 hover:text-slate-200',
+                ]"
+              >
+                {{ p === 'high' ? '高优' : p === 'low' ? '低优' : '普通' }}
+              </button>
+            </div>
+            <button
+              type="button"
+              @click="todoShowAll = !todoShowAll"
+              class="font-mono text-slate-400 hover:text-[#ffe2be] cursor-pointer"
+            >
+              {{ todoShowAll ? '仅未完成' : `全部 (${store.state.todos.length})` }}
+            </button>
+          </div>
+        </form>
+
+        <div v-if="visibleTodos.length === 0" class="py-10 text-center text-xs text-slate-500">
+          暂无待办事项
+        </div>
+
+        <div v-else class="flex flex-col gap-1.5">
+          <div
+            v-for="td in visibleTodos"
+            :key="td.id"
+            :class="[
+              'vesper-card rounded-xl p-2.5 flex items-start gap-2',
+              td.status === 'done' ? 'opacity-65' : '',
+            ]"
+          >
+            <button
+              type="button"
+              :aria-label="td.status === 'done' ? '标为未完成' : '标为已完成'"
+              @click="toggleTodoStatus(td)"
+              :class="[
+                'mt-0.5 w-4.5 h-4.5 rounded border flex items-center justify-center shrink-0 cursor-pointer transition-colors',
+                td.status === 'done'
+                  ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300'
+                  : 'border-[#fff8ee]/20 bg-[#fff8ee]/[0.04] text-transparent hover:border-[#f2b880]/60',
+              ]"
+            >
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </button>
+
+            <div class="min-w-0 flex-1 flex flex-col gap-1">
+              <div
+                :class="[
+                  'text-xs leading-snug break-words',
+                  td.status === 'done' ? 'line-through text-slate-400' : 'text-slate-100',
+                ]"
+              >
+                {{ td.title }}
+              </div>
+              <div class="flex flex-wrap items-center gap-1 text-[10px] font-mono">
+                <span
+                  :class="[
+                    'px-1.5 py-0.5 rounded border',
+                    td.priority === 'high'
+                      ? 'border-rose-400/35 bg-rose-500/12 text-rose-300'
+                      : td.priority === 'low'
+                        ? 'border-slate-500/30 text-slate-400'
+                        : 'border-[#fff8ee]/10 text-slate-300',
+                  ]"
+                >
+                  {{ td.priority === 'high' ? '高' : td.priority === 'low' ? '低' : '普通' }}
+                </span>
+                <span
+                  v-if="td.due_at"
+                  :class="[
+                    'px-1.5 py-0.5 rounded border',
+                    isTodoOverdue(td)
+                      ? 'border-rose-400/35 bg-rose-500/12 text-rose-300'
+                      : 'border-[#fff8ee]/10 text-slate-400',
+                  ]"
+                >
+                  {{ td.due_at }}
+                </span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                title="引用到对话"
+                aria-label="引用到对话"
+                @click="quoteTodoToChat(td)"
+                class="w-6 h-6 rounded-lg inline-flex items-center justify-center text-slate-400 hover:text-[#ffe2be] hover:bg-white/[0.06] cursor-pointer"
+              >
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polyline points="15 10 20 15 15 20" />
+                  <path d="M4 4v7a4 4 0 0 0 4 4h12" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                title="删除待办"
+                aria-label="删除待办"
+                @click="removeTodo(td)"
+                class="w-6 h-6 rounded-lg inline-flex items-center justify-center text-slate-500 hover:text-rose-300 hover:bg-rose-500/12 cursor-pointer"
+              >
+                <svg viewBox="0 0 24 24" width="11.5" height="11.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- TAB 2: NOTES -->
+      <template v-else-if="activeTab === 'notes'">
+        <!-- Inline Note Editor -->
+        <form v-if="noteEditing" @submit.prevent="handleSaveNote" class="flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-semibold text-white">{{ draftNoteId ? '编辑笔记' : '新建工作笔记' }}</span>
+            <button
+              type="button"
+              @click="noteEditing = false"
+              class="text-[11px] text-slate-400 hover:text-white cursor-pointer"
+            >
+              取消
+            </button>
+          </div>
+          <input
+            ref="noteTitleRef"
+            v-model="draftNoteTitle"
+            type="text"
+            placeholder="文档标题..."
+            class="rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+          />
+          <input
+            v-model="draftNoteCategory"
+            type="text"
+            placeholder="分类 (如 deliverable / plan / research)"
+            class="rounded-xl px-2.5 py-1.5 text-[11px] font-mono border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+          />
+          <textarea
+            v-model="draftNoteContent"
+            rows="10"
+            placeholder="支持 Markdown 正文..."
+            class="rounded-xl p-2.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55 leading-relaxed resize-y"
+          />
+          <div class="flex items-center justify-end gap-2">
+            <button
+              type="submit"
+              :disabled="!draftNoteTitle.trim() || savingNote"
+              class="btn-jewel px-3 py-1.5 rounded-xl text-xs cursor-pointer disabled:opacity-40"
+            >
+              {{ savingNote ? '保存中...' : '保存笔记' }}
+            </button>
+          </div>
+        </form>
+
+        <!-- Inline Note Viewer -->
+        <div v-else-if="selectedNote" class="flex flex-col gap-2.5">
+          <div class="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              @click="selectedNoteId = ''"
+              class="inline-flex items-center gap-1 text-xs text-slate-300 hover:text-[#ffe2be] cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              <span>返回列表</span>
+            </button>
+            <div class="flex items-center gap-1.5">
+              <button
+                type="button"
+                @click="quoteNoteToChat(selectedNote)"
+                class="px-2 py-1 rounded-lg border border-[#f2b880]/35 bg-[#f2b880]/12 text-[11px] text-[#ffe2be] hover:bg-[#f2b880]/22 cursor-pointer"
+              >
+                引用正文到对话
+              </button>
+              <button
+                type="button"
+                @click="startEditNote(selectedNote)"
+                class="px-2 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-white cursor-pointer"
+              >
+                编辑
+              </button>
+            </div>
+          </div>
+
+          <div class="vesper-card rounded-2xl p-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="text-xs font-semibold text-white leading-snug">{{ selectedNote.title }}</h3>
+              <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#fff8ee]/[0.06] text-slate-300 shrink-0">
+                {{ selectedNote.category || 'note' }}
+              </span>
+            </div>
+            <div
+              @click="handleNoteMarkdownClick"
+              class="text-xs leading-relaxed"
+              v-html="renderSafeMarkdown(selectedNote.content || '（暂无正文）')"
+            />
+          </div>
+        </div>
+
+        <!-- Notes List -->
+        <template v-else>
+          <div class="flex items-center gap-1.5">
+            <input
+              v-model="noteSearch"
+              type="search"
+              placeholder="搜索工作笔记..."
+              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+            />
+            <button
+              type="button"
+              @click="startNewNote"
+              class="btn-tactile-gold px-2.5 py-1.5 rounded-xl text-[11px] font-medium shrink-0 cursor-pointer"
+            >
+              + 新建
+            </button>
+          </div>
+
+          <div v-if="filteredNotes.length === 0" class="py-10 text-center text-xs text-slate-500">
+            暂无匹配的工作笔记
+          </div>
+
+          <div v-else class="flex flex-col gap-1.5">
+            <div
+              v-for="n in filteredNotes"
+              :key="n.id"
+              class="vesper-card vesper-card-interactive rounded-xl p-2.5 flex flex-col gap-1.5"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <button
+                  type="button"
+                  @click="openNoteViewer(n)"
+                  class="min-w-0 flex-1 text-left cursor-pointer"
+                >
+                  <div class="text-xs font-medium text-white truncate hover:text-[#ffe2be]">
+                    {{ n.title }}
+                  </div>
+                </button>
+                <span class="font-mono text-[9.5px] px-1.5 py-0.5 rounded border border-[#fff8ee]/10 text-slate-400 shrink-0">
+                  {{ n.category || 'note' }}
+                </span>
+              </div>
+              <div class="flex items-center justify-between gap-2 text-[10.5px] text-slate-400">
+                <span class="font-mono truncate">{{ formatTime(n.updated_at) }}</span>
+                <button
+                  type="button"
+                  @click="quoteNoteToChat(n)"
+                  class="text-[#f2b880] hover:underline cursor-pointer shrink-0"
+                >
+                  引用正文到对话
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </template>
+
+      <!-- TAB 3: STASH -->
+      <template v-else-if="activeTab === 'stash'">
+        <form @submit.prevent="handleCaptureStash" class="flex flex-col gap-1.5">
+          <div class="flex items-center gap-1.5">
+            <input
+              v-model="stashCaptureInput"
+              type="text"
+              placeholder="粘贴链接或输入闪念，回车秒收..."
+              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+            />
+            <button
+              type="submit"
+              :disabled="!stashCaptureInput.trim() || capturingStash"
+              class="btn-jewel px-2.5 py-1.5 rounded-xl text-[11px] shrink-0 cursor-pointer disabled:opacity-40"
+            >
+              收藏
+            </button>
+          </div>
+          <div class="flex items-center justify-between text-[10.5px]">
+            <span class="font-mono text-slate-400">未读 {{ store.unreadStashCount.value }}</span>
+            <button
+              type="button"
+              @click="stashShowAll = !stashShowAll"
+              class="font-mono text-slate-400 hover:text-[#ffe2be] cursor-pointer"
+            >
+              {{ stashShowAll ? '只看未读' : '显示全部' }}
+            </button>
+          </div>
+        </form>
+
+        <div v-if="visibleStash.length === 0" class="py-10 text-center text-xs text-slate-500">
+          {{ stashShowAll ? '收藏匣暂无内容' : '当前无未读干货' }}
+        </div>
+
+        <div v-else class="flex flex-col gap-2">
+          <div
+            v-for="item in visibleStash"
+            :key="item.id"
+            class="vesper-card rounded-xl p-2.5 flex flex-col gap-1.5"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 mb-0.5">
+                  <span class="font-mono text-[9.5px] px-1.5 py-0.5 rounded border border-cyan-400/30 bg-cyan-500/10 text-cyan-200">
+                    {{ item.kind === 'note' ? '闪念' : item.kind === 'github' ? 'GitHub' : item.kind === 'bilibili' ? 'Bilibili' : 'Web' }}
+                  </span>
+                  <span v-if="item.read_count === 0" class="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" aria-hidden="true" />
+                  <span v-if="item.domain" class="font-mono text-[10px] text-slate-400 truncate">{{ item.domain }}</span>
+                </div>
+                <a
+                  v-if="item.url"
+                  :href="item.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-xs font-medium text-white hover:text-[#ffe2be] hover:underline line-clamp-2"
+                >
+                  {{ item.title || item.raw_input }}
+                </a>
+                <div v-else class="text-xs font-medium text-white line-clamp-2">
+                  {{ item.title || item.raw_input }}
+                </div>
+              </div>
+            </div>
+
+            <div v-if="item.ai_tldr" class="text-[11px] text-slate-300 line-clamp-2 leading-snug">
+              {{ item.ai_tldr }}
+            </div>
+
+            <div class="flex flex-wrap items-center gap-1 pt-0.5">
+              <button
+                v-if="item.read_count === 0"
+                type="button"
+                @click="markStashRead(item)"
+                class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 text-[10.5px] text-slate-300 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+              >
+                标为已读
+              </button>
+              <button
+                type="button"
+                @click="convertStashToTodo(item)"
+                class="px-2 py-0.5 rounded-md border border-cyan-400/25 bg-cyan-500/10 text-[10.5px] text-cyan-200 hover:bg-cyan-500/20 cursor-pointer"
+              >
+                转待办
+              </button>
+              <button
+                type="button"
+                @click="convertStashToNote(item)"
+                class="px-2 py-0.5 rounded-md border border-emerald-400/25 bg-emerald-500/10 text-[10.5px] text-emerald-300 hover:bg-emerald-500/20 cursor-pointer"
+              >
+                存笔记
+              </button>
+              <button
+                type="button"
+                @click="quoteStashToChat(item)"
+                class="px-2 py-0.5 rounded-md border border-[#f2b880]/30 bg-[#f2b880]/10 text-[10.5px] text-[#ffe2be] hover:bg-[#f2b880]/20 cursor-pointer"
+              >
+                引用进对话
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- TAB 4: ASSETS -->
+      <template v-else-if="activeTab === 'assets'">
+        <div class="vesper-card rounded-xl p-2.5 flex flex-col gap-1.5">
+          <div class="flex items-center justify-between gap-2 text-[11px]">
+            <span class="text-slate-300 font-medium">费用预估 ({{ visibleAssets.length }} 项)</span>
+            <div class="flex items-center gap-1.5">
+              <button
+                type="button"
+                @click="assetExpiringOnly = !assetExpiringOnly"
+                :class="[
+                  'px-2 py-0.5 rounded-full border text-[10.5px] cursor-pointer',
+                  assetExpiringOnly
+                    ? 'border-amber-400/45 bg-amber-500/15 text-amber-200'
+                    : 'border-[#fff8ee]/12 text-slate-400 hover:text-white',
+                ]"
+              >
+                {{ assetExpiringOnly ? '仅临期' : '全部' }}
+              </button>
+              <button
+                type="button"
+                @click="store.state.editingAsset = null"
+                class="px-2 py-0.5 rounded-full border border-[#f2b880]/35 bg-[#f2b880]/12 text-[10.5px] text-[#ffe2be] cursor-pointer"
+              >
+                + 新增
+              </button>
+            </div>
+          </div>
+          <div v-if="monthlyAssetCost || yearlyAssetCost" class="font-mono text-[11px] text-[#ffe2be]">
+            <span v-if="monthlyAssetCost">月均 {{ monthlyAssetCost }}</span>
+            <span v-if="monthlyAssetCost && yearlyAssetCost" class="mx-1.5 text-slate-500">|</span>
+            <span v-if="yearlyAssetCost">年化 {{ yearlyAssetCost }}</span>
+          </div>
+        </div>
+
+        <div v-if="visibleAssets.length === 0" class="py-10 text-center text-xs text-slate-500">
+          {{ assetExpiringOnly ? '暂无 7 天内临期资产' : '暂无数字资产' }}
+        </div>
+
+        <div v-else class="flex flex-col gap-1.5">
+          <div
+            v-for="a in visibleAssets"
+            :key="a.id"
+            class="vesper-card rounded-xl p-2.5 flex flex-col gap-1.5"
+          >
+            <button
+              type="button"
+              @click="store.state.editingAsset = a"
+              class="w-full text-left flex items-start justify-between gap-2 cursor-pointer"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5">
+                  <AssetCategoryIcon
+                    :icon="resolveCategoryMeta(a.category, store.state.assetCategories).icon"
+                    class="w-3.5 h-3.5 text-[#f2b880] shrink-0"
+                  />
+                  <span class="text-xs font-medium text-white truncate hover:text-[#ffe2be]">{{ a.name }}</span>
+                </div>
+                <div class="mt-0.5 flex items-center gap-2 text-[10.5px] font-mono text-slate-400">
+                  <span>{{ formatDateOnly(a.due_date) }}</span>
+                  <span v-if="a.price" class="text-[#ffe2be]">{{ a.price }}</span>
+                </div>
+              </div>
+              <span
+                :class="[
+                  'font-mono text-[10px] shrink-0',
+                  a.status === '长期有效' || String(a.due_date || '').startsWith('2099')
+                    ? 'text-emerald-300'
+                    : a.days_left <= 3
+                      ? 'text-rose-400 font-semibold'
+                      : a.days_left <= 7
+                        ? 'text-amber-300 font-semibold'
+                        : 'text-emerald-300',
+                ]"
+              >
+                {{
+                  a.status === '长期有效' || String(a.due_date || '').startsWith('2099')
+                    ? '长期'
+                    : a.days_left < 0
+                      ? `逾期${Math.abs(a.days_left)}天`
+                      : `剩${a.days_left}天`
+                }}
+              </span>
+            </button>
+
+            <div
+              v-if="!(a.status === '长期有效' || String(a.due_date || '').startsWith('2099'))"
+              class="flex items-center justify-between gap-1.5 pt-0.5"
+            >
+              <span class="text-[10px] text-slate-500 truncate">{{ a.spec || a.status }}</span>
+              <div class="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  :disabled="renewingAssetId === a.id"
+                  @click="quickRenewAsset(a, 1)"
+                  class="px-1.5 py-0.5 rounded border border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-[10px] font-mono text-slate-300 hover:text-[#ffe2be] cursor-pointer"
+                >
+                  +1月
+                </button>
+                <button
+                  type="button"
+                  :disabled="renewingAssetId === a.id"
+                  @click="quickRenewAsset(a, 3)"
+                  class="px-1.5 py-0.5 rounded border border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-[10px] font-mono text-slate-300 hover:text-[#ffe2be] cursor-pointer"
+                >
+                  +1季
+                </button>
+                <button
+                  type="button"
+                  :disabled="renewingAssetId === a.id"
+                  @click="quickRenewAsset(a, 12)"
+                  class="px-1.5 py-0.5 rounded border border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-[10px] font-mono text-slate-300 hover:text-[#ffe2be] cursor-pointer"
+                >
+                  +1年
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- TAB 5: MEMORIES -->
+      <template v-else-if="activeTab === 'memories'">
+        <form @submit.prevent="handleAddMemory" class="flex flex-col gap-1.5">
+          <div class="flex items-center gap-1.5">
+            <input
+              v-model="memFactKey"
+              type="text"
+              placeholder="记忆键 (如 preferred_lang)"
+              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+            />
+            <button
+              type="button"
+              @click="memScopeMode = memScopeMode === 'bot' ? 'global' : 'bot'"
+              class="px-2 py-1.5 rounded-xl border border-[#fff8ee]/12 text-[10.5px] font-mono text-slate-300 hover:text-[#ffe2be] shrink-0 cursor-pointer"
+            >
+              {{ memScopeMode === 'bot' ? '当前Bot' : '全局' }}
+            </button>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <input
+              v-model="memContent"
+              type="text"
+              placeholder="记下一条偏好、事实或约定..."
+              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+            />
+            <button
+              type="submit"
+              :disabled="!memFactKey.trim() || !memContent.trim() || savingMemory"
+              class="btn-jewel px-2.5 py-1.5 rounded-xl text-[11px] shrink-0 cursor-pointer disabled:opacity-40"
+            >
+              存入
+            </button>
+          </div>
+        </form>
+
+        <div v-if="scopedMemories.length === 0" class="py-10 text-center text-xs text-slate-500">
+          当前作用域暂无长期记忆
+        </div>
+
+        <div v-else class="flex flex-col gap-1.5">
+          <div
+            v-for="m in scopedMemories"
+            :key="m.id"
+            class="vesper-card rounded-xl p-2.5 flex flex-col gap-1"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span
+                  :class="[
+                    'font-mono text-[9.5px] px-1.5 py-0.5 rounded border shrink-0',
+                    !m.scope || m.scope === 'global'
+                      ? 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
+                      : 'border-[#f2b880]/30 bg-[#f2b880]/10 text-[#ffe2be]',
+                  ]"
+                >
+                  {{ !m.scope || m.scope === 'global' ? '全局' : '专属' }}
+                </span>
+                <span class="font-mono text-[10.5px] font-medium text-white truncate">{{ m.fact_key }}</span>
+              </div>
+              <div class="flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  :title="m.pinned ? '取消置顶' : '置顶记忆'"
+                  @click="toggleMemoryPin(m)"
+                  :class="[
+                    'px-1.5 py-0.5 rounded text-[10px] font-mono cursor-pointer',
+                    m.pinned
+                      ? 'bg-[#f2b880]/18 text-[#ffe2be]'
+                      : 'text-slate-400 hover:text-white',
+                  ]"
+                >
+                  {{ m.pinned ? '已置顶' : '置顶' }}
+                </button>
+                <button
+                  type="button"
+                  title="删除记忆"
+                  aria-label="删除记忆"
+                  @click="removeMemory(m)"
+                  class="w-5 h-5 rounded inline-flex items-center justify-center text-slate-500 hover:text-rose-300 cursor-pointer"
+                >
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="text-[11.5px] text-slate-300 leading-snug break-words">
+              {{ m.content }}
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </aside>
+</template>

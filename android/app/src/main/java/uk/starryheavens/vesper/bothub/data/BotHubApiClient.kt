@@ -1248,6 +1248,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         onSession: (String) -> Unit,
         onReasoningDelta: (String) -> Unit,
         onToolCall: (String, String) -> Unit,
+        onToolDetail: (id: String, name: String, arguments: String, result: String, status: String) -> Unit = { _, _, _, _, _ -> },
         onContentDelta: (String) -> Unit,
         onDoneModel: (String) -> Unit = {},
         onError: (String) -> Unit
@@ -1292,10 +1293,19 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                             if (delta.isNotEmpty()) onReasoningDelta(delta)
                         }
                         "tool_start" -> {
-                            onToolCall(dataObj.optString("name"), "执行中")
+                            val tcId = dataObj.optString("id")
+                            val tcName = dataObj.optString("name")
+                            val tcArgs = dataObj.optString("arguments")
+                            onToolCall(tcName, "执行中")
+                            onToolDetail(tcId, tcName, tcArgs, "", "进行中")
                         }
                         "tool_result" -> {
-                            onToolCall(dataObj.optString("name"), "已完成")
+                            val tcId = dataObj.optString("id")
+                            val tcName = dataObj.optString("name")
+                            val tcResult = dataObj.optString("result")
+                            val tcStatus = dataObj.optString("status", "已完成").ifBlank { "已完成" }
+                            onToolCall(tcName, "已完成")
+                            onToolDetail(tcId, tcName, "", tcResult, tcStatus)
                         }
                         "content" -> {
                             val delta = dataObj.optString("delta")

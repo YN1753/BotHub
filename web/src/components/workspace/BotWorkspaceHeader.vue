@@ -306,6 +306,30 @@ onBeforeUnmount(() => {
 
       <button
         type="button"
+        @click="store.toggleChatWide()"
+        :aria-pressed="store.state.chatWide"
+        :title="store.state.chatWide ? '切换为标准宽度 (840px)' : '切换为宽屏视野 (1120px)'"
+        aria-label="切换对话宽度"
+        :class="[
+          'hidden lg:inline-flex min-h-[34px] items-center justify-center gap-1.5 px-2.5 rounded-full text-xs font-medium cursor-pointer shrink-0',
+          store.state.chatWide ? 'btn-tactile-gold' : 'btn-tactile text-slate-300',
+        ]"
+      >
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <polyline v-if="!store.state.chatWide" points="15 3 21 3 21 9" />
+          <polyline v-if="!store.state.chatWide" points="9 21 3 21 3 15" />
+          <line v-if="!store.state.chatWide" x1="21" y1="3" x2="14" y2="10" />
+          <line v-if="!store.state.chatWide" x1="3" y1="21" x2="10" y2="14" />
+          <polyline v-if="store.state.chatWide" points="4 14 10 14 10 20" />
+          <polyline v-if="store.state.chatWide" points="20 10 14 10 14 4" />
+          <line v-if="store.state.chatWide" x1="14" y1="10" x2="21" y2="3" />
+          <line v-if="store.state.chatWide" x1="3" y1="21" x2="10" y2="14" />
+        </svg>
+        <span>{{ store.state.chatWide ? '宽屏' : '标准' }}</span>
+      </button>
+
+      <button
+        type="button"
         @click="store.state.showGroupDrawer = true"
         :title="isGroupBot ? '管理群成员与协作策略' : '拉人发起协同群聊'"
         aria-label="协同成员设置"
@@ -318,6 +342,32 @@ onBeforeUnmount(() => {
           <line x1="23" y1="11" x2="17" y2="11" />
         </svg>
         <span class="hidden md:inline">{{ isGroupBot ? `成员 ${groupMembers.length}` : '协同' }}</span>
+      </button>
+
+      <button
+        type="button"
+        @click="store.toggleSideInspector()"
+        :aria-pressed="store.state.sideInspectorOpen"
+        :title="store.state.sideInspectorOpen ? '收起桌面协同副屏' : '展开桌面协同副屏 (待办 / 笔记 / 收藏 / 资产 / 记忆)'"
+        aria-label="切换协同副屏"
+        :class="[
+          'hidden lg:inline-flex relative min-h-[34px] items-center justify-center gap-1.5 px-2.5 rounded-full text-xs font-medium cursor-pointer shrink-0',
+          store.state.sideInspectorOpen ? 'btn-tactile-gold' : 'btn-tactile text-slate-300',
+        ]"
+      >
+        <span
+          v-if="!store.state.sideInspectorOpen && (store.unreadStashCount.value > 0 || store.expiringAssetCount.value > 0)"
+          :class="[
+            'absolute top-1 right-1 w-1.5 h-1.5 rounded-full',
+            store.unreadStashCount.value > 0 ? 'bg-rose-400' : 'bg-amber-400',
+          ]"
+          aria-hidden="true"
+        />
+        <svg viewBox="0 0 24 24" width="13.5" height="13.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <line x1="15" y1="3" x2="15" y2="21" />
+        </svg>
+        <span>协同副屏</span>
       </button>
 
       <div class="relative shrink-0">

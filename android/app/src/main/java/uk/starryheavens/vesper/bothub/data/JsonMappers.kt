@@ -272,28 +272,113 @@ object JsonMappers {
         return runCatching { parseStashItems(JSONArray(rawJson)) }.getOrDefault(emptyList())
     }
 
+    fun parseToolCallsJson(
+        rawToolCalls: String,
+        toolResultsByCallId: Map<String, String> = emptyMap()
+    ): List<ChatToolTraceUi> {
+        val clean = rawToolCalls.trim()
+        if (clean.isEmpty() || clean == "[]" || clean == "null") return emptyList()
+        val arr = runCatching { JSONArray(clean) }.getOrNull() ?: return emptyList()
+        return parseToolCallsArray(arr, toolResultsByCallId)
+    }
+
+    private fun parseToolCallsArray(
+        arr: JSONArray,
+        toolResultsByCallId: Map<String, String>
+    ): List<ChatToolTraceUi> = buildList {
+        for (i in 0 until arr.length()) {
+            val tc = arr.optJSONObject(i) ?: continue
+            val tcId = tc.optString("id", "").trim().ifEmpty { "tool_$i" }
+            val fn = tc.optJSONObject("function")
+            val name = (fn?.optString("name", "") ?: tc.optString("name", ""))
+                .trim()
+                .ifEmpty { "tool" }
+            val arguments = fn?.optString("arguments", "{}")
+                ?: tc.optString("arguments", "{}")
+            val result = toolResultsByCallId[tcId].orEmpty()
+            add(
+                ChatToolTraceUi(
+                    id = tcId,
+                    name = name,
+                    displayName = formatHumanToolName(name),
+                    arguments = arguments,
+                    result = result,
+                    status = "已完成"
+                )
+            )
+        }
+    }
+
     fun parseHistoryMessages(arr: JSONArray?): List<AgentHistoryMessage> {
         if (arr == null) return emptyList()
-        return buildList {
-            for (i in 0 until arr.length()) {
-                val m = arr.optJSONObject(i) ?: continue
-                val role = m.optString("role")
-                val msgKind = m.optString("msg_kind", "chat")
-                if (role == "user" || role == "assistant" || (role == "system" && msgKind == "system")) {
-                    add(
-                        AgentHistoryMessage(
-                            id = m.optLong("id"),
-                            role = role,
-                            content = m.optString("content", ""),
-                            reasoningContent = m.optString("reasoning_content", ""),
-                            msgKind = msgKind,
-                            senderBotId = m.optString("sender_bot_id", ""),
-                            modelUsed = m.optString("model_used", "")
-                        )
-                    )
+
+        // First pass: collect tool execution results keyed by tool_call_id.
+        val toolResultsByCallId = mutableMapOf<String, String>()
+        for (i in 0 until arr.length()) {
+            val m = arr.optJSONObject(i) ?: continue
+            if (m.optString("role") == "tool") {
+                val callId = m.optString("tool_call_id", "").trim()
+                if (callId.isNotEmpty()) {
+                    toolResultsByCallId[callId] = m.optString("content", "")
                 }
             }
         }
+
+        // Second pass: reconstruct user/system/assistant messages and merge multi-round assistant tool turns.
+        val out = mutableListOf<AgentHistoryMessage>()
+        for (i in 0 until arr.length()) {
+            val m = arr.optJSONObject(i) ?: continue
+            val role = m.optString("role")
+            val msgKind = m.optString("msg_kind", "chat")
+            if (role != "user" && role != "assistant" && !(role == "system" && msgKind == "system")) {
+                continue
+            }
+
+            val traces = if (role == "assistant") {
+                m.optJSONArray("tool_calls")?.let { parseToolCallsArray(it, toolResultsByCallId) }
+                    ?: parseToolCallsJson(m.optString("tool_calls", "[]"), toolResultsByCallId)
+            } else {
+                emptyList()
+            }
+
+            val mapped = AgentHistoryMessage(
+                id = m.optLong("id"),
+                role = role,
+                content = m.optString("content", ""),
+                reasoningContent = m.optString("reasoning_content", ""),
+                msgKind = msgKind,
+                senderBotId = m.optString("sender_bot_id", ""),
+                modelUsed = m.optString("model_used", ""),
+                toolTraces = traces
+            )
+
+            val prev = out.lastOrNull()
+            if (
+                prev != null &&
+                prev.role == "assistant" &&
+                mapped.role == "assistant" &&
+                prev.senderBotId == mapped.senderBotId &&
+                prev.toolTraces.isNotEmpty()
+            ) {
+                val mergedReasoning = when {
+                    mapped.reasoningContent.isBlank() -> prev.reasoningContent
+                    prev.reasoningContent.isBlank() -> mapped.reasoningContent
+                    prev.reasoningContent.contains(mapped.reasoningContent) -> prev.reasoningContent
+                    else -> "${prev.reasoningContent}\n${mapped.reasoningContent}"
+                }
+                out[out.lastIndex] = prev.copy(
+                    id = mapped.id,
+                    reasoningContent = mergedReasoning,
+                    toolTraces = prev.toolTraces + mapped.toolTraces,
+                    content = mapped.content.ifEmpty { prev.content },
+                    modelUsed = mapped.modelUsed.ifBlank { prev.modelUsed }
+                )
+                continue
+            }
+
+            out.add(mapped)
+        }
+        return out
     }
 
     fun parseAgentSessions(arr: JSONArray?): List<AgentSessionSummary> {
@@ -781,6 +866,18 @@ object JsonMappers {
         items.takeLast(maxItems).forEach { t ->
             val toolsArr = JSONArray()
             t.tools.forEach { toolsArr.put(it) }
+            val tracesArr = JSONArray()
+            t.toolTraces.forEach { tr ->
+                tracesArr.put(
+                    JSONObject()
+                        .put("id", tr.id)
+                        .put("name", tr.name)
+                        .put("display_name", tr.displayName)
+                        .put("arguments", tr.arguments)
+                        .put("result", tr.result)
+                        .put("status", tr.status)
+                )
+            }
             arr.put(
                 JSONObject()
                     .put("id", t.id)
@@ -789,6 +886,7 @@ object JsonMappers {
                     .put("model", t.model)
                     .put("reasoning", t.reasoning)
                     .put("tools", toolsArr)
+                    .put("tool_traces", tracesArr)
                     .put("content", t.content)
                     .put("msg_kind", t.msgKind)
                     .put("sender_bot_id", t.senderBotId)
@@ -805,6 +903,27 @@ object JsonMappers {
             buildList {
                 for (i in 0 until arr.length()) {
                     val o = arr.optJSONObject(i) ?: continue
+                    val traces = buildList {
+                        val tracesArr = o.optJSONArray("tool_traces")
+                        if (tracesArr != null) {
+                            for (j in 0 until tracesArr.length()) {
+                                val tr = tracesArr.optJSONObject(j) ?: continue
+                                val name = tr.optString("name", "").ifBlank { "tool" }
+                                val displayName = tr.optString("display_name", "")
+                                    .ifBlank { formatHumanToolName(name) }
+                                add(
+                                    ChatToolTraceUi(
+                                        id = tr.optString("id", "tool_$j"),
+                                        name = name,
+                                        displayName = displayName,
+                                        arguments = tr.optString("arguments", ""),
+                                        result = tr.optString("result", ""),
+                                        status = tr.optString("status", "已完成")
+                                    )
+                                )
+                            }
+                        }
+                    }
                     add(
                         ChatTurnUi(
                             id = o.optString("id"),
@@ -813,6 +932,7 @@ object JsonMappers {
                             model = o.optString("model", "deepseek-flash"),
                             reasoning = o.optString("reasoning", ""),
                             tools = optStringList(o, "tools"),
+                            toolTraces = traces,
                             content = o.optString("content", ""),
                             msgKind = o.optString("msg_kind", "chat"),
                             senderBotId = o.optString("sender_bot_id", ""),

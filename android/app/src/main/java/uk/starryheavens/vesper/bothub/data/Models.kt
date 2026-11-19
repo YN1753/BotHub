@@ -469,6 +469,44 @@ data class BotItem(
     }
 }
 
+@Immutable
+data class ChatToolTraceUi(
+    val id: String,
+    val name: String,
+    val displayName: String,
+    val arguments: String = "",
+    val result: String = "",
+    val status: String = "已完成"
+)
+
+fun formatHumanToolName(toolName: String): String {
+    val clean = toolName.trim()
+    return when {
+        clean == "web_search" -> "联网搜索"
+        clean == "read_url" -> "阅读网页"
+        clean == "manage_bots" -> "Bot 与群聊管理"
+        clean == "manage_models" -> "AI 模型池巡检调优"
+        clean == "manage_skills" -> "自定义技能工坊"
+        clean == "consult_bot" -> "协同成员"
+        clean == "manage_todos" -> "待办管理"
+        clean == "manage_notes" -> "工作文档"
+        clean == "manage_stash" -> "收藏闪念"
+        clean == "manage_tasks" -> "定时提醒"
+        clean == "workspace_briefing" -> "今日简报"
+        clean == "send_notification" -> "主动推送"
+        clean == "calculate_eval" -> "精确计算"
+        clean == "datetime_calc" -> "日期推算"
+        clean == "remember_fact" -> "写入记忆"
+        clean == "recall_memory" -> "检索记忆"
+        clean == "manage_memory" -> "整理记忆"
+        clean == "manage_assets" -> "资产台账"
+        clean == "query_nezha_nodes" -> "探针巡检"
+        clean.startsWith("skill_") -> clean.removePrefix("skill_")
+        clean.isBlank() -> "扩展能力"
+        else -> clean
+    }
+}
+
 data class AgentHistoryMessage(
     val id: Long,
     val role: String,
@@ -476,7 +514,8 @@ data class AgentHistoryMessage(
     val reasoningContent: String,
     val msgKind: String = "chat",
     val senderBotId: String = "",
-    val modelUsed: String = ""
+    val modelUsed: String = "",
+    val toolTraces: List<ChatToolTraceUi> = emptyList()
 ) {
     fun toChatTurnUi(
         idPrefix: String,
@@ -495,12 +534,17 @@ data class AgentHistoryMessage(
         } else {
             null
         }
+        val derivedTools = toolTraces
+            .map { it.displayName.ifBlank { formatHumanToolName(it.name) } }
+            .distinct()
         return ChatTurnUi(
             id = "${idPrefix}_$id",
             role = role,
             persona = senderBot?.name ?: defaultPersona,
             model = modelUsed.ifBlank { senderBot?.model ?: defaultModel },
             reasoning = reasoningContent,
+            tools = derivedTools,
+            toolTraces = toolTraces,
             content = content,
             msgKind = msgKind,
             senderBotId = senderBot?.id ?: defaultBotId,
@@ -606,6 +650,7 @@ data class ChatTurnUi(
     val model: String,
     val reasoning: String = "",
     val tools: List<String> = emptyList(),
+    val toolTraces: List<ChatToolTraceUi> = emptyList(),
     val content: String = "",
     val msgKind: String = "chat",
     val senderBotId: String = "",

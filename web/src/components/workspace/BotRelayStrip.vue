@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAppStore } from '../../stores/useAppStore'
+
 export interface RelayStepItem {
   id: string
   name: string
@@ -9,6 +11,8 @@ export interface RelayStepItem {
 defineProps<{
   steps: RelayStepItem[]
 }>()
+
+const store = useAppStore()
 </script>
 
 <template>
@@ -22,7 +26,10 @@ defineProps<{
   >
     <div
       v-if="steps.length > 0"
-      class="origin-bottom max-w-[820px] w-full mx-auto mb-2 px-3 py-1.5 rounded-full border border-[#f2b880]/25 bg-[#080d1c]/90 backdrop-blur-md flex items-center gap-2 overflow-x-auto no-scrollbar text-[11px]"
+      :class="[
+        'origin-bottom w-full mx-auto mb-2 px-3 py-1.5 rounded-full border border-[#f2b880]/25 bg-[#080d1c]/90 backdrop-blur-md flex items-center gap-2 overflow-x-auto no-scrollbar text-[11px]',
+        store.state.chatWide ? 'max-w-[1120px]' : 'max-w-[840px]',
+      ]"
     >
       <span class="font-mono text-slate-400 shrink-0">协同接力:</span>
       <template v-for="(step, sidx) in steps" :key="step.id + sidx">

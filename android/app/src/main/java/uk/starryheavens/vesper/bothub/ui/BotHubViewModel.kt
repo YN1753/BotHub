@@ -26,7 +26,9 @@ import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.BotThreadItem
+import uk.starryheavens.vesper.bothub.data.ChatToolTraceUi
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
+import uk.starryheavens.vesper.bothub.data.formatHumanToolName
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.JsonMappers
 import uk.starryheavens.vesper.bothub.data.MemoryItemUi
@@ -318,7 +320,8 @@ class BotHubViewModel(
                                     reasoningContent = obj.optString("reasoning_content", ""),
                                     msgKind = mKind,
                                     senderBotId = obj.optString("sender_bot_id", ""),
-                                    modelUsed = obj.optString("model_used", "")
+                                    modelUsed = obj.optString("model_used", ""),
+                                    toolTraces = JsonMappers.parseToolCallsJson(obj.optString("tool_calls", "[]"))
                                 ).toChatTurnUi(
                                     idPrefix = "botmsg",
                                     defaultPersona = target?.name ?: bId,
@@ -1530,6 +1533,42 @@ class BotHubViewModel(
                             }
                         }
                     },
+                    onToolDetail = { tcId, tcName, tcArgs, tcResult, tcStatus ->
+                        viewModelScope.launch {
+                            updateTurnById(assistantId) { cur ->
+                                val humanName = formatHumanToolName(tcName)
+                                val existingIdx = cur.toolTraces.indexOfLast { tr ->
+                                    (tcId.isNotBlank() && tr.id == tcId) ||
+                                        (tcId.isBlank() && tr.name == tcName && tr.status == "进行中")
+                                }
+                                val nextTraces = if (existingIdx >= 0) {
+                                    cur.toolTraces.mapIndexed { idx, existing ->
+                                        if (idx == existingIdx) {
+                                            existing.copy(
+                                                name = tcName.ifBlank { existing.name },
+                                                displayName = humanName.ifBlank { existing.displayName },
+                                                arguments = tcArgs.ifBlank { existing.arguments },
+                                                result = tcResult.ifBlank { existing.result },
+                                                status = tcStatus.ifBlank { existing.status }
+                                            )
+                                        } else {
+                                            existing
+                                        }
+                                    }
+                                } else {
+                                    cur.toolTraces + ChatToolTraceUi(
+                                        id = tcId.ifBlank { "live_${cur.toolTraces.size}_$tcName" },
+                                        name = tcName,
+                                        displayName = humanName,
+                                        arguments = tcArgs,
+                                        result = tcResult,
+                                        status = tcStatus.ifBlank { "已完成" }
+                                    )
+                                }
+                                cur.copy(toolTraces = nextTraces)
+                            }
+                        }
+                    },
                     onContentDelta = { delta ->
                         viewModelScope.launch {
                             updateTurnById(assistantId) { cur ->
@@ -2193,31 +2232,78 @@ class BotHubViewModel(
         }
     }
 
-    private fun formatHumanToolName(toolName: String): String {
-        val clean = toolName.trim()
-        return when {
-            clean == "web_search" -> "联网搜索"
-            clean == "read_url" -> "阅读网页"
-            clean == "manage_bots" -> "Bot 与群聊管理"
-            clean == "manage_models" -> "AI 模型池巡检调优"
-            clean == "manage_skills" -> "自定义技能工坊"
-            clean == "consult_bot" -> "协同成员"
-            clean == "manage_todos" -> "待办管理"
-            clean == "manage_notes" -> "工作文档"
-            clean == "manage_stash" -> "收藏闪念"
-            clean == "manage_tasks" -> "定时提醒"
-            clean == "workspace_briefing" -> "今日简报"
-            clean == "send_notification" -> "主动推送"
-            clean == "calculate_eval" -> "精确计算"
-            clean == "datetime_calc" -> "日期推算"
-            clean == "remember_fact" -> "写入记忆"
-            clean == "recall_memory" -> "检索记忆"
-            clean == "manage_memory" -> "整理记忆"
-            clean == "manage_assets" -> "资产台账"
-            clean == "query_nezha_nodes" -> "探针巡检"
-            clean.startsWith("skill_") -> clean.removePrefix("skill_")
-            clean.isBlank() -> "扩展能力"
-            else -> clean
+    fun convertTurnToTodo(turn: ChatTurnUi) {
+        val raw = turn.content.trim()
+        if (raw.isEmpty()) return
+        val firstLine = raw.lineSequence()
+            .map { it.trim().removePrefix("#").trim().replace("**", "").replace("`", "") }
+            .firstOrNull { it.isNotBlank() }
+            .orEmpty()
+        val title = firstLine.take(60).ifBlank { "对话转化待办" }
+        val notes = raw.take(1500)
+        viewModelScope.launch {
+            api.createTodo(title = title, notes = notes, priority = "normal").onSuccess { created ->
+                dashboard?.let { cur ->
+                    val nextDash = cur.copy(todos = listOf(created) + cur.todos.filterNot { it.id == created.id })
+                    dashboard = nextDash
+                    prefs.saveCachedDashboard(nextDash)
+                }
+                showMessage("已转为待办事项")
+                syncDashboardSlices(listOf("todos"))
+            }.onFailure { err ->
+                showMessage(err.message ?: "转为待办失败")
+            }
+        }
+    }
+
+    fun saveTurnAsNote(turn: ChatTurnUi) {
+        val raw = turn.content.trim()
+        if (raw.isEmpty()) return
+        val firstLine = raw.lineSequence()
+            .map { it.trim().trimStart('#').trim().replace("**", "").replace("`", "") }
+            .firstOrNull { it.isNotBlank() }
+            .orEmpty()
+        val title = firstLine.take(40).ifBlank { "AI 对话文档" }
+        viewModelScope.launch {
+            api.saveNote(
+                existingId = null,
+                title = title,
+                content = raw,
+                category = "deliverable",
+                pinned = false
+            ).onSuccess {
+                showMessage("已存入工作文档")
+                syncDashboardSlices(listOf("notes"))
+            }.onFailure { err ->
+                showMessage(err.message ?: "存入工作文档失败")
+            }
+        }
+    }
+
+    fun quickToggleTodoById(todoId: String, nextStatus: String) {
+        val cleanId = todoId.trim()
+        val cleanStatus = nextStatus.trim().ifBlank { "done" }
+        if (cleanId.isEmpty()) return
+        val prevDash = dashboard
+        if (prevDash != null && prevDash.todos.any { it.id == cleanId }) {
+            val optimistic = prevDash.copy(
+                todos = prevDash.todos.map {
+                    if (it.id == cleanId) it.copy(status = cleanStatus) else it
+                }
+            )
+            dashboard = optimistic
+            prefs.saveCachedDashboard(optimistic)
+        }
+        viewModelScope.launch {
+            api.updateTodo(id = cleanId, status = cleanStatus).onSuccess {
+                syncDashboardSlices(listOf("todos"))
+            }.onFailure { err ->
+                if (prevDash != null) {
+                    dashboard = prevDash
+                    prefs.saveCachedDashboard(prevDash)
+                }
+                showMessage(err.message ?: "更新待办状态失败")
+            }
         }
     }
 

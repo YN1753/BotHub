@@ -60,6 +60,7 @@ import { resolveTabSlideTransition } from '../src/utils/motion.ts'
 import { mapServerMessages } from '../src/utils/chatMapper.ts'
 import { buildSlashCommands, filterSlashCommands } from '../src/utils/slashCommands.ts'
 import { isValidBase64Url } from '../src/utils/passkey.ts'
+import { extractStructuredToolCards, parseNezhaHostInfo } from '../src/utils/toolCards.ts'
 
 test('format utilities produce expected strings', () => {
   assert.equal(formatDurationMs(420), '420ms')
@@ -594,4 +595,240 @@ test('modelRouting normalizes URLs, formats tokens, and previews dual-pool route
   })
   assert.equal(paidWithQuota.tone, 'paid')
   assert.equal(paidWithQuota.headline.includes('5 次/日'), true)
+})
+
+test('extractStructuredToolCards parses all structured tool payloads, deduplicates, and ignores partial JSON', () => {
+  assert.deepEqual(extractStructuredToolCards(undefined), [])
+  assert.deepEqual(extractStructuredToolCards([]), [])
+
+  // Malformed / partial streaming JSON & error payloads should be safely ignored
+  assert.deepEqual(
+    extractStructuredToolCards([
+      { id: 't1', name: 'manage_assets', arguments: '{}', result: '{"count":2,"assets":[{"id":', done: false },
+      { id: 't2', name: 'manage_todos', arguments: '{}', result: '{"ok":false,"error":"not found"}', status: 'error', done: true },
+      { id: 't3', name: 'web_search', arguments: '{}', result: '{"count":1,"results":[]}', done: true },
+    ]),
+    []
+  )
+
+  // manage_assets (list + expiring + summary + upsert) & deduplication by id
+  const assetCards = extractStructuredToolCards([
+    {
+      id: 'a_sum',
+      name: 'manage_assets',
+      arguments: '{"action":"summary"}',
+      result: JSON.stringify({
+        active_count: 5,
+        inactive_count: 1,
+        expiring_30d_count: 2,
+        by_category: { compute: 3, domain: 2 },
+        cost_by_currency: [
+          { currency: 'USD', monthly_estimated: 18.5, annualized_estimated: 222, priced_items: 4 },
+        ],
+      }),
+      done: true,
+    },
+    {
+      id: 'a_list',
+      name: 'manage_assets',
+      arguments: '{"action":"list"}',
+      result: JSON.stringify({
+        count: 2,
+        assets: [
+          { id: 'vps-jp', name: 'Tokyo VPS', category: 'compute', spec: '2C2G', price: '$5/月', status: '生效中', due_date: '2026-11-22', days_left: 3, auto_renew: true },
+          { id: 'dom-1', name: 'bothub.dev', category: 'domain', spec: 'Cloudflare', price: '$12/年', status: '生效中', due_date: '2027-06-01', days_left: 190, auto_renew: false },
+        ],
+      }),
+      done: true,
+    },
+    {
+      id: 'a_exp',
+      name: 'manage_assets',
+      arguments: '{"action":"expiring"}',
+      result: JSON.stringify({
+        within_days: 30,
+        count: 1,
+        expiring: [
+          { id: 'vps-jp', name: 'Tokyo VPS', category: 'compute', spec: '2C2G', price: '$5/月', status: '生效中', due_date: '2026-11-22', days_left: 3, auto_renew: true },
+        ],
+      }),
+      done: true,
+    },
+    {
+      id: 'a_upsert',
+      name: 'manage_assets',
+      arguments: '{"action":"upsert"}',
+      result: JSON.stringify({
+        ok: true,
+        asset: { id: 'sub-1', name: 'Cursor Pro', category: 'subscription', spec: 'Yearly', price: '$20/月', status: '生效中', due_date: '2026-12-10', days_left: 21, auto_renew: true },
+      }),
+      done: true,
+    },
+  ])
+  assert.equal(assetCards.length, 4) // 1 summary + 3 unique assets
+  assert.equal(assetCards[0].kind, 'asset_summary')
+  assert.equal(assetCards[1].kind, 'asset')
+  if (assetCards[1].kind === 'asset') {
+    assert.equal(assetCards[1].id, 'vps-jp')
+    assert.equal(assetCards[1].isExpiring, true)
+    assert.equal(assetCards[1].autoRenew, true)
+  }
+
+  // query_nezha_nodes + deduplication with compute_assets + host_info parsing
+  assert.equal(
+    parseNezhaHostInfo(
+      JSON.stringify({
+        Platform: 'Debian',
+        PlatformVersion: '12',
+        CPU: ['AMD EPYC 7763'],
+        MemTotal: 2 * 1024 * 1024 * 1024,
+        Arch: 'x86_64',
+        CountryCode: 'jp',
+      })
+    ),
+    'Debian 12 · AMD EPYC 7763 · RAM 2 GB · x86_64 · JP'
+  )
+  const nezhaCards = extractStructuredToolCards([
+    {
+      id: 'nz_1',
+      name: 'query_nezha_nodes',
+      arguments: '{}',
+      result: JSON.stringify({
+        source: 'nezha_sqlite',
+        nezha_nodes: [
+          {
+            id: 'nezha-1',
+            name: 'JP-Edge-01',
+            host_info: '{"Platform":"Ubuntu","PlatformVersion":"24.04","CPU":["Intel Xeon","Intel Xeon"],"MemTotal":4294967296}',
+            last_active: '2026-11-19 20:00:00',
+            status: 'online',
+          },
+        ],
+        compute_assets: [
+          { id: 'vps-jp', name: 'Tokyo VPS', category: 'compute', spec: '2C2G', price: '$5/月', status: '生效中', due_date: '2026-11-22', days_left: 3, auto_renew: false },
+        ],
+      }),
+      done: true,
+    },
+  ])
+  assert.equal(nezhaCards.length, 2)
+  assert.equal(nezhaCards[0].kind, 'nezha_node')
+  if (nezhaCards[0].kind === 'nezha_node') {
+    assert.equal(nezhaCards[0].hostSummary.includes('Ubuntu 24.04'), true)
+    assert.equal(nezhaCards[0].hostSummary.includes('2C · Intel Xeon'), true)
+    assert.equal(nezhaCards[0].hostSummary.includes('RAM 4 GB'), true)
+  }
+
+  // manage_todos (list + batch_add + complete updating existing item without duplication)
+  const todoCards = extractStructuredToolCards([
+    {
+      id: 'td_list',
+      name: 'manage_todos',
+      arguments: '{"action":"list"}',
+      result: JSON.stringify({
+        filter: 'open',
+        count: 1,
+        overdue_count: 0,
+        todos: [{ id: 'todo_1', title: 'Renew Tokyo VPS', status: 'pending', priority: 'high', due_at: '2026-11-21' }],
+      }),
+      done: true,
+    },
+    {
+      id: 'td_complete',
+      name: 'manage_todos',
+      arguments: '{"action":"complete"}',
+      result: JSON.stringify({
+        ok: true,
+        todo: { id: 'todo_1', title: 'Renew Tokyo VPS', status: 'done', priority: 'high', due_at: '2026-11-21' },
+      }),
+      done: true,
+    },
+    {
+      id: 'td_batch',
+      name: 'manage_todos',
+      arguments: '{"action":"batch_add"}',
+      result: JSON.stringify({
+        ok: true,
+        count: 2,
+        todos: [
+          { id: 'todo_2', title: 'Audit DNS', status: 'pending', priority: 'normal' },
+          { id: 'todo_3', title: 'Backup SQLite', status: 'pending', priority: 'low' },
+        ],
+      }),
+      done: true,
+    },
+  ])
+  assert.equal(todoCards.length, 3)
+  if (todoCards[0].kind === 'todo') {
+    assert.equal(todoCards[0].status, 'done')
+  }
+
+  // manage_tasks (list + upsert)
+  const taskCards = extractStructuredToolCards([
+    {
+      id: 'tk_list',
+      name: 'manage_tasks',
+      arguments: '{"action":"list"}',
+      result: JSON.stringify({
+        count: 1,
+        tasks: [
+          {
+            id: 'task_daily',
+            name: 'Morning Digest',
+            type: 'bot_prompt',
+            bot_id: 'butler',
+            cron_expr: '0 8 * * *',
+            enabled: true,
+            last_run: { status: 'ok', summary: 'Pushed 3 items' },
+          },
+        ],
+      }),
+      done: true,
+    },
+    {
+      id: 'tk_upsert',
+      name: 'manage_tasks',
+      arguments: '{"action":"upsert"}',
+      result: JSON.stringify({
+        ok: true,
+        task: { id: 'task_once', name: 'Call Mom', type: 'bot_prompt', bot_id: 'butler', run_at: '2026-11-20 19:00', enabled: true },
+      }),
+      done: true,
+    },
+  ])
+  assert.equal(taskCards.length, 2)
+  assert.equal(taskCards[0].kind, 'task')
+  if (taskCards[0].kind === 'task') {
+    assert.equal(taskCards[0].lastSummary, 'Pushed 3 items')
+  }
+
+  // workspace_briefing
+  const briefCards = extractStructuredToolCards([
+    {
+      id: 'wb_1',
+      name: 'workspace_briefing',
+      arguments: '{}',
+      result: JSON.stringify({
+        today: '2026-11-19',
+        weekday: '周四',
+        open_todo_count: 3,
+        overdue_todos: [{ id: 'todo_ov', title: 'Overdue Task', status: 'pending', priority: 'high', due_at: '2026-11-17' }],
+        due_today_todos: [{ id: 'todo_ov', title: 'Overdue Task', status: 'pending', priority: 'high', due_at: '2026-11-17' }],
+        high_priority_todos: [],
+        expiring_assets: [{ id: 'vps-jp', name: 'Tokyo VPS', category: 'compute', status: '生效中', due_date: '2026-11-22', days_left: 3, auto_renew: false }],
+        unread_notifications: [{ id: 1, title: 'Alert' }],
+        active_tasks: [{ id: 'task_daily', name: 'Morning Digest' }],
+        summary_text: 'Focus on overdue items',
+      }),
+      done: true,
+    },
+  ])
+  assert.equal(briefCards.length, 3) // 1 briefing + 1 deduped todo + 1 asset
+  assert.equal(briefCards[0].kind, 'briefing')
+  if (briefCards[0].kind === 'briefing') {
+    assert.equal(briefCards[0].overdueCount, 1)
+    assert.equal(briefCards[0].expiringAssetCount, 1)
+    assert.equal(briefCards[0].unreadCount, 1)
+    assert.equal(briefCards[0].activeTaskCount, 1)
+  }
 })

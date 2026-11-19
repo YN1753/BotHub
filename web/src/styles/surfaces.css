@@ -426,14 +426,20 @@
   contain-intrinsic-size: auto none auto 168px;
 }
 
-/* Reveal message actions cleanly on hover/focus on desktop, and progressively on touch */
+/* Reveal message actions cleanly on hover/focus on desktop, softly visible on last message, and progressively on touch */
 .reveal-actions {
   opacity: 0;
   transform: translateY(2px);
   transition: opacity 180ms ease-out, transform 180ms var(--ease-snappy);
 }
+.reveal-host[data-is-last="true"] .reveal-actions {
+  opacity: 0.72;
+  transform: translateY(0);
+}
 .reveal-host:hover .reveal-actions,
-.reveal-host:focus-within .reveal-actions {
+.reveal-host:focus-within .reveal-actions,
+.reveal-host[data-is-last="true"]:hover .reveal-actions,
+.reveal-host[data-is-last="true"]:focus-within .reveal-actions {
   opacity: 1;
   transform: translateY(0);
 }
@@ -451,8 +457,25 @@
 }
 
 /* Container-query responsive surfaces */
-.cq-container {
+.cq-container,
+.cq-inline-cards {
   container-type: inline-size;
+}
+
+.inline-bento-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.625rem;
+}
+@container (min-width: 480px) {
+  .inline-bento-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container (min-width: 840px) {
+  .inline-bento-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .ops-asset-grid {

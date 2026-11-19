@@ -198,8 +198,8 @@ func TestCompanionVsWorkerPromptAndSkills(t *testing.T) {
 		AllowedTools: `["query_nezha_nodes"]`,
 	}
 	workerPrompt := buildBotSystemPrompt(&workerBot, nil, nil, nil, "", false)
-	if !strings.Contains(workerPrompt, "干练务实的专业执行者") {
-		t.Fatalf("expected worker prompt guidance, got:\n%s", workerPrompt)
+	if !strings.Contains(workerPrompt, "干练务实的专业执行者") || !strings.Contains(workerPrompt, "结构化展示准则") {
+		t.Fatalf("expected worker prompt guidance with structured display hint, got:\n%s", workerPrompt)
 	}
 	workerTools := filterToolsForBot(&workerBot, nil)
 	if len(workerTools) != 1 || workerTools[0].Function.Name != "query_nezha_nodes" {
