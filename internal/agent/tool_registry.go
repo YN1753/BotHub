@@ -100,6 +100,7 @@ func init() {
 		manageNotesToolSpec(),
 		manageStashToolSpec(),
 		sendNotificationToolSpec(),
+		manageBotsToolSpec(),
 		consultBotToolSpec(),
 		workspaceBriefingToolSpec(),
 		calculateEvalToolSpec(),

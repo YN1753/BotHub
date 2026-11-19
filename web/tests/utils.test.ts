@@ -491,3 +491,24 @@ test('extensible asset category resolver merges custom definitions and asset cat
   assert.equal(resolveCategoryMeta('insurance', saved).icon, 'shield')
   assert.equal(resolveCategoryMeta('custom_card', saved).label, 'custom_card')
 })
+
+test('manage_bots tool metadata, step summaries and butler slash commands work cleanly', () => {
+  const step = summarizeToolStep({
+    name: 'manage_bots',
+    arguments: JSON.stringify({ action: 'create_group', name: '研发协同群' }),
+    result: JSON.stringify({
+      ok: true,
+      name: '研发协同群',
+      member_names: ['大管家', '代码审查官'],
+    }),
+    done: true,
+  })
+  assert.equal(step.title, '组建群聊 · 研发协同群')
+  assert.equal(step.subtitle, '成员：大管家、代码审查官')
+  assert.equal(step.statusLabel, '已完成')
+
+  const butlerBot = { id: 'butler', allowed_tools: '["manage_bots"]' } as any
+  const cmds = buildSlashCommands(butlerBot, [])
+  assert.equal(cmds.some((c) => c.cmd === '/newbot'), true)
+  assert.equal(cmds.some((c) => c.cmd === '/group'), true)
+})

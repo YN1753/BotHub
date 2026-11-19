@@ -243,7 +243,7 @@ func TestGrokBotRosterAndTimelineLifecycle(t *testing.T) {
 	s, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	// 1. Fresh DB must start clean with 0 hardcoded bots; templates must still be available
+	// 1. Fresh DB must start with exactly 1 neutral default concierge bot ("大管家") equipped with manage_bots
 	reqList := httptest.NewRequest(http.MethodGet, "/api/v2/bots", nil)
 	recList := httptest.NewRecorder()
 	s.handleListBots(recList, reqList)
@@ -257,8 +257,8 @@ func TestGrokBotRosterAndTimelineLifecycle(t *testing.T) {
 	if err := json.Unmarshal(recList.Body.Bytes(), &listResp); err != nil {
 		t.Fatalf("unmarshal bots: %v", err)
 	}
-	if len(listResp.Bots) != 0 {
-		t.Fatalf("expected clean DB with 0 hardcoded bots, got %d", len(listResp.Bots))
+	if len(listResp.Bots) != 1 || listResp.Bots[0].ID != store.DefaultConciergeBotID || !strings.Contains(listResp.Bots[0].AllowedTools, "manage_bots") {
+		t.Fatalf("expected fresh DB to have 1 default concierge bot (butler) with manage_bots, got %+v", listResp.Bots)
 	}
 
 	// 2. Create custom bot, update it, verify messages & unread clear

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,8 +42,9 @@ const (
 	KeyPoolFallback      = "pool_fallback"
 	KeyAppBearerToken    = "app_bearer_token"
 	KeyNezhaWebhookToken = "nezha_webhook_token"
-	KeyAdminPassHash     = "admin_pass_hash"
-	KeySessionSecret     = "session_secret"
+	KeyAdminPassHash       = "admin_pass_hash"
+	KeySessionSecret       = "session_secret"
+	KeyDefaultButlerSeeded = "default_butler_seeded"
 
 	KeyOIDCEnabled      = "oidc_enabled"
 	KeyOIDCIssuer       = "oidc_issuer"
@@ -593,6 +595,33 @@ func (s *Store) seedDefaults() error {
 	_, _ = s.db.Exec(`UPDATE agent_sessions SET model = 'deepseek-chat' WHERE model = 'deepseek-v4-pro'`)
 	if envPass := strings.TrimSpace(os.Getenv("BOTHUB_ADMIN_TOKEN")); envPass != "" {
 		_ = s.SetConfig(KeyAdminPassHash, HashPassword(envPass))
+	}
+
+	if seeded, _ := s.GetConfig(KeyDefaultButlerSeeded); seeded != "true" {
+		existingButler, _ := s.GetBot(DefaultConciergeBotID)
+		if existingButler == nil {
+			if err := s.SaveBot(DefaultConciergeBot()); err != nil {
+				return err
+			}
+		} else {
+			// Ensure an existing butler upgraded from an older version gains the manage_bots tool once.
+			curTools := existingButler.AllowedToolList()
+			hasManageBots := false
+			for _, t := range curTools {
+				if t == "manage_bots" {
+					hasManageBots = true
+					break
+				}
+			}
+			if !hasManageBots {
+				nextTools := append([]string{"manage_bots"}, curTools...)
+				if raw, mErr := json.Marshal(nextTools); mErr == nil {
+					existingButler.AllowedTools = string(raw)
+					_ = s.SaveBot(*existingButler)
+				}
+			}
+		}
+		_ = s.SetConfig(KeyDefaultButlerSeeded, "true")
 	}
 
 	return nil

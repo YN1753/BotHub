@@ -86,6 +86,20 @@ export const BUILTIN_SLASH_SPECS: readonly SlashCommandSpec[] = [
     anyOfTools: ['manage_stash'],
   },
   {
+    cmd: '/newbot',
+    title: '让大管家创建专属 Bot',
+    desc: '用自然语言描述角色定位，自动配置人设、工具与模型并创建',
+    prompt: '请调用 manage_bots(action="create_bot") 帮我创建一个专属 Bot：',
+    anyOfTools: ['manage_bots'],
+  },
+  {
+    cmd: '/group',
+    title: '让大管家拉群协同',
+    desc: '指定成员与讨论主题，一键组建多 Bot 协同群聊',
+    prompt: '请调用 manage_bots(action="create_group") 帮我拉一个多 Bot 协同群聊：',
+    anyOfTools: ['manage_bots'],
+  },
+  {
     cmd: '/consult',
     title: '协调团队成员协办',
     desc: '调用其他专精 Bot 协助完成子任务并汇总',

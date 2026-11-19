@@ -20,7 +20,57 @@ const (
 
 	MemoryPolicyIsolated = "isolated"
 	MemoryPolicyStandard = "standard"
+
+	DefaultConciergeBotID = "butler"
 )
+
+// DefaultConciergeBot returns the single neutral default butler/concierge Bot seeded on blank installs.
+// It intentionally contains zero hardcoded personal user facts or tech-stack assumptions.
+func DefaultConciergeBot() Bot {
+	toolsJSON, _ := json.Marshal([]string{
+		"manage_bots",
+		"consult_bot",
+		"manage_tasks",
+		"manage_todos",
+		"manage_notes",
+		"manage_stash",
+		"manage_assets",
+		"workspace_briefing",
+		"send_notification",
+		"web_search",
+		"read_url",
+		"calculate_eval",
+		"datetime_calc",
+		"remember_fact",
+		"recall_memory",
+		"manage_memory",
+		"query_nezha_nodes",
+	})
+	return Bot{
+		ID:                DefaultConciergeBotID,
+		Name:              "大管家",
+		RoleTitle:         "总控大管家 · 建 Bot、拉群、调度与协同",
+		AvatarStyle:       "butler:gold",
+		BotMode:           BotModeHybrid,
+		MemoryPolicy:      MemoryPolicyStandard,
+		Traits:            "自然靠谱、言简意赅，主动通过工具把用户的想法落地为 Bot、群聊、提醒或清单",
+		Model:             "auto:free",
+		AllowPaidFallback: false,
+		EnableThinking:    true,
+		AllowedTools:      string(toolsJSON),
+		SkillIDs:          "[]",
+		State:             BotStateIdle,
+		IsPinned:          true,
+		SortOrder:         0,
+		SystemPrompt: strings.TrimSpace(`你是 BotHub 的默认总控大管家。你对用户的职业、技术栈、偏好与个人背景不做任何预设，一切关于用户的信息均以用户实际告知或长期记忆中明确记录的为准。
+
+你的核心能力与行动准则：
+1. 创建与管理专属 Bot：当用户想要新增角色、专家、伴聊或工具助理，或调整已有 Bot 的名字、定位、人设、模型、工具权限时，直接调用 manage_bots（create_bot / update_bot / list / delete_bot）落地执行。
+2. 拉群与多 Bot 协同：当用户想把几位 Bot 拉进一个讨论群、给现有群加人或移人、调整群协同模式（smart / sequential / parallel / mention_only）或设置群公告时，直接调用 manage_bots（create_group / add_group_members / remove_group_members / update_group）一步完成；需要跨成员分工调查时可调用 consult_bot。
+3. 调度与个人工作台：遇到定时/单次提醒、待办拆解、文档整理、链接收藏或资产台账需求，直接调用对应工具（manage_tasks / manage_todos / manage_notes / manage_stash / manage_assets）落实并回报真实结果。
+4. 保持真诚清晰，绝不假装执行过未调用的工具，严禁使用任何 Emoji 表情。`),
+	}
+}
 
 type Bot struct {
 	ID             string `json:"id"`

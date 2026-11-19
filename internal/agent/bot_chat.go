@@ -247,16 +247,16 @@ func (e *Engine) runSingleBotTurn(
 
 	attachedSkills, _ := e.store.GetSkillsByIDs(actingBot.SkillIDList())
 	tools := filterToolsForBot(actingBot, attachedSkills)
-	hasConsultTool := false
+	hasRosterTool := false
 	for _, td := range tools {
-		if td.Function.Name == "consult_bot" {
-			hasConsultTool = true
+		if td.Function.Name == "consult_bot" || td.Function.Name == "manage_bots" {
+			hasRosterTool = true
 			break
 		}
 	}
 
 	var allBots []store.Bot
-	if timelineBotID != actingBot.ID || hasConsultTool {
+	if timelineBotID != actingBot.ID || hasRosterTool {
 		allBots, _ = e.store.ListBots()
 	}
 
@@ -269,7 +269,7 @@ func (e *Engine) runSingleBotTurn(
 	}
 
 	var peerBots []store.Bot
-	if hasConsultTool {
+	if hasRosterTool {
 		peerBots = allBots
 	}
 	workingCtx := e.buildWorkingContextBlock(actingBot, tools)

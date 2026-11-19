@@ -478,7 +478,7 @@ async function handleSubmit() {
                   <span class="text-slate-600">·</span>
                   <button
                     type="button"
-                    @click="allowedTools = availableTools.filter((t) => ['manage_todos','manage_notes','manage_stash','manage_tasks','workspace_briefing','send_notification','web_search','read_url','calculate_eval','datetime_calc','remember_fact','recall_memory','manage_memory','consult_bot'].includes(t.id)).map((t) => t.id)"
+                    @click="allowedTools = availableTools.filter((t) => ['manage_bots','manage_todos','manage_notes','manage_stash','manage_tasks','workspace_briefing','send_notification','web_search','read_url','calculate_eval','datetime_calc','remember_fact','recall_memory','manage_memory','consult_bot'].includes(t.id)).map((t) => t.id)"
                     class="text-cyan-300 hover:underline cursor-pointer"
                   >
                     个人总助推荐

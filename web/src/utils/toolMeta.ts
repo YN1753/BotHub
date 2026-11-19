@@ -22,6 +22,7 @@ const TOOL_META: Record<string, { group: string; shortLabel: string }> = {
   remember_fact: { group: 'memory', shortLabel: '写入长期记忆' },
   recall_memory: { group: 'memory', shortLabel: '检索长期记忆' },
   manage_memory: { group: 'memory', shortLabel: '整理与遗忘记忆' },
+  manage_bots: { group: 'memory', shortLabel: '创建 Bot 与拉群' },
   consult_bot: { group: 'memory', shortLabel: '协同队友委派' },
 
   manage_assets: { group: 'ops', shortLabel: '数字资产台账' },
@@ -125,6 +126,13 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
   done: '标记完成',
   toggle: '切换状态',
   archive: '归档',
+  create_bot: '新建 Bot',
+  update_bot: '更新 Bot',
+  delete_bot: '删除 Bot',
+  create_group: '组建群聊',
+  update_group: '更新群聊',
+  add_group_members: '拉人进群',
+  remove_group_members: '移出成员',
 }
 
 export function summarizeToolStep(
@@ -182,6 +190,32 @@ export function summarizeToolStep(
       subtitle: pageTitle && pageTitle !== formatted?.display ? pageTitle : undefined,
       url: url || undefined,
       statusLabel: !done ? '读取中...' : isError ? errMsg || '读取失败' : '已读取',
+      sources: [],
+      isError,
+    }
+  }
+
+  if (tool.name === 'manage_bots') {
+    const act = typeof args.action === 'string' ? args.action.trim().toLowerCase() : ''
+    const actLabel = TOOL_ACTION_LABELS[act] || '管理 Bot 与群聊'
+    const targetName = clipText(
+      res?.name || res?.group_name || args.name || args.group_name || args.bot_name || args.group_id || args.bot_id,
+      36
+    )
+    const memberNames = Array.isArray(res?.member_names)
+      ? res.member_names.map((x: unknown) => String(x)).join('、')
+      : ''
+    const subtitle = memberNames ? `成员：${clipText(memberNames, 44)}` : targetName || undefined
+    return {
+      title: targetName ? `${actLabel} · ${targetName}` : actLabel,
+      subtitle: memberNames ? subtitle : undefined,
+      statusLabel: !done
+        ? '处理中...'
+        : isError
+          ? errMsg || '操作失败'
+          : typeof res?.count === 'number'
+            ? `共 ${res.count} 个`
+            : '已完成',
       sources: [],
       isError,
     }

@@ -219,6 +219,10 @@ function runQuickToolStarter(toolId: string) {
       inputPrompt.value = '请帮我联网检索：'
       nextTick(() => composerRef.value?.focus())
       break
+    case 'manage_bots':
+      inputPrompt.value = '请帮我创建一个专属 Bot，或把几位 Bot 拉进一个协同群聊：'
+      nextTick(() => composerRef.value?.focus())
+      break
     case 'consult_bot':
       inputPrompt.value = '请帮我协同其他专员一起完成：'
       nextTick(() => composerRef.value?.focus())

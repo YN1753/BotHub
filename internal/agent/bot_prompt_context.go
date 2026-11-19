@@ -150,12 +150,25 @@ func buildBotSystemPromptWithContext(bot *store.Bot, attachedSkills []store.Skil
 	sb.WriteString("- 格式约束：严禁使用任何 Emoji 表情或装饰性特殊符号。\n")
 
 	if len(peerBots) > 0 {
-		sb.WriteString("\n[可协同委派的工作区队友 (可通过 consult_bot 呼叫)]\n")
+		var soloPeers, groupPeers []store.Bot
 		for _, p := range peerBots {
-			if p.IsGroup || p.ID == bot.ID {
-				continue
+			if p.IsGroup {
+				groupPeers = append(groupPeers, p)
+			} else if p.ID != bot.ID {
+				soloPeers = append(soloPeers, p)
 			}
-			sb.WriteString(fmt.Sprintf("- %s (id=%s): %s\n", p.Name, p.ID, p.RoleTitle))
+		}
+		if len(soloPeers) > 0 {
+			sb.WriteString("\n[工作区已有 Bot 成员 (可通过 consult_bot 协同，或通过 manage_bots 管理/拉群)]\n")
+			for _, p := range soloPeers {
+				sb.WriteString(fmt.Sprintf("- %s (id=%s): %s\n", p.Name, p.ID, p.RoleTitle))
+			}
+		}
+		if len(groupPeers) > 0 {
+			sb.WriteString("\n[工作区已有协同群聊 (可通过 manage_bots 调整群成员与公告)]\n")
+			for _, g := range groupPeers {
+				sb.WriteString(fmt.Sprintf("- %s (id=%s, mode=%s, 成员数=%d): %s\n", g.Name, g.ID, g.GroupMode, len(g.MemberIDList()), g.RoleTitle))
+			}
 		}
 	}
 

@@ -375,7 +375,7 @@ function openScopedMemoriesManager() {
                 </button>
                 <button
                   type="button"
-                  @click="cfgTools = availableTools.filter((t) => ['manage_todos','manage_notes','manage_stash','manage_tasks','workspace_briefing','send_notification','web_search','read_url','calculate_eval','datetime_calc','remember_fact','recall_memory','manage_memory','consult_bot'].includes(t.id)).map((t) => t.id)"
+                  @click="cfgTools = availableTools.filter((t) => ['manage_bots','manage_todos','manage_notes','manage_stash','manage_tasks','workspace_briefing','send_notification','web_search','read_url','calculate_eval','datetime_calc','remember_fact','recall_memory','manage_memory','consult_bot'].includes(t.id)).map((t) => t.id)"
                   class="text-cyan-300 hover:underline cursor-pointer"
                 >
                   总助推荐

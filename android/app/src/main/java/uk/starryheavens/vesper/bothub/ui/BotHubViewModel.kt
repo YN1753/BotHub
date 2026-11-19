@@ -1542,6 +1542,7 @@ class BotHubViewModel(
         return when {
             clean == "web_search" -> "联网搜索"
             clean == "read_url" -> "阅读网页"
+            clean == "manage_bots" -> "Bot 与群聊管理"
             clean == "consult_bot" -> "协同成员"
             clean == "manage_todos" -> "待办管理"
             clean == "manage_notes" -> "工作文档"
