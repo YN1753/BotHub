@@ -80,18 +80,18 @@ async function submitForward(jumpAfter: boolean) {
     @close="closeModal"
   >
     <div v-if="store.state.forwardingMessage" class="flex flex-col gap-3 min-h-0">
-      <div class="modal-section text-xs text-slate-300">
-        <div class="font-mono text-[10.5px] text-[#f2b880] mb-1">
+      <div class="modal-section text-xs text-fg-sub">
+        <div class="font-mono text-xs text-accent-fg mb-1">
           来自「{{ store.state.forwardingMessage.fromName }}」的消息摘要：
         </div>
-        <p class="line-clamp-3 text-slate-300/90 leading-relaxed whitespace-pre-wrap">
+        <p class="line-clamp-3 text-fg-sub leading-relaxed whitespace-pre-wrap">
           {{ store.state.forwardingMessage.content }}
         </p>
       </div>
 
       <div class="flex flex-col gap-1.5 min-h-0">
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs font-medium text-slate-300">选择接收会话</span>
+          <span class="text-xs font-medium text-fg-sub">选择接收会话</span>
           <input
             v-if="targets.length > 4"
             v-model="targetQuery"
@@ -99,10 +99,10 @@ async function submitForward(jumpAfter: boolean) {
             aria-label="筛选转发目标"
             placeholder="搜索目标会话..."
             @keydown.escape="clearSearchOnEscape($event, targetQuery, () => { targetQuery = '' })"
-            class="w-44 min-h-[30px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/60 focus:outline-none"
+            class="w-44 min-h-[30px] rounded-lg border border-line bg-canvas px-2.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
           />
         </div>
-        <div v-if="filteredTargets.length === 0" class="py-6 text-center text-xs text-slate-500">
+        <div v-if="filteredTargets.length === 0" class="py-6 text-center text-xs text-fg-muted">
           没有匹配的目标会话
         </div>
         <div v-else class="max-h-52 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5 pr-0.5">
@@ -113,10 +113,10 @@ async function submitForward(jumpAfter: boolean) {
             @pointermove="trackSpotlight"
             @click="selectedId = b.id"
             :class="[
-              'luxury-card rounded-xl px-2.5 py-2 flex items-center gap-2.5 text-left cursor-pointer',
+              'vesper-card rounded-xl px-2.5 py-2 flex items-center gap-2.5 text-left cursor-pointer',
               selectedId === b.id
-                ? 'border-[#f2b880]/65 bg-[#f2b880]/12'
-                : 'border-[#fff8ee]/10 opacity-85 hover:opacity-100'
+                ? 'border-accent-border bg-accent-soft'
+                : 'border-line opacity-85 hover:opacity-100'
             ]"
           >
             <BotGroupAvatar
@@ -128,15 +128,15 @@ async function submitForward(jumpAfter: boolean) {
             />
             <BotAvatar v-else :avatar-style="b.avatar_style" :state="b.state" size="sm" :interactive="false" />
             <div class="flex-1 min-w-0">
-              <div class="text-xs font-semibold text-white truncate">{{ b.name }}</div>
-              <div class="text-[10.5px] text-slate-400 truncate">{{ b.role_title }}</div>
+              <div class="text-xs font-semibold text-fg truncate">{{ b.name }}</div>
+              <div class="text-xs text-fg-muted truncate">{{ b.role_title }}</div>
             </div>
             <span
               :class="[
                 'w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors',
                 selectedId === b.id
-                  ? 'bg-[#f2b880] border-[#f2b880] text-[#070a13]'
-                  : 'border-[#fff8ee]/20 text-transparent'
+                  ? 'bg-accent border-accent-border text-on-accent'
+                  : 'border-line text-transparent'
               ]"
             >
               <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.8" aria-hidden="true">
@@ -147,10 +147,10 @@ async function submitForward(jumpAfter: boolean) {
         </div>
       </div>
 
-      <div class="flex flex-col gap-1.5 text-xs text-slate-300">
+      <div class="flex flex-col gap-1.5 text-xs text-fg-sub">
         <div class="flex items-center justify-between">
           <span>附言说明（可选）</span>
-          <span class="text-[10.5px] font-mono text-slate-500">{{ note.length }}/500</span>
+          <span class="text-xs font-mono text-fg-muted">{{ note.length }}/500</span>
         </div>
         <input
           v-model="note"
@@ -160,9 +160,9 @@ async function submitForward(jumpAfter: boolean) {
           placeholder="如：请参考这条记录排查关联节点... (Cmd/Ctrl + Enter 发送)"
           @keydown.meta.enter.prevent="selectedId && !sending && submitForward(true)"
           @keydown.ctrl.enter.prevent="selectedId && !sending && submitForward(true)"
-          class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 text-xs text-white focus:border-[#f2b880]/60"
+          class="min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs text-fg focus:border-accent"
         />
-        <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
+        <div class="flex items-center gap-1.5 flex-wrap text-xs">
           <button
             v-for="tag in ['请协助跟进', '供参考上下文', '排查关联异常']"
             :key="tag"
@@ -170,10 +170,10 @@ async function submitForward(jumpAfter: boolean) {
             :aria-pressed="note === tag"
             @click="note = note === tag ? '' : tag"
             :class="[
-              'px-2 py-0.5 rounded-md border cursor-pointer transition-colors',
+              'px-2 py-0.5 rounded-lg border cursor-pointer transition-colors',
               note === tag
-                ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
-                : 'border-[#fff8ee]/10 bg-[#050811] text-slate-400 hover:border-[#f2b880]/45 hover:text-[#f2b880]'
+                ? 'border-accent-border bg-accent-soft text-accent-fg'
+                : 'border-line bg-canvas text-fg-muted hover:border-accent-border hover:text-accent-fg'
             ]"
           >
             {{ tag }}
@@ -181,11 +181,11 @@ async function submitForward(jumpAfter: boolean) {
         </div>
       </div>
 
-      <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#fff8ee]/10">
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-line">
         <button
           type="button"
           @click="closeModal"
-          class="min-h-[38px] px-3.5 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+          class="min-h-[38px] px-3.5 rounded-xl border border-line text-xs text-fg-sub hover:bg-hover cursor-pointer"
         >
           取消
         </button>
@@ -193,7 +193,7 @@ async function submitForward(jumpAfter: boolean) {
           type="button"
           :disabled="!selectedId || sending"
           @click="submitForward(false)"
-          class="min-h-[38px] px-4 rounded-xl border border-[#f2b880]/40 bg-[#f2b880]/12 text-xs font-medium text-[#f2b880] hover:bg-[#f2b880]/20 cursor-pointer disabled:opacity-40"
+          class="min-h-[38px] px-4 rounded-xl border border-accent-border bg-accent-soft text-xs font-medium text-accent-fg hover:bg-accent-soft cursor-pointer disabled:opacity-40"
         >
           仅转发
         </button>
@@ -201,7 +201,7 @@ async function submitForward(jumpAfter: boolean) {
           type="button"
           :disabled="!selectedId || sending"
           @click="submitForward(true)"
-          class="min-h-[38px] px-4 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-xs font-semibold text-[#070a13] cursor-pointer disabled:opacity-40"
+          class="min-h-[38px] px-4 rounded-xl bg-accent hover:bg-accent-hover text-xs font-semibold text-on-accent cursor-pointer disabled:opacity-40"
         >
           {{ sending ? '转发中...' : '转发并前往' }}
         </button>

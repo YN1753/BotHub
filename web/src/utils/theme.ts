@@ -1,196 +1,158 @@
 import { ref } from 'vue'
 
-export type BotHubThemeId =
-  | 'obsidian'
-  | 'ocean'
-  | 'emerald'
-  | 'amethyst'
-  | 'daylight'
-  | 'parchment'
-  | 'system'
+export type ColorModeId = 'dark' | 'light' | 'system'
+export type ResolvedColorMode = 'dark' | 'light'
+export type AccentId = 'amber' | 'blue' | 'cyan' | 'emerald' | 'violet' | 'mono'
 
-export type ResolvedBotHubThemeId = Exclude<BotHubThemeId, 'system'>
-
-export interface BotHubThemeOption {
-  id: BotHubThemeId
+export interface ColorModeOption {
+  id: ColorModeId
   label: string
-  desc: string
-  swatchAccent: string
-  swatchBg: string
-  themeColor: string
-  isLightPreview: boolean
-  glowA: string
-  glowB: string
-  starRgb: string
 }
 
-export const THEME_STORAGE_KEY = 'bothub_theme'
+export interface AccentOption {
+  id: AccentId
+  label: string
+  swatchDark: string
+  swatchLight: string
+}
 
-export const BOTHUB_THEME_OPTIONS: BotHubThemeOption[] = [
-  {
-    id: 'obsidian',
-    label: '曜石暖金',
-    desc: '深邃夜空配暖香槟金',
-    swatchAccent: '#f2b880',
-    swatchBg: '#080d1b',
-    themeColor: '#080c1c',
-    isLightPreview: false,
-    glowA: 'rgba(242, 184, 128, 0.08)',
-    glowB: 'rgba(99, 102, 241, 0.08)',
-    starRgb: '245, 243, 255'
-  },
-  {
-    id: 'ocean',
-    label: '深海青岚',
-    desc: '沧溟夜海配清澈天青',
-    swatchAccent: '#38bdf8',
-    swatchBg: '#071624',
-    themeColor: '#061320',
-    isLightPreview: false,
-    glowA: 'rgba(56, 189, 248, 0.09)',
-    glowB: 'rgba(37, 99, 235, 0.09)',
-    starRgb: '224, 242, 254'
-  },
-  {
-    id: 'emerald',
-    label: '松烟翡翠',
-    desc: '静谧林夜配润泽翠绿',
-    swatchAccent: '#34d399',
-    swatchBg: '#071813',
-    themeColor: '#061510',
-    isLightPreview: false,
-    glowA: 'rgba(52, 211, 153, 0.085)',
-    glowB: 'rgba(13, 148, 136, 0.085)',
-    starRgb: '209, 250, 229'
-  },
-  {
-    id: 'amethyst',
-    label: '紫晶星云',
-    desc: '暮夜星云配幻紫微光',
-    swatchAccent: '#c084fc',
-    swatchBg: '#120b24',
-    themeColor: '#110b22',
-    isLightPreview: false,
-    glowA: 'rgba(192, 132, 252, 0.09)',
-    glowB: 'rgba(236, 72, 153, 0.07)',
-    starRgb: '243, 232, 255'
-  },
-  {
-    id: 'daylight',
-    label: '晴雪素白',
-    desc: '澄澈晴空白昼与钴蓝',
-    swatchAccent: '#2563eb',
-    swatchBg: '#f3f6fb',
-    themeColor: '#f2f5fa',
-    isLightPreview: true,
-    glowA: 'rgba(37, 99, 235, 0.06)',
-    glowB: 'rgba(99, 102, 241, 0.05)',
-    starRgb: '37, 99, 235'
-  },
-  {
-    id: 'parchment',
-    label: '宣纸暖茶',
-    desc: '温润米白配沉稳琥珀茶',
-    swatchAccent: '#b45309',
-    swatchBg: '#f6f0e4',
-    themeColor: '#f4eee2',
-    isLightPreview: true,
-    glowA: 'rgba(180, 83, 9, 0.065)',
-    glowB: 'rgba(217, 119, 6, 0.055)',
-    starRgb: '180, 83, 9'
-  },
-  {
-    id: 'system',
-    label: '跟随系统',
-    desc: '随系统明暗自动切换',
-    swatchAccent: '#94a3b8',
-    swatchBg: '#1e293b',
-    themeColor: '#080c1c',
-    isLightPreview: false,
-    glowA: 'rgba(242, 184, 128, 0.08)',
-    glowB: 'rgba(99, 102, 241, 0.08)',
-    starRgb: '245, 243, 255'
-  }
+export const COLOR_MODE_STORAGE_KEY = 'bothub_color_mode'
+export const ACCENT_STORAGE_KEY = 'bothub_accent'
+export const LEGACY_THEME_STORAGE_KEY = 'bothub_theme'
+
+export const COLOR_MODE_OPTIONS: ColorModeOption[] = [
+  { id: 'dark', label: '深色' },
+  { id: 'light', label: '浅色' },
+  { id: 'system', label: '跟随系统' },
 ]
 
-const VALID_IDS = new Set<string>(BOTHUB_THEME_OPTIONS.map((t) => t.id))
+export const ACCENT_OPTIONS: AccentOption[] = [
+  { id: 'amber', label: '琥珀金', swatchDark: '#e5a45c', swatchLight: '#b45309' },
+  { id: 'blue', label: '经典蓝', swatchDark: '#3b82f6', swatchLight: '#2563eb' },
+  { id: 'cyan', label: '青岚', swatchDark: '#06b6d4', swatchLight: '#0284c7' },
+  { id: 'emerald', label: '翠绿', swatchDark: '#10b981', swatchLight: '#059669' },
+  { id: 'violet', label: '紫晶', swatchDark: '#8b5cf6', swatchLight: '#7c3aed' },
+  { id: 'mono', label: '曜石黑白', swatchDark: '#f4f5f7', swatchLight: '#111827' },
+]
 
-function normalizeThemeId(raw: string | null | undefined): BotHubThemeId {
-  return raw && VALID_IDS.has(raw) ? (raw as BotHubThemeId) : 'obsidian'
+const VALID_MODES = new Set<string>(COLOR_MODE_OPTIONS.map((o) => o.id))
+const VALID_ACCENTS = new Set<string>(ACCENT_OPTIONS.map((o) => o.id))
+
+const LEGACY_THEME_MAP: Record<string, { mode: ColorModeId; accent: AccentId }> = {
+  obsidian: { mode: 'dark', accent: 'amber' },
+  ocean: { mode: 'dark', accent: 'cyan' },
+  emerald: { mode: 'dark', accent: 'emerald' },
+  amethyst: { mode: 'dark', accent: 'violet' },
+  daylight: { mode: 'light', accent: 'blue' },
+  parchment: { mode: 'light', accent: 'amber' },
+  system: { mode: 'system', accent: 'blue' },
 }
 
-export function resolveThemeId(themeId: BotHubThemeId): ResolvedBotHubThemeId {
-  if (themeId !== 'system') return themeId
-  if (typeof window !== 'undefined' && window.matchMedia) {
-    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'daylight' : 'obsidian'
+export function migrateLegacyTheme(
+  legacyTheme: string | null | undefined
+): { mode: ColorModeId; accent: AccentId } {
+  if (legacyTheme && Object.prototype.hasOwnProperty.call(LEGACY_THEME_MAP, legacyTheme)) {
+    return { ...LEGACY_THEME_MAP[legacyTheme] }
   }
-  return 'obsidian'
+  return { mode: 'dark', accent: 'blue' }
 }
 
-export function getResolvedThemeMeta(themeId: BotHubThemeId): BotHubThemeOption {
-  const resolved = resolveThemeId(themeId)
-  return BOTHUB_THEME_OPTIONS.find((item) => item.id === resolved) || BOTHUB_THEME_OPTIONS[0]
+function normalizeColorMode(raw: string | null | undefined): ColorModeId {
+  return raw && VALID_MODES.has(raw) ? (raw as ColorModeId) : 'dark'
 }
 
-const currentThemeId = ref<BotHubThemeId>(
-  typeof window !== 'undefined'
-    ? (() => {
-        try {
-          return normalizeThemeId(window.localStorage.getItem(THEME_STORAGE_KEY))
-        } catch {
-          return 'obsidian'
-        }
-      })()
-    : 'obsidian'
-)
+function normalizeAccent(raw: string | null | undefined): AccentId {
+  return raw && VALID_ACCENTS.has(raw) ? (raw as AccentId) : 'blue'
+}
 
-const resolvedThemeId = ref<ResolvedBotHubThemeId>(resolveThemeId(currentThemeId.value))
+export function resolveColorMode(mode: ColorModeId): ResolvedColorMode {
+  if (mode !== 'system') return mode
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  }
+  return 'dark'
+}
 
-export function applyThemeToDom(themeId: BotHubThemeId) {
+function loadInitialThemeState(): { mode: ColorModeId; accent: AccentId } {
+  if (typeof window === 'undefined') {
+    return { mode: 'dark', accent: 'blue' }
+  }
+  try {
+    const storedMode = window.localStorage.getItem(COLOR_MODE_STORAGE_KEY)
+    const storedAccent = window.localStorage.getItem(ACCENT_STORAGE_KEY)
+    if (!storedMode && !storedAccent) {
+      const legacy = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY)
+      if (legacy && Object.prototype.hasOwnProperty.call(LEGACY_THEME_MAP, legacy)) {
+        const migrated = migrateLegacyTheme(legacy)
+        window.localStorage.setItem(COLOR_MODE_STORAGE_KEY, migrated.mode)
+        window.localStorage.setItem(ACCENT_STORAGE_KEY, migrated.accent)
+        return migrated
+      }
+    }
+    return {
+      mode: normalizeColorMode(storedMode),
+      accent: normalizeAccent(storedAccent),
+    }
+  } catch {
+    return { mode: 'dark', accent: 'blue' }
+  }
+}
+
+const initial = loadInitialThemeState()
+const colorMode = ref<ColorModeId>(initial.mode)
+const accentId = ref<AccentId>(initial.accent)
+const resolvedColorMode = ref<ResolvedColorMode>(resolveColorMode(initial.mode))
+
+export function applyThemeToDom(mode: ColorModeId, accent: AccentId) {
+  const resolved = resolveColorMode(mode)
+  resolvedColorMode.value = resolved
   if (typeof document === 'undefined') return
-  const resolved = resolveThemeId(themeId)
-  const meta = getResolvedThemeMeta(themeId)
-  resolvedThemeId.value = resolved
 
   const root = document.documentElement
-  root.dataset.theme = resolved
-  root.dataset.colorMode = meta.isLightPreview ? 'light' : 'dark'
-  root.classList.toggle('dark', !meta.isLightPreview)
+  root.dataset.colorMode = resolved
+  root.dataset.accent = accent
+  root.classList.toggle('dark', resolved === 'dark')
 
   const schemeMeta = document.querySelector('meta[name="color-scheme"]')
   if (schemeMeta) {
-    schemeMeta.setAttribute(
-      'content',
-      themeId === 'system' ? 'light dark' : meta.isLightPreview ? 'light' : 'dark'
-    )
+    schemeMeta.setAttribute('content', mode === 'system' ? 'light dark' : resolved)
   }
 
   const themeMeta = document.querySelector('meta[name="theme-color"]')
   if (themeMeta) {
-    themeMeta.setAttribute('content', meta.themeColor)
+    themeMeta.setAttribute('content', resolved === 'light' ? '#ffffff' : '#111317')
   }
 }
 
-export function setAppTheme(themeId: BotHubThemeId) {
-  const safeId = normalizeThemeId(themeId)
-  currentThemeId.value = safeId
+export function setColorMode(mode: ColorModeId) {
+  const safeMode = normalizeColorMode(mode)
+  colorMode.value = safeMode
   try {
-    window.localStorage.setItem(THEME_STORAGE_KEY, safeId)
+    window.localStorage.setItem(COLOR_MODE_STORAGE_KEY, safeMode)
   } catch {}
-  applyThemeToDom(safeId)
+  applyThemeToDom(safeMode, accentId.value)
+}
+
+export function setAccent(accent: AccentId) {
+  const safeAccent = normalizeAccent(accent)
+  accentId.value = safeAccent
+  try {
+    window.localStorage.setItem(ACCENT_STORAGE_KEY, safeAccent)
+  } catch {}
+  applyThemeToDom(colorMode.value, safeAccent)
 }
 
 let listenersBound = false
 export function initThemeSync() {
-  applyThemeToDom(currentThemeId.value)
+  applyThemeToDom(colorMode.value, accentId.value)
   if (listenersBound || typeof window === 'undefined') return
   listenersBound = true
 
   if (window.matchMedia) {
     const mq = window.matchMedia('(prefers-color-scheme: light)')
     const onSystemChange = () => {
-      if (currentThemeId.value === 'system') {
-        applyThemeToDom('system')
+      if (colorMode.value === 'system') {
+        applyThemeToDom('system', accentId.value)
       }
     }
     if (mq.addEventListener) {
@@ -199,18 +161,24 @@ export function initThemeSync() {
   }
 
   window.addEventListener('storage', (ev) => {
-    if (ev.key === THEME_STORAGE_KEY) {
-      currentThemeId.value = normalizeThemeId(ev.newValue)
-      applyThemeToDom(currentThemeId.value)
+    if (ev.key === COLOR_MODE_STORAGE_KEY) {
+      colorMode.value = normalizeColorMode(ev.newValue)
+      applyThemeToDom(colorMode.value, accentId.value)
+    } else if (ev.key === ACCENT_STORAGE_KEY) {
+      accentId.value = normalizeAccent(ev.newValue)
+      applyThemeToDom(colorMode.value, accentId.value)
     }
   })
 }
 
 export function useAppTheme() {
   return {
-    themeId: currentThemeId,
-    resolvedThemeId,
-    themeOptions: BOTHUB_THEME_OPTIONS,
-    setAppTheme
+    colorMode,
+    resolvedColorMode,
+    accentId,
+    colorModeOptions: COLOR_MODE_OPTIONS,
+    accentOptions: ACCENT_OPTIONS,
+    setColorMode,
+    setAccent,
   }
 }

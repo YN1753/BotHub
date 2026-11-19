@@ -295,29 +295,29 @@ async function handleDelete() {
     <form @submit.prevent="handleSubmit" class="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3.5">
       <!-- Section 1: Basic Info & Structured Billing -->
       <div class="modal-section flex flex-col gap-3">
-        <div class="text-xs font-semibold text-[#f2b880]">基础信息与结构化费用</div>
+        <div class="text-xs font-semibold text-accent-fg">基础信息与结构化费用</div>
         <ExtensibleCategorySelect v-model="category" />
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
+          <label class="flex flex-col gap-1 text-xs text-fg-sub">
             <span>资产名称</span>
-            <input v-model="name" type="text" required placeholder="如：项目或服务名称" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
+            <input v-model="name" type="text" required placeholder="如：项目或服务名称" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent" />
           </label>
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
+          <label class="flex flex-col gap-1 text-xs text-fg-sub">
             <span>规格与备注描述</span>
-            <input v-model="spec" type="text" placeholder="如：版本、配置或用途备注" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60" />
+            <input v-model="spec" type="text" placeholder="如：版本、配置或用途备注" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent" />
           </label>
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <div class="flex flex-col gap-1 text-xs text-fg-sub">
             <span>生命周期状态</span>
             <CustomSelect v-model="status" :options="STATUS_OPTIONS" aria-label="生命周期状态" />
           </div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <div class="flex flex-col gap-1 text-xs text-fg-sub">
             <span>币种 / 费用类型</span>
             <CustomSelect v-model="currency" :options="CURRENCY_OPTIONS" aria-label="币种类型" />
           </div>
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
+          <label class="flex flex-col gap-1 text-xs text-fg-sub">
             <span>金额数值 ({{ currency === 'FREE' ? '免填' : '纯数字' }})</span>
             <input
               v-model="amountNum"
@@ -326,55 +326,55 @@ async function handleDelete() {
               step="0.01"
               :disabled="currency === 'FREE'"
               :placeholder="currency === 'FREE' ? '0 (免费)' : '如 21.66'"
-              class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60 disabled:opacity-45"
+              class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg focus:border-accent disabled:opacity-45"
             />
           </label>
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <div class="flex flex-col gap-1 text-xs text-fg-sub">
             <span>计费周期</span>
             <CustomSelect v-model="billingCycle" :options="CYCLE_OPTIONS" aria-label="计费周期" />
           </div>
         </div>
-        <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 px-0.5">
-          <span>账单展示预览: <strong class="text-[#f2b880]">{{ pricePreview }}</strong></span>
+        <div class="flex items-center justify-between text-xs font-mono text-fg-muted px-0.5">
+          <span>账单展示预览: <strong class="text-accent-fg">{{ pricePreview }}</strong></span>
         </div>
       </div>
 
       <!-- Section 2: Due Date & Alert Rules -->
       <div class="modal-section flex flex-col gap-3">
         <div class="flex items-center justify-between gap-2 flex-wrap">
-          <div class="text-xs font-semibold text-[#f2b880]">到期守望与续费规则</div>
+          <div class="text-xs font-semibold text-accent-fg">到期守望与续费规则</div>
           <span
             v-if="dueMode === 'permanent'"
-            class="font-mono text-[10.5px] px-2 py-0.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 text-emerald-300"
+            class="font-mono text-xs px-2 py-0.5 rounded-full border border-ok-border bg-ok-soft text-ok"
           >
             长期有效
           </span>
           <span
             v-else-if="previewDaysLeft !== null"
             :class="[
-              'font-mono text-[10.5px] px-2 py-0.5 rounded-full border',
+              'font-mono text-xs px-2 py-0.5 rounded-full border',
               previewDaysLeft <= 0
-                ? 'border-rose-400/40 bg-rose-500/15 text-rose-300'
+                ? 'border-danger-border bg-danger-soft text-danger'
                 : previewDaysLeft <= 14
-                  ? 'border-amber-400/35 bg-amber-400/10 text-amber-300'
-                  : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300',
+                  ? 'border-warn-border bg-warn-soft text-warn'
+                  : 'border-ok-border bg-ok-soft text-ok',
             ]"
           >
             {{ previewDaysLeft <= 0 ? `已逾期 ${Math.abs(previewDaysLeft)} 天` : `预计距今剩余 ${previewDaysLeft} 天` }}
           </span>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <div class="flex flex-col gap-1 text-xs text-fg-sub">
             <span>到期类型</span>
             <CustomSelect v-model="dueMode" :options="DUE_MODE_OPTIONS" aria-label="到期类型" />
           </div>
-          <div class="flex flex-col gap-1 text-xs text-slate-300">
+          <div class="flex flex-col gap-1 text-xs text-fg-sub">
             <span>临期预警梯度</span>
             <CustomSelect v-model="warnDays" :options="WARN_OPTIONS" aria-label="临期预警梯度" />
           </div>
 
           <div v-if="dueMode === 'date'" class="sm:col-span-2 flex flex-col gap-2">
-            <div class="flex flex-col gap-1 text-xs text-slate-300">
+            <div class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>到期日（日历选择）</span>
               <CalendarDatePicker
                 v-model="dueDateVal"
@@ -384,10 +384,10 @@ async function handleDelete() {
               />
             </div>
             <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="text-[11px] text-slate-500">一键顺延:</span>
-              <button type="button" @click="extendDueDate(1)" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">+1 个月</button>
-              <button type="button" @click="extendDueDate(3)" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">+1 季度</button>
-              <button type="button" @click="extendDueDate(12)" class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer">+1 年</button>
+              <span class="text-xs text-fg-muted">一键顺延:</span>
+              <button type="button" @click="extendDueDate(1)" class="px-2 py-0.5 rounded-lg border border-line bg-canvas text-xs text-fg-sub hover:border-accent-border hover:text-accent-fg cursor-pointer">+1 个月</button>
+              <button type="button" @click="extendDueDate(3)" class="px-2 py-0.5 rounded-lg border border-line bg-canvas text-xs text-fg-sub hover:border-accent-border hover:text-accent-fg cursor-pointer">+1 季度</button>
+              <button type="button" @click="extendDueDate(12)" class="px-2 py-0.5 rounded-lg border border-line bg-canvas text-xs text-fg-sub hover:border-accent-border hover:text-accent-fg cursor-pointer">+1 年</button>
             </div>
           </div>
 
@@ -405,27 +405,27 @@ async function handleDelete() {
       <div class="modal-section flex flex-col gap-3">
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <div>
-            <div class="text-xs font-semibold text-[#f2b880]">可扩展自定义属性 (Key / Value)</div>
-            <p class="text-[11px] text-slate-400 mt-0.5">按需记录任意元信息（如 registrar、region、account_id、anchor_day、sync_adapter）</p>
+            <div class="text-xs font-semibold text-accent-fg">可扩展自定义属性 (Key / Value)</div>
+            <p class="text-xs text-fg-muted mt-0.5">按需记录任意元信息（如 registrar、region、account_id、anchor_day、sync_adapter）</p>
           </div>
           <button
             type="button"
             @click="addExtraRow()"
-            class="min-h-[30px] px-2.5 rounded-lg border border-[#f2b880]/35 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-[11px] text-[#f2b880] cursor-pointer"
+            class="min-h-[30px] px-2.5 rounded-lg border border-accent-border bg-accent-soft hover:bg-accent-soft text-xs text-accent-fg cursor-pointer"
           >
             + 添加属性
           </button>
         </div>
 
         <div v-if="extraRows.length === 0" class="flex flex-col gap-2 py-1">
-          <span class="text-[11px] text-slate-500">暂无扩展属性，点击右上角「+ 添加属性」或点击下方常用字段名快速添加：</span>
+          <span class="text-xs text-fg-muted">暂无扩展属性，点击右上角「+ 添加属性」或点击下方常用字段名快速添加：</span>
           <div class="flex flex-wrap gap-1.5">
             <button
               v-for="k in ['host', 'region', 'registrar', 'panel_url', 'account']"
               :key="k"
               type="button"
               @click="addExtraRow(k, '')"
-              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] font-mono text-[10.5px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+              class="px-2 py-0.5 rounded-lg border border-line bg-canvas font-mono text-xs text-fg-sub hover:border-accent-border hover:text-accent-fg cursor-pointer"
             >
               + {{ k }}
             </button>
@@ -442,14 +442,14 @@ async function handleDelete() {
               v-model="row.key"
               type="text"
               placeholder="键名 (如 region)"
-              class="min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60"
+              class="min-h-[36px] rounded-lg border border-line bg-canvas px-2.5 py-1 font-mono text-xs text-fg focus:border-accent"
             />
             <div class="flex items-center gap-1.5 min-w-0">
               <input
                 v-model="row.value"
                 type="text"
                 placeholder="属性值"
-                class="flex-1 min-w-0 min-h-[36px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 py-1 font-mono text-xs text-white focus:border-[#f2b880]/60"
+                class="flex-1 min-w-0 min-h-[36px] rounded-lg border border-line bg-canvas px-2.5 py-1 font-mono text-xs text-fg focus:border-accent"
               />
               <a
                 v-if="/^https?:\/\//i.test(row.value.trim())"
@@ -457,7 +457,7 @@ async function handleDelete() {
                 target="_blank"
                 rel="noopener noreferrer"
                 title="在新窗口打开此链接"
-                class="px-2 py-1.5 rounded-lg border border-cyan-400/35 text-[10.5px] text-cyan-200 hover:bg-cyan-500/15 shrink-0"
+                class="px-2 py-1.5 rounded-lg border border-info-border text-xs text-info hover:bg-info-soft shrink-0"
               >
                 打开
               </a>
@@ -466,7 +466,7 @@ async function handleDelete() {
               type="button"
               @click="removeExtraRow(idx)"
               aria-label="移除该属性"
-              class="w-8 h-8 rounded-lg border border-rose-400/25 text-xs text-rose-300 hover:bg-rose-500/15 cursor-pointer"
+              class="w-8 h-8 rounded-lg border border-danger-border text-xs text-danger hover:bg-danger-soft cursor-pointer"
             >
               删
             </button>
@@ -474,23 +474,23 @@ async function handleDelete() {
         </div>
       </div>
 
-      <div class="flex items-center justify-between pt-2 border-t border-[#fff8ee]/10">
+      <div class="flex items-center justify-between pt-2 border-t border-line">
         <button
           v-if="!isNew"
           type="button"
           @click="handleDelete"
-          class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer"
+          class="min-h-[44px] sm:min-h-[34px] px-3.5 py-2 rounded-xl border border-danger-border bg-danger-soft text-xs text-danger hover:bg-danger-soft cursor-pointer"
         >
           删除资产
         </button>
-        <span v-else class="font-mono text-[11px] text-slate-400">
+        <span v-else class="font-mono text-xs text-fg-muted">
           {{ dueMode === 'permanent' ? '长期有效 · 免提醒' : `到期日 ${dueDateVal}` }}
         </span>
         <div class="flex gap-2">
-          <button type="button" @click="closeModal" class="min-h-[44px] sm:min-h-[34px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer">
+          <button type="button" @click="closeModal" class="min-h-[44px] sm:min-h-[34px] px-4 py-2 rounded-xl border border-line text-xs text-fg-sub hover:bg-hover cursor-pointer">
             取消
           </button>
-          <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[34px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50">
+          <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[34px] px-5 py-2 rounded-xl bg-accent hover:bg-accent-hover text-on-accent font-semibold text-xs cursor-pointer disabled:opacity-50">
             保存资产
           </button>
         </div>

@@ -47,7 +47,7 @@ const visible = ref(false)
       spellcheck="false"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       :class="[
-        'w-full border border-[#fff8ee]/12 bg-[#050811] font-mono text-white placeholder-slate-500 focus:border-[#f2b880]/60',
+        'w-full border border-line bg-canvas font-mono text-fg placeholder:text-fg-muted focus:border-accent',
         size === 'sm'
           ? 'min-h-[38px] rounded-xl pl-3 pr-12 py-1.5 text-xs'
           : 'min-h-[44px] sm:min-h-[40px] rounded-xl pl-3 pr-14 py-2 text-sm',
@@ -59,8 +59,8 @@ const visible = ref(false)
       :aria-label="visible ? `隐藏${toggleLabel}` : `显示${toggleLabel}`"
       @click="visible = !visible"
       :class="[
-        'absolute top-1/2 -translate-y-1/2 rounded font-mono text-slate-400 hover:text-[#f2b880] cursor-pointer',
-        size === 'sm' ? 'right-2 px-1.5 py-0.5 text-[10.5px]' : 'right-2.5 px-2 py-0.5 text-[11px]',
+        'absolute top-1/2 -translate-y-1/2 rounded font-mono text-fg-muted hover:text-accent-fg cursor-pointer',
+        size === 'sm' ? 'right-2 px-1.5 py-0.5 text-xs' : 'right-2.5 px-2 py-0.5 text-xs',
       ]"
     >
       {{ visible ? '隐藏' : '显示' }}

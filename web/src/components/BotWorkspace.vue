@@ -604,11 +604,11 @@ async function clearTimeline() {
     <!-- Empty Team Onboarding View when 0 Bots exist -->
     <div v-if="!bot" class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-10 flex items-center justify-center">
       <div class="max-w-lg w-full">
-        <div class="luxury-card rounded-2xl p-6 sm:p-8 flex flex-col gap-4 text-center items-center">
+        <div class="vesper-card rounded-xl p-6 sm:p-8 flex flex-col gap-4 text-center items-center">
           <BotAvatar avatar-style="butler:gold" state="idle" size="lg" />
           <div>
-            <h2 class="text-lg font-semibold text-white">工作台准备就绪</h2>
-            <p class="text-xs text-slate-400 mt-1.5 leading-relaxed max-w-md mx-auto">
+            <h2 class="text-lg font-semibold text-fg">工作台准备就绪</h2>
+            <p class="text-xs text-fg-muted mt-1.5 leading-relaxed max-w-md mx-auto">
               当前尚未添加 Bot 或协同群聊。你可以先在设置中配置模型并实时探测可用性，再按需创建专属 Bot。
             </p>
           </div>
@@ -616,14 +616,14 @@ async function clearTimeline() {
             <button
               type="button"
               @click="store.state.createModalMode = 'bot'; store.state.showCreateBotModal = true"
-              class="min-h-[42px] px-4 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer"
+              class="min-h-[42px] px-4 py-2 rounded-xl bg-accent hover:bg-accent-hover text-on-accent font-semibold text-xs cursor-pointer"
             >
               + 新建 Bot
             </button>
             <button
               type="button"
               @click="store.state.showSettingsModal = true"
-              class="min-h-[42px] px-4 py-2 rounded-xl border border-[#f2b880]/35 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-xs font-medium text-[#f2b880] cursor-pointer"
+              class="min-h-[42px] px-4 py-2 rounded-xl border border-accent-border bg-accent-soft hover:bg-accent-soft text-xs font-medium text-accent-fg cursor-pointer"
             >
               配置模型 Key
             </button>
@@ -663,14 +663,14 @@ async function clearTimeline() {
           >
             <div
               v-if="isGroupBot && bot?.announcement && !announcementDismissed && !isStreamEmpty"
-              class="mx-4 md:mx-6 mb-1 px-3.5 py-1.5 rounded-2xl border border-[#f2b880]/20 bg-[#f2b880]/[0.06] flex items-center justify-between gap-3 shrink-0"
+              class="mx-4 md:mx-6 mb-1 px-3.5 py-1.5 rounded-xl border border-accent-border bg-accent-soft flex items-center justify-between gap-3 shrink-0"
             >
               <button
                 type="button"
                 @click="store.state.showGroupDrawer = true"
-                class="flex items-center gap-2 min-w-0 text-left text-xs text-slate-300 hover:text-white cursor-pointer"
+                class="flex items-center gap-2 min-w-0 text-left text-xs text-fg-sub hover:text-fg cursor-pointer"
               >
-                <span class="px-1.5 py-0.5 rounded bg-[#f2b880]/20 text-[#f2b880] font-mono text-[10px] font-semibold shrink-0">
+                <span class="px-1.5 py-0.5 rounded bg-accent-soft text-accent-fg font-mono text-xs font-semibold shrink-0">
                   群公告
                 </span>
                 <span class="truncate">{{ bot.announcement }}</span>
@@ -679,7 +679,7 @@ async function clearTimeline() {
                 type="button"
                 aria-label="暂时收起群公告"
                 @click="announcementDismissed = true"
-                class="w-6 h-6 rounded-full inline-flex items-center justify-center text-slate-500 hover:text-white cursor-pointer shrink-0"
+                class="w-6 h-6 rounded-full inline-flex items-center justify-center text-fg-muted hover:text-fg cursor-pointer shrink-0"
               >
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -753,7 +753,7 @@ async function clearTimeline() {
               >
                 <span
                   v-if="store.state.isStreaming || unreadBelowCount > 0"
-                  :class="['w-1.5 h-1.5 rounded-full shrink-0', store.state.isStreaming ? 'bg-[#f2b880] animate-pulse' : 'bg-emerald-400']"
+                  :class="['w-1.5 h-1.5 rounded-full shrink-0', store.state.isStreaming ? 'bg-accent animate-pulse' : 'bg-ok']"
                   aria-hidden="true"
                 />
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

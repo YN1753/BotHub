@@ -185,21 +185,21 @@ watch(
       <button
         type="button"
         @click="toggleDesktopNotify"
-        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-line text-xs text-fg-sub hover:bg-hover cursor-pointer"
       >
         桌面弹窗: {{ desktopNotify ? '开' : '关' }}
       </button>
       <button
         type="button"
         @click="markAllRead"
-        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 hover:bg-white/5 cursor-pointer"
+        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-line text-xs text-fg-sub hover:text-accent-fg hover:border-accent-border hover:bg-hover cursor-pointer"
       >
         全部已读
       </button>
       <button
         type="button"
         @click="clearReadItems"
-        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-400 hover:text-rose-300 hover:border-rose-400/40 hover:bg-white/5 cursor-pointer"
+        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-line text-xs text-fg-muted hover:text-danger hover:border-danger-border hover:bg-hover cursor-pointer"
       >
         清理已读
       </button>
@@ -214,7 +214,7 @@ watch(
           aria-label="搜索收件箱情报"
           placeholder="搜索情报关键词..."
           @keydown.escape="clearSearchOnEscape($event, inboxQuery, () => { inboxQuery = '' })"
-          class="w-36 sm:w-44 min-h-[34px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/55"
+          class="w-36 sm:w-44 min-h-[34px] rounded-xl border border-line bg-canvas px-2.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent"
         />
         <button
           type="button"
@@ -223,8 +223,8 @@ watch(
           :class="[
             'min-h-[34px] px-3 rounded-xl border text-xs cursor-pointer transition-colors',
             onlyUnread
-              ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
-              : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+              ? 'border-accent-border bg-accent-soft text-accent-fg'
+              : 'border-line text-fg-muted hover:text-fg'
           ]"
         >
           仅看未读 ({{ store.unreadInboxCount.value }})
@@ -233,7 +233,7 @@ watch(
     </div>
 
     <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
-      <div v-if="filtered.length === 0" class="py-12 text-center text-sm text-slate-500">
+      <div v-if="filtered.length === 0" class="py-12 text-center text-sm text-fg-muted">
         {{ onlyUnread ? '当前分类下的情报已全部阅读' : '当前分类下暂无情报消息' }}
       </div>
       <article
@@ -241,70 +241,70 @@ watch(
         :key="n.id"
         @pointermove="trackSpotlight"
         :class="[
-          'stagger-item luxury-card rounded-xl p-3.5',
-          n.priority === 'high' ? 'border-l-[3px] border-l-rose-400' : !n.read_at ? 'border-l-[3px] border-l-[#f2b880]' : ''
+          'stagger-item vesper-card rounded-xl p-3.5',
+          n.priority === 'high' ? 'border-l-[3px] border-l-rose-400' : !n.read_at ? 'border-l-[3px] border-l-accent' : ''
         ]"
       >
         <div class="flex items-start justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-2 flex-wrap min-w-0">
             <span
               v-if="!n.read_at"
-              class="w-2 h-2 rounded-full bg-[#f2b880] shadow-[0_0_8px_#f2b880] shrink-0"
+              class="w-2 h-2 rounded-full bg-accent shadow-[0_0_8px_#f2b880] shrink-0"
               title="未读"
             />
             <span
               v-if="n.priority === 'high'"
-              class="font-mono text-[10px] px-1.5 py-0.5 rounded border border-rose-400/45 bg-rose-500/15 text-rose-300 shrink-0"
+              class="font-mono text-xs px-1.5 py-0.5 rounded border border-danger-border bg-danger-soft text-danger shrink-0"
             >
               高优
             </span>
-            <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-[#f2b880]/28 bg-[#f2b880]/10 text-[#f2b880] shrink-0">
+            <span class="font-mono text-xs px-2 py-0.5 rounded-lg border border-accent-border bg-accent-soft text-accent-fg shrink-0">
               {{ n.source }}
             </span>
-            <strong class="text-sm text-white truncate">{{ n.title }}</strong>
+            <strong class="text-sm text-fg truncate">{{ n.title }}</strong>
           </div>
-          <span :title="formatTime(n.created_at)" class="font-mono tabular-nums text-[11px] text-slate-400 shrink-0">
+          <span :title="formatTime(n.created_at)" class="font-mono tabular-nums text-xs text-fg-muted shrink-0">
             {{ formatRelativeTime(n.created_at) }}
           </span>
         </div>
-        <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">{{ n.summary }}</p>
+        <p class="text-xs text-fg-muted mt-1.5 leading-relaxed">{{ n.summary }}</p>
         <div class="mt-2 flex items-center justify-between gap-2 flex-wrap">
           <details class="vesper-details flex-1 min-w-0" @toggle="(e: any) => e.target?.open && markRead(n.id)">
-            <summary class="cursor-pointer inline-flex items-center gap-1 font-mono text-[11px] text-[#f2b880] select-none">
+            <summary class="cursor-pointer inline-flex items-center gap-1 font-mono text-xs text-accent-fg select-none">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron shrink-0">
                 <polyline points="9 18 15 12 9 6" />
               </svg>
               <span>展开全文</span>
             </summary>
-            <div @click="handleMarkdownCodeCopy($event)" class="mt-2 pt-2 border-t border-[#fff8ee]/10" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
+            <div @click="handleMarkdownCodeCopy($event)" class="mt-2 pt-2 border-t border-line" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
           </details>
           <div class="flex items-center gap-1.5 shrink-0 self-start">
             <button
               v-if="!n.read_at"
               type="button"
               @click="markRead(n.id)"
-              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-[#fff8ee]/12 hover:border-emerald-400/40 text-[11px] text-slate-300 hover:text-emerald-300 cursor-pointer"
+              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-line hover:border-ok-border text-xs text-fg-sub hover:text-ok cursor-pointer"
             >
               标已读
             </button>
             <button
               type="button"
               @click="convertInboxToTodo(n)"
-              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-cyan-400/30 bg-cyan-500/8 hover:bg-cyan-500/18 text-[11px] text-cyan-200 cursor-pointer"
+              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-info-border bg-info-soft hover:bg-info-soft text-xs text-info cursor-pointer"
             >
               转待办
             </button>
             <button
               type="button"
               @click="saveInboxToNote(n)"
-              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-[#fff8ee]/12 hover:border-[#f2b880]/40 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-line hover:border-accent-border text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
             >
               存文档
             </button>
             <button
               type="button"
               @click="askBotAnalyze(n)"
-              class="min-h-[32px] sm:min-h-[26px] px-2.5 py-0.5 rounded-lg border border-[#f2b880]/30 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-[11px] text-[#f2b880] cursor-pointer"
+              class="min-h-[32px] sm:min-h-[26px] px-2.5 py-0.5 rounded-lg border border-accent-border bg-accent-soft hover:bg-accent-soft text-xs text-accent-fg cursor-pointer"
             >
               让 Bot 分析 ->
             </button>

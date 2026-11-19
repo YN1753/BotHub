@@ -3,12 +3,12 @@
   line-height: 1.72;
   word-break: break-word;
   font-size: 0.9rem;
-  color: var(--text-main);
+  color: var(--fg-main);
 }
 .md-body h1, .md-body h2, .md-body h3, .md-body h4 {
   margin: 0.8rem 0 0.35rem;
   font-weight: 600;
-  color: var(--text-main);
+  color: var(--fg-main);
   text-wrap: balance;
 }
 .md-body h1 { font-size: 1.15rem; }
@@ -23,7 +23,7 @@
 .md-body ol { list-style-type: decimal; }
 .md-body li { margin: 0.14rem 0; }
 .md-body a {
-  color: var(--accent-gold);
+  color: var(--accent-fg);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -32,29 +32,26 @@
 }
 .md-body code.md-inline-code {
   background: var(--md-inline-bg);
-  border: 1px solid var(--border-glass);
+  border: 1px solid var(--border-line);
   padding: 0.08rem 0.35rem;
-  border-radius: 0.35rem;
+  border-radius: 0.375rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.8rem;
-  color: var(--md-inline-text);
+  color: var(--accent-fg);
 }
 .md-body blockquote {
   margin: 0.5rem 0;
   padding: 0.45rem 0.8rem;
-  border-left: 3px solid var(--border-gold);
-  background: rgba(var(--accent-rgb), 0.08);
-  color: var(--text-sub);
+  border-left: 3px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--fg-sub);
   border-radius: 0 0.5rem 0.5rem 0;
 }
 .md-code-wrap {
   margin: 0.75rem 0;
-  border-radius: 0.875rem;
-  border: 1px solid var(--border-glass);
-  background: linear-gradient(180deg var(--in-oklab), var(--md-code-top) 0%, var(--md-code-bottom) 100%);
-  box-shadow:
-    inset 0 1px 0 var(--hairline-top),
-    0 10px 26px -6px var(--shadow-ambient);
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-line);
+  background: var(--md-code-bg);
   overflow: hidden;
 }
 .md-code-head {
@@ -62,16 +59,16 @@
   justify-content: space-between;
   align-items: center;
   padding: 0.45rem 0.85rem;
-  background: linear-gradient(90deg var(--in-oklab), rgba(var(--accent-rgb), 0.09) 0%, transparent 100%);
-  border-bottom: 1px solid var(--border-glass);
-  font-size: 0.72rem;
-  color: var(--text-muted);
+  background: var(--md-code-head);
+  border-bottom: 1px solid var(--border-line);
+  font-size: 0.75rem;
+  color: var(--fg-muted);
 }
 .md-code-wrap pre {
   margin: 0;
   padding: 0.7rem 0.85rem;
   overflow-x: auto;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   line-height: 1.55;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   color: var(--md-code-text);
@@ -96,28 +93,28 @@
   width: 100%;
   overflow-x: auto;
   margin: 0.5rem 0;
-  border-radius: 10px;
-  border: 1px solid var(--border-glass);
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-line);
 }
 .md-body table {
   width: 100%;
   border-collapse: collapse;
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
 }
 .md-body th, .md-body td {
-  border: 1px solid var(--border-glass);
-  padding: 0.38rem 0.6rem;
+  border: 1px solid var(--border-line);
+  padding: 0.4rem 0.65rem;
   text-align: left;
   white-space: nowrap;
 }
 .md-body th {
-  background: rgba(var(--accent-rgb), 0.1);
-  color: var(--text-main);
+  background: var(--surface-subtle);
+  color: var(--fg-main);
   font-weight: 600;
 }
 .md-body .md-del {
-  color: #94a3b8;
+  color: var(--fg-muted);
   text-decoration: line-through;
 }
 .md-body .md-task-list {
@@ -131,7 +128,7 @@
   margin: 0.28rem 0;
 }
 .md-body .md-task-item.is-done > span:last-child {
-  color: #94a3b8;
+  color: var(--fg-muted);
   text-decoration: line-through;
 }
 .md-body .md-task-box {
@@ -142,16 +139,16 @@
   height: 0.95rem;
   margin-top: 0.22rem;
   border-radius: 4px;
-  border: 1px solid rgba(242, 184, 128, 0.45);
-  background: rgba(242, 184, 128, 0.08);
-  color: #f2b880;
-  font-size: 0.65rem;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+  font-size: 0.7rem;
   line-height: 1;
   flex-shrink: 0;
 }
 .md-body .md-hr {
   height: 1px;
-  background: var(--border-glass);
+  background: var(--border-line);
   margin: 0.55rem 0;
 }
 

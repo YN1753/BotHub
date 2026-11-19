@@ -4,7 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -55,7 +54,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -136,9 +134,9 @@ fun ObsidianGlassInput(
 ) {
     val theme = BotHubThemeTokens
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(10.dp)
     val borderColor by animateColorAsState(
-        targetValue = if (focused) theme.accent.copy(alpha = 0.65f) else theme.divider,
+        targetValue = if (focused) theme.accent else theme.divider,
         animationSpec = tween(160),
         label = "inputFocusBorder"
     )
@@ -151,26 +149,23 @@ fun ObsidianGlassInput(
             Text(
                 text = label,
                 style = TextStyle(
-                    fontSize = 11.5.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = if (focused) theme.accent else theme.textMuted,
                     platformStyle = NoFontPaddingStyle
                 ),
                 maxLines = 1,
                 softWrap = false,
-                modifier = Modifier.padding(start = 4.dp)
+                modifier = Modifier.padding(start = 2.dp)
             )
         }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .sizeIn(minHeight = 46.dp)
+                .sizeIn(minHeight = 44.dp)
                 .clip(shape)
-                .background(
-                    Brush.verticalGradient(listOf(theme.inputTop, theme.inputBottom)),
-                    shape
-                )
-                .border(0.9.dp, borderColor, shape),
+                .background(theme.inputTop, shape)
+                .border(if (focused) 1.2.dp else 1.dp, borderColor, shape),
             contentAlignment = Alignment.CenterStart
         ) {
             BasicTextField(
@@ -279,9 +274,7 @@ fun BotHubTopBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(listOf(theme.topBarTop, theme.topBarBottom))
-            )
+            .background(theme.topBarTop)
             .statusBarsPadding()
     ) {
         Row(
@@ -426,28 +419,15 @@ private fun HeaderIconCircle(
 ) {
     val theme = BotHubThemeTokens
     val shape = CircleShape
-    val bgBrush = remember(accent, theme.id) {
-        if (accent) {
-            Brush.verticalGradient(
-                listOf(
-                    theme.accent.copy(alpha = 0.20f),
-                    theme.accentDeep.copy(alpha = 0.10f)
-                )
-            )
-        } else {
-            Brush.verticalGradient(listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom))
-        }
+    val fillColor = if (accent) {
+        theme.accent.copy(alpha = if (theme.isLight) 0.10f else 0.16f)
+    } else {
+        theme.secondaryBtnTop
     }
-    val rim = remember(accent, theme.id) {
-        if (accent) {
-            specularRimBrush(
-                theme.accent.copy(alpha = 0.50f),
-                theme.accent.copy(alpha = 0.20f),
-                theme.accent.copy(alpha = 0.08f)
-            )
-        } else {
-            specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
-        }
+    val borderColor = if (accent) {
+        theme.accent.copy(alpha = 0.42f)
+    } else {
+        theme.divider
     }
 
     Box(
@@ -455,8 +435,8 @@ private fun HeaderIconCircle(
             .size(36.dp)
             .tactileClickable(pressedScale = 0.92f, hapticOnTap = true, onClick = onClick)
             .clip(shape)
-            .background(bgBrush, shape)
-            .border(BorderStroke(0.85.dp, rim), shape),
+            .background(fillColor, shape)
+            .border(1.dp, borderColor, shape),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -484,9 +464,7 @@ fun BotHubBottomBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(listOf(theme.bottomBarTop, theme.bottomBarBottom))
-            )
+            .background(theme.bottomBarTop)
             .navigationBarsPadding()
     ) {
         SpecularHairline()
@@ -516,8 +494,8 @@ fun BotHubBottomBar(
                     label = "navFgColor"
                 )
                 val iconScale by animateFloatAsState(
-                    targetValue = if (isSelected) 1.09f else 1f,
-                    animationSpec = spring(dampingRatio = 0.62f, stiffness = 520f),
+                    targetValue = if (isSelected) 1.06f else 1f,
+                    animationSpec = spring(dampingRatio = 0.68f, stiffness = 520f),
                     label = "navIconScale"
                 )
 
@@ -537,20 +515,6 @@ fun BotHubBottomBar(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isSelected) {
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .offset(y = (-5).dp)
-                                .background(
-                                    Brush.radialGradient(
-                                        colors = listOf(theme.accent.copy(alpha = 0.16f), Color.Transparent)
-                                    ),
-                                    CircleShape
-                                )
-                        )
-                    }
-
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -586,9 +550,9 @@ fun BotHubBottomBar(
                         Text(
                             text = tab.label,
                             style = TextStyle(
-                                fontSize = 10.5.sp,
+                                fontSize = 11.sp,
                                 lineHeight = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                                 color = fgColor,
                                 platformStyle = NoFontPaddingStyle
                             ),

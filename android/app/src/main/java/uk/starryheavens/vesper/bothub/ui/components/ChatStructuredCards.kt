@@ -394,7 +394,7 @@ private fun AssetMicroCard(a: JSONObject) {
                         else -> "未设到期日"
                     },
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 10.5.sp,
+                    fontSize = 11.sp,
                     color = theme.textSecondary,
                     maxLines = 1,
                     softWrap = false
@@ -416,7 +416,7 @@ private fun AssetMicroCard(a: JSONObject) {
                 Text(
                     text = if (isPerpetual) "长期" else if (daysLeft < 0) "逾期${-daysLeft}天" else "${daysLeft}天",
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 10.5.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = indicatorColor,
                     maxLines = 1,
@@ -500,7 +500,7 @@ private fun NezhaNodesStructuredCard(json: JSONObject) {
                         Text(
                             text = lastActive,
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             color = theme.textMuted,
                             maxLines = 1,
                             softWrap = false
@@ -754,7 +754,7 @@ private fun ManageTasksStructuredCard(json: JSONObject) {
                     Text(
                         text = scheduleLabel,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 10.5.sp,
+                        fontSize = 11.sp,
                         color = theme.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -899,7 +899,7 @@ private fun BriefingKpiChip(
         Text(
             text = label,
             style = TextStyle(
-                fontSize = 9.5.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
                 color = theme.textMuted,
                 platformStyle = NoFontPaddingStyle
@@ -916,7 +916,7 @@ private fun OverflowHintText(remaining: Int) {
     val theme = BotHubThemeTokens
     Text(
         text = "另有 $remaining 项未展开，详情见下方总结",
-        fontSize = 10.5.sp,
+        fontSize = 11.sp,
         color = theme.textMuted,
         maxLines = 1,
         softWrap = false,

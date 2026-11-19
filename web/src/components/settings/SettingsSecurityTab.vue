@@ -310,17 +310,17 @@ async function handleImportBackup(e: Event) {
     <form @submit.prevent="handleSaveOidcConfig" class="modal-section flex flex-col gap-3" aria-labelledby="oidc-section-heading">
       <div class="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h4 id="oidc-section-heading" class="text-xs font-semibold text-[#f2b880]">Vesper Auth 单点登录（OIDC）</h4>
-          <p class="text-[11px] text-slate-400 mt-0.5">
+          <h4 id="oidc-section-heading" class="text-xs font-semibold text-accent-fg">Vesper Auth 单点登录（OIDC）</h4>
+          <p class="text-xs text-fg-muted mt-0.5">
             基于标准 OAuth 2.0 / OIDC + PKCE (S256)，支持网页端免密单点登录与 Android 客户端一键唤起免输密钥绑定。
           </p>
         </div>
         <span
           :class="[
-            'font-mono text-[10.5px] px-2.5 py-0.5 rounded-full border shrink-0',
+            'font-mono text-xs px-2.5 py-0.5 rounded-full border shrink-0',
             isOidcLive
-              ? 'border-emerald-400/35 bg-emerald-500/12 text-emerald-300'
-              : 'border-[#fff8ee]/14 bg-white/[0.04] text-slate-400'
+              ? 'border-ok-border bg-ok-soft text-ok'
+              : 'border-line bg-subtle text-fg-muted'
           ]"
         >
           {{ isOidcLive ? '已启用 · Vesper Auth' : '未启用' }}
@@ -333,16 +333,16 @@ async function handleImportBackup(e: Event) {
           v-model="oidcEnabled"
           name="oidc_enabled"
           type="checkbox"
-          class="accent-[#f2b880] rounded shrink-0"
+          class="accent-accent rounded shrink-0"
         />
-        <label for="settings-oidc-enabled" class="text-xs text-slate-200 cursor-pointer select-none">
+        <label for="settings-oidc-enabled" class="text-xs text-fg cursor-pointer select-none">
           启用 Vesper Auth 通行证作为首选登录与手机绑定方式
         </label>
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <div class="flex flex-col gap-1">
-          <label for="settings-oidc-issuer" class="text-xs text-slate-300">Issuer 地址</label>
+          <label for="settings-oidc-issuer" class="text-xs text-fg-sub">Issuer 地址</label>
           <input
             id="settings-oidc-issuer"
             v-model="oidcIssuer"
@@ -352,11 +352,11 @@ async function handleImportBackup(e: Event) {
             autocorrect="off"
             autocapitalize="none"
             spellcheck="false"
-            class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
+            class="min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-1.5 font-mono text-xs text-fg focus:border-accent"
           />
         </div>
         <div class="flex flex-col gap-1">
-          <label for="settings-oidc-client-id" class="text-xs text-slate-300">Client ID</label>
+          <label for="settings-oidc-client-id" class="text-xs text-fg-sub">Client ID</label>
           <input
             id="settings-oidc-client-id"
             v-model="oidcClientId"
@@ -366,14 +366,14 @@ async function handleImportBackup(e: Event) {
             autocorrect="off"
             autocapitalize="none"
             spellcheck="false"
-            class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
+            class="min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-1.5 font-mono text-xs text-fg focus:border-accent"
           />
         </div>
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <div class="flex flex-col gap-1">
-          <label for="settings-oidc-secret" class="text-xs text-slate-300">Client Secret（已脱敏保护）</label>
+          <label for="settings-oidc-secret" class="text-xs text-fg-sub">Client Secret（已脱敏保护）</label>
           <SecretInput
             id="settings-oidc-secret"
             v-model="oidcClientSecret"
@@ -384,7 +384,7 @@ async function handleImportBackup(e: Event) {
           />
         </div>
         <div class="flex flex-col gap-1">
-          <label for="settings-oidc-sub" class="text-xs text-slate-300">主理人 Sub 白名单（逗号分隔）</label>
+          <label for="settings-oidc-sub" class="text-xs text-fg-sub">主理人 Sub 白名单（逗号分隔）</label>
           <input
             id="settings-oidc-sub"
             v-model="oidcAllowedSub"
@@ -394,18 +394,18 @@ async function handleImportBackup(e: Event) {
             autocorrect="off"
             autocapitalize="none"
             spellcheck="false"
-            class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
+            class="min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-1.5 font-mono text-xs text-fg focus:border-accent"
           />
         </div>
       </div>
 
       <div class="flex items-center justify-between gap-2 flex-wrap pt-1">
-        <div class="flex items-center gap-2 min-w-0 text-[11px] text-slate-400 font-mono">
+        <div class="flex items-center gap-2 min-w-0 text-xs text-fg-muted font-mono">
           <span class="truncate">回调地址: {{ oidcCallbackUrl }}</span>
           <button
             type="button"
             @click="copyCallbackUrl"
-            class="px-2 py-0.5 rounded border border-[#fff8ee]/12 text-[10.5px] text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer shrink-0"
+            class="px-2 py-0.5 rounded border border-line text-xs text-fg-sub hover:text-accent-fg hover:border-accent-border cursor-pointer shrink-0"
           >
             复制
           </button>
@@ -413,7 +413,7 @@ async function handleImportBackup(e: Event) {
         <button
           type="submit"
           :disabled="savingOidc"
-          class="min-h-[40px] sm:min-h-[36px] px-4 py-1.5 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50 shrink-0"
+          class="min-h-[40px] sm:min-h-[36px] px-4 py-1.5 rounded-xl bg-accent hover:bg-accent-hover text-on-accent font-semibold text-xs cursor-pointer disabled:opacity-50 shrink-0"
         >
           {{ savingOidc ? '保存中...' : '保存 OIDC 设置' }}
         </button>
@@ -424,8 +424,8 @@ async function handleImportBackup(e: Event) {
     <div class="modal-section flex flex-col gap-3">
       <div class="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <div class="text-xs font-semibold text-[#f2b880]">面容 / 指纹通行密钥 (Passkey)</div>
-          <p class="text-[11px] text-slate-400 mt-0.5">
+          <div class="text-xs font-semibold text-accent-fg">面容 / 指纹通行密钥 (Passkey)</div>
+          <p class="text-xs text-fg-muted mt-0.5">
             绑定后在 Android 原生 APP 或浏览器均可优先无感刷脸、按指纹免密码登录与激活通知。
           </p>
         </div>
@@ -440,18 +440,18 @@ async function handleImportBackup(e: Event) {
         </button>
       </div>
 
-      <div v-if="passkeyLoading" class="text-xs text-slate-400 py-1">正在读取已注册密钥...</div>
-      <div v-else-if="passkeys.length === 0" class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/60 px-3 py-2.5 text-xs text-slate-400">
+      <div v-if="passkeyLoading" class="text-xs text-fg-muted py-1">正在读取已注册密钥...</div>
+      <div v-else-if="passkeys.length === 0" class="rounded-xl border border-line bg-canvas px-3 py-2.5 text-xs text-fg-muted">
         尚未注册通行密钥。点击右上方按钮即可使用当前设备的面容、触控 ID 或指纹一键绑定。
       </div>
       <div v-else class="flex flex-col gap-2">
         <div
           v-for="pk in passkeys"
           :key="pk.id"
-          class="flex items-center justify-between gap-3 rounded-xl border border-[#fff8ee]/12 bg-[#050811]/75 px-3 py-2.5"
+          class="flex items-center justify-between gap-3 rounded-xl border border-line bg-canvas px-3 py-2.5"
         >
           <div class="flex items-center gap-2.5 min-w-0">
-            <span class="w-8 h-8 rounded-xl bg-[#f2b880]/15 border border-[#f2b880]/30 inline-flex items-center justify-center text-[#f2b880] shrink-0" aria-hidden="true">
+            <span class="w-8 h-8 rounded-xl bg-accent-soft border border-accent-border inline-flex items-center justify-center text-accent-fg shrink-0" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
                 <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
@@ -462,15 +462,15 @@ async function handleImportBackup(e: Event) {
             </span>
             <div class="min-w-0">
               <div class="flex items-center gap-2">
-                <span class="text-xs font-medium text-white truncate">{{ pk.name }}</span>
+                <span class="text-xs font-medium text-fg truncate">{{ pk.name }}</span>
                 <span
                   v-if="pk.credentialBackedUp"
-                  class="font-mono text-[9.5px] px-1.5 py-0.5 rounded border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 shrink-0"
+                  class="font-mono text-xs px-1.5 py-0.5 rounded border border-ok-border bg-ok-soft text-ok shrink-0"
                 >
                   跨端同步
                 </span>
               </div>
-              <div class="text-[10.5px] text-slate-400 font-mono truncate mt-0.5">
+              <div class="text-xs text-fg-muted font-mono truncate mt-0.5">
                 注册于 {{ formatEpochDate(pk.registeredAt) }} · 最近使用 {{ formatEpochDate(pk.lastUsedAt) }}
               </div>
             </div>
@@ -479,14 +479,14 @@ async function handleImportBackup(e: Event) {
             <button
               type="button"
               @click="handleRenamePasskey(pk)"
-              class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+              class="px-2.5 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-accent-fg hover:border-accent-border cursor-pointer"
             >
               改名
             </button>
             <button
               type="button"
               @click="handleDeletePasskey(pk)"
-              class="px-2.5 py-1 rounded-lg border border-rose-400/35 bg-rose-500/10 text-[11px] text-rose-300 hover:bg-rose-500/20 cursor-pointer"
+              class="px-2.5 py-1 rounded-lg border border-danger-border bg-danger-soft text-xs text-danger hover:bg-danger-soft cursor-pointer"
             >
               移除
             </button>
@@ -496,7 +496,7 @@ async function handleImportBackup(e: Event) {
     </div>
 
     <form @submit.prevent="handleUpdatePassword" class="modal-section flex flex-col gap-2.5" aria-labelledby="fallback-password-heading">
-      <label id="fallback-password-heading" for="settings-new-password" class="text-xs font-semibold text-[#f2b880]">兜底访问密码管理</label>
+      <label id="fallback-password-heading" for="settings-new-password" class="text-xs font-semibold text-accent-fg">兜底访问密码管理</label>
       <div class="flex flex-col sm:flex-row gap-2">
         <SecretInput
           id="settings-new-password"
@@ -509,7 +509,7 @@ async function handleImportBackup(e: Event) {
           toggle-label="新密钥"
           required
         />
-        <button type="submit" class="min-h-[44px] sm:min-h-[40px] px-4 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer shrink-0">
+        <button type="submit" class="min-h-[44px] sm:min-h-[40px] px-4 py-2 rounded-xl border border-line text-xs text-fg hover:bg-hover cursor-pointer shrink-0">
           更新密码
         </button>
       </div>
@@ -517,15 +517,15 @@ async function handleImportBackup(e: Event) {
 
     <div class="modal-section flex flex-col gap-3">
       <div>
-        <div class="text-xs font-semibold text-[#f2b880]">系统数据灾备与设备解绑</div>
-        <p class="text-[11px] text-slate-400 mt-0.5">支持含密钥全量灾备导出，或自动遮蔽 API Key 与密码的脱敏分享导出</p>
+        <div class="text-xs font-semibold text-accent-fg">系统数据灾备与设备解绑</div>
+        <p class="text-xs text-fg-muted mt-0.5">支持含密钥全量灾备导出，或自动遮蔽 API Key 与密码的脱敏分享导出</p>
       </div>
       <div class="flex flex-wrap gap-2.5">
         <button
           type="button"
           :disabled="Boolean(exportingMode)"
           @click="handleExportBackup(false)"
-          class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer disabled:opacity-50"
+          class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-line text-xs text-fg hover:bg-hover cursor-pointer disabled:opacity-50"
         >
           {{ exportingMode === 'full' ? '正在导出...' : '全量导出备份 (JSON)' }}
         </button>
@@ -533,15 +533,15 @@ async function handleImportBackup(e: Event) {
           type="button"
           :disabled="Boolean(exportingMode)"
           @click="handleExportBackup(true)"
-          class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-emerald-400/35 bg-emerald-500/10 text-xs text-emerald-200 hover:bg-emerald-500/20 cursor-pointer disabled:opacity-50"
+          class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-ok-border bg-ok-soft text-xs text-ok hover:bg-ok-soft cursor-pointer disabled:opacity-50"
         >
           {{ exportingMode === 'redacted' ? '正在导出...' : '脱敏导出备份 (隐藏密钥)' }}
         </button>
-        <label class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:bg-white/5 cursor-pointer inline-flex items-center">
+        <label class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-line text-xs text-fg hover:bg-hover cursor-pointer inline-flex items-center">
           导入恢复备份
           <input type="file" accept=".json" class="hidden" @change="handleImportBackup" />
         </label>
-        <button type="button" @click="handleRotateToken" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 text-xs text-rose-300 hover:bg-rose-500/25 cursor-pointer">
+        <button type="button" @click="handleRotateToken" class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-danger-border bg-danger-soft text-xs text-danger hover:bg-danger-soft cursor-pointer">
           解绑所有已连接手机客户端
         </button>
       </div>
@@ -549,8 +549,8 @@ async function handleImportBackup(e: Event) {
 
     <div class="modal-section flex items-center justify-between gap-3 flex-wrap">
       <div>
-        <h4 class="text-xs font-semibold text-white">运行版本与构建信息</h4>
-        <p class="font-mono text-[11px] text-slate-400 mt-0.5">
+        <h4 class="text-xs font-semibold text-fg">运行版本与构建信息</h4>
+        <p class="font-mono text-xs text-fg-muted mt-0.5">
           {{ store.state.version }}
           <template v-if="store.state.commit"> · {{ store.state.commit }}</template>
           <template v-if="store.state.buildTime"> · {{ store.state.buildTime }}</template>
@@ -561,32 +561,32 @@ async function handleImportBackup(e: Event) {
         <button
           type="button"
           @click="copyBuildDiagnostic"
-          class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          class="px-2.5 py-1 rounded-lg border border-line text-xs text-fg-sub hover:border-accent-border hover:text-accent-fg cursor-pointer"
         >
           复制诊断
         </button>
-        <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-full border border-[#fff8ee]/12 text-slate-400">运行中</span>
+        <span class="font-mono text-xs px-2 py-0.5 rounded-full border border-line text-fg-muted">运行中</span>
       </div>
     </div>
 
     <div class="modal-section flex items-center justify-between gap-3 flex-wrap">
       <div>
-        <h4 class="text-xs font-semibold text-white">多端会话管理与退出登录</h4>
-        <p class="text-[11px] text-slate-400 mt-0.5">可一键吊销其他浏览器登录会话，或退出本机登录</p>
+        <h4 class="text-xs font-semibold text-fg">多端会话管理与退出登录</h4>
+        <p class="text-xs text-fg-muted mt-0.5">可一键吊销其他浏览器登录会话，或退出本机登录</p>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <button
           type="button"
           :disabled="revokingDevices"
           @click="handleRevokeOtherDevices"
-          class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-amber-400/40 bg-amber-500/12 text-xs font-medium text-amber-200 hover:bg-amber-500/22 cursor-pointer disabled:opacity-50"
+          class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-warn-border bg-warn-soft text-xs font-medium text-warn hover:bg-warn-soft cursor-pointer disabled:opacity-50"
         >
           {{ revokingDevices ? '正在吊销...' : '吊销其他已登录设备' }}
         </button>
         <button
           type="button"
           @click="handleLogout"
-          class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-rose-400/45 bg-rose-500/15 text-xs font-medium text-rose-300 hover:bg-rose-500/25 cursor-pointer"
+          class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-danger-border bg-danger-soft text-xs font-medium text-danger hover:bg-danger-soft cursor-pointer"
         >
           退出本机登录
         </button>

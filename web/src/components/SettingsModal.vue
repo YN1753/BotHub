@@ -15,7 +15,15 @@ const SettingsSecurityTab = lazyPanelChunk(() => import('./settings/SettingsSecu
 const ModelConfigPanel = lazyPanelChunk(() => import('./settings/ModelConfigPanel.vue'))
 
 const store = useAppStore()
-const { themeId, themeOptions, setAppTheme } = useAppTheme()
+const {
+  colorMode,
+  resolvedColorMode,
+  accentId,
+  colorModeOptions,
+  accentOptions,
+  setColorMode,
+  setAccent,
+} = useAppTheme()
 const activeTab = ref<'ai' | 'push' | 'integrations' | 'security'>('ai')
 const settingsTabTransition = ref<DirectionalTransitionName>('vesper-slide-forward')
 
@@ -216,34 +224,55 @@ async function handleQuickCreatePasskey() {
     max-width="2xl"
     @close="closeModal"
   >
-    <div class="border-b border-[#fff8ee]/10 pb-3 shrink-0 flex flex-col gap-2.5">
-      <div class="flex items-center justify-between gap-2 flex-wrap">
-        <span class="text-[11px] font-medium text-slate-400 shrink-0">界面主题 · 弹窗统一换肤</span>
-        <div class="flex items-center gap-1.5 flex-wrap" role="radiogroup" aria-label="界面外观主题">
-          <button
-            v-for="opt in themeOptions"
-            :key="opt.id"
-            type="button"
-            role="radio"
-            :aria-checked="themeId === opt.id"
-            :title="opt.desc"
-            @click="setAppTheme(opt.id)"
-            :class="[
-              'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition cursor-pointer',
-              themeId === opt.id
-                ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
-                : 'border-[#fff8ee]/12 text-slate-300 hover:border-[#f2b880]/35'
-            ]"
-          >
-            <span
-              class="w-3 h-3 rounded-full border border-white/25 inline-flex items-center justify-center shrink-0"
-              :style="{ backgroundColor: opt.swatchBg }"
-              aria-hidden="true"
+    <div class="border-b border-line pb-3 shrink-0 flex flex-col gap-2.5">
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <span class="text-xs font-medium text-fg-muted shrink-0">外观模式</span>
+          <div class="flex items-center gap-1.5 flex-wrap" role="radiogroup" aria-label="外观模式">
+            <button
+              v-for="opt in colorModeOptions"
+              :key="opt.id"
+              type="button"
+              role="radio"
+              :aria-checked="colorMode === opt.id"
+              @click="setColorMode(opt.id)"
+              :class="[
+                'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border transition cursor-pointer',
+                colorMode === opt.id
+                  ? 'border-accent-border bg-accent-soft text-accent-fg'
+                  : 'border-line bg-card text-fg-sub hover:border-line-strong hover:text-fg'
+              ]"
             >
-              <span class="w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: opt.swatchAccent }" />
-            </span>
-            <span>{{ opt.label }}</span>
-          </button>
+              {{ opt.label }}
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <span class="text-xs font-medium text-fg-muted shrink-0">强调色</span>
+          <div class="flex items-center gap-1.5 flex-wrap" role="radiogroup" aria-label="强调色">
+            <button
+              v-for="opt in accentOptions"
+              :key="opt.id"
+              type="button"
+              role="radio"
+              :aria-checked="accentId === opt.id"
+              @click="setAccent(opt.id)"
+              :class="[
+                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition cursor-pointer',
+                accentId === opt.id
+                  ? 'border-accent-border bg-accent-soft text-accent-fg'
+                  : 'border-line bg-card text-fg-sub hover:border-line-strong hover:text-fg'
+              ]"
+            >
+              <span
+                class="w-2.5 h-2.5 rounded-full border border-line-strong shrink-0"
+                :style="{ backgroundColor: resolvedColorMode === 'light' ? opt.swatchLight : opt.swatchDark }"
+                aria-hidden="true"
+              />
+              <span>{{ opt.label }}</span>
+            </button>
+          </div>
         </div>
       </div>
       <SegmentedTabs v-model="activeTab" :items="SETTINGS_TABS" aria-label="系统设置分类" />
@@ -260,7 +289,7 @@ async function handleQuickCreatePasskey() {
           />
 
           <div class="flex justify-end pt-1">
-            <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
+            <button type="submit" :disabled="saving" class="btn-jewel min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-lg text-xs cursor-pointer disabled:opacity-50">
               {{ saving ? '保存中...' : '保存模型配置与系统凭据' }}
             </button>
           </div>
@@ -268,25 +297,25 @@ async function handleQuickCreatePasskey() {
 
         <!-- Tab: Native App Push (Zero Manual Configuration) -->
         <div v-else-if="activeTab === 'push'" key="push" class="flex flex-col gap-3.5">
-          <div class="luxury-card rounded-2xl p-4 border-[#f2b880]/28">
+          <div class="vesper-card rounded-xl p-4 border-line">
             <div class="flex items-center justify-between gap-2 flex-wrap">
               <div class="flex items-center gap-2">
-                <span :class="['w-2 h-2 rounded-full shrink-0', store.state.sseConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400']" aria-hidden="true" />
-                <strong class="text-sm font-semibold text-white">手机原生通知（零配置自动就绪）</strong>
+                <span :class="['w-2 h-2 rounded-full shrink-0', store.state.sseConnected ? 'bg-ok animate-pulse' : 'bg-warn']" aria-hidden="true" />
+                <strong class="text-sm font-semibold text-fg">手机原生通知（零配置自动就绪）</strong>
               </div>
-              <span :class="['font-mono text-[10.5px] px-2 py-0.5 rounded-full border', store.state.sseConnected ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' : 'border-amber-400/30 bg-amber-400/10 text-amber-300']">
+              <span :class="['font-mono text-xs px-2 py-0.5 rounded-full border', store.state.sseConnected ? 'border-ok-border bg-ok-soft text-ok' : 'border-warn-border bg-warn-soft text-warn']">
                 {{ store.state.sseConnected ? 'SSE 实时通道在线' : 'SSE 等待重连' }}
               </span>
             </div>
-            <p class="text-xs text-slate-300/90 mt-1.5 leading-relaxed">
+            <p class="text-xs text-fg-sub mt-1.5 leading-relaxed">
               服务端已自动维护加密推送凭证，无需手动填写任何 Token。定时晨报、技术雷达、资产到期提醒与哪吒探针告警均自动直推手机锁屏。
             </p>
           </div>
 
           <div class="modal-section flex flex-col gap-3">
             <div>
-              <div class="text-xs font-semibold text-[#f2b880]">无感面容 / 指纹激活手机客户端</div>
-              <p class="text-[11px] text-slate-400 mt-0.5">
+              <div class="text-xs font-semibold text-accent-fg">无感面容 / 指纹激活手机客户端</div>
+              <p class="text-xs text-fg-muted mt-0.5">
                 方式一：注册面容/指纹通行密钥后，手机安装 APP 打开即可无感刷脸（或按指纹）直连；方式二：在手机浏览器直接点下方「一键免密唤醒绑定本机 APP」，无需输入网址或密码。
               </p>
             </div>
@@ -296,7 +325,7 @@ async function handleQuickCreatePasskey() {
                 type="button"
                 :disabled="pairingApp"
                 @click="handleOneTapPairApp"
-                class="btn-jewel min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-semibold cursor-pointer disabled:opacity-50"
+                class="btn-jewel min-h-[44px] px-4 py-2.5 rounded-lg text-xs cursor-pointer disabled:opacity-50"
               >
                 {{ pairingApp ? '正在唤醒客户端...' : '一键免密唤醒绑定本机 APP' }}
               </button>
@@ -306,7 +335,7 @@ async function handleQuickCreatePasskey() {
                 type="button"
                 :disabled="registeringPasskey"
                 @click="handleQuickCreatePasskey"
-                class="min-h-[44px] px-4 py-2.5 rounded-xl border border-[#f2b880]/45 bg-[#f2b880]/12 hover:bg-[#f2b880]/22 text-xs font-medium text-[#f2b880] cursor-pointer disabled:opacity-50"
+                class="btn-tactile-gold min-h-[44px] px-4 py-2.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50"
               >
                 {{
                   registeringPasskey
@@ -324,7 +353,7 @@ async function handleQuickCreatePasskey() {
               href="https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk"
               target="_blank"
               rel="noopener noreferrer"
-              class="min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-xl border border-[#fff8ee]/16 text-xs text-slate-200 hover:text-[#f2b880] hover:border-[#f2b880]/40 inline-flex items-center justify-center"
+              class="btn-tactile min-h-[44px] sm:min-h-[36px] px-3.5 py-2 rounded-lg text-xs inline-flex items-center justify-center"
             >
               下载最新 Android 客户端 APK
             </a>
@@ -332,7 +361,7 @@ async function handleQuickCreatePasskey() {
               type="button"
               :disabled="testingPush"
               @click="handleTestPush"
-              class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-[#f2b880]/40 bg-[#f2b880]/12 hover:bg-[#f2b880]/20 text-xs font-medium text-[#f2b880] cursor-pointer disabled:opacity-50"
+              class="btn-tactile-gold min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-50"
             >
               {{ testingPush ? '正在推送测试...' : '发送测试通知到手机' }}
             </button>
@@ -342,31 +371,31 @@ async function handleQuickCreatePasskey() {
         <!-- Tab: Integrations -->
         <form v-else-if="activeTab === 'integrations'" key="integrations" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
           <div class="modal-section flex flex-col gap-3">
-            <div class="text-xs font-semibold text-[#f2b880]">服务器探针直连 (哪吒监控)</div>
-            <label class="flex flex-col gap-1 text-xs text-slate-300">
+            <div class="text-xs font-semibold text-accent-fg">服务器探针直连 (哪吒监控)</div>
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>哪吒监控面板地址</span>
-              <input v-model="nezhaUrl" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              <input v-model="nezhaUrl" type="text" class="min-h-[44px] sm:min-h-[40px] rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg focus:border-accent" />
             </label>
-            <label class="flex flex-col gap-1 text-xs text-slate-300">
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>哪吒 SQLite 本机路径 (只读直连，可选)</span>
-              <input v-model="nezhaDbPath" type="text" placeholder="留空仅走网页/资产查询，填实际 .db 路径可直连探针" class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-sm text-white focus:border-[#f2b880]/60" />
+              <input v-model="nezhaDbPath" type="text" placeholder="留空仅走网页/资产查询，填实际 .db 路径可直连探针" class="min-h-[44px] sm:min-h-[40px] rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg placeholder:text-fg-muted focus:border-accent" />
             </label>
           </div>
 
           <div class="modal-section flex flex-col gap-3">
-            <div class="text-xs font-semibold text-[#f2b880]">域名与生态扩展凭据</div>
-            <label class="flex flex-col gap-1 text-xs text-slate-300">
+            <div class="text-xs font-semibold text-accent-fg">域名与生态扩展凭据</div>
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>Cloudflare API Token</span>
               <SecretInput v-model="cfApiToken" toggle-label="Cloudflare API Token" />
             </label>
-            <label class="flex flex-col gap-1 text-xs text-slate-300">
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>哔哩哔哩 SESSDATA</span>
               <SecretInput v-model="biliSessdata" toggle-label="哔哩哔哩 SESSDATA" />
             </label>
           </div>
 
           <div class="flex justify-end pt-1">
-            <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
+            <button type="submit" :disabled="saving" class="btn-jewel min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-lg text-xs cursor-pointer disabled:opacity-50">
               保存巡检凭据
             </button>
           </div>
@@ -379,17 +408,17 @@ async function handleQuickCreatePasskey() {
 
     <div
       v-if="hasUnsavedChanges && activeTab !== 'security'"
-      class="shrink-0 flex items-center justify-between gap-3 rounded-xl border border-[#f2b880]/40 bg-[#f2b880]/10 px-3.5 py-2.5 text-xs"
+      class="shrink-0 flex items-center justify-between gap-3 rounded-xl border border-accent-border bg-accent-soft px-3.5 py-2.5 text-xs"
     >
       <div class="flex items-center gap-2 min-w-0">
-        <span class="w-2 h-2 rounded-full bg-[#f2b880] animate-pulse shrink-0" aria-hidden="true" />
-        <span class="text-[#f7cba0] truncate">检测到配置改动，记得保存后生效</span>
+        <span class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" aria-hidden="true" />
+        <span class="text-accent-fg truncate">检测到配置改动，记得保存后生效</span>
       </div>
       <button
         type="button"
         :disabled="saving"
         @click="saveAllConfig"
-        class="min-h-[34px] px-4 rounded-lg bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer shrink-0 disabled:opacity-50"
+        class="btn-jewel min-h-[34px] px-4 rounded-lg text-xs cursor-pointer shrink-0 disabled:opacity-50"
       >
         {{ saving ? '保存中...' : '立即保存全部改动' }}
       </button>

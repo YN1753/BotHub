@@ -27,12 +27,12 @@ function scrollActiveEntryIntoView() {
 }
 
 function categoryBadgeClass(cat: SearchEntry['category']): string {
-  if (cat === '会话' || cat === '话题') return 'border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880]'
-  if (cat === '收藏') return 'border-rose-400/30 bg-rose-500/10 text-rose-200'
-  if (cat === '待办' || cat === '技能') return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
-  if (cat === '文档' || cat === '记忆') return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
-  if (cat === '资产' || cat === '例程') return 'border-amber-400/30 bg-amber-500/10 text-amber-200'
-  return 'border-[#fff8ee]/10 bg-[#050811]/70 text-slate-400'
+  if (cat === '会话' || cat === '话题') return 'border-accent-border bg-accent-soft text-accent-fg'
+  if (cat === '收藏') return 'border-danger-border bg-danger-soft text-danger'
+  if (cat === '待办' || cat === '技能') return 'border-info-border bg-info-soft text-info'
+  if (cat === '文档' || cat === '记忆') return 'border-ok-border bg-ok-soft text-ok'
+  if (cat === '资产' || cat === '例程') return 'border-warn-border bg-warn-soft text-warn'
+  return 'border-line bg-canvas text-fg-muted'
 }
 
 function resolveGroupMembers(b: Bot): Bot[] {
@@ -361,7 +361,7 @@ function handleKeydown(e: KeyboardEvent) {
           stroke="currentColor"
           stroke-width="2"
           aria-hidden="true"
-          class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+          class="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-muted pointer-events-none"
         >
           <circle cx="11" cy="11" r="8" />
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -372,7 +372,7 @@ function handleKeydown(e: KeyboardEvent) {
           type="search"
           placeholder="输入 Bot 名称、资产关键词或操作指令..."
           @keydown="handleKeydown"
-          class="w-full min-h-[44px] rounded-xl border border-[#f2b880]/30 bg-[#050811] pl-10 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:border-[#f2b880]"
+          class="w-full min-h-[44px] rounded-xl border border-accent-border bg-canvas pl-10 pr-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-accent"
         />
       </div>
 
@@ -383,10 +383,10 @@ function handleKeydown(e: KeyboardEvent) {
           type="button"
           @click="scopeFilter = tab; highlighted = 0"
           :class="[
-            'snap-chip shrink-0 px-2.5 py-0.5 rounded-full border text-[11px] cursor-pointer transition-colors',
+            'snap-chip shrink-0 px-2.5 py-0.5 rounded-full border text-xs cursor-pointer transition-colors',
             scopeFilter === tab
-              ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
-              : 'border-[#fff8ee]/10 text-slate-400 hover:text-white'
+              ? 'border-accent-border bg-accent-soft text-accent-fg'
+              : 'border-line text-fg-muted hover:text-fg'
           ]"
         >
           {{ tab === '快捷操作' ? '操作' : tab }}
@@ -394,13 +394,13 @@ function handleKeydown(e: KeyboardEvent) {
       </div>
 
       <div ref="listContainerRef" class="flex-1 min-h-0 max-h-[50dvh] overflow-y-auto flex flex-col gap-1 pr-0.5">
-        <div v-if="entries.length === 0" class="py-8 text-center flex flex-col items-center gap-2 text-xs text-slate-500">
+        <div v-if="entries.length === 0" class="py-8 text-center flex flex-col items-center gap-2 text-xs text-fg-muted">
           <span>未找到匹配结果</span>
           <button
             v-if="query.trim() || scopeFilter !== '全部'"
             type="button"
             @click="query = ''; scopeFilter = '全部'; highlighted = 0"
-            class="px-3 py-1 rounded-full border border-[#fff8ee]/12 text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+            class="px-3 py-1 rounded-full border border-line text-fg-sub hover:border-accent-border hover:text-accent-fg cursor-pointer"
           >
             清空搜索与分类筛选
           </button>
@@ -416,8 +416,8 @@ function handleKeydown(e: KeyboardEvent) {
           :class="[
             'w-full min-h-[48px] flex items-center justify-between gap-3 px-3 py-2 rounded-xl border text-left cursor-pointer transition-colors',
             idx === highlighted
-              ? 'border-[#f2b880]/50 bg-[#f2b880]/12 text-white'
-              : 'border-transparent hover:bg-white/[0.04] text-slate-200'
+              ? 'border-accent-border bg-accent-soft text-fg'
+              : 'border-transparent hover:bg-hover text-fg'
           ]"
         >
           <div class="flex items-center gap-2.5 min-w-0 flex-1">
@@ -433,22 +433,22 @@ function handleKeydown(e: KeyboardEvent) {
             </template>
             <span
               v-else
-              class="w-7 h-7 rounded-lg border border-[#fff8ee]/12 bg-[#fff8ee]/[0.04] text-[#f2b880] inline-flex items-center justify-center shrink-0 font-mono text-[10px]"
+              class="w-7 h-7 rounded-lg border border-line bg-subtle text-accent-fg inline-flex items-center justify-center shrink-0 font-mono text-xs"
             >
               {{ item.category.slice(0, 1) }}
             </span>
             <div class="min-w-0 flex-1">
               <div class="text-xs font-semibold truncate">{{ item.title }}</div>
-              <div class="text-[11px] text-slate-400 truncate">{{ item.subtitle }}</div>
+              <div class="text-xs text-fg-muted truncate">{{ item.subtitle }}</div>
             </div>
           </div>
-          <span :class="['font-mono text-[10px] px-2 py-0.5 rounded-md border shrink-0', categoryBadgeClass(item.category)]">
+          <span :class="['font-mono text-xs px-2 py-0.5 rounded-lg border shrink-0', categoryBadgeClass(item.category)]">
             {{ item.category }}
           </span>
         </button>
       </div>
 
-      <div class="flex items-center justify-between gap-2 pt-2 border-t border-[#fff8ee]/8 text-[10.5px] font-mono text-slate-500">
+      <div class="flex items-center justify-between gap-2 pt-2 border-t border-line text-xs font-mono text-fg-muted">
         <span>匹配 {{ entries.length }} 项</span>
         <span class="hidden sm:inline">↑↓ 选择 · Enter 确认 · Esc 关闭 · ? 呼出</span>
       </div>

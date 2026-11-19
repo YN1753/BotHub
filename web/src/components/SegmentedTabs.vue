@@ -123,22 +123,22 @@ onBeforeUnmount(() => {
     role="tablist"
     :aria-label="ariaLabel || '视图切换'"
     :class="[
-      'chip-rail well-recessed relative inline-flex items-center p-1 rounded-full overflow-x-auto no-scrollbar max-w-full select-none [contain:layout_style]',
+      'chip-rail bg-canvas border border-line relative inline-flex items-center p-0.5 rounded-lg overflow-x-auto no-scrollbar max-w-full select-none [contain:layout_style]',
       variant === 'pill' ? 'opacity-100' : 'opacity-95'
     ]"
   >
-    <!-- Gliding 3D Jewel Spring Indicator (snaps instantly on dialog mount, glides with spring on user switch) -->
+    <!-- Gliding Active Thumb -->
     <span
       aria-hidden="true"
       :style="{
         width: pillStyle.width,
         opacity: pillStyle.opacity,
         transform: pillStyle.transform,
-        transitionTimingFunction: indicatorAnimated ? 'var(--ease-spring)' : 'none',
+        transitionTimingFunction: indicatorAnimated ? 'var(--ease-snappy)' : 'none',
       }"
       :class="[
-        'btn-jewel pointer-events-none absolute top-1 bottom-1 left-0 rounded-full motion-reduce:transition-none',
-        indicatorAnimated ? 'transition-[transform,width,opacity] duration-300' : 'transition-none'
+        'bg-card border border-line shadow-xs pointer-events-none absolute top-0.5 bottom-0.5 left-0 rounded-md motion-reduce:transition-none',
+        indicatorAnimated ? 'transition-[transform,width,opacity] duration-200' : 'transition-none'
       ]"
     />
 
@@ -153,12 +153,10 @@ onBeforeUnmount(() => {
       @keydown="handleTabKeydown($event, idx)"
       @click="emit('update:modelValue', item.id)"
       :class="[
-        'snap-chip relative z-10 min-h-[38px] sm:min-h-[30px] px-3.5 rounded-full text-xs whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-200',
-        modelValue === item.id && pillStyle.opacity > 0
-          ? 'text-[#070a13] font-semibold'
-          : modelValue === item.id
-            ? 'text-[#ffe2be] font-semibold'
-            : 'text-slate-300 hover:text-white'
+        'snap-chip relative z-10 min-h-[36px] sm:min-h-[28px] px-3 rounded-lg text-xs whitespace-nowrap shrink-0 cursor-pointer transition-colors duration-150',
+        modelValue === item.id
+          ? 'text-fg font-medium'
+          : 'text-fg-muted hover:text-fg'
       ]"
     >
       {{ item.label }}

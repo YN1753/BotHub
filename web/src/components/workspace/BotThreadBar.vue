@@ -80,10 +80,10 @@ function carrySummaryToNewThread() {
       type="button"
       @click="store.switchThread('')"
       :class="[
-        'snap-chip px-2.5 py-0.5 rounded-full text-[11px] whitespace-nowrap cursor-pointer transition-all',
+        'snap-chip px-2.5 py-0.5 rounded-full text-xs whitespace-nowrap cursor-pointer transition-all',
         !store.state.activeThreadId
           ? 'btn-tactile-gold font-medium'
-          : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]',
+          : 'text-fg-muted hover:text-fg hover:bg-hover',
       ]"
     >
       # 主时间线
@@ -103,7 +103,7 @@ function carrySummaryToNewThread() {
         @keydown.enter.prevent="commitRenameThread"
         @keydown.escape.stop="renamingThreadId = null"
         @blur="commitRenameThread"
-        class="plain-inline-input w-32 bg-transparent px-2.5 py-0.5 rounded-full border border-[#f2b880]/60 text-[11px] text-white focus:outline-none"
+        class="plain-inline-input w-32 bg-transparent px-2.5 py-0.5 rounded-full border border-accent-border text-xs text-fg focus:outline-none"
       />
       <button
         v-else
@@ -112,10 +112,10 @@ function carrySummaryToNewThread() {
         @click="store.switchThread(th.id)"
         @dblclick="startRenameThread(th.id, th.title)"
         :class="[
-          'px-2.5 py-0.5 rounded-full text-[11px] whitespace-nowrap cursor-pointer transition-all',
+          'px-2.5 py-0.5 rounded-full text-xs whitespace-nowrap cursor-pointer transition-all',
           store.state.activeThreadId === th.id
             ? 'btn-tactile-gold font-medium'
-            : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]',
+            : 'text-fg-muted hover:text-fg hover:bg-hover',
         ]"
       >
         # {{ th.title }}
@@ -134,19 +134,19 @@ function carrySummaryToNewThread() {
   >
     <div
       v-if="activeThreadObj?.summary"
-      class="mx-4 md:mx-6 mb-1.5 px-3.5 py-1.5 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.06] flex items-start justify-between gap-2 text-[11px] shrink-0"
+      class="mx-4 md:mx-6 mb-1.5 px-3.5 py-1.5 rounded-xl border border-ok-border bg-ok-soft flex items-start justify-between gap-2 text-xs shrink-0"
     >
       <button
         type="button"
         @click="summaryExpanded = !summaryExpanded"
         class="flex items-start gap-1.5 min-w-0 flex-1 text-left cursor-pointer group"
       >
-        <span class="px-1.5 py-0.5 rounded bg-emerald-400/15 text-emerald-300 font-mono text-[10px] shrink-0">
+        <span class="px-1.5 py-0.5 rounded bg-ok-soft text-ok font-mono text-xs shrink-0">
           前情提要
         </span>
         <span
           :class="[
-            'text-slate-300 group-hover:text-white transition-colors',
+            'text-fg-sub group-hover:text-fg transition-colors',
             summaryExpanded ? 'whitespace-pre-wrap' : 'truncate',
           ]"
         >
@@ -157,14 +157,14 @@ function carrySummaryToNewThread() {
         <button
           type="button"
           @click="saveThreadSummaryToNote"
-          class="px-2 py-0.5 rounded-full text-[10.5px] text-slate-300 hover:text-white hover:bg-white/[0.08] cursor-pointer"
+          class="px-2 py-0.5 rounded-full text-xs text-fg-sub hover:text-fg hover:bg-hover cursor-pointer"
         >
           存文档
         </button>
         <button
           type="button"
           @click="carrySummaryToNewThread"
-          class="px-2 py-0.5 rounded-full text-[10.5px] text-emerald-300 hover:bg-emerald-400/15 cursor-pointer"
+          class="px-2 py-0.5 rounded-full text-xs text-ok hover:bg-ok-soft cursor-pointer"
         >
           续开
         </button>

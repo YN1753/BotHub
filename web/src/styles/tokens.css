@@ -1,12 +1,37 @@
+@theme inline {
+  --color-canvas: var(--surface-canvas);
+  --color-sidebar: var(--surface-sidebar);
+  --color-main: var(--surface-main);
+  --color-card: var(--surface-card);
+  --color-hover: var(--surface-hover);
+  --color-subtle: var(--surface-subtle);
+  --color-line: var(--border-line);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--fg-main);
+  --color-fg-sub: var(--fg-sub);
+  --color-fg-muted: var(--fg-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-border: var(--accent-border);
+  --color-accent-fg: var(--accent-fg);
+  --color-on-accent: var(--on-accent);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-border: var(--ok-border);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-border: var(--warn-border);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-border: var(--danger-border);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-border: var(--info-border);
+}
+
 :root {
   interpolate-size: allow-keywords;
-
-  --border-glass: rgba(255, 248, 238, 0.1);
-  --text-main: #f5f2eb;
-  --text-sub: #cbd5e1;
-  --text-muted: #94a3b8;
-  --accent-gold: #f2b880;
-  --accent-rgb: 242, 184, 128;
 
   /* Motion timing & easing primitives */
   --dur-fast: 150ms;
@@ -41,12 +66,8 @@
 html,
 body {
   min-height: 100%;
-  background:
-    radial-gradient(ellipse 75% 52% at 14% 8% var(--in-oklab), var(--bg-glow-2) 0%, transparent 62%),
-    radial-gradient(ellipse 60% 48% at 88% 14% var(--in-oklab), var(--bg-glow-1) 0%, transparent 56%),
-    radial-gradient(ellipse 70% 50% at 78% 92% var(--in-oklab), rgba(var(--accent-rgb), 0.10) 0%, transparent 60%),
-    linear-gradient(180deg var(--in-oklab), var(--bg-top) 0%, var(--bg-bottom) 100%);
-  color: var(--text-main);
+  background: var(--surface-canvas);
+  color: var(--fg-main);
   font-family: -apple-system, BlinkMacSystemFont, "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -54,8 +75,8 @@ body {
 }
 
 ::selection {
-  background: rgba(var(--accent-rgb), 0.28);
-  color: var(--text-main);
+  background: var(--accent-soft);
+  color: var(--fg-main);
 }
 
 /* Typographic clarity */
@@ -79,42 +100,32 @@ img, video {
 
 :where(a, button, select, summary, [tabindex]):focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.65);
+  box-shadow: 0 0 0 2px var(--accent-border);
 }
 
 :where(input, textarea):focus-visible {
   outline: none;
 }
 
-/* Carved recessed depth for form inputs & textareas across workspaces and modals */
+/* Flat crisp form inputs & textareas across workspaces and modals */
 :where(
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.plain-inline-input),
   textarea:not(.composer-textarea)
 ) {
-  background: linear-gradient(
-    180deg var(--in-oklab),
-    var(--surface-input-top) 0%,
-    var(--surface-input-bottom) 100%
-  );
-  color: var(--text-main);
-  box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, 0.22),
-    inset 0 -1px 0 var(--hairline-top),
-    0 1px 0 var(--border-glass);
-  transition: border-color 180ms ease-out, box-shadow 200ms ease-out;
+  background: var(--surface-canvas);
+  color: var(--fg-main);
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
 }
 
 :where(
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.plain-inline-input),
   textarea:not(.composer-textarea)
 ):focus {
-  box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, 0.16),
-    0 0 0 1px rgba(var(--accent-rgb), 0.45),
-    0 0 20px -4px rgba(var(--accent-rgb), 0.24);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
-/* Crisp interactive tactile motion (non-spatial color/shadow kept for all; scale opted-in) */
+/* Crisp interactive tactile motion (never transition scrollbar-color) */
 :where(button, [role="button"]) {
   transition-property: background-color, border-color, color, box-shadow, opacity;
   transition-duration: var(--dur-fast);
@@ -124,37 +135,42 @@ img, video {
 @media (prefers-reduced-motion: no-preference) {
   :where(button, [role="button"]) {
     transition-property: background-color, border-color, color, box-shadow, opacity, transform, scale, translate;
-    transition-duration: 165ms;
+    transition-duration: 150ms;
     transition-timing-function: var(--ease-snappy);
   }
   :where(button, [role="button"]):not(:disabled):active {
-    scale: 0.968;
+    scale: 0.98;
   }
 }
 
-/* Unified Theme Scrollbars & Stream Scroller */
+/* Standard Scrollbar Color & Thickness (never animated) */
 :where(*) {
   scrollbar-width: thin;
-  scrollbar-color: var(--border-glass) transparent;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border-glass);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--accent-rgb), 0.5);
-  border: 2px solid transparent;
-  background-clip: content-box;
+@supports not (scrollbar-color: auto) {
+  :where(*) {
+    scrollbar-width: auto;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--fg-muted);
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -187,15 +203,15 @@ img, video {
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0%,
-    black 22px,
-    black calc(100% - 18px),
+    black 16px,
+    black calc(100% - 14px),
     transparent 100%
   );
   mask-image: linear-gradient(
     to bottom,
     transparent 0%,
-    black 22px,
-    black calc(100% - 18px),
+    black 16px,
+    black calc(100% - 14px),
     transparent 100%
   );
 }

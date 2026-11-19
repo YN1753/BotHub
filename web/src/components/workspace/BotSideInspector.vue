@@ -463,23 +463,23 @@ function fullViewLabel(): string {
 <template>
   <aside
     aria-label="桌面协同副屏"
-    class="hidden lg:flex w-[376px] xl:w-[400px] shrink-0 border-l border-[#fff8ee]/10 flex-col min-h-0 bg-black/15"
+    class="hidden lg:flex w-[376px] xl:w-[400px] shrink-0 border-l border-line flex-col min-h-0 bg-subtle"
   >
     <!-- Inspector Top Header + Full-Screen Link -->
-    <div class="px-3.5 pt-2.5 pb-2 border-b border-[#fff8ee]/8 flex flex-col gap-2 shrink-0">
+    <div class="px-3.5 pt-2.5 pb-2 border-b border-line flex flex-col gap-2 shrink-0">
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5 min-w-0">
-          <svg viewBox="0 0 24 24" width="13.5" height="13.5" fill="none" stroke="currentColor" stroke-width="2" class="text-[#f2b880] shrink-0" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="13.5" height="13.5" fill="none" stroke="currentColor" stroke-width="2" class="text-accent-fg shrink-0" aria-hidden="true">
             <rect x="3" y="3" width="18" height="18" rx="2" />
             <line x1="15" y1="3" x2="15" y2="21" />
           </svg>
-          <span class="text-xs font-semibold text-white truncate">协同副屏</span>
+          <span class="text-xs font-semibold text-fg truncate">协同副屏</span>
         </div>
         <div class="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             @click="openFullView"
-            class="px-2 py-1 rounded-lg border border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-[10.5px] text-slate-300 hover:text-[#ffe2be] cursor-pointer inline-flex items-center gap-1"
+            class="px-2 py-1 rounded-lg border border-line hover:border-accent-border text-xs text-fg-sub hover:text-accent-fg cursor-pointer inline-flex items-center gap-1"
           >
             <span>{{ fullViewLabel() }}</span>
             <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -492,7 +492,7 @@ function fullViewLabel(): string {
             aria-label="收起协同副屏"
             title="收起协同副屏"
             @click="store.toggleSideInspector()"
-            class="w-6 h-6 rounded-lg inline-flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+            class="w-6 h-6 rounded-lg inline-flex items-center justify-center text-fg-muted hover:text-fg hover:bg-hover cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -513,26 +513,26 @@ function fullViewLabel(): string {
           :data-active="activeTab === tab.id"
           @click="activeTab = tab.id"
           :class="[
-            'relative py-1 rounded-full text-[11px] font-medium cursor-pointer transition-colors flex items-center justify-center gap-1',
+            'relative py-1 rounded-full text-xs font-medium cursor-pointer transition-colors flex items-center justify-center gap-1',
             activeTab === tab.id
-              ? 'bg-[#f2b880] text-[#090c16] shadow-xs'
-              : 'text-slate-300 hover:text-white',
+              ? 'bg-accent text-on-accent shadow-xs'
+              : 'text-fg-sub hover:text-fg',
           ]"
         >
           <span>{{ tab.label }}</span>
           <span
             v-if="tab.id === 'todos' && store.pendingTodoCount.value > 0 && activeTab !== 'todos'"
-            class="w-1.5 h-1.5 rounded-full bg-cyan-400"
+            class="w-1.5 h-1.5 rounded-full bg-info"
             aria-hidden="true"
           />
           <span
             v-else-if="tab.id === 'stash' && store.unreadStashCount.value > 0 && activeTab !== 'stash'"
-            class="w-1.5 h-1.5 rounded-full bg-rose-400"
+            class="w-1.5 h-1.5 rounded-full bg-danger"
             aria-hidden="true"
           />
           <span
             v-else-if="tab.id === 'assets' && store.expiringAssetCount.value > 0 && activeTab !== 'assets'"
-            class="w-1.5 h-1.5 rounded-full bg-amber-400"
+            class="w-1.5 h-1.5 rounded-full bg-warn"
             aria-hidden="true"
           />
         </button>
@@ -549,17 +549,17 @@ function fullViewLabel(): string {
               v-model="newTodoTitle"
               type="text"
               placeholder="快速记待办，回车添加..."
-              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-line focus:border-accent"
             />
             <button
               type="submit"
               :disabled="!newTodoTitle.trim() || savingTodo"
-              class="btn-jewel px-2.5 py-1.5 rounded-xl text-[11px] shrink-0 cursor-pointer disabled:opacity-40"
+              class="btn-jewel px-2.5 py-1.5 rounded-xl text-xs shrink-0 cursor-pointer disabled:opacity-40"
             >
               添加
             </button>
           </div>
-          <div class="flex items-center justify-between gap-2 text-[10.5px]">
+          <div class="flex items-center justify-between gap-2 text-xs">
             <div class="flex items-center gap-1">
               <button
                 v-for="p in (['high', 'normal', 'low'] as const)"
@@ -569,8 +569,8 @@ function fullViewLabel(): string {
                 :class="[
                   'px-2 py-0.5 rounded-full border cursor-pointer',
                   newTodoPriority === p
-                    ? 'border-[#f2b880]/50 bg-[#f2b880]/15 text-[#ffe2be]'
-                    : 'border-[#fff8ee]/10 text-slate-400 hover:text-slate-200',
+                    ? 'border-accent-border bg-accent-soft text-accent-fg'
+                    : 'border-line text-fg-muted hover:text-fg',
                 ]"
               >
                 {{ p === 'high' ? '高优' : p === 'low' ? '低优' : '普通' }}
@@ -579,14 +579,14 @@ function fullViewLabel(): string {
             <button
               type="button"
               @click="todoShowAll = !todoShowAll"
-              class="font-mono text-slate-400 hover:text-[#ffe2be] cursor-pointer"
+              class="font-mono text-fg-muted hover:text-accent-fg cursor-pointer"
             >
               {{ todoShowAll ? '仅未完成' : `全部 (${store.state.todos.length})` }}
             </button>
           </div>
         </form>
 
-        <div v-if="visibleTodos.length === 0" class="py-10 text-center text-xs text-slate-500">
+        <div v-if="visibleTodos.length === 0" class="py-10 text-center text-xs text-fg-muted">
           暂无待办事项
         </div>
 
@@ -606,8 +606,8 @@ function fullViewLabel(): string {
               :class="[
                 'mt-0.5 w-4.5 h-4.5 rounded border flex items-center justify-center shrink-0 cursor-pointer transition-colors',
                 td.status === 'done'
-                  ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300'
-                  : 'border-[#fff8ee]/20 bg-[#fff8ee]/[0.04] text-transparent hover:border-[#f2b880]/60',
+                  ? 'border-ok-border bg-ok-soft text-ok'
+                  : 'border-line bg-subtle text-transparent hover:border-accent-border',
               ]"
             >
               <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true">
@@ -619,20 +619,20 @@ function fullViewLabel(): string {
               <div
                 :class="[
                   'text-xs leading-snug break-words',
-                  td.status === 'done' ? 'line-through text-slate-400' : 'text-slate-100',
+                  td.status === 'done' ? 'line-through text-fg-muted' : 'text-fg',
                 ]"
               >
                 {{ td.title }}
               </div>
-              <div class="flex flex-wrap items-center gap-1 text-[10px] font-mono">
+              <div class="flex flex-wrap items-center gap-1 text-xs font-mono">
                 <span
                   :class="[
                     'px-1.5 py-0.5 rounded border',
                     td.priority === 'high'
-                      ? 'border-rose-400/35 bg-rose-500/12 text-rose-300'
+                      ? 'border-danger-border bg-danger-soft text-danger'
                       : td.priority === 'low'
-                        ? 'border-slate-500/30 text-slate-400'
-                        : 'border-[#fff8ee]/10 text-slate-300',
+                        ? 'border-line text-fg-muted'
+                        : 'border-line text-fg-sub',
                   ]"
                 >
                   {{ td.priority === 'high' ? '高' : td.priority === 'low' ? '低' : '普通' }}
@@ -642,8 +642,8 @@ function fullViewLabel(): string {
                   :class="[
                     'px-1.5 py-0.5 rounded border',
                     isTodoOverdue(td)
-                      ? 'border-rose-400/35 bg-rose-500/12 text-rose-300'
-                      : 'border-[#fff8ee]/10 text-slate-400',
+                      ? 'border-danger-border bg-danger-soft text-danger'
+                      : 'border-line text-fg-muted',
                   ]"
                 >
                   {{ td.due_at }}
@@ -657,7 +657,7 @@ function fullViewLabel(): string {
                 title="引用到对话"
                 aria-label="引用到对话"
                 @click="quoteTodoToChat(td)"
-                class="w-6 h-6 rounded-lg inline-flex items-center justify-center text-slate-400 hover:text-[#ffe2be] hover:bg-white/[0.06] cursor-pointer"
+                class="w-6 h-6 rounded-lg inline-flex items-center justify-center text-fg-muted hover:text-accent-fg hover:bg-hover cursor-pointer"
               >
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <polyline points="15 10 20 15 15 20" />
@@ -669,7 +669,7 @@ function fullViewLabel(): string {
                 title="删除待办"
                 aria-label="删除待办"
                 @click="removeTodo(td)"
-                class="w-6 h-6 rounded-lg inline-flex items-center justify-center text-slate-500 hover:text-rose-300 hover:bg-rose-500/12 cursor-pointer"
+                class="w-6 h-6 rounded-lg inline-flex items-center justify-center text-fg-muted hover:text-danger hover:bg-danger-soft cursor-pointer"
               >
                 <svg viewBox="0 0 24 24" width="11.5" height="11.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -686,11 +686,11 @@ function fullViewLabel(): string {
         <!-- Inline Note Editor -->
         <form v-if="noteEditing" @submit.prevent="handleSaveNote" class="flex flex-col gap-2">
           <div class="flex items-center justify-between gap-2">
-            <span class="text-xs font-semibold text-white">{{ draftNoteId ? '编辑笔记' : '新建工作笔记' }}</span>
+            <span class="text-xs font-semibold text-fg">{{ draftNoteId ? '编辑笔记' : '新建工作笔记' }}</span>
             <button
               type="button"
               @click="noteEditing = false"
-              class="text-[11px] text-slate-400 hover:text-white cursor-pointer"
+              class="text-xs text-fg-muted hover:text-fg cursor-pointer"
             >
               取消
             </button>
@@ -700,19 +700,19 @@ function fullViewLabel(): string {
             v-model="draftNoteTitle"
             type="text"
             placeholder="文档标题..."
-            class="rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+            class="rounded-xl px-2.5 py-1.5 text-xs border border-line focus:border-accent"
           />
           <input
             v-model="draftNoteCategory"
             type="text"
             placeholder="分类 (如 deliverable / plan / research)"
-            class="rounded-xl px-2.5 py-1.5 text-[11px] font-mono border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+            class="rounded-xl px-2.5 py-1.5 text-xs font-mono border border-line focus:border-accent"
           />
           <textarea
             v-model="draftNoteContent"
             rows="10"
             placeholder="支持 Markdown 正文..."
-            class="rounded-xl p-2.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55 leading-relaxed resize-y"
+            class="rounded-xl p-2.5 text-xs border border-line focus:border-accent leading-relaxed resize-y"
           />
           <div class="flex items-center justify-end gap-2">
             <button
@@ -731,7 +731,7 @@ function fullViewLabel(): string {
             <button
               type="button"
               @click="selectedNoteId = ''"
-              class="inline-flex items-center gap-1 text-xs text-slate-300 hover:text-[#ffe2be] cursor-pointer"
+              class="inline-flex items-center gap-1 text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
             >
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <polyline points="15 18 9 12 15 6" />
@@ -742,24 +742,24 @@ function fullViewLabel(): string {
               <button
                 type="button"
                 @click="quoteNoteToChat(selectedNote)"
-                class="px-2 py-1 rounded-lg border border-[#f2b880]/35 bg-[#f2b880]/12 text-[11px] text-[#ffe2be] hover:bg-[#f2b880]/22 cursor-pointer"
+                class="px-2 py-1 rounded-lg border border-accent-border bg-accent-soft text-xs text-accent-fg hover:bg-accent-soft cursor-pointer"
               >
                 引用正文到对话
               </button>
               <button
                 type="button"
                 @click="startEditNote(selectedNote)"
-                class="px-2 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-white cursor-pointer"
+                class="px-2 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-fg cursor-pointer"
               >
                 编辑
               </button>
             </div>
           </div>
 
-          <div class="vesper-card rounded-2xl p-3 flex flex-col gap-2">
+          <div class="vesper-card rounded-xl p-3 flex flex-col gap-2">
             <div class="flex items-center justify-between gap-2">
-              <h3 class="text-xs font-semibold text-white leading-snug">{{ selectedNote.title }}</h3>
-              <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[#fff8ee]/[0.06] text-slate-300 shrink-0">
+              <h3 class="text-xs font-semibold text-fg leading-snug">{{ selectedNote.title }}</h3>
+              <span class="font-mono text-xs px-1.5 py-0.5 rounded bg-subtle text-fg-sub shrink-0">
                 {{ selectedNote.category || 'note' }}
               </span>
             </div>
@@ -778,18 +778,18 @@ function fullViewLabel(): string {
               v-model="noteSearch"
               type="search"
               placeholder="搜索工作笔记..."
-              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-line focus:border-accent"
             />
             <button
               type="button"
               @click="startNewNote"
-              class="btn-tactile-gold px-2.5 py-1.5 rounded-xl text-[11px] font-medium shrink-0 cursor-pointer"
+              class="btn-tactile-gold px-2.5 py-1.5 rounded-xl text-xs font-medium shrink-0 cursor-pointer"
             >
               + 新建
             </button>
           </div>
 
-          <div v-if="filteredNotes.length === 0" class="py-10 text-center text-xs text-slate-500">
+          <div v-if="filteredNotes.length === 0" class="py-10 text-center text-xs text-fg-muted">
             暂无匹配的工作笔记
           </div>
 
@@ -805,20 +805,20 @@ function fullViewLabel(): string {
                   @click="openNoteViewer(n)"
                   class="min-w-0 flex-1 text-left cursor-pointer"
                 >
-                  <div class="text-xs font-medium text-white truncate hover:text-[#ffe2be]">
+                  <div class="text-xs font-medium text-fg truncate hover:text-accent-fg">
                     {{ n.title }}
                   </div>
                 </button>
-                <span class="font-mono text-[9.5px] px-1.5 py-0.5 rounded border border-[#fff8ee]/10 text-slate-400 shrink-0">
+                <span class="font-mono text-xs px-1.5 py-0.5 rounded border border-line text-fg-muted shrink-0">
                   {{ n.category || 'note' }}
                 </span>
               </div>
-              <div class="flex items-center justify-between gap-2 text-[10.5px] text-slate-400">
+              <div class="flex items-center justify-between gap-2 text-xs text-fg-muted">
                 <span class="font-mono truncate">{{ formatTime(n.updated_at) }}</span>
                 <button
                   type="button"
                   @click="quoteNoteToChat(n)"
-                  class="text-[#f2b880] hover:underline cursor-pointer shrink-0"
+                  class="text-accent-fg hover:underline cursor-pointer shrink-0"
                 >
                   引用正文到对话
                 </button>
@@ -836,29 +836,29 @@ function fullViewLabel(): string {
               v-model="stashCaptureInput"
               type="text"
               placeholder="粘贴链接或输入闪念，回车秒收..."
-              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-line focus:border-accent"
             />
             <button
               type="submit"
               :disabled="!stashCaptureInput.trim() || capturingStash"
-              class="btn-jewel px-2.5 py-1.5 rounded-xl text-[11px] shrink-0 cursor-pointer disabled:opacity-40"
+              class="btn-jewel px-2.5 py-1.5 rounded-xl text-xs shrink-0 cursor-pointer disabled:opacity-40"
             >
               收藏
             </button>
           </div>
-          <div class="flex items-center justify-between text-[10.5px]">
-            <span class="font-mono text-slate-400">未读 {{ store.unreadStashCount.value }}</span>
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-mono text-fg-muted">未读 {{ store.unreadStashCount.value }}</span>
             <button
               type="button"
               @click="stashShowAll = !stashShowAll"
-              class="font-mono text-slate-400 hover:text-[#ffe2be] cursor-pointer"
+              class="font-mono text-fg-muted hover:text-accent-fg cursor-pointer"
             >
               {{ stashShowAll ? '只看未读' : '显示全部' }}
             </button>
           </div>
         </form>
 
-        <div v-if="visibleStash.length === 0" class="py-10 text-center text-xs text-slate-500">
+        <div v-if="visibleStash.length === 0" class="py-10 text-center text-xs text-fg-muted">
           {{ stashShowAll ? '收藏匣暂无内容' : '当前无未读干货' }}
         </div>
 
@@ -871,28 +871,28 @@ function fullViewLabel(): string {
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5 mb-0.5">
-                  <span class="font-mono text-[9.5px] px-1.5 py-0.5 rounded border border-cyan-400/30 bg-cyan-500/10 text-cyan-200">
+                  <span class="font-mono text-xs px-1.5 py-0.5 rounded border border-info-border bg-info-soft text-info">
                     {{ item.kind === 'note' ? '闪念' : item.kind === 'github' ? 'GitHub' : item.kind === 'bilibili' ? 'Bilibili' : 'Web' }}
                   </span>
-                  <span v-if="item.read_count === 0" class="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" aria-hidden="true" />
-                  <span v-if="item.domain" class="font-mono text-[10px] text-slate-400 truncate">{{ item.domain }}</span>
+                  <span v-if="item.read_count === 0" class="w-1.5 h-1.5 rounded-full bg-danger shrink-0" aria-hidden="true" />
+                  <span v-if="item.domain" class="font-mono text-xs text-fg-muted truncate">{{ item.domain }}</span>
                 </div>
                 <a
                   v-if="item.url"
                   :href="item.url"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="text-xs font-medium text-white hover:text-[#ffe2be] hover:underline line-clamp-2"
+                  class="text-xs font-medium text-fg hover:text-accent-fg hover:underline line-clamp-2"
                 >
                   {{ item.title || item.raw_input }}
                 </a>
-                <div v-else class="text-xs font-medium text-white line-clamp-2">
+                <div v-else class="text-xs font-medium text-fg line-clamp-2">
                   {{ item.title || item.raw_input }}
                 </div>
               </div>
             </div>
 
-            <div v-if="item.ai_tldr" class="text-[11px] text-slate-300 line-clamp-2 leading-snug">
+            <div v-if="item.ai_tldr" class="text-xs text-fg-sub line-clamp-2 leading-snug">
               {{ item.ai_tldr }}
             </div>
 
@@ -901,28 +901,28 @@ function fullViewLabel(): string {
                 v-if="item.read_count === 0"
                 type="button"
                 @click="markStashRead(item)"
-                class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 text-[10.5px] text-slate-300 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+                class="px-2 py-0.5 rounded-lg border border-line text-xs text-fg-sub hover:text-fg hover:bg-hover cursor-pointer"
               >
                 标为已读
               </button>
               <button
                 type="button"
                 @click="convertStashToTodo(item)"
-                class="px-2 py-0.5 rounded-md border border-cyan-400/25 bg-cyan-500/10 text-[10.5px] text-cyan-200 hover:bg-cyan-500/20 cursor-pointer"
+                class="px-2 py-0.5 rounded-lg border border-info-border bg-info-soft text-xs text-info hover:bg-info-soft cursor-pointer"
               >
                 转待办
               </button>
               <button
                 type="button"
                 @click="convertStashToNote(item)"
-                class="px-2 py-0.5 rounded-md border border-emerald-400/25 bg-emerald-500/10 text-[10.5px] text-emerald-300 hover:bg-emerald-500/20 cursor-pointer"
+                class="px-2 py-0.5 rounded-lg border border-ok-border bg-ok-soft text-xs text-ok hover:bg-ok-soft cursor-pointer"
               >
                 存笔记
               </button>
               <button
                 type="button"
                 @click="quoteStashToChat(item)"
-                class="px-2 py-0.5 rounded-md border border-[#f2b880]/30 bg-[#f2b880]/10 text-[10.5px] text-[#ffe2be] hover:bg-[#f2b880]/20 cursor-pointer"
+                class="px-2 py-0.5 rounded-lg border border-accent-border bg-accent-soft text-xs text-accent-fg hover:bg-accent-soft cursor-pointer"
               >
                 引用进对话
               </button>
@@ -934,17 +934,17 @@ function fullViewLabel(): string {
       <!-- TAB 4: ASSETS -->
       <template v-else-if="activeTab === 'assets'">
         <div class="vesper-card rounded-xl p-2.5 flex flex-col gap-1.5">
-          <div class="flex items-center justify-between gap-2 text-[11px]">
-            <span class="text-slate-300 font-medium">费用预估 ({{ visibleAssets.length }} 项)</span>
+          <div class="flex items-center justify-between gap-2 text-xs">
+            <span class="text-fg-sub font-medium">费用预估 ({{ visibleAssets.length }} 项)</span>
             <div class="flex items-center gap-1.5">
               <button
                 type="button"
                 @click="assetExpiringOnly = !assetExpiringOnly"
                 :class="[
-                  'px-2 py-0.5 rounded-full border text-[10.5px] cursor-pointer',
+                  'px-2 py-0.5 rounded-full border text-xs cursor-pointer',
                   assetExpiringOnly
-                    ? 'border-amber-400/45 bg-amber-500/15 text-amber-200'
-                    : 'border-[#fff8ee]/12 text-slate-400 hover:text-white',
+                    ? 'border-warn-border bg-warn-soft text-warn'
+                    : 'border-line text-fg-muted hover:text-fg',
                 ]"
               >
                 {{ assetExpiringOnly ? '仅临期' : '全部' }}
@@ -952,20 +952,20 @@ function fullViewLabel(): string {
               <button
                 type="button"
                 @click="store.state.editingAsset = null"
-                class="px-2 py-0.5 rounded-full border border-[#f2b880]/35 bg-[#f2b880]/12 text-[10.5px] text-[#ffe2be] cursor-pointer"
+                class="px-2 py-0.5 rounded-full border border-accent-border bg-accent-soft text-xs text-accent-fg cursor-pointer"
               >
                 + 新增
               </button>
             </div>
           </div>
-          <div v-if="monthlyAssetCost || yearlyAssetCost" class="font-mono text-[11px] text-[#ffe2be]">
+          <div v-if="monthlyAssetCost || yearlyAssetCost" class="font-mono text-xs text-accent-fg">
             <span v-if="monthlyAssetCost">月均 {{ monthlyAssetCost }}</span>
-            <span v-if="monthlyAssetCost && yearlyAssetCost" class="mx-1.5 text-slate-500">|</span>
+            <span v-if="monthlyAssetCost && yearlyAssetCost" class="mx-1.5 text-fg-muted">|</span>
             <span v-if="yearlyAssetCost">年化 {{ yearlyAssetCost }}</span>
           </div>
         </div>
 
-        <div v-if="visibleAssets.length === 0" class="py-10 text-center text-xs text-slate-500">
+        <div v-if="visibleAssets.length === 0" class="py-10 text-center text-xs text-fg-muted">
           {{ assetExpiringOnly ? '暂无 7 天内临期资产' : '暂无数字资产' }}
         </div>
 
@@ -984,25 +984,25 @@ function fullViewLabel(): string {
                 <div class="flex items-center gap-1.5">
                   <AssetCategoryIcon
                     :icon="resolveCategoryMeta(a.category, store.state.assetCategories).icon"
-                    class="w-3.5 h-3.5 text-[#f2b880] shrink-0"
+                    class="w-3.5 h-3.5 text-accent-fg shrink-0"
                   />
-                  <span class="text-xs font-medium text-white truncate hover:text-[#ffe2be]">{{ a.name }}</span>
+                  <span class="text-xs font-medium text-fg truncate hover:text-accent-fg">{{ a.name }}</span>
                 </div>
-                <div class="mt-0.5 flex items-center gap-2 text-[10.5px] font-mono text-slate-400">
+                <div class="mt-0.5 flex items-center gap-2 text-xs font-mono text-fg-muted">
                   <span>{{ formatDateOnly(a.due_date) }}</span>
-                  <span v-if="a.price" class="text-[#ffe2be]">{{ a.price }}</span>
+                  <span v-if="a.price" class="text-accent-fg">{{ a.price }}</span>
                 </div>
               </div>
               <span
                 :class="[
-                  'font-mono text-[10px] shrink-0',
+                  'font-mono text-xs shrink-0',
                   a.status === '长期有效' || String(a.due_date || '').startsWith('2099')
-                    ? 'text-emerald-300'
+                    ? 'text-ok'
                     : a.days_left <= 3
-                      ? 'text-rose-400 font-semibold'
+                      ? 'text-danger font-semibold'
                       : a.days_left <= 7
-                        ? 'text-amber-300 font-semibold'
-                        : 'text-emerald-300',
+                        ? 'text-warn font-semibold'
+                        : 'text-ok',
                 ]"
               >
                 {{
@@ -1019,13 +1019,13 @@ function fullViewLabel(): string {
               v-if="!(a.status === '长期有效' || String(a.due_date || '').startsWith('2099'))"
               class="flex items-center justify-between gap-1.5 pt-0.5"
             >
-              <span class="text-[10px] text-slate-500 truncate">{{ a.spec || a.status }}</span>
+              <span class="text-xs text-fg-muted truncate">{{ a.spec || a.status }}</span>
               <div class="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
                   :disabled="renewingAssetId === a.id"
                   @click="quickRenewAsset(a, 1)"
-                  class="px-1.5 py-0.5 rounded border border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-[10px] font-mono text-slate-300 hover:text-[#ffe2be] cursor-pointer"
+                  class="px-1.5 py-0.5 rounded border border-line hover:border-accent-border text-xs font-mono text-fg-sub hover:text-accent-fg cursor-pointer"
                 >
                   +1月
                 </button>
@@ -1033,7 +1033,7 @@ function fullViewLabel(): string {
                   type="button"
                   :disabled="renewingAssetId === a.id"
                   @click="quickRenewAsset(a, 3)"
-                  class="px-1.5 py-0.5 rounded border border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-[10px] font-mono text-slate-300 hover:text-[#ffe2be] cursor-pointer"
+                  class="px-1.5 py-0.5 rounded border border-line hover:border-accent-border text-xs font-mono text-fg-sub hover:text-accent-fg cursor-pointer"
                 >
                   +1季
                 </button>
@@ -1041,7 +1041,7 @@ function fullViewLabel(): string {
                   type="button"
                   :disabled="renewingAssetId === a.id"
                   @click="quickRenewAsset(a, 12)"
-                  class="px-1.5 py-0.5 rounded border border-[#fff8ee]/12 hover:border-[#f2b880]/45 text-[10px] font-mono text-slate-300 hover:text-[#ffe2be] cursor-pointer"
+                  class="px-1.5 py-0.5 rounded border border-line hover:border-accent-border text-xs font-mono text-fg-sub hover:text-accent-fg cursor-pointer"
                 >
                   +1年
                 </button>
@@ -1059,12 +1059,12 @@ function fullViewLabel(): string {
               v-model="memFactKey"
               type="text"
               placeholder="记忆键 (如 preferred_lang)"
-              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-line focus:border-accent"
             />
             <button
               type="button"
               @click="memScopeMode = memScopeMode === 'bot' ? 'global' : 'bot'"
-              class="px-2 py-1.5 rounded-xl border border-[#fff8ee]/12 text-[10.5px] font-mono text-slate-300 hover:text-[#ffe2be] shrink-0 cursor-pointer"
+              class="px-2 py-1.5 rounded-xl border border-line text-xs font-mono text-fg-sub hover:text-accent-fg shrink-0 cursor-pointer"
             >
               {{ memScopeMode === 'bot' ? '当前Bot' : '全局' }}
             </button>
@@ -1074,19 +1074,19 @@ function fullViewLabel(): string {
               v-model="memContent"
               type="text"
               placeholder="记下一条偏好、事实或约定..."
-              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-[#fff8ee]/12 focus:border-[#f2b880]/55"
+              class="flex-1 min-w-0 rounded-xl px-2.5 py-1.5 text-xs border border-line focus:border-accent"
             />
             <button
               type="submit"
               :disabled="!memFactKey.trim() || !memContent.trim() || savingMemory"
-              class="btn-jewel px-2.5 py-1.5 rounded-xl text-[11px] shrink-0 cursor-pointer disabled:opacity-40"
+              class="btn-jewel px-2.5 py-1.5 rounded-xl text-xs shrink-0 cursor-pointer disabled:opacity-40"
             >
               存入
             </button>
           </div>
         </form>
 
-        <div v-if="scopedMemories.length === 0" class="py-10 text-center text-xs text-slate-500">
+        <div v-if="scopedMemories.length === 0" class="py-10 text-center text-xs text-fg-muted">
           当前作用域暂无长期记忆
         </div>
 
@@ -1100,15 +1100,15 @@ function fullViewLabel(): string {
               <div class="flex items-center gap-1.5 min-w-0">
                 <span
                   :class="[
-                    'font-mono text-[9.5px] px-1.5 py-0.5 rounded border shrink-0',
+                    'font-mono text-xs px-1.5 py-0.5 rounded border shrink-0',
                     !m.scope || m.scope === 'global'
-                      ? 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
-                      : 'border-[#f2b880]/30 bg-[#f2b880]/10 text-[#ffe2be]',
+                      ? 'border-info-border bg-info-soft text-info'
+                      : 'border-accent-border bg-accent-soft text-accent-fg',
                   ]"
                 >
                   {{ !m.scope || m.scope === 'global' ? '全局' : '专属' }}
                 </span>
-                <span class="font-mono text-[10.5px] font-medium text-white truncate">{{ m.fact_key }}</span>
+                <span class="font-mono text-xs font-medium text-fg truncate">{{ m.fact_key }}</span>
               </div>
               <div class="flex items-center gap-0.5 shrink-0">
                 <button
@@ -1116,10 +1116,10 @@ function fullViewLabel(): string {
                   :title="m.pinned ? '取消置顶' : '置顶记忆'"
                   @click="toggleMemoryPin(m)"
                   :class="[
-                    'px-1.5 py-0.5 rounded text-[10px] font-mono cursor-pointer',
+                    'px-1.5 py-0.5 rounded text-xs font-mono cursor-pointer',
                     m.pinned
-                      ? 'bg-[#f2b880]/18 text-[#ffe2be]'
-                      : 'text-slate-400 hover:text-white',
+                      ? 'bg-accent-soft text-accent-fg'
+                      : 'text-fg-muted hover:text-fg',
                   ]"
                 >
                   {{ m.pinned ? '已置顶' : '置顶' }}
@@ -1129,7 +1129,7 @@ function fullViewLabel(): string {
                   title="删除记忆"
                   aria-label="删除记忆"
                   @click="removeMemory(m)"
-                  class="w-5 h-5 rounded inline-flex items-center justify-center text-slate-500 hover:text-rose-300 cursor-pointer"
+                  class="w-5 h-5 rounded inline-flex items-center justify-center text-fg-muted hover:text-danger cursor-pointer"
                 >
                   <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <line x1="18" y1="6" x2="6" y2="18" />
@@ -1138,7 +1138,7 @@ function fullViewLabel(): string {
                 </button>
               </div>
             </div>
-            <div class="text-[11.5px] text-slate-300 leading-snug break-words">
+            <div class="text-xs text-fg-sub leading-snug break-words">
               {{ m.content }}
             </div>
           </div>

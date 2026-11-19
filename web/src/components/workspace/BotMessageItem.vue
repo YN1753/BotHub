@@ -98,7 +98,7 @@ function closeDetailsMenu(e: Event) {
 <template>
   <!-- 5-Minute Time Cluster Divider -->
   <div v-if="showTimestamp" class="flex justify-center py-0.5 select-none">
-    <span class="px-2.5 py-0.5 rounded-full bg-[#fff8ee]/[0.03] text-[10.5px] font-mono text-slate-500">
+    <span class="px-2.5 py-0.5 rounded-full bg-subtle text-xs font-mono text-fg-muted">
       {{ formatTimelineDivider(message.createdAt) }}
     </span>
   </div>
@@ -108,7 +108,7 @@ function closeDetailsMenu(e: Event) {
     v-if="message.role === 'system' || message.msgKind === 'system'"
     :class="[rowMaxWidthClass, 'w-full mx-auto flex justify-center my-0.5', message.isLiveNew ? 'msg-enter' : '']"
   >
-    <div class="px-3.5 py-1 rounded-full border border-[#fff8ee]/8 bg-[#fff8ee]/[0.035] text-[11px] text-slate-400 text-center whitespace-pre-line leading-relaxed">
+    <div class="px-3.5 py-1 rounded-full border border-line bg-subtle text-xs text-fg-muted text-center whitespace-pre-line leading-relaxed">
       {{ message.content }}
     </div>
   </div>
@@ -120,20 +120,20 @@ function closeDetailsMenu(e: Event) {
     :data-touch-open="touchActionsOpen ? 'true' : undefined"
     @click="handleTouchMessageTap"
     :class="[
-      'reveal-host w-full mx-auto flex flex-col items-end gap-1 rounded-2xl transition-shadow',
+      'reveal-host w-full mx-auto flex flex-col items-end gap-1 rounded-xl transition-shadow',
       rowMaxWidthClass,
       message.isLiveNew ? 'msg-enter-user' : '',
       deferred ? 'msg-deferred-user' : '',
-      focusedMatch ? 'ring-1 ring-[#f2b880]/70 p-1' : '',
+      focusedMatch ? 'ring-1 ring-accent p-1' : '',
     ]"
   >
     <div
       :title="formatTime(message.createdAt)"
-      class="msg-bubble-user max-w-[85%] sm:max-w-[72%] rounded-[22px] rounded-tr-md px-4 py-2.5 text-sm text-slate-50 leading-relaxed whitespace-pre-wrap"
+      class="msg-bubble-user max-w-[85%] sm:max-w-[72%] rounded-xl px-4 py-2.5 text-sm text-on-accent leading-relaxed whitespace-pre-wrap"
     >
       <div
         v-if="message.replyPreview"
-        class="mb-2 pl-2.5 border-l-2 border-[#f2b880]/80 text-xs text-slate-200/90 bg-black/25 rounded-r-lg py-1 pr-2 line-clamp-2"
+        class="mb-2 pl-2.5 border-l-2 border-on-accent/60 text-xs text-on-accent/90 bg-black/15 rounded-r-lg py-1 pr-2 line-clamp-2"
       >
         {{ message.replyPreview }}
       </div>
@@ -144,7 +144,7 @@ function closeDetailsMenu(e: Event) {
         v-if="isLongUserMessage"
         type="button"
         @click="expandedUser = !expandedUser"
-        class="mt-1.5 font-mono text-[11px] text-[#ffe2be] hover:underline cursor-pointer"
+        class="mt-1.5 font-mono text-xs text-on-accent/90 hover:text-on-accent hover:underline cursor-pointer"
       >
         {{ expandedUser ? '收起长消息' : '展开全文' }}
       </button>
@@ -153,7 +153,7 @@ function closeDetailsMenu(e: Event) {
       <button
         type="button"
         @click="emit('quote', message)"
-        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-fg-muted hover:text-fg hover:bg-hover cursor-pointer"
       >
         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" /></svg>
         <span>引用</span>
@@ -161,7 +161,7 @@ function closeDetailsMenu(e: Event) {
       <button
         type="button"
         @click="emit('editResend', message)"
-        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-fg-muted hover:text-fg hover:bg-hover cursor-pointer"
       >
         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
         <span>重编</span>
@@ -169,7 +169,7 @@ function closeDetailsMenu(e: Event) {
       <button
         type="button"
         @click="emit('copyMarkdown', message.content)"
-        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-fg-muted hover:text-fg hover:bg-hover cursor-pointer"
       >
         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
         <span>复制</span>
@@ -178,7 +178,7 @@ function closeDetailsMenu(e: Event) {
         v-if="message.serverId"
         type="button"
         @click="emit('fork', message.serverId)"
-        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-emerald-300 hover:bg-white/[0.08] cursor-pointer"
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-fg-muted hover:text-ok hover:bg-hover cursor-pointer"
       >
         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" /></svg>
         <span>分支</span>
@@ -187,7 +187,7 @@ function closeDetailsMenu(e: Event) {
         v-if="message.serverId"
         type="button"
         @click="emit('delete', message)"
-        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] text-slate-400 hover:text-rose-300 hover:bg-rose-500/15 cursor-pointer"
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-fg-muted hover:text-danger hover:bg-danger-soft cursor-pointer"
       >
         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>
         <span>删除</span>
@@ -203,11 +203,11 @@ function closeDetailsMenu(e: Event) {
     :data-touch-open="touchActionsOpen ? 'true' : undefined"
     @click="handleTouchMessageTap"
     :class="[
-      'reveal-host w-full mx-auto flex items-start gap-3 sm:gap-3.5 rounded-2xl transition-shadow',
+      'reveal-host w-full mx-auto flex items-start gap-3 sm:gap-3.5 rounded-xl transition-shadow',
       rowMaxWidthClass,
       message.isLiveNew ? 'msg-enter-bot' : '',
       deferred ? 'msg-deferred-bot' : '',
-      focusedMatch ? 'ring-1 ring-[#f2b880]/70 bg-[#f2b880]/[0.04] p-2' : '',
+      focusedMatch ? 'ring-1 ring-accent bg-accent-soft p-2' : '',
     ]"
   >
     <div class="flex flex-col items-center self-stretch shrink-0 pt-0.5">
@@ -226,40 +226,40 @@ function closeDetailsMenu(e: Event) {
       <span
         v-if="message.reasoning || message.tools.length || message.streaming"
         aria-hidden="true"
-        class="w-px flex-1 mt-2 bg-gradient-to-b from-[#f2b880]/30 via-[#fff8ee]/8 to-transparent"
+        class="w-px flex-1 mt-2 bg-line"
       />
     </div>
 
     <div
       :class="[
         'flex-1 min-w-0 flex flex-col gap-2',
-        message.msgKind === 'routine' ? 'vesper-card rounded-2xl border-[#f2b880]/30 p-4' : 'pt-0.5',
+        message.msgKind === 'routine' ? 'vesper-card rounded-xl border-accent-border p-4' : 'pt-0.5',
       ]"
     >
-      <div class="flex items-center justify-between gap-2 text-xs text-slate-400">
+      <div class="flex items-center justify-between gap-2 text-xs text-fg-muted">
         <div class="flex items-center gap-2 min-w-0">
           <button
             type="button"
             @click="emit('mention', `@${message.senderName} `)"
-            class="text-[#ffe2be] hover:underline font-medium truncate cursor-pointer"
+            class="text-fg hover:text-accent-fg hover:underline font-medium truncate cursor-pointer"
           >
             {{ message.senderName }}
           </button>
           <span
             v-if="message.roleTitle && isGroupBot"
-            class="hidden sm:inline-flex font-mono text-[10px] text-slate-500 truncate max-w-[160px]"
+            class="hidden sm:inline-flex font-mono text-xs text-fg-muted truncate max-w-[160px]"
           >
             {{ message.roleTitle }}
           </span>
           <span
             v-if="message.isTempGuest"
-            class="font-mono text-[10px] px-1.5 py-0.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 text-emerald-300 shrink-0"
+            class="font-mono text-xs px-1.5 py-0.5 rounded-full border border-ok-border bg-ok-soft text-ok shrink-0"
           >
             外援
           </span>
           <span
             v-if="message.msgKind === 'routine'"
-            class="font-mono text-[10px] px-2 py-0.5 rounded-full bg-[#f2b880]/14 text-[#ffe2be] shrink-0"
+            class="font-mono text-xs px-2 py-0.5 rounded-full bg-accent-soft text-accent-fg shrink-0"
           >
             自动汇报
           </span>
@@ -268,17 +268,17 @@ function closeDetailsMenu(e: Event) {
           <span
             v-if="modelTierTag && !message.streaming"
             :class="[
-              'font-mono text-[9.5px] px-1.5 py-0.5 rounded border leading-none',
+              'font-mono text-xs px-1.5 py-0.5 rounded-lg border leading-none',
               modelTierTag === 'paid'
-                ? 'border-[#f2b880]/35 bg-[#f2b880]/10 text-[#f2b880]'
-                : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
+                ? 'border-accent-border bg-accent-soft text-accent-fg'
+                : 'border-ok-border bg-ok-soft text-ok',
             ]"
           >
             {{ modelTierTag === 'paid' ? '付费池' : '免费池' }}
           </span>
           <span
             v-if="message.model && !message.streaming"
-            class="hidden sm:inline-flex font-mono text-[10px] text-slate-500"
+            class="hidden sm:inline-flex font-mono text-xs text-fg-muted"
           >
             {{ message.model }}
           </span>
@@ -286,11 +286,11 @@ function closeDetailsMenu(e: Event) {
             v-if="isGroupBot && message.senderBotId && message.senderBotId !== activeBotId"
             type="button"
             @click="emit('jumpBot', message.senderBotId)"
-            class="reveal-actions font-mono text-[10px] px-2 py-0.5 rounded-full border border-[#fff8ee]/12 text-slate-400 hover:text-[#ffe2be] cursor-pointer"
+            class="reveal-actions font-mono text-xs px-2 py-0.5 rounded-full border border-line text-fg-muted hover:text-fg cursor-pointer"
           >
             私聊
           </button>
-          <span :class="['font-mono text-[10.5px]', message.errorText ? 'text-rose-400' : 'text-slate-500']">
+          <span :class="['font-mono text-xs', message.errorText ? 'text-danger' : 'text-fg-muted']">
             {{ message.statusText }}
           </span>
         </div>
@@ -299,7 +299,7 @@ function closeDetailsMenu(e: Event) {
       <!-- Calm Thinking Waveform -->
       <div
         v-if="message.streaming && !message.content"
-        class="py-1 flex items-center gap-2 text-xs text-slate-400"
+        class="py-1 flex items-center gap-2 text-xs text-fg-muted"
         aria-live="polite"
       >
         <span class="thinking-dots inline-flex items-center gap-1" aria-hidden="true">
@@ -312,13 +312,13 @@ function closeDetailsMenu(e: Event) {
       <div v-if="message.reasoning || message.tools.length" class="flex flex-wrap items-start gap-2">
         <details
           v-if="message.reasoning"
-          class="vesper-details well-recessed w-fit max-w-full rounded-full px-3 py-1 text-xs text-slate-400 [&[open]]:basis-full [&[open]]:w-full [&[open]]:rounded-2xl [&[open]]:px-3.5 [&[open]]:py-2 transition-[border-radius] duration-150"
+          class="vesper-details well-recessed w-fit max-w-full rounded-full px-3 py-1 text-xs text-fg-muted [&[open]]:basis-full [&[open]]:w-full [&[open]]:rounded-xl [&[open]]:px-3.5 [&[open]]:py-2 transition-[border-radius] duration-150"
         >
-          <summary class="cursor-pointer flex items-center gap-1.5 text-[#f2b880] select-none">
+          <summary class="cursor-pointer flex items-center gap-1.5 text-accent-fg select-none">
             <span
               :class="[
                 'w-1.5 h-1.5 rounded-full shrink-0',
-                message.streaming && !message.content ? 'bg-[#f2b880] animate-pulse' : 'bg-[#f2b880]/75',
+                message.streaming && !message.content ? 'bg-accent animate-pulse' : 'bg-accent/75',
               ]"
               aria-hidden="true"
             />
@@ -326,9 +326,9 @@ function closeDetailsMenu(e: Event) {
               <polyline points="9 18 15 12 9 6" />
             </svg>
             <span>思考过程</span>
-            <span class="font-mono text-[10.5px] text-slate-400">({{ message.reasoning.length }} 字)</span>
+            <span class="font-mono text-xs text-fg-muted">({{ message.reasoning.length }} 字)</span>
           </summary>
-          <div class="mt-2 pt-2 border-t border-[#fff8ee]/8 whitespace-pre-wrap leading-relaxed text-slate-300/90 max-h-60 overflow-y-auto">
+          <div class="mt-2 pt-2 border-t border-line whitespace-pre-wrap leading-relaxed text-fg-sub max-h-60 overflow-y-auto">
             {{ message.reasoning.replace(/<\/?think>/g, '').trim() }}
           </div>
         </details>
@@ -345,13 +345,13 @@ function closeDetailsMenu(e: Event) {
         :class="message.streaming ? 'md-streaming' : ''"
         v-html="renderedMarkdownHtml"
       />
-      <div v-else-if="message.errorText" class="flex items-center justify-between gap-2 flex-wrap text-sm text-rose-400">
+      <div v-else-if="message.errorText" class="flex items-center justify-between gap-2 flex-wrap text-sm text-danger">
         <span>[调用失败] {{ message.errorText }}</span>
         <button
           v-if="canRetry"
           type="button"
           @click="emit('retry')"
-          class="px-2.5 py-1 rounded-lg border border-rose-400/45 bg-rose-500/15 hover:bg-rose-500/25 text-xs text-rose-200 cursor-pointer shrink-0"
+          class="px-2.5 py-1 rounded-lg border border-danger-border bg-danger-soft hover:opacity-90 text-xs text-danger cursor-pointer shrink-0"
         >
           立即重试
         </button>
@@ -363,7 +363,7 @@ function closeDetailsMenu(e: Event) {
           <button
             type="button"
             @click="emit('copyMarkdown', message.content)"
-            class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
+            class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs text-fg-sub hover:text-fg hover:bg-hover cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
             <span>复制</span>
@@ -372,7 +372,7 @@ function closeDetailsMenu(e: Event) {
           <button
             type="button"
             @click="emit('quote', message)"
-            class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
+            class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs text-fg-sub hover:text-fg hover:bg-hover cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" /></svg>
             <span>引用</span>
@@ -382,7 +382,7 @@ function closeDetailsMenu(e: Event) {
             v-if="isLast"
             type="button"
             @click="emit('continue')"
-            class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] text-[#f7cba0] hover:bg-[#f2b880]/15 cursor-pointer font-medium"
+            class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs text-accent-fg hover:bg-accent-soft cursor-pointer font-medium"
           >
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 10 20 15 15 20" /><path d="M4 4v7a4 4 0 0 0 4 4h12" /></svg>
             <span>追问</span>
@@ -391,20 +391,20 @@ function closeDetailsMenu(e: Event) {
             v-else-if="canRetry"
             type="button"
             @click="emit('retry')"
-            class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer"
+            class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs text-fg-sub hover:text-fg hover:bg-hover cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
             <span>重试</span>
           </button>
 
           <details v-if="canRetry" class="msg-more-menu relative">
-            <summary class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer select-none inline-flex items-center gap-1">
+            <summary class="px-2.5 py-0.5 rounded-full text-xs text-fg-sub hover:text-fg hover:bg-hover cursor-pointer select-none inline-flex items-center gap-1">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>
               <span>换模型</span>
               <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
             </summary>
-            <div class="aero-glass absolute right-0 sm:left-0 sm:right-auto bottom-full mb-1.5 z-30 min-w-[14rem] max-w-[19rem] max-h-60 overflow-y-auto rounded-xl border border-[#fff8ee]/16 p-1 flex flex-col gap-0.5 shadow-2xl">
-              <div class="px-2 py-1 text-[10px] text-slate-400 border-b border-[#fff8ee]/10">
+            <div class="aero-glass absolute right-0 sm:left-0 sm:right-auto bottom-full mb-1.5 z-30 min-w-[14rem] max-w-[19rem] max-h-60 overflow-y-auto rounded-lg border border-line-strong p-1 flex flex-col gap-0.5">
+              <div class="px-2 py-1 text-xs text-fg-muted border-b border-line">
                 原位重答（选付费模型仅对本轮临时放行）
               </div>
               <button
@@ -413,10 +413,10 @@ function closeDetailsMenu(e: Event) {
                 type="button"
                 @click="emit('retryModel', choice.id, choice.isPaid); closeDetailsMenu($event)"
                 :class="[
-                  'px-2.5 py-1.5 rounded-lg text-[11px] text-left truncate cursor-pointer',
+                  'px-2.5 py-1.5 rounded-lg text-xs text-left truncate cursor-pointer',
                   choice.isPaid
-                    ? 'text-[#ffe2be] hover:bg-[#f2b880]/18'
-                    : 'text-slate-200 hover:bg-emerald-500/15 hover:text-emerald-200',
+                    ? 'text-accent-fg hover:bg-accent-soft'
+                    : 'text-fg hover:bg-ok-soft hover:text-ok',
                 ]"
               >
                 {{ choice.label }}
@@ -425,19 +425,19 @@ function closeDetailsMenu(e: Event) {
           </details>
 
           <details class="msg-more-menu relative">
-            <summary class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-400 hover:text-white hover:bg-white/[0.08] cursor-pointer select-none inline-flex items-center gap-1">
+            <summary class="px-2.5 py-0.5 rounded-full text-xs text-fg-muted hover:text-fg hover:bg-hover cursor-pointer select-none inline-flex items-center gap-1">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.75" /><circle cx="12" cy="12" r="1.75" /><circle cx="19" cy="12" r="1.75" /></svg>
               <span>更多</span>
               <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
             </summary>
-            <div class="aero-glass absolute right-0 sm:left-0 sm:right-auto bottom-full mb-1.5 z-30 min-w-[8.5rem] rounded-xl border border-[#fff8ee]/16 p-1 flex flex-col gap-0.5 shadow-2xl">
-              <button type="button" @click="emit('saveMemory', message); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-emerald-500/15 hover:text-emerald-300 text-left cursor-pointer">存为长期记忆</button>
-              <button type="button" @click="emit('convertTodo', message); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-cyan-500/15 hover:text-cyan-200 text-left cursor-pointer">转为个人待办</button>
-              <button type="button" @click="emit('saveNote', message); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-[#f2b880]/15 hover:text-[#ffe2be] text-left cursor-pointer">存为工作文档</button>
-              <button type="button" @click="emit('forward', message); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-200 hover:bg-white/[0.08] text-left cursor-pointer">转发给其他 Bot</button>
-              <button type="button" @click="emit('copyPlain', message.content); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 hover:bg-white/[0.08] text-left cursor-pointer">复制纯文本</button>
-              <button v-if="message.serverId" type="button" @click="emit('fork', message.serverId); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 hover:bg-emerald-500/15 hover:text-emerald-300 text-left cursor-pointer">从此分支新话题</button>
-              <button v-if="message.serverId" type="button" @click="emit('delete', message); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-[11px] text-rose-300 hover:bg-rose-500/15 text-left cursor-pointer">删除此消息</button>
+            <div class="aero-glass absolute right-0 sm:left-0 sm:right-auto bottom-full mb-1.5 z-30 min-w-[8.5rem] rounded-lg border border-line-strong p-1 flex flex-col gap-0.5">
+              <button type="button" @click="emit('saveMemory', message); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-xs text-fg hover:bg-ok-soft hover:text-ok text-left cursor-pointer">存为长期记忆</button>
+              <button type="button" @click="emit('convertTodo', message); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-xs text-fg hover:bg-info-soft hover:text-info text-left cursor-pointer">转为个人待办</button>
+              <button type="button" @click="emit('saveNote', message); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-xs text-fg hover:bg-accent-soft hover:text-accent-fg text-left cursor-pointer">存为工作文档</button>
+              <button type="button" @click="emit('forward', message); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-xs text-fg hover:bg-hover text-left cursor-pointer">转发给其他 Bot</button>
+              <button type="button" @click="emit('copyPlain', message.content); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-xs text-fg-sub hover:bg-hover text-left cursor-pointer">复制纯文本</button>
+              <button v-if="message.serverId" type="button" @click="emit('fork', message.serverId); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-xs text-fg-sub hover:bg-ok-soft hover:text-ok text-left cursor-pointer">从此分支新话题</button>
+              <button v-if="message.serverId" type="button" @click="emit('delete', message); closeDetailsMenu($event)" class="px-2.5 py-1.5 rounded-lg text-xs text-danger hover:bg-danger-soft text-left cursor-pointer">删除此消息</button>
             </div>
           </details>
         </div>

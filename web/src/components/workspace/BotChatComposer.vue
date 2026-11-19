@@ -394,7 +394,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
         :key="member.id"
         type="button"
         @click="appendMention(`@${member.name} `)"
-        class="btn-tactile min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11.5px] shrink-0 cursor-pointer"
+        class="btn-tactile min-h-[30px] inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs shrink-0 cursor-pointer"
       >
         <BotAvatar :avatar-style="member.avatar_style" :state="member.state" size="xs" :interactive="false" />
         <span>@{{ member.name }}</span>
@@ -405,7 +405,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
       ref="formRef"
       @submit.prevent="emit('submitPrompt')"
       :class="[
-        'composer-dock w-full mx-auto rounded-[24px] px-4 sm:px-4.5 pt-3.5 pb-2.5 flex flex-col gap-2',
+        'composer-dock w-full mx-auto rounded-xl px-4 sm:px-4.5 pt-3.5 pb-2.5 flex flex-col gap-2',
         composerMaxWidthClass,
         store.state.isStreaming ? 'is-streaming' : '',
       ]"
@@ -420,17 +420,17 @@ function handleComposerKeydown(e: KeyboardEvent) {
       >
         <div
           v-if="replyTarget"
-          class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl border border-[#f2b880]/25 bg-[#f2b880]/[0.06] text-xs"
+          class="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border border-accent-border bg-accent-soft text-xs"
         >
           <div class="flex items-center gap-2 min-w-0">
-            <span class="w-0.5 h-4 rounded-full bg-[#f2b880] shrink-0" />
-            <span class="text-slate-300 truncate">{{ replyTarget.preview }}</span>
+            <span class="w-0.5 h-4 rounded-full bg-accent shrink-0" />
+            <span class="text-fg-sub truncate">{{ replyTarget.preview }}</span>
           </div>
           <button
             type="button"
             aria-label="取消引用"
             @click="emit('update:replyTarget', null)"
-            class="w-5 h-5 rounded-full inline-flex items-center justify-center text-slate-400 hover:text-white cursor-pointer shrink-0"
+            class="w-5 h-5 rounded-full inline-flex items-center justify-center text-fg-muted hover:text-fg cursor-pointer shrink-0"
           >
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -451,7 +451,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
           @input="syncMentionAndSlash"
           @compositionend="handleCompositionEnd"
           @keydown="handleComposerKeydown"
-          class="auto-size-textarea composer-textarea w-full bg-transparent border-0 text-base sm:text-sm text-slate-100 placeholder-slate-500 resize-none focus:outline-none min-h-[24px] max-h-[160px] overflow-y-auto leading-relaxed"
+          class="auto-size-textarea composer-textarea w-full bg-transparent border-0 text-base sm:text-sm text-fg placeholder:text-fg-muted resize-none focus:outline-none min-h-[24px] max-h-[160px] overflow-y-auto leading-relaxed"
         />
       </div>
 
@@ -466,14 +466,14 @@ function handleComposerKeydown(e: KeyboardEvent) {
             @click="emit('update:enableThinking', !enableThinking)"
             :title="selectedModel.startsWith('pool:') || selectedModel === 'auto:free' ? '深度思考开关作用于支持推理链（Thinking）的模型' : '开启或关闭深度推理思考链'"
             :class="[
-              'min-h-[40px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 rounded-xl text-xs cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880]',
-              enableThinking ? 'btn-tactile-gold' : 'btn-tactile text-slate-400',
+              'min-h-[40px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 rounded-lg text-xs cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
+              enableThinking ? 'btn-tactile-gold' : 'btn-tactile text-fg-muted',
             ]"
           >
             <span
               :class="[
                 'w-1.5 h-1.5 rounded-full transition-colors',
-                enableThinking ? 'bg-[#f2b880] shadow-[0_0_8px_#f2b880]' : 'bg-slate-500',
+                enableThinking ? 'bg-accent' : 'bg-fg-muted',
               ]"
               aria-hidden="true"
             />
@@ -481,10 +481,10 @@ function handleComposerKeydown(e: KeyboardEvent) {
           </button>
           <span
             v-if="store.state.isStreaming"
-            class="hidden sm:inline-flex items-center gap-1.5 font-mono text-[11px] text-[#ffe2be] truncate pl-1"
+            class="hidden sm:inline-flex items-center gap-1.5 font-mono text-xs text-accent-fg truncate pl-1"
             aria-live="polite"
           >
-            <span class="w-1.5 h-1.5 rounded-full bg-[#f2b880] animate-pulse shrink-0" aria-hidden="true" />
+            <span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shrink-0" aria-hidden="true" />
             <span class="truncate">
               {{ streamStatus }}<template v-if="streamElapsedMs >= 400"> · {{ formatDurationMs(streamElapsedMs) }}</template>
             </span>
@@ -497,13 +497,13 @@ function handleComposerKeydown(e: KeyboardEvent) {
             type="button"
             @click="saveLongDraftAsNote"
             title="把粘贴的长文档自动存进 Workhub 后按 ID 引用，对话更干净"
-            class="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-cyan-400/35 bg-cyan-500/10 text-[10.5px] text-cyan-200 hover:bg-cyan-500/20 cursor-pointer"
+            class="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-info-border bg-info-soft text-xs text-info hover:opacity-90 cursor-pointer"
           >
             长文转文档 ({{ promptModel.length }}字)
           </button>
           <span
             v-else-if="promptModel.length > 120"
-            class="hidden sm:inline font-mono text-[10.5px] text-slate-500 tabular-nums"
+            class="hidden sm:inline font-mono text-xs text-fg-muted tabular-nums"
           >
             {{ promptModel.length }} 字
           </span>
@@ -512,7 +512,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
             type="button"
             @click="clearDraftPrompt"
             title="清空当前输入框草稿"
-            class="inline-flex items-center min-h-[34px] px-2.5 py-1 rounded-full text-[11px] text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] cursor-pointer"
+            class="inline-flex items-center min-h-[34px] px-2.5 py-1 rounded-full text-xs text-fg-muted hover:text-fg hover:bg-hover cursor-pointer"
           >
             清空
           </button>
@@ -520,7 +520,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
             v-if="store.state.isStreaming"
             type="button"
             @click="emit('stopStream')"
-            class="min-h-[38px] sm:min-h-[34px] px-3.5 rounded-full text-xs bg-rose-500/20 border border-rose-400/45 text-rose-300 hover:bg-rose-500/30 cursor-pointer"
+            class="min-h-[38px] sm:min-h-[34px] px-3.5 rounded-full text-xs bg-danger-soft border border-danger-border text-danger hover:opacity-90 cursor-pointer"
           >
             停止
           </button>
@@ -529,7 +529,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
             :disabled="store.state.isStreaming || !promptModel.trim()"
             aria-label="发送指令"
             title="发送 (Enter)"
-            class="btn-jewel w-10 h-10 sm:w-9 sm:h-9 rounded-full hover:scale-105 flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer disabled:opacity-35 disabled:hover:scale-100 disabled:cursor-not-allowed"
+            class="btn-jewel w-10 h-10 sm:w-9 sm:h-9 rounded-full hover:scale-105 flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent cursor-pointer disabled:opacity-35 disabled:hover:scale-100 disabled:cursor-not-allowed"
           >
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
               <line x1="12" y1="19" x2="12" y2="5" />
@@ -551,13 +551,13 @@ function handleComposerKeydown(e: KeyboardEvent) {
         @click="emit('pickStarter', chip.id)"
         :class="[
           'min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs cursor-pointer',
-          chip.highlight ? 'btn-tactile-gold font-medium' : 'btn-tactile text-slate-300',
+          chip.highlight ? 'btn-tactile-gold font-medium' : 'btn-tactile text-fg-sub',
         ]"
       >
         <span
           :class="[
             'w-1.5 h-1.5 rounded-full shrink-0',
-            chip.highlight ? 'bg-[#f2b880] shadow-[0_0_6px_#f2b880]' : 'bg-slate-400/80',
+            chip.highlight ? 'bg-accent' : 'bg-fg-muted',
           ]"
           aria-hidden="true"
         />

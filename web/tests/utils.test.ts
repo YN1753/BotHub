@@ -61,6 +61,7 @@ import { mapServerMessages } from '../src/utils/chatMapper.ts'
 import { buildSlashCommands, filterSlashCommands } from '../src/utils/slashCommands.ts'
 import { isValidBase64Url } from '../src/utils/passkey.ts'
 import { extractStructuredToolCards, parseNezhaHostInfo } from '../src/utils/toolCards.ts'
+import { migrateLegacyTheme } from '../src/utils/theme.ts'
 
 test('format utilities produce expected strings', () => {
   assert.equal(formatDurationMs(420), '420ms')
@@ -126,12 +127,12 @@ test('parseJsonStringArray, parseJsonRecord, formatLocalDate and botStateDotClas
   const localLateNight = new Date(2026, 10, 18, 23, 59, 59)
   assert.equal(formatLocalDate(localLateNight), '2026-11-18')
 
-  assert.equal(botStateDotClass('thinking'), 'bg-amber-400 animate-pulse')
-  assert.equal(botStateDotClass('working'), 'bg-[#f2b880] animate-pulse')
-  assert.equal(botStateDotClass('done'), 'bg-emerald-400')
-  assert.equal(botStateDotClass('blocked'), 'bg-rose-400')
-  assert.equal(botStateDotClass('idle'), 'bg-slate-500')
-  assert.equal(botStateDotClass(undefined), 'bg-slate-500')
+  assert.equal(botStateDotClass('thinking'), 'bg-warn animate-pulse')
+  assert.equal(botStateDotClass('working'), 'bg-accent animate-pulse')
+  assert.equal(botStateDotClass('done'), 'bg-ok')
+  assert.equal(botStateDotClass('blocked'), 'bg-danger')
+  assert.equal(botStateDotClass('idle'), 'bg-fg-muted')
+  assert.equal(botStateDotClass(undefined), 'bg-fg-muted')
 })
 
 test('scoreOmnisearchMatch ranks exact, prefix, title, subtitle and body hits', () => {
@@ -831,4 +832,17 @@ test('extractStructuredToolCards parses all structured tool payloads, deduplicat
     assert.equal(briefCards[0].unreadCount, 1)
     assert.equal(briefCards[0].activeTaskCount, 1)
   }
+})
+
+test('migrateLegacyTheme maps all legacy themes to decoupled mode and accent pairs', () => {
+  assert.deepEqual(migrateLegacyTheme('obsidian'), { mode: 'dark', accent: 'amber' })
+  assert.deepEqual(migrateLegacyTheme('ocean'), { mode: 'dark', accent: 'cyan' })
+  assert.deepEqual(migrateLegacyTheme('emerald'), { mode: 'dark', accent: 'emerald' })
+  assert.deepEqual(migrateLegacyTheme('amethyst'), { mode: 'dark', accent: 'violet' })
+  assert.deepEqual(migrateLegacyTheme('daylight'), { mode: 'light', accent: 'blue' })
+  assert.deepEqual(migrateLegacyTheme('parchment'), { mode: 'light', accent: 'amber' })
+  assert.deepEqual(migrateLegacyTheme('system'), { mode: 'system', accent: 'blue' })
+  assert.deepEqual(migrateLegacyTheme('unknown'), { mode: 'dark', accent: 'blue' })
+  assert.deepEqual(migrateLegacyTheme(null), { mode: 'dark', accent: 'blue' })
+  assert.deepEqual(migrateLegacyTheme(undefined), { mode: 'dark', accent: 'blue' })
 })

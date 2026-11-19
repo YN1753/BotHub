@@ -30,7 +30,7 @@ function isSelected(tab: MobileImTab): boolean {
 <template>
   <nav
     aria-label="移动端主导航"
-    class="md:hidden shrink-0 border-t border-[#fff8ee]/12 bg-[#070b16]/96 backdrop-blur-2xl px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom,0.375rem))]"
+    class="md:hidden shrink-0 border-t border-line bg-sidebar px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom,0.375rem))]"
   >
     <div class="grid grid-cols-4 gap-1">
       <button
@@ -39,7 +39,7 @@ function isSelected(tab: MobileImTab): boolean {
         @click="emit('selectTab', 'chats')"
         :class="[
           'relative min-h-[50px] flex flex-col items-center justify-center gap-0.5 transition-transform duration-150 active:scale-92 cursor-pointer',
-          isSelected('chats') ? 'text-[#f2b880]' : 'text-slate-400 hover:text-slate-200'
+          isSelected('chats') ? 'text-accent-fg' : 'text-fg-muted hover:text-fg'
         ]"
       >
         <span :class="['relative inline-flex items-center justify-center w-9 h-6 transition-transform duration-150', isSelected('chats') ? '-translate-y-0.5 scale-105' : '']">
@@ -48,13 +48,13 @@ function isSelected(tab: MobileImTab): boolean {
           </svg>
           <span
             v-if="totalUnreadMessages > 0"
-            class="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-500 text-white font-mono text-[9.5px] font-bold leading-none inline-flex items-center justify-center"
+            class="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-danger text-white font-mono text-xs font-bold leading-none inline-flex items-center justify-center"
           >
             {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
           </span>
         </span>
-        <span :class="['text-[10.5px] leading-tight whitespace-nowrap', isSelected('chats') ? 'font-semibold' : 'font-medium']">消息</span>
-        <span v-if="isSelected('chats')" class="w-1 h-1 rounded-full bg-[#f2b880]" aria-hidden="true" />
+        <span :class="['text-xs leading-tight whitespace-nowrap', isSelected('chats') ? 'font-semibold' : 'font-medium']">消息</span>
+        <span v-if="isSelected('chats')" class="w-1 h-1 rounded-full bg-accent" aria-hidden="true" />
       </button>
 
       <button
@@ -63,7 +63,7 @@ function isSelected(tab: MobileImTab): boolean {
         @click="emit('selectTab', 'contacts')"
         :class="[
           'relative min-h-[50px] flex flex-col items-center justify-center gap-0.5 transition-transform duration-150 active:scale-92 cursor-pointer',
-          isSelected('contacts') ? 'text-[#f2b880]' : 'text-slate-400 hover:text-slate-200'
+          isSelected('contacts') ? 'text-accent-fg' : 'text-fg-muted hover:text-fg'
         ]"
       >
         <span :class="['relative inline-flex items-center justify-center w-9 h-6 transition-transform duration-150', isSelected('contacts') ? '-translate-y-0.5 scale-105' : '']">
@@ -74,8 +74,8 @@ function isSelected(tab: MobileImTab): boolean {
             <path d="M16 3.13a4 4 0 0 1 0 7.75" fill="none" />
           </svg>
         </span>
-        <span :class="['text-[10.5px] leading-tight whitespace-nowrap', isSelected('contacts') ? 'font-semibold' : 'font-medium']">好友</span>
-        <span v-if="isSelected('contacts')" class="w-1 h-1 rounded-full bg-[#f2b880]" aria-hidden="true" />
+        <span :class="['text-xs leading-tight whitespace-nowrap', isSelected('contacts') ? 'font-semibold' : 'font-medium']">好友</span>
+        <span v-if="isSelected('contacts')" class="w-1 h-1 rounded-full bg-accent" aria-hidden="true" />
       </button>
 
       <button
@@ -84,7 +84,7 @@ function isSelected(tab: MobileImTab): boolean {
         @click="emit('selectTab', 'stash')"
         :class="[
           'relative min-h-[50px] flex flex-col items-center justify-center gap-0.5 transition-transform duration-150 active:scale-92 cursor-pointer',
-          isSelected('stash') ? 'text-[#f2b880]' : 'text-slate-400 hover:text-slate-200'
+          isSelected('stash') ? 'text-accent-fg' : 'text-fg-muted hover:text-fg'
         ]"
       >
         <span :class="['relative inline-flex items-center justify-center w-9 h-6 transition-transform duration-150', isSelected('stash') ? '-translate-y-0.5 scale-105' : '']">
@@ -93,13 +93,13 @@ function isSelected(tab: MobileImTab): boolean {
           </svg>
           <span
             v-if="unreadStash > 0"
-            class="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-500 text-white font-mono text-[9.5px] font-bold leading-none inline-flex items-center justify-center"
+            class="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-danger text-white font-mono text-xs font-bold leading-none inline-flex items-center justify-center"
           >
             {{ unreadStash > 99 ? '99+' : unreadStash }}
           </span>
         </span>
-        <span :class="['text-[10.5px] leading-tight whitespace-nowrap', isSelected('stash') ? 'font-semibold' : 'font-medium']">收藏</span>
-        <span v-if="isSelected('stash')" class="w-1 h-1 rounded-full bg-[#f2b880]" aria-hidden="true" />
+        <span :class="['text-xs leading-tight whitespace-nowrap', isSelected('stash') ? 'font-semibold' : 'font-medium']">收藏</span>
+        <span v-if="isSelected('stash')" class="w-1 h-1 rounded-full bg-accent" aria-hidden="true" />
       </button>
 
       <button
@@ -108,7 +108,7 @@ function isSelected(tab: MobileImTab): boolean {
         @click="emit('selectTab', 'ops')"
         :class="[
           'relative min-h-[50px] flex flex-col items-center justify-center gap-0.5 transition-transform duration-150 active:scale-92 cursor-pointer',
-          isSelected('ops') ? 'text-[#f2b880]' : 'text-slate-400 hover:text-slate-200'
+          isSelected('ops') ? 'text-accent-fg' : 'text-fg-muted hover:text-fg'
         ]"
       >
         <span :class="['relative inline-flex items-center justify-center w-9 h-6 transition-transform duration-150', isSelected('ops') ? '-translate-y-0.5 scale-105' : '']">
@@ -119,8 +119,8 @@ function isSelected(tab: MobileImTab): boolean {
             <rect width="8" height="8" x="13" y="13" rx="2" />
           </svg>
         </span>
-        <span :class="['text-[10.5px] leading-tight whitespace-nowrap', isSelected('ops') ? 'font-semibold' : 'font-medium']">中枢</span>
-        <span v-if="isSelected('ops')" class="w-1 h-1 rounded-full bg-[#f2b880]" aria-hidden="true" />
+        <span :class="['text-xs leading-tight whitespace-nowrap', isSelected('ops') ? 'font-semibold' : 'font-medium']">中枢</span>
+        <span v-if="isSelected('ops')" class="w-1 h-1 rounded-full bg-accent" aria-hidden="true" />
       </button>
     </div>
   </nav>

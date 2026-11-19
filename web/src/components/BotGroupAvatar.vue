@@ -185,7 +185,7 @@ const isHeroInteractive = computed(() => props.size === 'xl' || props.size === '
       v-if="members.length > 4"
       :class="[
         'btn-jewel pointer-events-none absolute -bottom-0.5 -right-1 z-50 rounded-full font-mono leading-none',
-        size === 'xl' ? 'px-2 py-0.5 text-[10.5px]' : 'px-1 py-0.5 text-[8.5px]',
+        size === 'xl' ? 'px-2 py-0.5 text-xs' : 'px-1 py-0.5 text-xs',
       ]"
     >
       +{{ members.length - 4 }}

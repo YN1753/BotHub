@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
       @keydown="handleTriggerKeydown"
       :class="[
         'btn-tactile w-full flex items-center justify-between gap-2 rounded-xl text-left cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed',
-        open ? 'border-[#f2b880]/55 text-white' : 'text-slate-100',
+        open ? 'border-accent-border text-fg' : 'text-fg',
         compact ? 'px-3 py-1.5 text-xs min-h-[44px] sm:min-h-[34px]' : 'px-3.5 py-2 text-sm min-h-[44px]'
       ]"
     >
@@ -184,7 +184,7 @@ onBeforeUnmount(() => {
         stroke="currentColor"
         stroke-width="2"
         aria-hidden="true"
-        :class="['shrink-0 text-slate-400 transition-transform duration-150', open ? 'rotate-180 text-[#f2b880]' : '']"
+        :class="['shrink-0 text-fg-muted transition-transform duration-150', open ? 'rotate-180 text-accent-fg' : '']"
       >
         <polyline points="6 9 12 15 18 9" />
       </svg>
@@ -204,11 +204,11 @@ onBeforeUnmount(() => {
         ref="listboxEl"
         role="listbox"
         :class="[
-          'aero-glass absolute left-0 z-50 w-full min-w-[180px] max-h-60 overflow-y-auto rounded-2xl border border-[#fff8ee]/16 p-1.5',
+          'aero-glass absolute left-0 z-50 w-full min-w-[180px] max-h-60 overflow-y-auto rounded-xl border border-line p-1.5',
           openAbove ? 'bottom-full mb-1.5 origin-bottom-left' : 'top-full mt-1.5 origin-top-left'
         ]"
       >
-        <div v-if="options.length === 0" class="px-3 py-2 text-xs text-slate-500 text-center">
+        <div v-if="options.length === 0" class="px-3 py-2 text-xs text-fg-muted text-center">
           暂无可选项
         </div>
         <button
@@ -224,10 +224,10 @@ onBeforeUnmount(() => {
           :class="[
             'w-full text-left px-3 min-h-[44px] sm:min-h-[34px] rounded-lg text-xs sm:text-sm transition-colors cursor-pointer flex items-center justify-between gap-2',
             opt.value === modelValue
-              ? 'bg-[#f2b880]/20 text-[#f2b880] font-medium'
+              ? 'bg-accent-soft text-accent-fg font-medium'
               : idx === highlightedIndex
-                ? 'bg-slate-500/15 text-white'
-                : 'text-slate-300 hover:bg-slate-500/10 hover:text-white'
+                ? 'bg-subtle text-fg'
+                : 'text-fg-sub hover:bg-hover hover:text-fg'
           ]"
         >
           <span class="truncate">{{ opt.label }}</span>
@@ -240,7 +240,7 @@ onBeforeUnmount(() => {
             stroke="currentColor"
             stroke-width="2.4"
             aria-hidden="true"
-            class="shrink-0 text-[#f2b880]"
+            class="shrink-0 text-accent-fg"
           >
             <polyline points="20 6 9 17 4 12" />
           </svg>

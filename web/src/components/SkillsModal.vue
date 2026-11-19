@@ -228,17 +228,17 @@ watch(
       <!-- Left: Create / Edit Form -->
       <form
         @submit.prevent="handleSave"
-        class="lg:col-span-6 rounded-xl border border-[#fff8ee]/10 bg-[#060914] p-4 flex flex-col gap-3 h-fit"
+        class="lg:col-span-6 rounded-xl border border-line bg-canvas p-4 flex flex-col gap-3 h-fit"
       >
         <div class="flex items-center justify-between gap-2">
-          <h4 class="text-xs font-semibold text-white">
+          <h4 class="text-xs font-semibold text-fg">
             {{ editingId ? '编辑自定义技能' : '新建自定义技能' }}
           </h4>
           <button
             v-if="editingId"
             type="button"
             @click="resetForm"
-            class="text-[11px] text-[#f2b880] hover:underline cursor-pointer"
+            class="text-xs text-accent-fg hover:underline cursor-pointer"
           >
             取消编辑
           </button>
@@ -247,45 +247,45 @@ watch(
         <SegmentedTabs v-model="kind" :items="KIND_TABS" aria-label="技能类型" />
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
+          <label class="flex flex-col gap-1 text-xs text-fg-sub">
             <span>技能名称</span>
             <input
               v-model="name"
               type="text"
               placeholder="如 天气查询 / 晨间复盘流程"
               required
-              class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 text-xs text-white focus:border-[#f2b880]/60"
+              class="min-h-[38px] rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs text-fg focus:border-accent"
             />
           </label>
-          <label class="flex flex-col gap-1 text-xs text-slate-300">
+          <label class="flex flex-col gap-1 text-xs text-fg-sub">
             <span>函数标识符 Slug (可选)</span>
             <input
               v-model="slug"
               type="text"
               placeholder="自动生成如 check_weather"
-              class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
+              class="min-h-[38px] rounded-xl border border-line bg-canvas px-3 py-1.5 font-mono text-xs text-fg focus:border-accent"
             />
           </label>
         </div>
 
-        <label class="flex flex-col gap-1 text-xs text-slate-300">
+        <label class="flex flex-col gap-1 text-xs text-fg-sub">
           <span>功能简述 (Bot 靠它判断何时触发)</span>
           <input
             v-model="description"
             type="text"
             placeholder="简洁说明这个技能用来干什么、什么时候该调用"
-            class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 text-xs text-white focus:border-[#f2b880]/60"
+            class="min-h-[38px] rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs text-fg focus:border-accent"
           />
         </label>
 
         <!-- Prompt Playbook Content -->
-        <label v-if="kind === 'prompt'" class="flex flex-col gap-1 text-xs text-slate-300">
+        <label v-if="kind === 'prompt'" class="flex flex-col gap-1 text-xs text-fg-sub">
           <span>指令正文 / 行动准则</span>
           <textarea
             v-model="instruction"
             rows="4"
             placeholder="写入具体的工作流步骤、说话风格、输出要求或判断原则；挂载后将注入该 Bot 的能力上下文。"
-            class="auto-size-textarea rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-xs text-white focus:border-[#f2b880]/60 leading-relaxed"
+            class="auto-size-textarea rounded-xl border border-line bg-canvas px-3 py-2 text-xs text-fg focus:border-accent leading-relaxed"
           />
         </label>
 
@@ -301,14 +301,14 @@ watch(
         />
 
         <div class="flex items-center justify-between pt-1">
-          <label class="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-            <input v-model="enabled" type="checkbox" class="accent-[#f2b880]" />
+          <label class="inline-flex items-center gap-2 text-xs text-fg-sub cursor-pointer">
+            <input v-model="enabled" type="checkbox" class="accent-accent" />
             <span>启用此技能</span>
           </label>
           <button
             type="submit"
             :disabled="saving"
-            class="min-h-[38px] px-4 py-1.5 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+            class="min-h-[38px] px-4 py-1.5 rounded-xl bg-accent hover:bg-accent-hover text-on-accent font-semibold text-xs cursor-pointer disabled:opacity-50"
           >
             {{ saving ? '保存中...' : editingId ? '保存修改' : '创建技能' }}
           </button>
@@ -317,10 +317,10 @@ watch(
 
       <!-- Right: Skill Library & Live Test -->
       <div class="lg:col-span-6 flex flex-col gap-3">
-        <div class="rounded-xl border border-[#fff8ee]/10 bg-[#060914] p-4 flex flex-col gap-2.5">
+        <div class="rounded-xl border border-line bg-canvas p-4 flex flex-col gap-2.5">
           <div class="flex items-center justify-between gap-2 flex-wrap">
-            <h4 class="text-xs font-semibold text-white">已创建的技能 ({{ filteredSkills.length }}<span v-if="skillSearch.trim()"> / {{ skills.length }}</span>)</h4>
-            <span class="text-[11px] text-slate-500">Webhook 技能自动编译为 skill_ 工具</span>
+            <h4 class="text-xs font-semibold text-fg">已创建的技能 ({{ filteredSkills.length }}<span v-if="skillSearch.trim()"> / {{ skills.length }}</span>)</h4>
+            <span class="text-xs text-fg-muted">Webhook 技能自动编译为 skill_ 工具</span>
           </div>
 
           <input
@@ -330,89 +330,89 @@ watch(
             aria-label="筛选技能"
             placeholder="搜索技能名称、slug 或描述..."
             @keydown.escape="clearSearchOnEscape($event, skillSearch, () => { skillSearch = '' })"
-            class="w-full min-h-[34px] rounded-lg border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
+            class="w-full min-h-[34px] rounded-lg border border-line bg-canvas px-2.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
           />
 
-          <div v-if="skills.length === 0" class="py-8 text-center text-xs text-slate-500 leading-relaxed">
+          <div v-if="skills.length === 0" class="py-8 text-center text-xs text-fg-muted leading-relaxed">
             当前没有任何技能。你可以在左侧创建一个习惯指令 Playbook，或接入外部 REST API Webhook 成为 Bot 的专属实时工具。
           </div>
-          <div v-else-if="filteredSkills.length === 0" class="py-6 text-center text-xs text-slate-500">
+          <div v-else-if="filteredSkills.length === 0" class="py-6 text-center text-xs text-fg-muted">
             没有匹配「{{ skillSearch }}」的技能
           </div>
 
           <article
             v-for="sk in filteredSkills"
             :key="sk.id"
-            class="rounded-xl border border-[#fff8ee]/10 bg-[#050811] p-3 flex flex-col gap-2"
+            class="rounded-xl border border-line bg-canvas p-3 flex flex-col gap-2"
           >
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
-                  <strong class="text-xs font-semibold text-white">{{ sk.name }}</strong>
+                  <strong class="text-xs font-semibold text-fg">{{ sk.name }}</strong>
                   <span
                     :class="[
-                      'px-1.5 py-0.5 rounded font-mono text-[10px] border',
+                      'px-1.5 py-0.5 rounded font-mono text-xs border',
                       sk.kind === 'webhook'
-                        ? 'border-cyan-400/35 bg-cyan-500/10 text-cyan-300'
-                        : 'border-[#f2b880]/35 bg-[#f2b880]/10 text-[#f2b880]',
+                        ? 'border-info-border bg-info-soft text-info'
+                        : 'border-accent-border bg-accent-soft text-accent-fg',
                     ]"
                   >
                     {{ sk.kind === 'webhook' ? `${sk.http_method || 'GET'} skill_${sk.slug}` : 'Playbook' }}
                   </span>
                   <span
                     v-if="mountedBotCount(sk.id) > 0"
-                    class="px-1.5 py-0.5 rounded border border-emerald-400/25 bg-emerald-500/10 text-[10px] text-emerald-300"
+                    class="px-1.5 py-0.5 rounded border border-ok-border bg-ok-soft text-xs text-ok"
                   >
                     {{ mountedBotCount(sk.id) }} 个 Bot 已挂载
                   </span>
-                  <span v-if="!sk.enabled" class="text-[10px] text-slate-500">已停用</span>
+                  <span v-if="!sk.enabled" class="text-xs text-fg-muted">已停用</span>
                 </div>
-                <p v-if="sk.description" class="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                <p v-if="sk.description" class="text-xs text-fg-muted mt-1 leading-relaxed">
                   {{ sk.description }}
                 </p>
-                <div v-if="sk.kind === 'webhook'" class="text-[10.5px] font-mono text-slate-500 mt-1 truncate">
+                <div v-if="sk.kind === 'webhook'" class="text-xs font-mono text-fg-muted mt-1 truncate">
                   {{ sk.http_url }}
                 </div>
-                <p v-else-if="sk.instruction" class="text-[11px] text-slate-500 mt-1 line-clamp-2">
+                <p v-else-if="sk.instruction" class="text-xs text-fg-muted mt-1 line-clamp-2">
                   {{ sk.instruction }}
                 </p>
               </div>
             </div>
 
-            <div class="flex items-center justify-end gap-1.5 flex-wrap pt-1 border-t border-[#fff8ee]/6">
+            <div class="flex items-center justify-end gap-1.5 flex-wrap pt-1 border-t border-line">
               <button
                 v-if="sk.kind === 'webhook'"
                 type="button"
                 @click="testSkillTarget = sk"
-                class="px-2.5 py-1 rounded-lg border border-cyan-400/35 text-[11px] text-cyan-300 hover:bg-cyan-500/15 cursor-pointer"
+                class="px-2.5 py-1 rounded-lg border border-info-border text-xs text-info hover:bg-info-soft cursor-pointer"
               >
                 实时调试
               </button>
               <button
                 type="button"
                 @click="toggleSkillEnabled(sk)"
-                class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-white cursor-pointer"
+                class="px-2.5 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-fg cursor-pointer"
               >
                 {{ sk.enabled ? '停用' : '启用' }}
               </button>
               <button
                 type="button"
                 @click="cloneSkillToForm(sk)"
-                class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-cyan-200 cursor-pointer"
+                class="px-2.5 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-info cursor-pointer"
               >
                 复用新建
               </button>
               <button
                 type="button"
                 @click="loadSkillToEdit(sk)"
-                class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+                class="px-2.5 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
               >
                 编辑
               </button>
               <button
                 type="button"
                 @click="handleDelete(sk)"
-                class="px-2.5 py-1 rounded-lg border border-rose-400/30 text-[11px] text-rose-300 hover:bg-rose-500/15 cursor-pointer"
+                class="px-2.5 py-1 rounded-lg border border-danger-border text-xs text-danger hover:bg-danger-soft cursor-pointer"
               >
                 删除
               </button>

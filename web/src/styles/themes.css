@@ -1,577 +1,246 @@
-/* Multi-Theme Palette Registry + Adaptive Light/Dark Popup Unification */
+/* ============================================================================
+   Decoupled Color Mode (Neutral Dark / Neutral Light) + 6 Accent Swatches
+   All components consume semantic tokens directly with zero cascade hacks.
+   ============================================================================ */
 
 :root {
   color-scheme: light dark;
-  accent-color: var(--accent-gold);
+  accent-color: var(--accent);
 }
 
-:root:has(> head > meta[name="color-scheme"][content="dark"]) {
+html[data-color-mode="dark"] {
   color-scheme: dark;
 }
 
-:root:has(> head > meta[name="color-scheme"][content="light"]) {
+html[data-color-mode="light"] {
   color-scheme: light;
 }
 
-/* 1. 曜石暖金 (Obsidian Gold — Default Dark) */
+/* Neutral Dark Surface & Semantic Tokens (Default) */
 :root,
-html[data-theme="obsidian"] {
-  --bg-deep: #050811;
-  --bg-top: #070b18;
-  --bg-bottom: #03050c;
-  --bg-glow-1: rgba(242, 184, 128, 0.11);
-  --bg-glow-2: rgba(99, 102, 241, 0.14);
+html[data-color-mode="dark"] {
+  --surface-canvas: #0b0c0e;
+  --surface-sidebar: #111317;
+  --surface-main: #14171c;
+  --surface-card: #1a1d24;
+  --surface-hover: #222630;
+  --surface-subtle: rgba(255, 255, 255, 0.05);
+  --border-line: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --fg-main: #f4f5f7;
+  --fg-sub: #b4bcc8;
+  --fg-muted: #7d8594;
+  --shadow-soft: rgba(0, 0, 0, 0.32);
+  --backdrop-scrim: rgba(0, 0, 0, 0.60);
 
-  --surface-sidebar-top: rgba(16, 22, 42, 0.88);
-  --surface-sidebar-bottom: rgba(8, 12, 23, 0.94);
-  --surface-workspace-top: rgba(13, 18, 34, 0.72);
-  --surface-workspace-bottom: rgba(6, 9, 19, 0.84);
-  --surface-card-top: rgba(22, 29, 52, 0.84);
-  --surface-card-bottom: rgba(10, 14, 27, 0.92);
-  --surface-dialog-top: rgba(18, 24, 44, 0.97);
-  --surface-dialog-bottom: rgba(8, 12, 23, 0.98);
-  --surface-dialog-header: rgba(10, 14, 28, 0.76);
-  --surface-popover-top: rgba(22, 28, 50, 0.96);
-  --surface-popover-bottom: rgba(11, 15, 29, 0.97);
-  --surface-input-top: rgba(5, 8, 18, 0.78);
-  --surface-input-bottom: rgba(10, 14, 28, 0.62);
-  --surface-bubble-ai-top: rgba(20, 29, 55, 0.86);
-  --surface-bubble-ai-bottom: rgba(11, 16, 33, 0.92);
-  --surface-bubble-user-top: #3a281c;
-  --surface-bubble-user-bottom: #241812;
-  --surface-toast: rgba(10, 15, 31, 0.96);
+  --md-code-bg: #0e1014;
+  --md-code-head: #151820;
+  --md-code-text: #e5e7eb;
+  --md-inline-bg: rgba(255, 255, 255, 0.07);
 
-  --backdrop-scrim: rgba(2, 4, 10, 0.78);
-  --backdrop-popover: rgba(2, 4, 10, 0.36);
+  --scrollbar-thumb: #4b5263;
+  --scrollbar-track: transparent;
 
-  --accent-gold: #f2b880;
-  --accent-gold-light: #ffe2be;
-  --accent-gold-deep: #c98647;
-  --accent-indigo: #a5b4fc;
-  --accent-rgb: 242, 184, 128;
-  --on-accent: #090c16;
+  --ok: #34d399;
+  --ok-soft: rgba(16, 185, 129, 0.12);
+  --ok-border: rgba(52, 211, 153, 0.28);
+  --warn: #fbbf24;
+  --warn-soft: rgba(245, 158, 11, 0.12);
+  --warn-border: rgba(251, 191, 36, 0.30);
+  --danger: #fb7185;
+  --danger-soft: rgba(244, 63, 94, 0.12);
+  --danger-border: rgba(251, 113, 133, 0.30);
+  --info: #38bdf8;
+  --info-soft: rgba(14, 165, 233, 0.12);
+  --info-border: rgba(56, 189, 248, 0.28);
 
-  --text-main: #fff8ee;
-  --text-sub: #cbd5e1;
-  --text-muted: #94a3b8;
-  --border-glass: rgba(255, 248, 238, 0.115);
-  --border-gold: rgba(242, 184, 128, 0.42);
-  --shadow-ambient: rgba(0, 0, 0, 0.54);
-  --hairline-top: rgba(255, 248, 238, 0.14);
+  --bot-svg-shadow: rgba(0, 0, 0, 0.42);
+  --mochi-item-shadow: rgba(0, 0, 0, 0.52);
+  --mochi-lead-shadow-a: rgba(0, 0, 0, 0.56);
+  --mochi-lead-shadow-b: rgba(0, 0, 0, 0.40);
+  --bot-ground-shadow: rgba(0, 0, 0, 0.44);
+  --bot-cluster-shadow: rgba(0, 0, 0, 0.42);
 
-  --md-code-top: rgba(6, 9, 19, 0.94);
-  --md-code-bottom: rgba(3, 5, 12, 0.96);
-  --md-code-text: #ede9e0;
-  --md-inline-bg: rgba(255, 248, 238, 0.08);
-  --md-inline-text: #f7cba0;
-}
-
-/* 2. 深海青岚 (Ocean Cyan — Dark) */
-html[data-theme="ocean"] {
-  --bg-deep: #040b13;
-  --bg-top: #061320;
-  --bg-bottom: #03080f;
-  --bg-glow-1: rgba(56, 189, 248, 0.12);
-  --bg-glow-2: rgba(37, 99, 235, 0.15);
-
-  --surface-sidebar-top: rgba(12, 29, 48, 0.90);
-  --surface-sidebar-bottom: rgba(6, 16, 29, 0.95);
-  --surface-workspace-top: rgba(10, 24, 41, 0.76);
-  --surface-workspace-bottom: rgba(5, 13, 24, 0.86);
-  --surface-card-top: rgba(15, 36, 59, 0.86);
-  --surface-card-bottom: rgba(8, 20, 35, 0.93);
-  --surface-dialog-top: rgba(13, 30, 49, 0.97);
-  --surface-dialog-bottom: rgba(6, 16, 28, 0.98);
-  --surface-dialog-header: rgba(8, 21, 36, 0.80);
-  --surface-popover-top: rgba(15, 36, 59, 0.97);
-  --surface-popover-bottom: rgba(7, 18, 32, 0.98);
-  --surface-input-top: rgba(5, 14, 25, 0.80);
-  --surface-input-bottom: rgba(9, 22, 38, 0.66);
-  --surface-bubble-ai-top: rgba(15, 35, 58, 0.88);
-  --surface-bubble-ai-bottom: rgba(8, 21, 36, 0.93);
-  --surface-bubble-user-top: #0c3556;
-  --surface-bubble-user-bottom: #08233a;
-  --surface-toast: rgba(7, 20, 36, 0.96);
-
-  --backdrop-scrim: rgba(2, 6, 14, 0.78);
-  --backdrop-popover: rgba(2, 6, 14, 0.36);
-
-  --accent-gold: #38bdf8;
-  --accent-gold-light: #bae6fd;
-  --accent-gold-deep: #0284c7;
-  --accent-indigo: #60a5fa;
-  --accent-rgb: 56, 189, 248;
-  --on-accent: #041320;
-
-  --text-main: #f0f9ff;
-  --text-sub: #cbd5e1;
-  --text-muted: #93c5fd;
-  --border-glass: rgba(186, 230, 253, 0.13);
-  --border-gold: rgba(56, 189, 248, 0.42);
-  --hairline-top: rgba(186, 230, 253, 0.16);
-
-  --md-inline-bg: rgba(186, 230, 253, 0.09);
-  --md-inline-text: #7dd3fc;
-}
-
-/* 3. 松烟翡翠 (Forest Emerald — Dark) */
-html[data-theme="emerald"] {
-  --bg-deep: #040d0a;
-  --bg-top: #061510;
-  --bg-bottom: #030907;
-  --bg-glow-1: rgba(52, 211, 153, 0.11);
-  --bg-glow-2: rgba(13, 148, 136, 0.14);
-
-  --surface-sidebar-top: rgba(13, 35, 28, 0.90);
-  --surface-sidebar-bottom: rgba(7, 20, 15, 0.95);
-  --surface-workspace-top: rgba(10, 29, 22, 0.76);
-  --surface-workspace-bottom: rgba(5, 16, 12, 0.86);
-  --surface-card-top: rgba(16, 42, 33, 0.86);
-  --surface-card-bottom: rgba(8, 24, 18, 0.93);
-  --surface-dialog-top: rgba(13, 36, 28, 0.97);
-  --surface-dialog-bottom: rgba(6, 19, 14, 0.98);
-  --surface-dialog-header: rgba(8, 25, 19, 0.80);
-  --surface-popover-top: rgba(15, 41, 32, 0.97);
-  --surface-popover-bottom: rgba(7, 21, 16, 0.98);
-  --surface-input-top: rgba(5, 16, 12, 0.80);
-  --surface-input-bottom: rgba(9, 26, 20, 0.66);
-  --surface-bubble-ai-top: rgba(15, 39, 31, 0.88);
-  --surface-bubble-ai-bottom: rgba(8, 24, 18, 0.93);
-  --surface-bubble-user-top: #0f3d2e;
-  --surface-bubble-user-bottom: #09281e;
-  --surface-toast: rgba(7, 24, 18, 0.96);
-
-  --backdrop-scrim: rgba(2, 10, 7, 0.78);
-  --backdrop-popover: rgba(2, 10, 7, 0.36);
-
-  --accent-gold: #34d399;
-  --accent-gold-light: #a7f3d0;
-  --accent-gold-deep: #059669;
-  --accent-indigo: #5eead4;
-  --accent-rgb: 52, 211, 153;
-  --on-accent: #041912;
-
-  --text-main: #ecfdf5;
-  --text-sub: #d1d5db;
-  --text-muted: #6ee7b7;
-  --border-glass: rgba(167, 243, 208, 0.13);
-  --border-gold: rgba(52, 211, 153, 0.42);
-  --hairline-top: rgba(167, 243, 208, 0.16);
-
-  --md-inline-bg: rgba(167, 243, 208, 0.09);
-  --md-inline-text: #6ee7b7;
-}
-
-/* 4. 紫晶星云 (Amethyst Nebula — Dark) */
-html[data-theme="amethyst"] {
-  --bg-deep: #090613;
-  --bg-top: #110b22;
-  --bg-bottom: #06040e;
-  --bg-glow-1: rgba(192, 132, 252, 0.13);
-  --bg-glow-2: rgba(236, 72, 153, 0.11);
-
-  --surface-sidebar-top: rgba(28, 19, 51, 0.90);
-  --surface-sidebar-bottom: rgba(16, 10, 31, 0.95);
-  --surface-workspace-top: rgba(23, 15, 43, 0.76);
-  --surface-workspace-bottom: rgba(12, 8, 24, 0.86);
-  --surface-card-top: rgba(34, 22, 61, 0.86);
-  --surface-card-bottom: rgba(18, 11, 36, 0.93);
-  --surface-dialog-top: rgba(28, 18, 52, 0.97);
-  --surface-dialog-bottom: rgba(14, 9, 28, 0.98);
-  --surface-dialog-header: rgba(20, 12, 38, 0.80);
-  --surface-popover-top: rgba(33, 21, 60, 0.97);
-  --surface-popover-bottom: rgba(16, 10, 32, 0.98);
-  --surface-input-top: rgba(12, 8, 24, 0.80);
-  --surface-input-bottom: rgba(21, 13, 40, 0.66);
-  --surface-bubble-ai-top: rgba(32, 21, 58, 0.88);
-  --surface-bubble-ai-bottom: rgba(18, 11, 35, 0.93);
-  --surface-bubble-user-top: #3b1c5a;
-  --surface-bubble-user-bottom: #26113c;
-  --surface-toast: rgba(20, 12, 38, 0.96);
-
-  --backdrop-scrim: rgba(7, 3, 16, 0.78);
-  --backdrop-popover: rgba(7, 3, 16, 0.36);
-
-  --accent-gold: #c084fc;
-  --accent-gold-light: #e9d5ff;
-  --accent-gold-deep: #9333ea;
-  --accent-indigo: #f472b6;
-  --accent-rgb: 192, 132, 252;
-  --on-accent: #140826;
-
-  --text-main: #faf5ff;
-  --text-sub: #cbd5e1;
-  --text-muted: #c4b5fd;
-  --border-glass: rgba(233, 213, 255, 0.13);
-  --border-gold: rgba(192, 132, 252, 0.42);
-  --hairline-top: rgba(233, 213, 255, 0.16);
-
-  --md-inline-bg: rgba(233, 213, 255, 0.09);
-  --md-inline-text: #d8b4fe;
-}
-
-/* 5. 晴雪素白 (Daylight Frost — Light) */
-html[data-theme="daylight"] {
-  --bg-deep: #e4ecf6;
-  --bg-top: #ebf1f9;
-  --bg-bottom: #dce6f4;
-  --bg-glow-1: rgba(37, 99, 235, 0.08);
-  --bg-glow-2: rgba(99, 102, 241, 0.07);
-
-  --surface-sidebar-top: rgba(248, 250, 253, 0.94);
-  --surface-sidebar-bottom: rgba(239, 244, 251, 0.97);
-  --surface-workspace-top: #ffffff;
-  --surface-workspace-bottom: #fbfcfe;
-  --surface-card-top: rgba(255, 255, 255, 0.97);
-  --surface-card-bottom: rgba(245, 248, 253, 0.99);
-  --surface-nested: #eef3fa;
-  --surface-elevated: rgba(255, 255, 255, 0.96);
-  --surface-dialog-top: rgba(255, 255, 255, 0.985);
-  --surface-dialog-bottom: rgba(244, 247, 252, 0.99);
-  --surface-dialog-header: rgba(241, 245, 252, 0.92);
-  --surface-popover-top: rgba(255, 255, 255, 0.98);
-  --surface-popover-bottom: rgba(245, 248, 253, 0.99);
-  --surface-input-top: rgba(241, 245, 249, 0.96);
-  --surface-input-bottom: rgba(255, 255, 255, 0.98);
-  --surface-bubble-ai-top: #ffffff;
-  --surface-bubble-ai-bottom: #f4f7fc;
-  --surface-bubble-user-top: #2563eb;
-  --surface-bubble-user-bottom: #1d4ed8;
-  --surface-toast: rgba(255, 255, 255, 0.98);
-
-  --backdrop-scrim: rgba(15, 23, 42, 0.36);
-  --backdrop-popover: rgba(15, 23, 42, 0.14);
-
-  --accent-gold: #2563eb;
-  --accent-gold-light: #1d4ed8;
-  --accent-gold-deep: #1e40af;
-  --accent-indigo: #4f46e5;
-  --accent-rgb: 37, 99, 235;
+  /* Default Accent: Blue (Dark) */
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-fg: #60a5fa;
   --on-accent: #ffffff;
-
-  --text-main: #0f172a;
-  --text-sub: #334155;
-  --text-muted: #64748b;
-  --border-glass: rgba(15, 23, 42, 0.14);
-  --border-gold: rgba(37, 99, 235, 0.36);
-  --shadow-ambient: rgba(15, 23, 42, 0.12);
-  --hairline-top: rgba(255, 255, 255, 0.95);
-
-  --bot-svg-shadow: rgba(30, 58, 138, 0.12);
-  --mochi-item-shadow: rgba(30, 58, 138, 0.11);
-  --mochi-lead-shadow-a: rgba(30, 58, 138, 0.08);
-  --mochi-lead-shadow-b: rgba(30, 58, 138, 0.13);
-  --bot-ground-shadow: rgba(100, 116, 139, 0.15);
-  --bot-cluster-shadow: rgba(100, 116, 139, 0.14);
-
-  --md-code-top: #f1f5f9;
-  --md-code-bottom: #e2e8f0;
-  --md-code-text: #0f172a;
-  --md-inline-bg: rgba(37, 99, 235, 0.09);
-  --md-inline-text: #1d4ed8;
+  --accent-soft: rgba(59, 130, 246, 0.14);
+  --accent-border: rgba(96, 165, 250, 0.34);
+  --accent-rgb: 59, 130, 246;
 }
 
-/* 6. 宣纸暖茶 (Warm Parchment — Light) */
-html[data-theme="parchment"] {
-  --bg-deep: #eae0ce;
-  --bg-top: #efe6d6;
-  --bg-bottom: #e2d5be;
-  --bg-glow-1: rgba(180, 83, 9, 0.08);
-  --bg-glow-2: rgba(217, 119, 6, 0.06);
+/* Neutral Light Surface & Semantic Tokens */
+html[data-color-mode="light"] {
+  --surface-canvas: #f3f4f6;
+  --surface-sidebar: #f7f8fa;
+  --surface-main: #ffffff;
+  --surface-card: #ffffff;
+  --surface-hover: #eef0f4;
+  --surface-subtle: rgba(15, 23, 42, 0.045);
+  --border-line: #e4e7ec;
+  --border-strong: #cdd3dd;
+  --fg-main: #111827;
+  --fg-sub: #4b5563;
+  --fg-muted: #6b7280;
+  --shadow-soft: rgba(15, 23, 42, 0.07);
+  --backdrop-scrim: rgba(15, 23, 42, 0.36);
 
-  --surface-sidebar-top: rgba(251, 247, 239, 0.95);
-  --surface-sidebar-bottom: rgba(242, 233, 218, 0.98);
-  --surface-workspace-top: #fffdf9;
-  --surface-workspace-bottom: #fcf8ef;
-  --surface-card-top: rgba(255, 252, 245, 0.97);
-  --surface-card-bottom: rgba(245, 238, 225, 0.99);
-  --surface-nested: #efe7d8;
-  --surface-elevated: rgba(253, 249, 241, 0.96);
-  --surface-dialog-top: rgba(253, 249, 241, 0.99);
-  --surface-dialog-bottom: rgba(243, 235, 221, 0.99);
-  --surface-dialog-header: rgba(244, 236, 222, 0.92);
-  --surface-popover-top: rgba(253, 250, 243, 0.985);
-  --surface-popover-bottom: rgba(245, 238, 225, 0.99);
-  --surface-input-top: rgba(242, 234, 220, 0.94);
-  --surface-input-bottom: rgba(255, 252, 246, 0.98);
-  --surface-bubble-ai-top: #fffdf8;
-  --surface-bubble-ai-bottom: #f5ede0;
-  --surface-bubble-user-top: #b45309;
-  --surface-bubble-user-bottom: #92400e;
-  --surface-toast: rgba(253, 249, 241, 0.985);
+  --md-code-bg: #f6f7f9;
+  --md-code-head: #eef0f4;
+  --md-code-text: #111827;
+  --md-inline-bg: rgba(15, 23, 42, 0.06);
 
-  --backdrop-scrim: rgba(44, 29, 14, 0.34);
-  --backdrop-popover: rgba(44, 29, 14, 0.14);
+  --scrollbar-thumb: #9ca3af;
+  --scrollbar-track: transparent;
 
-  --accent-gold: #b45309;
-  --accent-gold-light: #92400e;
-  --accent-gold-deep: #78350f;
-  --accent-indigo: #a16207;
+  --ok: #047857;
+  --ok-soft: #ecfdf5;
+  --ok-border: #a7f3d0;
+  --warn: #b45309;
+  --warn-soft: #fffbeb;
+  --warn-border: #fde68a;
+  --danger: #be123c;
+  --danger-soft: #fff1f2;
+  --danger-border: #fecdd3;
+  --info: #0369a1;
+  --info-soft: #f0f9ff;
+  --info-border: #bae6fd;
+
+  --bot-svg-shadow: rgba(15, 23, 42, 0.10);
+  --mochi-item-shadow: rgba(15, 23, 42, 0.10);
+  --mochi-lead-shadow-a: rgba(15, 23, 42, 0.07);
+  --mochi-lead-shadow-b: rgba(15, 23, 42, 0.12);
+  --bot-ground-shadow: rgba(100, 116, 139, 0.14);
+  --bot-cluster-shadow: rgba(100, 116, 139, 0.13);
+
+  /* Default Accent: Blue (Light) */
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-fg: #1d4ed8;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(37, 99, 235, 0.09);
+  --accent-border: rgba(37, 99, 235, 0.28);
+  --accent-rgb: 37, 99, 235;
+}
+
+/* Accent Swatch: Blue */
+html[data-accent="blue"] {
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-fg: #60a5fa;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(59, 130, 246, 0.14);
+  --accent-border: rgba(96, 165, 250, 0.34);
+  --accent-rgb: 59, 130, 246;
+}
+html[data-color-mode="light"][data-accent="blue"] {
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-fg: #1d4ed8;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(37, 99, 235, 0.09);
+  --accent-border: rgba(37, 99, 235, 0.28);
+  --accent-rgb: 37, 99, 235;
+}
+
+/* Accent Swatch: Amber */
+html[data-accent="amber"] {
+  --accent: #e5a45c;
+  --accent-hover: #edb472;
+  --accent-fg: #f0be82;
+  --on-accent: #140f08;
+  --accent-soft: rgba(229, 164, 92, 0.14);
+  --accent-border: rgba(229, 164, 92, 0.34);
+  --accent-rgb: 229, 164, 92;
+}
+html[data-color-mode="light"][data-accent="amber"] {
+  --accent: #b45309;
+  --accent-hover: #92400e;
+  --accent-fg: #b45309;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(180, 83, 9, 0.09);
+  --accent-border: rgba(180, 83, 9, 0.28);
   --accent-rgb: 180, 83, 9;
-  --on-accent: #fffaf0;
-
-  --text-main: #2c2015;
-  --text-sub: #574434;
-  --text-muted: #7c6753;
-  --border-glass: rgba(92, 64, 34, 0.17);
-  --border-gold: rgba(180, 83, 9, 0.36);
-  --shadow-ambient: rgba(68, 46, 22, 0.12);
-  --hairline-top: rgba(255, 252, 245, 0.95);
-
-  --bot-svg-shadow: rgba(92, 64, 34, 0.13);
-  --mochi-item-shadow: rgba(92, 64, 34, 0.12);
-  --mochi-lead-shadow-a: rgba(92, 64, 34, 0.08);
-  --mochi-lead-shadow-b: rgba(92, 64, 34, 0.14);
-  --bot-ground-shadow: rgba(124, 103, 83, 0.16);
-  --bot-cluster-shadow: rgba(124, 103, 83, 0.15);
-
-  --md-code-top: #efe7d9;
-  --md-code-bottom: #e5dac7;
-  --md-code-text: #2c2015;
-  --md-inline-bg: rgba(180, 83, 9, 0.10);
-  --md-inline-text: #92400e;
 }
 
-/* Dynamic Accent Remap for Non-Obsidian Dark Themes & Light Themes */
-html[data-theme]:not([data-theme="obsidian"]) button.bg-\[\#f2b880\],
-html[data-theme]:not([data-theme="obsidian"]) .bg-\[\#f2b880\] {
-  background-color: var(--accent-gold) !important;
-  color: var(--on-accent) !important;
+/* Accent Swatch: Cyan */
+html[data-accent="cyan"] {
+  --accent: #06b6d4;
+  --accent-hover: #22d3ee;
+  --accent-fg: #22d3ee;
+  --on-accent: #04151a;
+  --accent-soft: rgba(6, 182, 212, 0.14);
+  --accent-border: rgba(34, 211, 238, 0.34);
+  --accent-rgb: 6, 182, 212;
+}
+html[data-color-mode="light"][data-accent="cyan"] {
+  --accent: #0284c7;
+  --accent-hover: #0369a1;
+  --accent-fg: #0369a1;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(2, 132, 199, 0.09);
+  --accent-border: rgba(2, 132, 199, 0.28);
+  --accent-rgb: 2, 132, 199;
 }
 
-html[data-theme]:not([data-theme="obsidian"]) .hover\:bg-\[\#f6c596\]:hover,
-html[data-theme]:not([data-theme="obsidian"]) .hover\:bg-\[\#f5c593\]:hover,
-html[data-theme]:not([data-theme="obsidian"]) .hover\:bg-\[\#f7cba0\]:hover {
-  background-color: var(--accent-gold-light) !important;
-  color: var(--on-accent) !important;
+/* Accent Swatch: Emerald */
+html[data-accent="emerald"] {
+  --accent: #10b981;
+  --accent-hover: #34d399;
+  --accent-fg: #34d399;
+  --on-accent: #031811;
+  --accent-soft: rgba(16, 185, 129, 0.14);
+  --accent-border: rgba(52, 211, 153, 0.34);
+  --accent-rgb: 16, 185, 129;
+}
+html[data-color-mode="light"][data-accent="emerald"] {
+  --accent: #059669;
+  --accent-hover: #047857;
+  --accent-fg: #047857;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(5, 150, 105, 0.09);
+  --accent-border: rgba(5, 150, 105, 0.28);
+  --accent-rgb: 5, 150, 105;
 }
 
-html[data-theme]:not([data-theme="obsidian"]) .text-\[\#f2b880\],
-html[data-theme]:not([data-theme="obsidian"]) .text-\[\#f2b880\]\/65,
-html[data-theme]:not([data-theme="obsidian"]) .text-\[\#f2b880\]\/80,
-html[data-theme]:not([data-theme="obsidian"]) .text-\[\#f2b880\]\/90,
-html[data-theme]:not([data-theme="obsidian"]) .text-\[\#ffe2be\],
-html[data-theme]:not([data-theme="obsidian"]) .text-\[\#f7cba0\],
-html[data-theme]:not([data-theme="obsidian"]) .hover\:text-\[\#f2b880\]:hover,
-html[data-theme]:not([data-theme="obsidian"]) .hover\:text-\[\#ffe2be\]:hover,
-html[data-theme]:not([data-theme="obsidian"]) .hover\:text-\[\#f7cba0\]:hover,
-html[data-theme]:not([data-theme="obsidian"]) .group:hover .group-hover\:text-\[\#f7cba0\] {
-  color: var(--accent-gold-light) !important;
+/* Accent Swatch: Violet */
+html[data-accent="violet"] {
+  --accent: #8b5cf6;
+  --accent-hover: #a78bfa;
+  --accent-fg: #c4b5fd;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(139, 92, 246, 0.15);
+  --accent-border: rgba(167, 139, 250, 0.34);
+  --accent-rgb: 139, 92, 246;
+}
+html[data-color-mode="light"][data-accent="violet"] {
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-fg: #6d28d9;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(124, 58, 237, 0.09);
+  --accent-border: rgba(124, 58, 237, 0.28);
+  --accent-rgb: 124, 58, 237;
 }
 
-html[data-theme]:not([data-theme="obsidian"]) [class*="border-[#f2b880]"] {
-  border-color: var(--border-gold) !important;
+/* Accent Swatch: Mono */
+html[data-accent="mono"] {
+  --accent: #f4f5f7;
+  --accent-hover: #ffffff;
+  --accent-fg: #f4f5f7;
+  --on-accent: #111317;
+  --accent-soft: rgba(255, 255, 255, 0.10);
+  --accent-border: rgba(255, 255, 255, 0.24);
+  --accent-rgb: 244, 245, 247;
 }
-
-html[data-theme]:not([data-theme="obsidian"]) [class*="bg-[#f2b880]/"] {
-  background-color: rgba(var(--accent-rgb), 0.14) !important;
-}
-
-/* Dark theme background container tint adaptation for ocean/emerald/amethyst */
-html[data-theme]:not([data-theme="obsidian"])[data-color-mode="dark"] [class*="bg-[#0"],
-html[data-theme]:not([data-theme="obsidian"])[data-color-mode="dark"] [class*="bg-[#101830]"],
-html[data-theme]:not([data-theme="obsidian"])[data-color-mode="dark"] [class*="bg-[#120912"] {
-  background-color: var(--surface-input-top) !important;
-}
-
-html[data-theme]:not([data-theme="obsidian"])[data-color-mode="dark"] header[class*="bg-[#0"],
-html[data-theme]:not([data-theme="obsidian"])[data-color-mode="dark"] nav[class*="bg-[#0"],
-html[data-theme]:not([data-theme="obsidian"])[data-color-mode="dark"] .fixed[class*="bg-[#0"],
-html[data-theme]:not([data-theme="obsidian"])[data-color-mode="dark"] .aero-glass[class*="bg-[#0"] {
-  background-color: var(--surface-dialog-top) !important;
-}
-
-/* Light Mode Comprehensive Surface, Chip, Contrast & Shadow Adaptation */
-html[data-color-mode="light"] [class*="bg-[#0"],
-html[data-color-mode="light"] [class*="bg-[#101830]"],
-html[data-color-mode="light"] [class*="bg-[#120912"],
-html[data-color-mode="light"] .bg-slate-900\/80,
-html[data-color-mode="light"] .bg-slate-900\/70,
-html[data-color-mode="light"] .bg-slate-950\/70,
-html[data-color-mode="light"] .bg-black\/15,
-html[data-color-mode="light"] .bg-black\/25,
-html[data-color-mode="light"] .bg-black\/30,
-html[data-color-mode="light"] .bg-black\/40 {
-  background-color: var(--surface-nested) !important;
-}
-
-/* Top-level elevated bars, drawers & menus in light mode stay crisp opaque paper */
-html[data-color-mode="light"] header[class*="bg-[#0"],
-html[data-color-mode="light"] nav[class*="bg-[#0"],
-html[data-color-mode="light"] .fixed[class*="bg-[#0"],
-html[data-color-mode="light"] .aero-glass[class*="bg-[#0"] {
-  background-color: var(--surface-elevated) !important;
-}
-
-html[data-color-mode="light"] .bg-black\/55,
-html[data-color-mode="light"] .bg-black\/65 {
-  background-color: var(--backdrop-scrim) !important;
-}
-
-html[data-color-mode="light"] .text-white,
-html[data-color-mode="light"] .text-slate-50,
-html[data-color-mode="light"] .text-\[\#fff8ee\],
-html[data-color-mode="light"] .text-\[\#fbf7f0\],
-html[data-color-mode="light"] .text-slate-100,
-html[data-color-mode="light"] .text-slate-200,
-html[data-color-mode="light"] .text-slate-200\/90,
-html[data-color-mode="light"] .hover\:text-white:hover,
-html[data-color-mode="light"] .group:hover .group-hover\:text-white {
-  color: var(--text-main) !important;
-}
-
-html[data-color-mode="light"] .text-slate-300,
-html[data-color-mode="light"] .text-slate-300\/90,
-html[data-color-mode="light"] .hover\:text-slate-200:hover,
-html[data-color-mode="light"] .hover\:text-slate-300:hover {
-  color: var(--text-sub) !important;
-}
-
-html[data-color-mode="light"] .text-slate-400,
-html[data-color-mode="light"] .text-slate-400\/85,
-html[data-color-mode="light"] .text-slate-400\/90,
-html[data-color-mode="light"] .text-slate-500,
-html[data-color-mode="light"] .text-slate-600,
-html[data-color-mode="light"] .placeholder-slate-500::placeholder,
-html[data-color-mode="light"] .placeholder\:text-slate-500::placeholder {
-  color: var(--text-muted) !important;
-}
-
-/* Checked pills in light mode cleanly light up with accent tint + crisp accent text */
-html[data-color-mode="light"] label[class*="has-[:checked]:bg-[#f2b880]"]:has(:checked) {
-  background-color: rgba(var(--accent-rgb), 0.14) !important;
-  border-color: var(--border-gold) !important;
-  color: var(--accent-gold-light) !important;
-}
-
-html[data-color-mode="light"] label[class*="has-[:checked]:bg-cyan"]:has(:checked) {
-  background-color: rgba(2, 132, 199, 0.14) !important;
-  border-color: rgba(2, 132, 199, 0.45) !important;
-  color: #0369a1 !important;
-}
-
-html[data-color-mode="light"] [class*="bg-[#fff8ee]/"],
-html[data-color-mode="light"] [class*="bg-white/"],
-html[data-color-mode="light"] [class*="hover:bg-white/"]:hover,
-html[data-color-mode="light"] [class*="hover:bg-[#fff8ee]/"]:hover {
-  background-color: rgba(15, 23, 42, 0.055) !important;
-}
-
-html[data-color-mode="light"] [class*="border-[#fff8ee]/"],
-html[data-color-mode="light"] [class*="border-white/"] {
-  border-color: var(--border-glass) !important;
-}
-
-html[data-color-mode="light"] .ring-\[\#050811\],
-html[data-color-mode="light"] .ring-\[\#090d1b\] {
-  --tw-ring-color: var(--bg-deep) !important;
-}
-
-/* Soften dark harsh drop shadows on light backgrounds */
-html[data-color-mode="light"] .shadow-2xl,
-html[data-color-mode="light"] .shadow-xl {
-  --tw-shadow-color: var(--shadow-ambient) !important;
-}
-
-/* Keep white label legible on primary solid accent & danger buttons in light mode */
-html[data-color-mode="light"] button.bg-\[\#f2b880\],
-html[data-color-mode="light"] .bg-\[\#f2b880\],
-html[data-color-mode="light"] button.bg-\[\#f2b880\] *,
-html[data-color-mode="light"] .bg-\[\#f2b880\] *,
-html[data-color-mode="light"] button.bg-rose-500,
-html[data-color-mode="light"] button.bg-rose-500 *,
-html[data-color-mode="light"] [role="tab"][data-active="true"] {
-  color: var(--on-accent) !important;
-}
-
-/* Keep semantic green/cyan/rose/amber/indigo/sky accents high-contrast WCAG AA on light surfaces */
-html[data-color-mode="light"] .text-emerald-200,
-html[data-color-mode="light"] .text-emerald-300,
-html[data-color-mode="light"] .text-emerald-300\/80,
-html[data-color-mode="light"] .text-emerald-300\/90,
-html[data-color-mode="light"] .text-emerald-400,
-html[data-color-mode="light"] .hover\:text-emerald-200:hover,
-html[data-color-mode="light"] .hover\:text-emerald-300:hover {
-  color: #047857 !important;
-}
-html[data-color-mode="light"] .text-cyan-100,
-html[data-color-mode="light"] .text-cyan-200,
-html[data-color-mode="light"] .text-cyan-200\/85,
-html[data-color-mode="light"] .text-cyan-300,
-html[data-color-mode="light"] .hover\:text-cyan-200:hover {
-  color: #0369a1 !important;
-}
-html[data-color-mode="light"] .text-rose-100,
-html[data-color-mode="light"] .text-rose-200,
-html[data-color-mode="light"] .text-rose-300,
-html[data-color-mode="light"] .text-rose-300\/80,
-html[data-color-mode="light"] .text-rose-400,
-html[data-color-mode="light"] .hover\:text-rose-200:hover,
-html[data-color-mode="light"] .hover\:text-rose-300:hover {
-  color: #be123c !important;
-}
-html[data-color-mode="light"] .text-amber-200,
-html[data-color-mode="light"] .text-amber-300,
-html[data-color-mode="light"] .text-amber-300\/90 {
-  color: #b45309 !important;
-}
-html[data-color-mode="light"] .text-indigo-200,
-html[data-color-mode="light"] .text-indigo-300 {
-  color: #4338ca !important;
-}
-html[data-color-mode="light"] .text-sky-200,
-html[data-color-mode="light"] .text-sky-300 {
-  color: #0369a1 !important;
-}
-
-/* High-Contrast Brand Gradient User Bubble & Elevated Surfaces in Light Mode */
-html[data-color-mode="light"] .msg-bubble-user {
-  color: var(--on-accent) !important;
-  border-color: rgba(255, 255, 255, 0.22) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 12px 26px -8px rgba(var(--accent-rgb), 0.36),
-    0 4px 10px -2px var(--shadow-ambient) !important;
-}
-
-html[data-color-mode="light"] .msg-bubble-user > button {
-  color: rgba(255, 255, 255, 0.94) !important;
-}
-
-html[data-color-mode="light"] .msg-bubble-user .bg-black\/25 {
-  background-color: rgba(0, 0, 0, 0.22) !important;
-  color: rgba(255, 255, 255, 0.94) !important;
-  border-left-color: rgba(255, 255, 255, 0.72) !important;
-}
-
-html[data-color-mode="light"] .workspace-island {
-  background:
-    linear-gradient(180deg var(--in-oklab), var(--surface-workspace-top) 0%, var(--surface-workspace-bottom) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
-    0 20px 52px -14px var(--shadow-ambient);
-}
-
-html[data-color-mode="light"] .well-recessed {
-  background: var(--surface-nested);
-  border-color: var(--border-glass);
-  box-shadow:
-    inset 0 1px 2px rgba(15, 23, 42, 0.06),
-    0 1px 0 rgba(255, 255, 255, 0.85);
-}
-
-html[data-color-mode="light"] .composer-dock {
-  background:
-    linear-gradient(180deg var(--in-oklab), #ffffff 0%, var(--surface-card-bottom) 100%);
-  border-color: rgba(15, 23, 42, 0.15);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.98),
-    0 18px 40px -12px rgba(15, 23, 42, 0.16),
-    0 4px 12px rgba(15, 23, 42, 0.07);
-}
-
-html[data-theme="parchment"] .composer-dock {
-  background:
-    linear-gradient(180deg var(--in-oklab), #fffdf9 0%, #f6efe2 100%);
-  border-color: rgba(92, 64, 34, 0.18);
+html[data-color-mode="light"][data-accent="mono"] {
+  --accent: #111827;
+  --accent-hover: #1f2937;
+  --accent-fg: #111827;
+  --on-accent: #ffffff;
+  --accent-soft: rgba(17, 24, 39, 0.07);
+  --accent-border: rgba(17, 24, 39, 0.22);
+  --accent-rgb: 17, 24, 39;
 }

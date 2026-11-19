@@ -27,24 +27,24 @@ const store = useAppStore()
     <div
       v-if="steps.length > 0"
       :class="[
-        'origin-bottom w-full mx-auto mb-2 px-3 py-1.5 rounded-full border border-[#f2b880]/25 bg-[#080d1c]/90 backdrop-blur-md flex items-center gap-2 overflow-x-auto no-scrollbar text-[11px]',
+        'origin-bottom w-full mx-auto mb-2 px-3 py-1.5 rounded-full border border-accent-border bg-card flex items-center gap-2 overflow-x-auto no-scrollbar text-xs',
         store.state.chatWide ? 'max-w-[1120px]' : 'max-w-[840px]',
       ]"
     >
-      <span class="font-mono text-slate-400 shrink-0">协同接力:</span>
+      <span class="font-mono text-fg-muted shrink-0">协同接力:</span>
       <template v-for="(step, sidx) in steps" :key="step.id + sidx">
-        <span v-if="sidx > 0" class="text-slate-600 shrink-0">-&gt;</span>
+        <span v-if="sidx > 0" class="text-fg-muted shrink-0">-&gt;</span>
         <span
           :class="[
             'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full shrink-0 transition-colors duration-200',
             step.status === 'active'
-              ? 'bg-[#f2b880]/15 text-[#f2b880] font-medium'
-              : 'bg-emerald-400/10 text-emerald-300',
+              ? 'bg-accent-soft text-accent-fg font-medium'
+              : 'bg-ok-soft text-ok',
           ]"
         >
-          <span :class="['w-1.5 h-1.5 rounded-full', step.status === 'active' ? 'bg-[#f2b880] animate-pulse' : 'bg-emerald-400']" />
+          <span :class="['w-1.5 h-1.5 rounded-full', step.status === 'active' ? 'bg-accent animate-pulse' : 'bg-ok']" />
           <span>{{ step.name }}</span>
-          <span v-if="step.guest" class="text-[9.5px] opacity-80">(外援)</span>
+          <span v-if="step.guest" class="text-xs opacity-80">(外援)</span>
         </span>
       </template>
     </div>

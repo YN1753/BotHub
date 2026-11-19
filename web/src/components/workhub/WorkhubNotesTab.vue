@@ -183,7 +183,7 @@ async function refineNoteWithBot(n: WorkNote) {
 
 <template>
   <div class="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-12 gap-3">
-    <div class="md:col-span-4 min-h-0 flex flex-col gap-2 md:border-r md:border-[#fff8ee]/8 md:pr-2">
+    <div class="md:col-span-4 min-h-0 flex flex-col gap-2 md:border-r md:border-line md:pr-2">
       <div class="flex items-center gap-2 shrink-0">
         <input
           v-model="noteSearch"
@@ -191,19 +191,19 @@ async function refineNoteWithBot(n: WorkNote) {
           aria-label="搜索文档"
           placeholder="搜索文档..."
           @keydown.escape="clearSearchOnEscape($event, noteSearch, () => { noteSearch = '' })"
-          class="flex-1 min-w-0 min-h-[34px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white"
+          class="flex-1 min-w-0 min-h-[34px] rounded-xl border border-line bg-canvas px-2.5 text-xs text-fg"
         />
         <button
           type="button"
           @click="startNewNote"
-          class="min-h-[34px] px-3 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer shrink-0"
+          class="min-h-[34px] px-3 rounded-xl bg-accent hover:bg-accent-hover text-on-accent font-semibold text-xs cursor-pointer shrink-0"
         >
           + 新文档
         </button>
       </div>
 
       <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5">
-        <div v-if="filteredNotes.length === 0" class="py-8 text-center text-xs text-slate-500">
+        <div v-if="filteredNotes.length === 0" class="py-8 text-center text-xs text-fg-muted">
           暂无工作文档
         </div>
         <button
@@ -214,15 +214,15 @@ async function refineNoteWithBot(n: WorkNote) {
           :class="[
             'w-full text-left px-3 py-2 rounded-xl border transition-colors cursor-pointer',
             selectedNote?.id === n.id && !editingNote
-              ? 'border-[#f2b880]/50 bg-[#f2b880]/12'
-              : 'border-[#fff8ee]/8 bg-[#070b18]/60 hover:border-[#fff8ee]/20',
+              ? 'border-accent-border bg-accent-soft'
+              : 'border-line bg-canvas hover:border-line-strong',
           ]"
         >
           <div class="flex items-center justify-between gap-1.5">
-            <strong class="text-xs text-white truncate">{{ n.title }}</strong>
-            <span v-if="n.pinned" class="font-mono text-[9.5px] text-amber-300 shrink-0">置顶</span>
+            <strong class="text-xs text-fg truncate">{{ n.title }}</strong>
+            <span v-if="n.pinned" class="font-mono text-xs text-warn shrink-0">置顶</span>
           </div>
-          <div class="flex items-center justify-between gap-2 mt-0.5 text-[10.5px] font-mono text-slate-400">
+          <div class="flex items-center justify-between gap-2 mt-0.5 text-xs font-mono text-fg-muted">
             <span>{{ n.category }}</span>
             <span>{{ formatTime(n.updated_at) }}</span>
           </div>
@@ -239,35 +239,35 @@ async function refineNoteWithBot(n: WorkNote) {
             type="text"
             required
             placeholder="文档标题"
-            class="sm:col-span-7 min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 text-xs text-white"
+            class="sm:col-span-7 min-h-[36px] rounded-xl border border-line bg-canvas px-3 text-xs text-fg"
           />
           <input
             v-model="draftNoteCategory"
             type="text"
             list="workhub-note-categories"
             placeholder="输入或选择文档分类..."
-            class="sm:col-span-3 min-h-[36px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 font-mono text-xs text-white"
+            class="sm:col-span-3 min-h-[36px] rounded-xl border border-line bg-canvas px-2.5 font-mono text-xs text-fg"
           />
           <datalist id="workhub-note-categories">
             <option v-for="cat in noteCategoryChoices" :key="cat" :value="cat" />
           </datalist>
-          <label class="sm:col-span-2 inline-flex items-center justify-center gap-1.5 text-xs text-slate-300 cursor-pointer">
-            <input v-model="draftNotePinned" type="checkbox" class="accent-[#f2b880]" />
+          <label class="sm:col-span-2 inline-flex items-center justify-center gap-1.5 text-xs text-fg-sub cursor-pointer">
+            <input v-model="draftNotePinned" type="checkbox" class="accent-accent" />
             <span>置顶</span>
           </label>
         </div>
-        <div class="flex items-center gap-1.5 flex-wrap text-[11px] shrink-0">
-          <span class="text-slate-500">分类快选:</span>
+        <div class="flex items-center gap-1.5 flex-wrap text-xs shrink-0">
+          <span class="text-fg-muted">分类快选:</span>
           <button
             v-for="cat in noteCategoryChoices"
             :key="cat"
             type="button"
             @click="draftNoteCategory = cat"
             :class="[
-              'px-2 py-0.5 rounded-md border font-mono cursor-pointer transition-colors',
+              'px-2 py-0.5 rounded-lg border font-mono cursor-pointer transition-colors',
               draftNoteCategory === cat
-                ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
-                : 'border-[#fff8ee]/10 text-slate-400 hover:text-white'
+                ? 'border-accent-border bg-accent-soft text-accent-fg'
+                : 'border-line text-fg-muted hover:text-fg'
             ]"
           >
             {{ cat }}
@@ -278,24 +278,24 @@ async function refineNoteWithBot(n: WorkNote) {
           placeholder="编写或粘贴 Markdown 文档正文（Cmd/Ctrl + Enter 快速保存）..."
           @keydown.meta.enter.prevent="handleSaveNote"
           @keydown.ctrl.enter.prevent="handleSaveNote"
-          class="flex-1 min-h-[220px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] p-3 font-mono text-xs text-slate-100 resize-none"
+          class="flex-1 min-h-[220px] rounded-xl border border-line bg-canvas p-3 font-mono text-xs text-fg resize-none"
         />
         <div class="flex items-center justify-between gap-2 shrink-0">
-          <span class="font-mono text-[10.5px] text-slate-500">
+          <span class="font-mono text-xs text-fg-muted">
             {{ draftNoteContent.length }} 字符 · {{ draftNoteContent ? draftNoteContent.split('\n').length : 0 }} 行
           </span>
           <div class="flex items-center gap-2">
             <button
               type="button"
               @click="editingNote = false"
-              class="px-3.5 py-1.5 rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-white cursor-pointer"
+              class="px-3.5 py-1.5 rounded-xl border border-line text-xs text-fg-sub hover:text-fg cursor-pointer"
             >
               取消
             </button>
             <button
               type="submit"
               :disabled="savingNote"
-              class="px-4 py-1.5 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+              class="px-4 py-1.5 rounded-xl bg-accent hover:bg-accent-hover text-on-accent font-semibold text-xs cursor-pointer disabled:opacity-50"
             >
               {{ savingNote ? '保存中...' : '保存文档' }}
             </button>
@@ -304,10 +304,10 @@ async function refineNoteWithBot(n: WorkNote) {
       </form>
 
       <div v-else-if="selectedNote" class="flex-1 min-h-0 flex flex-col gap-2.5">
-        <div class="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-[#fff8ee]/8 shrink-0">
+        <div class="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-line shrink-0">
           <div class="min-w-0">
-            <h3 class="text-sm font-semibold text-white truncate">{{ selectedNote.title }}</h3>
-            <div class="text-[11px] font-mono text-slate-400 mt-0.5">
+            <h3 class="text-sm font-semibold text-fg truncate">{{ selectedNote.title }}</h3>
+            <div class="text-xs font-mono text-fg-muted mt-0.5">
               {{ selectedNote.category }}
               <template v-if="selectedNote.bot_id"> · 来自 {{ botNameById(selectedNote.bot_id) }}</template>
               · 更新于 {{ formatTime(selectedNote.updated_at) }}
@@ -317,42 +317,42 @@ async function refineNoteWithBot(n: WorkNote) {
             <button
               type="button"
               @click="quoteNoteToChat(selectedNote)"
-              class="px-2.5 py-1 rounded-lg border border-cyan-400/35 text-[11px] text-cyan-200 hover:bg-cyan-500/15 cursor-pointer"
+              class="px-2.5 py-1 rounded-lg border border-info-border text-xs text-info hover:bg-info-soft cursor-pointer"
             >
               引用进对话
             </button>
             <button
               type="button"
               @click="refineNoteWithBot(selectedNote)"
-              class="px-2.5 py-1 rounded-lg border border-[#f2b880]/40 bg-[#f2b880]/12 text-[11px] text-[#f7cba0] hover:bg-[#f2b880]/22 cursor-pointer"
+              class="px-2.5 py-1 rounded-lg border border-accent-border bg-accent-soft text-xs text-accent-fg hover:bg-accent-soft cursor-pointer"
             >
               派 Bot 润色
             </button>
             <button
               type="button"
               @click="startEditNote(selectedNote)"
-              class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-white cursor-pointer"
+              class="px-2.5 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-fg cursor-pointer"
             >
               编辑
             </button>
             <button
               type="button"
               @click="copyNoteMarkdown(selectedNote)"
-              class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+              class="px-2.5 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
             >
               复制
             </button>
             <button
               type="button"
               @click="downloadNoteMarkdown(selectedNote)"
-              class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+              class="px-2.5 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
             >
               下载 .md
             </button>
             <button
               type="button"
               @click="removeNote(selectedNote.id)"
-              class="px-2.5 py-1 rounded-lg border border-rose-400/35 text-[11px] text-rose-300 hover:bg-rose-500/15 cursor-pointer"
+              class="px-2.5 py-1 rounded-lg border border-danger-border text-xs text-danger hover:bg-danger-soft cursor-pointer"
             >
               删除
             </button>
@@ -360,16 +360,16 @@ async function refineNoteWithBot(n: WorkNote) {
         </div>
         <div @click="handleNoteMarkdownClick" class="flex-1 min-h-0 overflow-y-auto pr-1 text-xs leading-relaxed">
           <div v-if="selectedNote.content" v-html="renderSafeMarkdown(selectedNote.content)" />
-          <div v-else class="text-slate-500 py-8 text-center">文档正文为空，可点击「编辑」写入内容</div>
+          <div v-else class="text-fg-muted py-8 text-center">文档正文为空，可点击「编辑」写入内容</div>
         </div>
       </div>
 
-      <div v-else class="flex-1 flex flex-col items-center justify-center text-center px-6 text-xs text-slate-500 gap-2">
+      <div v-else class="flex-1 flex flex-col items-center justify-center text-center px-6 text-xs text-fg-muted gap-2">
         <span>这里统一汇总你与各专属助手产出的报告、计划、邮件草稿与 Markdown 文档。</span>
         <button
           type="button"
           @click="startNewNote"
-          class="px-3.5 py-1.5 rounded-xl border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/12 cursor-pointer"
+          class="px-3.5 py-1.5 rounded-xl border border-accent-border text-accent-fg hover:bg-accent-soft cursor-pointer"
         >
           + 创建第一份工作文档
         </button>

@@ -81,11 +81,11 @@ const greetingLine = computed(() => {
     </div>
 
     <div class="flex flex-col items-center gap-1">
-      <h2 class="text-xl sm:text-[26px] font-semibold text-white tracking-tight leading-snug">
+      <h2 class="text-xl sm:text-[26px] font-semibold text-fg tracking-tight leading-snug">
         {{ greetingLine }}
       </h2>
-      <p class="text-xs sm:text-[13px] text-slate-400 max-w-md">
-        <span class="text-[#ffe2be] font-medium">{{ bot?.name }}</span>
+      <p class="text-xs sm:text-sm text-fg-muted max-w-md">
+        <span class="text-accent-fg font-medium">{{ bot?.name }}</span>
         <template v-if="bot?.role_title"> · {{ bot.role_title }}</template>
         <template v-if="isGroupBot && groupMembers.length > 1"> · 点击任意糯团切至 C 位</template>
       </p>
@@ -101,17 +101,17 @@ const greetingLine = computed(() => {
         :key="card.title"
         type="button"
         @click="emit('pickPrompt', card.prompt, card.prefill)"
-        class="group rounded-2xl border border-[#fff8ee]/12 bg-[#070b16]/75 hover:border-[#f2b880]/50 hover:bg-[#f2b880]/[0.07] px-3.5 py-2.5 flex flex-col gap-1 transition cursor-pointer text-left"
+        class="group rounded-xl border border-line bg-canvas hover:border-accent-border hover:bg-accent-soft px-3.5 py-2.5 flex flex-col gap-1 transition cursor-pointer text-left"
       >
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs font-semibold text-white group-hover:text-[#ffe2be] transition-colors">
+          <span class="text-xs font-semibold text-fg group-hover:text-accent-fg transition-colors">
             {{ card.title }}
           </span>
-          <span class="font-mono text-[10px] text-[#f2b880] opacity-75 group-hover:opacity-100">
+          <span class="font-mono text-xs text-accent-fg opacity-75 group-hover:opacity-100">
             {{ card.prefill ? '填入指令 ->' : '一键执行 ->' }}
           </span>
         </div>
-        <span class="text-[11px] text-slate-400 leading-snug">{{ card.desc }}</span>
+        <span class="text-xs text-fg-muted leading-snug">{{ card.desc }}</span>
       </button>
     </div>
   </div>

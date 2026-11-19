@@ -308,7 +308,7 @@ async function handleDisbandGroup() {
   >
     <div
       v-if="store.state.showGroupDrawer"
-      class="fixed inset-0 z-40 bg-black/55 backdrop-blur-xs"
+      class="fixed inset-0 z-40 bg-black/50"
       aria-hidden="true"
       @click="closeDrawer"
     />
@@ -327,12 +327,10 @@ async function handleDisbandGroup() {
       role="dialog"
       aria-modal="true"
       aria-label="群聊与会话详情"
-      class="fixed inset-y-0 right-0 z-50 w-[min(24rem,94vw)] bg-[#080c18]/96 backdrop-blur-2xl border-l border-[#fff8ee]/12 shadow-[-20px_0_60px_rgba(0,0,0,0.65)] flex flex-col overflow-hidden"
+      class="fixed inset-y-0 right-0 z-50 w-[min(24rem,94vw)] bg-card border-l border-line-strong shadow-xl flex flex-col overflow-hidden"
     >
-      <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#f2b880]/45 to-transparent" aria-hidden="true" />
-
       <!-- Drawer Header -->
-      <div class="px-4 py-3.5 pt-[max(0.875rem,env(safe-area-inset-top,0.875rem))] border-b border-[#fff8ee]/10 flex items-center justify-between gap-2 shrink-0">
+      <div class="px-4 py-3.5 pt-[max(0.875rem,env(safe-area-inset-top,0.875rem))] border-b border-line flex items-center justify-between gap-2 shrink-0">
         <div class="flex items-center gap-2.5 min-w-0">
           <BotGroupAvatar
             v-if="isGroup"
@@ -343,17 +341,17 @@ async function handleDisbandGroup() {
           />
           <BotAvatar v-else :avatar-style="bot.avatar_style" :state="bot.state" size="sm" />
           <div class="min-w-0">
-            <h2 class="text-sm font-semibold text-white truncate">
+            <h2 class="text-sm font-semibold text-fg truncate">
               {{ isGroup ? `群聊详情 (${currentMembers.length})` : '会话与拉群管理' }}
             </h2>
-            <p class="text-[11px] text-slate-400 truncate">{{ bot.name }}</p>
+            <p class="text-xs text-fg-muted truncate">{{ bot.name }}</p>
           </div>
         </div>
         <button
           type="button"
           aria-label="关闭抽屉"
           @click="closeDrawer"
-          class="min-h-[40px] min-w-[40px] sm:min-h-[32px] sm:min-w-[32px] inline-flex items-center justify-center rounded-full border border-[#fff8ee]/12 text-slate-400 hover:text-white hover:border-[#f2b880]/40 cursor-pointer"
+          class="min-h-[40px] min-w-[40px] sm:min-h-[32px] sm:min-w-[32px] inline-flex items-center justify-center rounded-full border border-line text-fg-muted hover:text-fg hover:border-accent-border cursor-pointer"
         >
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -369,12 +367,12 @@ async function handleDisbandGroup() {
           <!-- QQ/WeChat Member Mosaic Grid + Live Invite/Remove -->
           <div class="modal-section flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2">
-              <span class="text-xs font-medium text-slate-200">群聊成员 ({{ currentMembers.length }})</span>
+              <span class="text-xs font-medium text-fg">群聊成员 ({{ currentMembers.length }})</span>
               <button
                 v-if="inviteCandidates.length > 0"
                 type="button"
                 @click="showInviteList = !showInviteList"
-                class="text-[11px] font-medium text-[#f2b880] hover:text-[#f7cba0] cursor-pointer"
+                class="text-xs font-medium text-accent-fg hover:text-accent-fg cursor-pointer"
               >
                 {{ showInviteList ? '收起候选' : `+ 临时拉人 (${inviteCandidates.length})` }}
               </button>
@@ -384,7 +382,7 @@ async function handleDisbandGroup() {
               <div
                 v-for="m in currentMembers"
                 :key="m.id"
-                class="group relative flex flex-col items-center gap-1 p-1.5 rounded-xl hover:bg-white/[0.04] transition-colors"
+                class="group relative flex flex-col items-center gap-1 p-1.5 rounded-xl hover:bg-hover transition-colors"
               >
                 <button
                   v-if="currentMembers.length > 1"
@@ -392,7 +390,7 @@ async function handleDisbandGroup() {
                   :disabled="busyMemberId === m.id"
                   title="移出群聊"
                   @click="removeMember(m)"
-                  class="opacity-0 group-hover:opacity-100 focus:opacity-100 absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#090d1a] border border-rose-400/50 text-rose-300 flex items-center justify-center hover:bg-rose-500/25 cursor-pointer z-10 transition-opacity"
+                  class="opacity-0 group-hover:opacity-100 focus:opacity-100 absolute -top-1 -right-1 w-5 h-5 rounded-full bg-canvas border border-danger-border text-danger flex items-center justify-center hover:bg-danger-soft cursor-pointer z-10 transition-opacity"
                 >
                   <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true">
                     <line x1="18" y1="6" x2="6" y2="18" />
@@ -406,7 +404,7 @@ async function handleDisbandGroup() {
                   class="flex flex-col items-center gap-1 cursor-pointer w-full"
                 >
                   <BotAvatar :avatar-style="m.avatar_style" :state="m.state" size="md" :interactive="false" />
-                  <span class="text-[11px] text-slate-200 truncate w-full text-center">{{ m.name }}</span>
+                  <span class="text-xs text-fg truncate w-full text-center">{{ m.name }}</span>
                 </button>
               </div>
 
@@ -415,29 +413,29 @@ async function handleDisbandGroup() {
                 v-if="inviteCandidates.length > 0"
                 type="button"
                 @click="showInviteList = !showInviteList"
-                class="flex flex-col items-center justify-center gap-1 p-1.5 rounded-xl border border-dashed border-[#fff8ee]/18 hover:border-[#f2b880]/55 text-slate-400 hover:text-[#f2b880] cursor-pointer"
+                class="flex flex-col items-center justify-center gap-1 p-1.5 rounded-xl border border-dashed border-line hover:border-accent-border text-fg-muted hover:text-accent-fg cursor-pointer"
               >
-                <span class="w-9 h-9 rounded-full border border-[#fff8ee]/14 bg-[#fff8ee]/[0.03] flex items-center justify-center">
+                <span class="w-9 h-9 rounded-full border border-line bg-subtle flex items-center justify-center">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
                 </span>
-                <span class="text-[11px]">拉人</span>
+                <span class="text-xs">拉人</span>
               </button>
             </div>
 
             <!-- Expandable Invite Candidate List -->
-            <div v-if="showInviteList && inviteCandidates.length > 0" class="pt-2.5 border-t border-[#fff8ee]/10 flex flex-col gap-1.5">
+            <div v-if="showInviteList && inviteCandidates.length > 0" class="pt-2.5 border-t border-line flex flex-col gap-1.5">
               <div class="flex items-center justify-between gap-2">
-                <span class="font-mono text-[10.5px] text-slate-400">选择要临时拉入本群的 Bot：</span>
+                <span class="font-mono text-xs text-fg-muted">选择要临时拉入本群的 Bot：</span>
                 <input
                   v-if="inviteCandidates.length > 4"
                   v-model="inviteQuery"
                   type="search"
                   placeholder="搜索..."
                   @keydown.escape="clearSearchOnEscape($event, inviteQuery, () => { inviteQuery = '' })"
-                  class="w-28 min-h-[26px] rounded-md border border-[#fff8ee]/12 bg-[#050811] px-2 text-[11px] text-white"
+                  class="w-28 min-h-[26px] rounded-lg border border-line bg-canvas px-2 text-xs text-fg"
                 />
               </div>
               <button
@@ -447,14 +445,14 @@ async function handleDisbandGroup() {
                 @pointermove="trackSpotlight"
                 :disabled="busyMemberId === cand.id"
                 @click="inviteMember(cand)"
-                class="luxury-card rounded-xl px-2.5 py-2 flex items-center gap-2.5 text-left cursor-pointer"
+                class="vesper-card rounded-xl px-2.5 py-2 flex items-center gap-2.5 text-left cursor-pointer"
               >
                 <BotAvatar :avatar-style="cand.avatar_style" :state="cand.state" size="sm" :interactive="false" />
                 <div class="flex-1 min-w-0">
-                  <div class="text-xs font-medium text-white truncate">{{ cand.name }}</div>
-                  <div class="text-[10.5px] text-slate-400 truncate">{{ cand.role_title }}</div>
+                  <div class="text-xs font-medium text-fg truncate">{{ cand.name }}</div>
+                  <div class="text-xs text-fg-muted truncate">{{ cand.role_title }}</div>
                 </div>
-                <span class="px-2 py-0.5 rounded-md border border-[#f2b880]/40 bg-[#f2b880]/12 text-[11px] font-medium text-[#f2b880] shrink-0">
+                <span class="px-2 py-0.5 rounded-lg border border-accent-border bg-accent-soft text-xs font-medium text-accent-fg shrink-0">
                   {{ busyMemberId === cand.id ? '拉入中' : '+ 拉入' }}
                 </span>
               </button>
@@ -463,39 +461,39 @@ async function handleDisbandGroup() {
 
           <!-- Group Name, Mode & Announcement -->
           <form @submit.prevent="saveGroupMeta" class="modal-section flex flex-col gap-3">
-            <label class="flex flex-col gap-1.5 text-xs text-slate-300">
+            <label class="flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>群聊名称</span>
               <input
                 v-model="editName"
                 type="text"
-                class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 text-xs text-white focus:border-[#f2b880]/60"
+                class="min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs text-fg focus:border-accent"
               />
             </label>
 
-            <div class="flex flex-col gap-1.5 text-xs text-slate-300">
+            <div class="flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>群协同策略</span>
               <SegmentedTabs v-model="editMode" :items="MODE_TABS" variant="subtle" aria-label="群协同策略" />
-              <p class="text-[11px] text-slate-400 leading-relaxed">{{ modeHint }}</p>
+              <p class="text-xs text-fg-muted leading-relaxed">{{ modeHint }}</p>
             </div>
 
-            <label class="flex flex-col gap-1.5 text-xs text-slate-300">
+            <label class="flex flex-col gap-1.5 text-xs text-fg-sub">
               <div class="flex items-center justify-between">
                 <span>群公告（将置顶提示在聊天气泡上方）</span>
-                <span class="font-mono text-[10px] text-slate-500">{{ editAnnouncement.length }} / 240</span>
+                <span class="font-mono text-xs text-fg-muted">{{ editAnnouncement.length }} / 240</span>
               </div>
               <textarea
                 v-model="editAnnouncement"
                 rows="2"
                 maxlength="240"
                 placeholder="填写群内协作规范、值守说明或本群聚焦目标..."
-                class="auto-size-textarea rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-xs text-white focus:border-[#f2b880]/60 resize-y"
+                class="auto-size-textarea rounded-xl border border-line bg-canvas px-3 py-2 text-xs text-fg focus:border-accent resize-y"
               />
             </label>
 
             <button
               type="submit"
               :disabled="savingGroup"
-              class="min-h-[38px] rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+              class="min-h-[38px] rounded-xl bg-accent hover:bg-accent-hover text-on-accent font-semibold text-xs cursor-pointer disabled:opacity-50"
             >
               {{ savingGroup ? '保存中...' : '保存群设置' }}
             </button>
@@ -513,35 +511,35 @@ async function handleDisbandGroup() {
               <button
                 type="button"
                 @click="handleCreateFreshThread"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                class="min-h-[38px] rounded-xl border border-line text-xs text-fg-sub hover:text-accent-fg hover:border-accent-border cursor-pointer"
               >
                 开启新话题
               </button>
               <button
                 type="button"
                 @click="openScopedMemory"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                class="min-h-[38px] rounded-xl border border-line text-xs text-fg-sub hover:text-accent-fg hover:border-accent-border cursor-pointer"
               >
                 本群专属记忆
               </button>
               <button
                 type="button"
                 @click="handleClearTimeline"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+                class="min-h-[38px] rounded-xl border border-line text-xs text-fg-sub hover:bg-hover cursor-pointer"
               >
                 清空聊天记录
               </button>
               <button
                 type="button"
                 @click="copyGroupRosterSummary"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                class="min-h-[38px] rounded-xl border border-line text-xs text-fg-sub hover:text-accent-fg hover:border-accent-border cursor-pointer"
               >
                 复制群名录
               </button>
               <button
                 type="button"
                 @click="handleDisbandGroup"
-                class="min-h-[38px] rounded-xl border border-rose-400/35 bg-rose-500/12 text-xs text-rose-300 hover:bg-rose-500/22 cursor-pointer"
+                class="min-h-[38px] rounded-xl border border-danger-border bg-danger-soft text-xs text-danger hover:bg-danger-soft cursor-pointer"
               >
                 解散群聊
               </button>
@@ -554,27 +552,27 @@ async function handleDisbandGroup() {
           <div class="modal-section flex items-center gap-3">
             <BotAvatar :avatar-style="bot.avatar_style" :state="bot.state" size="lg" />
             <div class="min-w-0 flex-1">
-              <div class="text-sm font-semibold text-white truncate">{{ bot.name }}</div>
-              <div class="text-xs text-slate-400 truncate">{{ bot.role_title }}</div>
+              <div class="text-sm font-semibold text-fg truncate">{{ bot.name }}</div>
+              <div class="text-xs text-fg-muted truncate">{{ bot.role_title }}</div>
             </div>
           </div>
 
           <div class="modal-section flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2">
-              <span class="text-xs font-semibold text-[#f7cba0]">临时拉人发起协同群聊</span>
-              <div class="flex items-center gap-2 text-[10.5px]">
+              <span class="text-xs font-semibold text-accent-fg">临时拉人发起协同群聊</span>
+              <div class="flex items-center gap-2 text-xs">
                 <button
                   v-if="adhocCandidates.length > 0"
                   type="button"
                   @click="adhocSelectedIds = adhocSelectedIds.length === adhocCandidates.length ? [] : adhocCandidates.map((c) => c.id)"
-                  class="text-[#f2b880] hover:underline cursor-pointer"
+                  class="text-accent-fg hover:underline cursor-pointer"
                 >
                   {{ adhocSelectedIds.length === adhocCandidates.length ? '清空选择' : '全选候选' }}
                 </button>
-                <span class="font-mono text-slate-400">已拉 {{ adhocSelectedIds.length }} 位外援</span>
+                <span class="font-mono text-fg-muted">已拉 {{ adhocSelectedIds.length }} 位外援</span>
               </div>
             </div>
-            <p class="text-[11.5px] text-slate-400 leading-relaxed">
+            <p class="text-xs text-fg-muted leading-relaxed">
               无需中断思路：保留「{{ bot.name }}」，勾选其他专家即刻组建多人协同群。
             </p>
 
@@ -584,7 +582,7 @@ async function handleDisbandGroup() {
               type="search"
               placeholder="搜索成员名字或职责..."
               @keydown.escape="clearSearchOnEscape($event, inviteQuery, () => { inviteQuery = '' })"
-              class="min-h-[34px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white focus:border-[#f2b880]/60"
+              class="min-h-[34px] rounded-lg border border-line bg-canvas px-2.5 text-xs text-fg focus:border-accent"
             />
             <div class="flex flex-col gap-1.5">
               <button
@@ -594,23 +592,23 @@ async function handleDisbandGroup() {
                 @pointermove="trackSpotlight"
                 @click="toggleAdhocBot(cand.id)"
                 :class="[
-                  'luxury-card rounded-xl px-2.5 py-2 flex items-center gap-2.5 text-left cursor-pointer',
+                  'vesper-card rounded-xl px-2.5 py-2 flex items-center gap-2.5 text-left cursor-pointer',
                   adhocSelectedIds.includes(cand.id)
-                    ? 'border-[#f2b880]/60 bg-[#f2b880]/10'
-                    : 'border-[#fff8ee]/10 opacity-85 hover:opacity-100'
+                    ? 'border-accent-border bg-accent-soft'
+                    : 'border-line opacity-85 hover:opacity-100'
                 ]"
               >
                 <BotAvatar :avatar-style="cand.avatar_style" :state="cand.state" size="sm" :interactive="false" />
                 <div class="flex-1 min-w-0">
-                  <div class="text-xs font-medium text-white truncate">{{ cand.name }}</div>
-                  <div class="text-[10.5px] text-slate-400 truncate">{{ cand.role_title }}</div>
+                  <div class="text-xs font-medium text-fg truncate">{{ cand.name }}</div>
+                  <div class="text-xs text-fg-muted truncate">{{ cand.role_title }}</div>
                 </div>
                 <span
                   :class="[
                     'w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors',
                     adhocSelectedIds.includes(cand.id)
-                      ? 'bg-[#f2b880] border-[#f2b880] text-[#070a13]'
-                      : 'border-[#fff8ee]/20 text-transparent'
+                      ? 'bg-accent border-accent-border text-on-accent'
+                      : 'border-line text-transparent'
                   ]"
                 >
                   <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true">
@@ -624,7 +622,7 @@ async function handleDisbandGroup() {
               v-model="adhocGroupName"
               type="text"
               placeholder="群名称（留空自动生成，如 XX × XX 协同群）"
-              class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 text-xs text-white focus:border-[#f2b880]/60"
+              class="min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs text-fg focus:border-accent"
             />
 
             <ToggleSwitch
@@ -637,7 +635,7 @@ async function handleDisbandGroup() {
               type="button"
               :disabled="adhocSelectedIds.length === 0 || creatingAdhoc"
               @click="launchAdhocGroup"
-              class="min-h-[40px] rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-40"
+              class="min-h-[40px] rounded-xl bg-accent hover:bg-accent-hover text-on-accent font-semibold text-xs cursor-pointer disabled:opacity-40"
             >
               {{ creatingAdhoc ? '建群中...' : `立即拉起 ${adhocSelectedIds.length + 1} 人协同群` }}
             </button>
@@ -653,28 +651,28 @@ async function handleDisbandGroup() {
               <button
                 type="button"
                 @click="store.state.botView = 'config'; closeDrawer()"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                class="min-h-[38px] rounded-xl border border-line text-xs text-fg-sub hover:text-accent-fg hover:border-accent-border cursor-pointer"
               >
                 形象与人设配置
               </button>
               <button
                 type="button"
                 @click="openScopedMemory"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                class="min-h-[38px] rounded-xl border border-line text-xs text-fg-sub hover:text-accent-fg hover:border-accent-border cursor-pointer"
               >
                 专属记忆域
               </button>
               <button
                 type="button"
                 @click="handleCreateFreshThread"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 cursor-pointer"
+                class="min-h-[38px] rounded-xl border border-line text-xs text-fg-sub hover:text-accent-fg hover:border-accent-border cursor-pointer"
               >
                 开启新话题
               </button>
               <button
                 type="button"
                 @click="handleClearTimeline"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+                class="min-h-[38px] rounded-xl border border-line text-xs text-fg-sub hover:bg-hover cursor-pointer"
               >
                 清空聊天记录
               </button>

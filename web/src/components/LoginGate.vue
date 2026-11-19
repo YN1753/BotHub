@@ -143,14 +143,14 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <main class="relative z-10 min-h-dvh flex items-center justify-center p-4">
+  <main class="relative z-10 min-h-dvh flex items-center justify-center p-4 bg-canvas">
     <section
       @pointermove="trackSpotlight"
-      :class="['luxury-card w-full max-w-md rounded-2xl p-7 shadow-2xl', errorMsg ? 'vesper-shake border-rose-400/35' : '']"
+      :class="['vesper-card w-full max-w-md rounded-xl p-7 shadow-lg', errorMsg ? 'vesper-shake border-danger-border' : '']"
     >
       <div class="flex items-center justify-between gap-3 mb-4">
-        <div class="btn-tactile-gold inline-flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full font-mono text-[11px] tracking-wider">
-          <VesperBrandIcon class="w-4 h-4 rounded-[4px]" />
+        <div class="btn-tactile-gold inline-flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full font-mono text-xs tracking-wider">
+          <VesperBrandIcon class="w-4 h-4 rounded-lg" />
           <span>BOTHUB</span>
         </div>
         <BotAvatar
@@ -160,8 +160,8 @@ async function handleSubmit() {
           focusable
         />
       </div>
-      <h1 :id="headingId" class="text-2xl font-semibold text-white mb-1 tracking-tight">BotHub 智能中枢</h1>
-      <p class="font-mono text-xs text-slate-300 mb-6">
+      <h1 :id="headingId" class="text-2xl font-semibold text-fg mb-1 tracking-tight">BotHub 智能中枢</h1>
+      <p class="font-mono text-xs text-fg-muted mb-6">
         {{ hostLabel }} ·
         {{
           oidcEnabled
@@ -178,7 +178,7 @@ async function handleSubmit() {
           type="button"
           :disabled="oidcRedirecting || passkeyLoading || loading"
           @click="handleOIDCLogin"
-          class="btn-jewel w-full min-h-[48px] rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          class="btn-jewel w-full min-h-[48px] rounded-lg text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
         >
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -195,9 +195,9 @@ async function handleSubmit() {
           :disabled="passkeyLoading || loading || oidcRedirecting"
           @click="handlePasskeyUnlock"
           :class="[
-            'w-full min-h-[46px] rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50',
+            'w-full min-h-[46px] rounded-lg text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50',
             oidcEnabled
-              ? 'border border-[#f2b880]/40 bg-[#f2b880]/10 hover:bg-[#f2b880]/20 text-[#ffe2be]'
+              ? 'btn-tactile-gold'
               : 'btn-jewel'
           ]"
         >
@@ -248,32 +248,32 @@ async function handleSubmit() {
             required
             @keydown="checkCapsLock"
             @keyup="checkCapsLock"
-            class="w-full min-h-[44px] rounded-xl border border-[#fff8ee]/12 bg-[#070a14]/85 pl-3.5 pr-12 py-2.5 font-mono text-sm text-white placeholder-slate-500 focus:border-[#f2b880]/60"
+            class="w-full min-h-[44px] rounded-lg border border-line bg-canvas pl-3.5 pr-12 py-2.5 font-mono text-sm text-fg placeholder:text-fg-muted focus:border-accent"
           />
           <button
             type="button"
             @click="showPassword = !showPassword"
             :aria-pressed="showPassword"
             :aria-label="showPassword ? '隐藏密钥' : '显示密钥'"
-            class="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-lg text-[11px] font-mono text-slate-400 hover:text-[#f2b880] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer"
+            class="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-lg text-xs font-mono text-fg-muted hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent cursor-pointer"
           >
             {{ showPassword ? '隐藏' : '显示' }}
           </button>
         </div>
-        <p v-if="capsLockOn" class="text-[11px] font-mono text-amber-300/90">
+        <p v-if="capsLockOn" class="text-xs font-mono text-warn">
           大写锁定 (Caps Lock) 已开启
         </p>
-        <label class="inline-flex items-start gap-2 text-xs text-slate-300 cursor-pointer select-none">
-          <input v-model="rememberDevice" type="checkbox" class="accent-[#f2b880] rounded mt-0.5 shrink-0" />
+        <label class="inline-flex items-start gap-2 text-xs text-fg-sub cursor-pointer select-none">
+          <input v-model="rememberDevice" type="checkbox" class="accent-accent rounded-lg mt-0.5 shrink-0" />
           <span>记住此设备（30 天免重输；公共设备请勿勾选）</span>
         </label>
         <button
           type="submit"
           :disabled="loading"
           :class="[
-            'w-full min-h-[44px] rounded-xl text-sm cursor-pointer disabled:opacity-50',
+            'w-full min-h-[44px] rounded-lg text-sm cursor-pointer disabled:opacity-50',
             hasPasswordlessPrimary
-              ? 'border border-[#fff8ee]/18 bg-white/[0.06] hover:bg-white/[0.12] text-white font-medium'
+              ? 'btn-tactile font-medium text-fg'
               : 'btn-jewel'
           ]"
         >
@@ -287,13 +287,13 @@ async function handleSubmit() {
           :aria-expanded="showPasswordFallback"
           :aria-controls="fallbackFormId"
           @click="revealPasswordFallback"
-          class="text-xs text-slate-400 hover:text-[#f2b880] py-1.5 px-2 cursor-pointer"
+          class="text-xs text-fg-muted hover:text-fg py-1.5 px-2 cursor-pointer"
         >
           {{ showPasswordFallback ? '收起访问密钥表单' : '改用访问密钥解锁' }}
         </button>
       </div>
 
-      <p v-if="errorMsg" role="alert" class="text-xs text-rose-400 mt-2">{{ errorMsg }}</p>
+      <p v-if="errorMsg" role="alert" class="text-xs text-danger mt-2">{{ errorMsg }}</p>
     </section>
   </main>
 </template>

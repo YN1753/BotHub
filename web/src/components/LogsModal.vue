@@ -64,39 +64,39 @@ watch(
       <button
         type="button"
         @click="exportLogsJson"
-        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/40 hover:bg-white/5 cursor-pointer"
+        class="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl border border-line text-xs text-fg-sub hover:text-accent-fg hover:border-accent-border hover:bg-hover cursor-pointer"
       >
         导出 JSON
       </button>
     </template>
     <!-- Interactive Audit Strip -->
-    <div class="modal-section grid grid-cols-3 divide-x divide-[#fff8ee]/10 p-0 overflow-hidden shrink-0">
+    <div class="modal-section grid grid-cols-3 divide-x divide-line p-0 overflow-hidden shrink-0">
       <button
         type="button"
         :aria-pressed="filterStatus === 'all'"
         @click="filterStatus = 'all'"
-        :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-white/[0.03]', filterStatus === 'all' ? 'bg-[#f2b880]/8' : '']"
+        :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-hover', filterStatus === 'all' ? 'bg-accent-soft' : '']"
       >
-        <span class="text-xs text-slate-400">总记录</span>
-        <span class="font-mono tabular-nums text-sm font-semibold text-white">{{ store.state.pushLogs.length }}</span>
+        <span class="text-xs text-fg-muted">总记录</span>
+        <span class="font-mono tabular-nums text-sm font-semibold text-fg">{{ store.state.pushLogs.length }}</span>
       </button>
       <button
         type="button"
         :aria-pressed="filterStatus === 'sent'"
         @click="filterStatus = 'sent'"
-        :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-white/[0.03]', filterStatus === 'sent' ? 'bg-emerald-400/8' : '']"
+        :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-hover', filterStatus === 'sent' ? 'bg-ok-soft' : '']"
       >
-        <span class="text-xs text-slate-400">已投递</span>
-        <span class="font-mono tabular-nums text-sm font-semibold text-emerald-300">{{ sentCount }}</span>
+        <span class="text-xs text-fg-muted">已投递</span>
+        <span class="font-mono tabular-nums text-sm font-semibold text-ok">{{ sentCount }}</span>
       </button>
       <button
         type="button"
         :aria-pressed="filterStatus === 'failed'"
         @click="filterStatus = 'failed'"
-        :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-white/[0.03]', filterStatus === 'failed' ? 'bg-rose-400/10' : '']"
+        :class="['px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-hover', filterStatus === 'failed' ? 'bg-danger-soft' : '']"
       >
-        <span class="text-xs text-slate-400">异常</span>
-        <span :class="['font-mono tabular-nums text-sm font-semibold', failedCount > 0 ? 'text-rose-400' : 'text-slate-500']">
+        <span class="text-xs text-fg-muted">异常</span>
+        <span :class="['font-mono tabular-nums text-sm font-semibold', failedCount > 0 ? 'text-danger' : 'text-fg-muted']">
           {{ failedCount }}
         </span>
       </button>
@@ -111,18 +111,18 @@ watch(
         aria-label="筛选推送流水"
         placeholder="搜索标题、模块或报文..."
         @keydown.escape="clearSearchOnEscape($event, logQuery, () => { logQuery = '' })"
-        class="w-full sm:w-52 min-h-[34px] rounded-xl border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
+        class="w-full sm:w-52 min-h-[34px] rounded-xl border border-line bg-canvas px-2.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
       />
     </div>
 
     <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
-      <div v-if="filteredLogs.length === 0" class="py-12 text-center text-sm text-slate-500 flex flex-col items-center gap-2">
+      <div v-if="filteredLogs.length === 0" class="py-12 text-center text-sm text-fg-muted flex flex-col items-center gap-2">
         <span>暂无匹配推送流水记录</span>
         <button
           v-if="filterStatus !== 'all' || logQuery.trim()"
           type="button"
           @click="filterStatus = 'all'; logQuery = ''"
-          class="px-3 py-1 rounded-lg border border-[#fff8ee]/12 text-xs text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          class="px-3 py-1 rounded-lg border border-line text-xs text-fg-sub hover:border-accent-border hover:text-accent-fg cursor-pointer"
         >
           重置筛选条件
         </button>
@@ -131,28 +131,28 @@ watch(
         v-for="log in filteredLogs"
         :key="log.id"
         @pointermove="trackSpotlight"
-        class="stagger-item luxury-card rounded-xl p-3.5"
+        class="stagger-item vesper-card rounded-xl p-3.5"
       >
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-2 min-w-0">
             <span
               :class="[
-                'inline-flex items-center gap-1.5 font-mono text-[10.5px] px-2 py-0.5 rounded-full border shrink-0',
+                'inline-flex items-center gap-1.5 font-mono text-xs px-2 py-0.5 rounded-full border shrink-0',
                 log.status === 'sent'
-                  ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
-                  : 'border-rose-400/40 bg-rose-400/10 text-rose-300'
+                  ? 'border-ok-border bg-ok-soft text-ok'
+                  : 'border-danger-border bg-danger-soft text-danger'
               ]"
             >
-              <span :class="['w-1.5 h-1.5 rounded-full', log.status === 'sent' ? 'bg-emerald-400' : 'bg-rose-400']" aria-hidden="true" />
+              <span :class="['w-1.5 h-1.5 rounded-full', log.status === 'sent' ? 'bg-ok' : 'bg-danger']" aria-hidden="true" />
               {{ log.status === 'sent' ? '已投递' : '失败' }}
             </span>
-            <strong class="text-sm text-white truncate">{{ log.title }}</strong>
+            <strong class="text-sm text-fg truncate">{{ log.title }}</strong>
           </div>
-          <span :title="formatTime(log.created_at)" class="font-mono tabular-nums text-[11px] text-slate-400 shrink-0">{{ formatRelativeTime(log.created_at) }}</span>
+          <span :title="formatTime(log.created_at)" class="font-mono tabular-nums text-xs text-fg-muted shrink-0">{{ formatRelativeTime(log.created_at) }}</span>
         </div>
-        <div class="font-mono text-[11px] text-slate-400 mt-1.5 truncate">模块: {{ log.module_id }} · {{ log.response_msg }}</div>
+        <div class="font-mono text-xs text-fg-muted mt-1.5 truncate">模块: {{ log.module_id }} · {{ log.response_msg }}</div>
         <details v-if="log.content" class="vesper-details mt-2">
-          <summary class="cursor-pointer inline-flex items-center gap-1 font-mono text-[10.5px] text-[#f2b880] select-none">
+          <summary class="cursor-pointer inline-flex items-center gap-1 font-mono text-xs text-accent-fg select-none">
             <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="details-chevron shrink-0">
               <polyline points="9 18 15 12 9 6" />
             </svg>
@@ -162,11 +162,11 @@ watch(
             <button
               type="button"
               @click="copyPayload(log.content)"
-              class="absolute top-2 right-2 px-2 py-0.5 rounded border border-[#fff8ee]/15 bg-[#0d1222]/90 text-[10.5px] text-slate-300 hover:text-[#f2b880] hover:border-[#f2b880]/45 cursor-pointer"
+              class="absolute top-2 right-2 px-2 py-0.5 rounded border border-line bg-canvas text-xs text-fg-sub hover:text-accent-fg hover:border-accent-border cursor-pointer"
             >
               复制报文
             </button>
-            <pre class="p-2.5 pr-16 rounded-lg bg-[#050811]/85 border border-[#fff8ee]/8 text-[11px] font-mono text-slate-300 whitespace-pre-wrap break-all">{{ log.content }}</pre>
+            <pre class="p-2.5 pr-16 rounded-lg bg-canvas border border-line text-xs font-mono text-fg-sub whitespace-pre-wrap break-all">{{ log.content }}</pre>
           </div>
         </details>
       </article>

@@ -66,10 +66,10 @@ function triggerPreviewStunt(kind: BotStuntKind) {
           <BotAvatar ref="previewAvatarRef" :avatar-style="modelValue" :state="previewState" size="xl" class="!w-16 !h-16" focusable />
         </div>
         <div class="min-w-0">
-          <div class="text-xs font-semibold text-white truncate">
+          <div class="text-xs font-semibold text-fg truncate">
             {{ previewName || '自定义灵动伙伴预览' }}
           </div>
-          <div class="text-[11px] text-slate-400 mt-0.5">
+          <div class="text-xs text-fg-muted mt-0.5">
             6 种性格待机律动 + 4 套互动动作特技 · 点击 Bot 循环触发果冻跳 / 空翻 / 摇摆 / 害羞趴
           </div>
           <!-- Live State & Stunt Action Playground -->
@@ -81,21 +81,21 @@ function triggerPreviewStunt(kind: BotStuntKind) {
               :aria-pressed="previewState === st.id"
               @click="previewState = st.id"
               :class="[
-                'px-2 py-0.5 rounded-full font-mono text-[10px] border cursor-pointer transition-colors',
+                'px-2 py-0.5 rounded-full font-mono text-xs border cursor-pointer transition-colors',
                 previewState === st.id
                   ? 'btn-tactile-gold'
-                  : 'border-[#fff8ee]/10 bg-[#050811]/60 text-slate-400 hover:text-slate-200',
+                  : 'border-line bg-canvas text-fg-muted hover:text-fg',
               ]"
             >
               {{ st.label }}
             </button>
-            <span class="mx-0.5 h-3 w-px bg-[#fff8ee]/12" aria-hidden="true" />
+            <span class="mx-0.5 h-3 w-px bg-line" aria-hidden="true" />
             <button
               v-for="act in STUNT_BUTTONS"
               :key="act.id"
               type="button"
               @click="triggerPreviewStunt(act.id)"
-              class="btn-tactile px-2 py-0.5 rounded-full font-mono text-[10px] cursor-pointer"
+              class="btn-tactile px-2 py-0.5 rounded-full font-mono text-xs cursor-pointer"
             >
               {{ act.label }}
             </button>
@@ -113,16 +113,16 @@ function triggerPreviewStunt(kind: BotStuntKind) {
           :aria-label="c.label"
           :aria-pressed="parsed.color === c.id"
           @click="pickColor(c.id)"
-          class="min-w-[30px] min-h-[30px] inline-flex items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer"
+          class="min-w-[30px] min-h-[30px] inline-flex items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent cursor-pointer"
         >
           <span
             :style="{
-              background: `radial-gradient(circle at 32% 28%, ${c.shellHi} 0%, ${c.shellMid} 55%, ${c.ring} 100%)`,
+              background: `linear-gradient(135deg, ${c.shellHi} 0%, ${c.shellMid} 65%, ${c.ring} 100%)`,
             }"
             :class="[
-              'w-5 h-5 rounded-full transition-transform duration-200 shadow-inner',
+              'w-5 h-5 rounded-full transition-transform duration-150',
               parsed.color === c.id
-                ? 'scale-110 ring-2 ring-white/90 ring-offset-2 ring-offset-[#070a16]'
+                ? 'scale-110 ring-2 ring-fg ring-offset-2 ring-offset-card'
                 : 'opacity-75 hover:opacity-100 hover:scale-105',
             ]"
           />
@@ -130,14 +130,14 @@ function triggerPreviewStunt(kind: BotStuntKind) {
         <button
           type="button"
           @click="randomizeLook"
-          class="btn-tactile ml-1 px-2.5 py-1 rounded-lg text-[10.5px] cursor-pointer"
+          class="btn-tactile ml-1 px-2.5 py-1 rounded-lg text-xs cursor-pointer"
         >
           随机搭配
         </button>
       </div>
     </div>
 
-    <!-- Interactive Living 3D Archetype Grid -->
+    <!-- Interactive Archetype Grid -->
     <div class="grid grid-cols-3 sm:grid-cols-6 gap-2" role="group" aria-label="伙伴造型">
       <button
         v-for="sh in BOT_SHAPES"
@@ -149,17 +149,17 @@ function triggerPreviewStunt(kind: BotStuntKind) {
         @click="pickShape(sh.id)"
         :aria-pressed="parsed.shape === sh.id"
         :class="[
-          'group luxury-card rounded-xl p-2.5 flex flex-col items-center gap-1.5 cursor-pointer text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880]',
+          'group vesper-card rounded-xl p-2.5 flex flex-col items-center gap-1.5 cursor-pointer text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
           parsed.shape === sh.id
-            ? 'border-[#f2b880]/70 bg-[#f2b880]/14'
-            : 'border-[#fff8ee]/10 opacity-88 hover:opacity-100',
+            ? 'border-accent-border bg-accent-soft'
+            : 'border-line opacity-88 hover:opacity-100 hover:border-line-strong',
         ]"
       >
         <BotAvatar :avatar-style="composeAvatarStyle(sh.id, parsed.color)" :state="previewState" size="md" :interactive="false" />
-        <span :class="['text-[11px] leading-tight font-medium', parsed.shape === sh.id ? 'text-[#f7cba0]' : 'text-slate-200']">
+        <span :class="['text-xs leading-tight font-medium', parsed.shape === sh.id ? 'text-accent-fg' : 'text-fg']">
           {{ sh.label }}
         </span>
-        <span class="text-[9.5px] text-slate-500 leading-none">
+        <span class="text-xs text-fg-muted leading-none">
           {{ sh.hint }}
         </span>
       </button>

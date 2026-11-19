@@ -309,7 +309,7 @@ onBeforeUnmount(() => {
       @click="togglePanel"
       :class="[
         'btn-tactile w-full flex items-center justify-between gap-2 rounded-xl text-left cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed',
-        isOpen ? 'border-[#f2b880]/60 text-white' : 'text-slate-100',
+        isOpen ? 'border-accent-border text-fg' : 'text-fg',
         compact ? 'px-2.5 py-1.5 text-xs min-h-[38px] sm:min-h-[36px]' : 'px-3 py-2 text-sm min-h-[44px] sm:min-h-[40px]'
       ]"
     >
@@ -324,14 +324,14 @@ onBeforeUnmount(() => {
           stroke-linecap="round"
           stroke-linejoin="round"
           aria-hidden="true"
-          class="shrink-0 text-[#f2b880]"
+          class="shrink-0 text-accent-fg"
         >
           <rect x="3" y="4" width="18" height="18" rx="2.5" />
           <line x1="16" y1="2" x2="16" y2="6" />
           <line x1="8" y1="2" x2="8" y2="6" />
           <line x1="3" y1="10" x2="21" y2="10" />
         </svg>
-        <span :class="['truncate font-mono', displayLabel ? '' : 'text-slate-400 font-sans']">
+        <span :class="['truncate font-mono', displayLabel ? '' : 'text-fg-muted font-sans']">
           {{ displayLabel || placeholder }}
         </span>
       </span>
@@ -343,7 +343,7 @@ onBeforeUnmount(() => {
         aria-label="清除日期"
         @click.stop="clearValue"
         @keydown.enter.stop.prevent="clearValue"
-        class="shrink-0 px-1.5 py-0.5 rounded-md text-[10.5px] text-slate-400 hover:text-rose-300 hover:bg-rose-500/12"
+        class="shrink-0 px-1.5 py-0.5 rounded-lg text-xs text-fg-muted hover:text-danger hover:bg-danger-soft"
       >
         清除
       </span>
@@ -355,7 +355,7 @@ onBeforeUnmount(() => {
       :popover="supportsNativePopover ? 'auto' : undefined"
       v-show="supportsNativePopover || isOpen"
       :class="[
-        'calendar-popover aero-glass rounded-2xl p-3 shadow-2xl',
+        'calendar-popover aero-glass rounded-xl p-3 shadow-2xl',
         supportsAnchorArea ? 'calendar-popover-anchored' : '',
         !supportsNativePopover ? 'fixed z-[120]' : ''
       ]"
@@ -391,7 +391,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           @click="pickerView = pickerView === 'days' ? 'ym' : 'days'"
-          class="px-2.5 py-1 rounded-lg font-mono text-xs font-semibold hover:bg-[#f2b880]/15 text-[#f2b880] cursor-pointer transition-colors"
+          class="px-2.5 py-1 rounded-lg font-mono text-xs font-semibold hover:bg-accent-soft text-accent-fg cursor-pointer transition-colors"
         >
           {{ viewYear }} 年 {{ pad2(viewMonth) }} 月 {{ pickerView === 'ym' ? '▴' : '▾' }}
         </button>
@@ -432,7 +432,7 @@ onBeforeUnmount(() => {
             {{ y }}
           </button>
         </div>
-        <div class="grid grid-cols-4 gap-1.5 pt-1 border-t border-[#fff8ee]/10">
+        <div class="grid grid-cols-4 gap-1.5 pt-1 border-t border-line">
           <button
             v-for="(mLabel, mIdx) in MONTH_LABELS"
             :key="mLabel"
@@ -450,7 +450,7 @@ onBeforeUnmount(() => {
 
       <!-- Days Grid -->
       <div v-else class="flex flex-col gap-1">
-        <div class="grid grid-cols-7 gap-1 text-center text-[10.5px] font-medium text-slate-400 pb-1">
+        <div class="grid grid-cols-7 gap-1 text-center text-xs font-medium text-fg-muted pb-1">
           <span v-for="w in WEEKDAY_LABELS" :key="w">{{ w }}</span>
         </div>
         <div class="grid grid-cols-7 gap-1">
@@ -478,18 +478,18 @@ onBeforeUnmount(() => {
       <!-- Time Picker Bar for DateTime mode -->
       <div
         v-if="mode === 'datetime'"
-        class="mt-2.5 pt-2.5 border-t border-[#fff8ee]/10 flex flex-col gap-2"
+        class="mt-2.5 pt-2.5 border-t border-line flex flex-col gap-2"
       >
         <div class="flex items-center justify-between gap-2">
-          <span class="text-[11px] text-slate-400">触发时刻 (上海时间)</span>
+          <span class="text-xs text-fg-muted">触发时刻 (上海时间)</span>
           <div class="flex items-center gap-1 font-mono text-xs">
-            <button type="button" @click="adjustTime(-1, 0)" class="cal-nav-btn w-6 h-6 rounded-md cursor-pointer">-</button>
-            <span class="px-1.5 font-semibold text-white">{{ pad2(timeHour) }}</span>
-            <button type="button" @click="adjustTime(1, 0)" class="cal-nav-btn w-6 h-6 rounded-md cursor-pointer">+</button>
-            <span class="text-slate-400">:</span>
-            <button type="button" @click="adjustTime(0, -5)" class="cal-nav-btn w-6 h-6 rounded-md cursor-pointer">-</button>
-            <span class="px-1.5 font-semibold text-white">{{ pad2(timeMinute) }}</span>
-            <button type="button" @click="adjustTime(0, 5)" class="cal-nav-btn w-6 h-6 rounded-md cursor-pointer">+</button>
+            <button type="button" @click="adjustTime(-1, 0)" class="cal-nav-btn w-6 h-6 rounded-lg cursor-pointer">-</button>
+            <span class="px-1.5 font-semibold text-fg">{{ pad2(timeHour) }}</span>
+            <button type="button" @click="adjustTime(1, 0)" class="cal-nav-btn w-6 h-6 rounded-lg cursor-pointer">+</button>
+            <span class="text-fg-muted">:</span>
+            <button type="button" @click="adjustTime(0, -5)" class="cal-nav-btn w-6 h-6 rounded-lg cursor-pointer">-</button>
+            <span class="px-1.5 font-semibold text-fg">{{ pad2(timeMinute) }}</span>
+            <button type="button" @click="adjustTime(0, 5)" class="cal-nav-btn w-6 h-6 rounded-lg cursor-pointer">+</button>
           </div>
         </div>
         <div class="flex items-center gap-1 flex-wrap">
@@ -498,7 +498,7 @@ onBeforeUnmount(() => {
             :key="qt"
             type="button"
             @click="setQuickClock(qt)"
-            class="cal-preset-chip px-2 py-0.5 rounded-md font-mono text-[10.5px] cursor-pointer"
+            class="cal-preset-chip px-2 py-0.5 rounded-lg font-mono text-xs cursor-pointer"
           >
             {{ qt }}
           </button>
@@ -506,12 +506,12 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Footer Quick Actions -->
-      <div class="mt-2.5 pt-2 border-t border-[#fff8ee]/10 flex items-center justify-between gap-1.5 flex-wrap">
+      <div class="mt-2.5 pt-2 border-t border-line flex items-center justify-between gap-1.5 flex-wrap">
         <div class="flex items-center gap-1 flex-wrap">
           <button
             type="button"
             @click="pickToday"
-            class="cal-preset-chip px-2 py-0.5 rounded-md text-[11px] cursor-pointer"
+            class="cal-preset-chip px-2 py-0.5 rounded-lg text-xs cursor-pointer"
           >
             今天
           </button>
@@ -520,7 +520,7 @@ onBeforeUnmount(() => {
             :key="p.label"
             type="button"
             @click="applyPreset(p.value)"
-            class="cal-preset-chip px-2 py-0.5 rounded-md text-[11px] cursor-pointer"
+            class="cal-preset-chip px-2 py-0.5 rounded-lg text-xs cursor-pointer"
           >
             {{ p.label }}
           </button>
@@ -528,7 +528,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           @click="closePanel"
-          class="px-2.5 py-0.5 rounded-md bg-[#f2b880] text-[#070a13] font-semibold text-[11px] cursor-pointer"
+          class="px-2.5 py-0.5 rounded-lg bg-accent text-on-accent font-semibold text-xs cursor-pointer"
         >
           确定
         </button>

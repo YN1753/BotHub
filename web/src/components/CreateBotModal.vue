@@ -347,7 +347,7 @@ async function handleSubmit() {
       <button
         type="button"
         @click="resetCreateForm"
-        class="px-2.5 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-400 hover:text-white cursor-pointer"
+        class="px-2.5 py-1 rounded-lg border border-line text-xs text-fg-muted hover:text-fg cursor-pointer"
       >
         重置表单
       </button>
@@ -368,14 +368,14 @@ async function handleSubmit() {
       >
         <!-- Mode 1: Single Specialist / Companion Bot -->
         <div v-if="mode === 'bot'" key="bot" class="flex flex-col gap-3.5">
-          <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
-            <span class="text-slate-500">快速人设模板:</span>
+          <div class="flex items-center gap-1.5 flex-wrap text-xs">
+            <span class="text-fg-muted">快速人设模板:</span>
             <button
               v-for="arc in STARTER_ARCHETYPES"
               :key="arc.label"
               type="button"
               @click="applyArchetype(arc)"
-              class="px-2.5 py-1 rounded-full border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-[#f2b880]/50 hover:text-[#f2b880] cursor-pointer"
+              class="px-2.5 py-1 rounded-full border border-line bg-canvas text-fg-sub hover:border-accent-border hover:text-accent-fg cursor-pointer"
             >
               {{ arc.label }}
             </button>
@@ -384,8 +384,8 @@ async function handleSubmit() {
 
           <div class="modal-section flex flex-col gap-2">
             <div class="flex items-center justify-between gap-2">
-              <span class="text-xs font-medium text-slate-200">交流定位 / 角色模式</span>
-              <span class="text-[11px] text-slate-400">
+              <span class="text-xs font-medium text-fg">交流定位 / 角色模式</span>
+              <span class="text-xs text-fg-muted">
                 {{
                   botMode === 'companion'
                     ? '像真人朋友一样自然聊天陪伴，不主动套用死板汇报格式'
@@ -399,7 +399,7 @@ async function handleSubmit() {
           </div>
 
           <div class="modal-section grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label class="flex flex-col gap-1.5 text-xs text-slate-300">
+            <label class="flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>Bot 名称</span>
               <input
                 ref="botNameInputRef"
@@ -407,33 +407,33 @@ async function handleSubmit() {
                 type="text"
                 placeholder="如：阿彻 / 云账单管家 / 深夜酒馆"
                 required
-                class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
+                class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent"
               />
             </label>
-            <label class="flex flex-col gap-1.5 text-xs text-slate-300">
+            <label class="flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>关系定位 / 职责头衔</span>
               <input
                 v-model="roleTitle"
                 type="text"
                 :placeholder="botMode === 'companion' ? '如：毒舌却温暖的老朋友' : '如：服务器巡检与成本分析专员'"
                 required
-                class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
+                class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent"
               />
             </label>
-            <label class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
+            <label class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>性格特质与说话口吻</span>
               <input
                 v-model="traits"
                 type="text"
                 placeholder="如：说话简短直接、爱接梗、像真人发微信，不要每次列一二三点"
-                class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-xs text-white focus:border-[#f2b880]/60"
+                class="min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 text-xs text-fg focus:border-accent"
               />
             </label>
-            <div class="flex flex-col gap-1.5 text-xs text-slate-300">
+            <div class="flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>推理模型 (动态实时读取)</span>
               <CustomSelect v-model="model" :options="store.modelOptions.value" aria-label="默认推理模型" />
             </div>
-            <div class="flex flex-col gap-1.5 text-xs text-slate-300">
+            <div class="flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>记忆隔离策略</span>
               <CustomSelect v-model="memoryPolicy" :options="MEMORY_POLICY_OPTIONS" aria-label="记忆隔离策略" />
             </div>
@@ -455,67 +455,67 @@ async function handleSubmit() {
           </div>
 
           <div class="modal-section flex flex-col gap-3">
-            <label class="flex flex-col gap-1.5 text-xs text-slate-300">
+            <label class="flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>灵魂背景与行为准则 (System Prompt)</span>
               <textarea
                 v-model="systemPrompt"
                 rows="3"
                 placeholder="描写它的过往经历、与你的关系、遇到不同话题时该如何回应..."
-                class="auto-size-textarea w-full rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60 resize-y"
+                class="auto-size-textarea w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent resize-y"
               />
             </label>
 
-            <div class="flex flex-col gap-2 text-xs text-slate-300">
+            <div class="flex flex-col gap-2 text-xs text-fg-sub">
               <div class="flex items-center justify-between gap-2 flex-wrap">
                 <span>内置工具白名单 ({{ allowedTools.length }}/{{ availableTools.length }})</span>
-                <div class="flex items-center gap-1.5 text-[11px] flex-wrap">
+                <div class="flex items-center gap-1.5 text-xs flex-wrap">
                   <input
                     v-model="toolSearch"
                     type="search"
                     aria-label="搜索工具"
                     placeholder="筛选工具..."
                     @keydown.escape="clearSearchOnEscape($event, toolSearch, () => { toolSearch = '' })"
-                    class="w-28 min-h-[26px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
+                    class="w-28 min-h-[26px] rounded-lg border border-line bg-canvas px-2 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
                   />
                   <button
                     type="button"
                     @click="allowedTools = availableTools.map((t) => t.id)"
-                    class="text-[#f2b880] hover:underline cursor-pointer"
+                    class="text-accent-fg hover:underline cursor-pointer"
                   >
                     全选
                   </button>
-                  <span class="text-slate-600">·</span>
+                  <span class="text-fg-muted">·</span>
                   <button
                     type="button"
                     @click="allowedTools = availableTools.filter((t) => ['manage_bots','manage_todos','manage_notes','manage_stash','manage_tasks','workspace_briefing','send_notification','web_search','read_url','calculate_eval','datetime_calc','remember_fact','recall_memory','manage_memory','consult_bot'].includes(t.id)).map((t) => t.id)"
-                    class="text-cyan-300 hover:underline cursor-pointer"
+                    class="text-info hover:underline cursor-pointer"
                   >
                     个人总助推荐
                   </button>
-                  <span class="text-slate-600">·</span>
+                  <span class="text-fg-muted">·</span>
                   <button
                     type="button"
                     @click="allowedTools = []"
-                    class="text-slate-400 hover:underline cursor-pointer"
+                    class="text-fg-muted hover:underline cursor-pointer"
                   >
                     清空
                   </button>
                 </div>
               </div>
               <div class="flex flex-col gap-2">
-                <div v-if="filteredGroupedTools.length === 0" class="text-[11px] text-slate-500 py-2">
+                <div v-if="filteredGroupedTools.length === 0" class="text-xs text-fg-muted py-2">
                   无匹配工具「{{ toolSearch }}」
                 </div>
                 <div v-for="grp in filteredGroupedTools" :key="grp.id" class="flex flex-col gap-1">
-                  <span class="text-[10.5px] font-mono text-slate-500">{{ grp.label }}</span>
+                  <span class="text-xs font-mono text-fg-muted">{{ grp.label }}</span>
                   <div class="flex flex-wrap gap-1.5">
                     <label
                       v-for="tool in grp.tools"
                       :key="tool.id"
                       :title="tool.description"
-                      class="min-h-[32px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-[#fff8ee]/12 bg-[#050811]/80 text-xs text-slate-300 cursor-pointer hover:border-[#f2b880]/40 has-[:checked]:border-[#f2b880]/55 has-[:checked]:bg-[#f2b880]/14 has-[:checked]:text-[#f7cba0] transition-colors"
+                      class="min-h-[32px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-line bg-canvas text-xs text-fg-sub cursor-pointer hover:border-accent-border has-[:checked]:border-accent-border has-[:checked]:bg-accent-soft has-[:checked]:text-accent-fg transition-colors"
                     >
-                      <input v-model="allowedTools" type="checkbox" :value="tool.id" class="accent-[#f2b880]" />
+                      <input v-model="allowedTools" type="checkbox" :value="tool.id" class="accent-accent" />
                       <span>{{ tool.shortLabel }}</span>
                     </label>
                   </div>
@@ -523,29 +523,29 @@ async function handleSubmit() {
               </div>
             </div>
 
-            <div class="flex flex-col gap-1.5 text-xs text-slate-300 pt-1 border-t border-[#fff8ee]/8">
+            <div class="flex flex-col gap-1.5 text-xs text-fg-sub pt-1 border-t border-line">
               <div class="flex items-center justify-between">
                 <span>挂载自定义技能 ({{ selectedSkillIds.length }}/{{ availableSkills.length }})</span>
                 <button
                   type="button"
                   @click="openSkillsWorkshop"
-                  class="text-[11px] text-[#f2b880] hover:underline cursor-pointer"
+                  class="text-xs text-accent-fg hover:underline cursor-pointer"
                 >
                   + 去技能工坊新建
                 </button>
               </div>
-              <div v-if="availableSkills.length === 0" class="text-[11px] text-slate-500">
+              <div v-if="availableSkills.length === 0" class="text-xs text-fg-muted">
                 暂无已启用的自定义技能，可随时在「技能工坊」创建后回来绑定。
               </div>
               <div v-else class="flex flex-wrap gap-1.5">
                 <label
                   v-for="sk in availableSkills"
                   :key="sk.id"
-                  class="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-[#fff8ee]/12 bg-[#050811]/80 text-xs text-slate-300 cursor-pointer hover:border-cyan-400/40 has-[:checked]:border-cyan-400/55 has-[:checked]:bg-cyan-500/14 has-[:checked]:text-cyan-200 transition-colors"
+                  class="min-h-[34px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-line bg-canvas text-xs text-fg-sub cursor-pointer hover:border-info-border has-[:checked]:border-info-border has-[:checked]:bg-info-soft has-[:checked]:text-info transition-colors"
                 >
                   <input v-model="selectedSkillIds" type="checkbox" :value="sk.id" class="accent-cyan-400" />
                   <span>{{ sk.name }}</span>
-                  <span class="font-mono text-[10px] opacity-70">{{ sk.kind === 'webhook' ? 'API' : 'Doc' }}</span>
+                  <span class="font-mono text-xs opacity-70">{{ sk.kind === 'webhook' ? 'API' : 'Doc' }}</span>
                 </label>
               </div>
             </div>
@@ -557,7 +557,7 @@ async function handleSubmit() {
           <BotAvatarPicker v-model="groupAvatar" :preview-name="groupName || '多 Bot 协同群'" />
 
           <div class="modal-section grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label class="flex flex-col gap-1.5 text-xs text-slate-300">
+            <label class="flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>群聊名称</span>
               <input
                 ref="groupNameInputRef"
@@ -565,19 +565,19 @@ async function handleSubmit() {
                 type="text"
                 placeholder="如：深夜吐槽茶话会 / 生产故障联合群"
                 required
-                class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
+                class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent"
               />
             </label>
-            <label class="flex flex-col gap-1.5 text-xs text-slate-300">
+            <label class="flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>群聊定位 / 议题说明</span>
               <input
                 v-model="groupDesc"
                 type="text"
                 placeholder="如：轻松聊天互相接梗 / 运维评估"
-                class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
+                class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent"
               />
             </label>
-            <div class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
+            <div class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>默认协同策略</span>
               <SegmentedTabs
                 v-model="groupMode"
@@ -591,7 +591,7 @@ async function handleSubmit() {
                 aria-label="群协同策略"
               />
             </div>
-            <div class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
+            <div class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>群协调主力模型 (可选)</span>
               <CustomSelect
                 v-model="groupModel"
@@ -599,21 +599,21 @@ async function handleSubmit() {
                 aria-label="群协调主力模型"
               />
             </div>
-            <label class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-slate-300">
+            <label class="sm:col-span-2 flex flex-col gap-1.5 text-xs text-fg-sub">
               <span>初始群公告（可选，置顶显示在对话流顶部）</span>
               <input
                 v-model="groupAnnouncement"
                 type="text"
                 placeholder="如：各自带入本人性格与专长自然接话"
-                class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-sm text-white focus:border-[#f2b880]/60"
+                class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent"
               />
             </label>
           </div>
 
           <div class="modal-section flex flex-col gap-2.5">
             <div class="flex items-center justify-between gap-2">
-              <span class="text-xs font-medium text-slate-200">选择进群成员（已选 {{ groupMembers.length }} 位）</span>
-              <span class="font-mono text-[10.5px] text-slate-400">自动汇集所选成员的性格与可用技能</span>
+              <span class="text-xs font-medium text-fg">选择进群成员（已选 {{ groupMembers.length }} 位）</span>
+              <span class="font-mono text-xs text-fg-muted">自动汇集所选成员的性格与可用技能</span>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -625,23 +625,23 @@ async function handleSubmit() {
                 @click="toggleGroupMember(b.id)"
                 :aria-pressed="groupMembers.includes(b.id)"
                 :class="[
-                  'group luxury-card rounded-xl p-2.5 flex items-center gap-2.5 text-left cursor-pointer',
+                  'group vesper-card rounded-xl p-2.5 flex items-center gap-2.5 text-left cursor-pointer',
                   groupMembers.includes(b.id)
-                    ? 'border-[#f2b880]/65 bg-[#f2b880]/12'
-                    : 'border-[#fff8ee]/10 opacity-80 hover:opacity-100'
+                    ? 'border-accent-border bg-accent-soft'
+                    : 'border-line opacity-80 hover:opacity-100'
                 ]"
               >
                 <BotAvatar :avatar-style="b.avatar_style" :state="b.state" size="md" />
                 <div class="flex-1 min-w-0">
-                  <div class="text-xs font-semibold text-white truncate">{{ b.name }}</div>
-                  <div class="text-[11px] text-slate-400 truncate">{{ b.role_title }}</div>
+                  <div class="text-xs font-semibold text-fg truncate">{{ b.name }}</div>
+                  <div class="text-xs text-fg-muted truncate">{{ b.role_title }}</div>
                 </div>
                 <span
                   :class="[
                     'w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors',
                     groupMembers.includes(b.id)
-                      ? 'bg-[#f2b880] border-[#f2b880] text-[#070a13]'
-                      : 'border-[#fff8ee]/20 text-transparent'
+                      ? 'bg-accent border-accent-border text-on-accent'
+                      : 'border-line text-transparent'
                   ]"
                 >
                   <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true">
@@ -654,8 +654,8 @@ async function handleSubmit() {
         </div>
       </Transition>
 
-      <div class="flex items-center justify-between gap-2 pt-2 border-t border-[#fff8ee]/10 shrink-0 flex-wrap">
-        <span class="font-mono text-[11px] text-slate-400">
+      <div class="flex items-center justify-between gap-2 pt-2 border-t border-line shrink-0 flex-wrap">
+        <span class="font-mono text-xs text-fg-muted">
           <template v-if="mode === 'bot'">
             {{ BOT_MODE_TABS.find((t) => t.id === botMode)?.label }} · {{ allowedTools.length }} 工具 · {{ selectedSkillIds.length }} 技能
           </template>
@@ -667,14 +667,14 @@ async function handleSubmit() {
           <button
             type="button"
             @click="closeModal"
-            class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-[#fff8ee]/14 text-xs text-slate-300 hover:bg-white/5 cursor-pointer"
+            class="min-h-[44px] sm:min-h-[36px] px-4 py-2 rounded-xl border border-line text-xs text-fg-sub hover:bg-hover cursor-pointer"
           >
             取消
           </button>
           <button
             type="submit"
             :disabled="saving"
-            class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+            class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-accent hover:bg-accent-hover text-on-accent font-semibold text-xs cursor-pointer disabled:opacity-50"
           >
             {{ saving ? '创建中...' : (mode === 'group' ? '创建协同群聊' : '创建并激活 Bot') }}
           </button>

@@ -23,7 +23,7 @@ export function renderSafeMarkdown(raw: string): string {
     const safeLang = escapeHtml(lang || 'text')
     const safeCode = escapeHtml(code.replace(/\n$/, ''))
     codeBlocks.push(
-      `<div class="md-code-wrap"><div class="md-code-head"><span class="font-mono uppercase tracking-wider text-[10.5px] text-[#f2b880]/90">${safeLang}</span><button type="button" class="md-copy-code-btn min-h-[26px] px-2.5 py-0.5 rounded-md border border-[#fff8ee]/15 bg-[#0d1222]/80 text-slate-300 hover:border-[#f2b880]/50 hover:text-[#f2b880] text-[11px] transition cursor-pointer">复制代码</button></div><pre><code>${safeCode}</code></pre></div>`
+      `<div class="md-code-wrap"><div class="md-code-head"><span class="font-mono uppercase tracking-wider text-xs text-accent-fg">${safeLang}</span><button type="button" class="md-copy-code-btn min-h-[26px] px-2.5 py-0.5 rounded-lg border border-line bg-card text-fg-sub hover:border-line-strong hover:text-fg text-xs transition cursor-pointer">复制代码</button></div><pre><code>${safeCode}</code></pre></div>`
     )
     return `\n@@CODEBLOCK_${idx}@@\n`
   })
@@ -32,7 +32,7 @@ export function renderSafeMarkdown(raw: string): string {
     let out = escapeHtml(text)
     out = out.replace(/`([^`\n]+)`/g, '<code class="md-inline-code">$1</code>')
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    out = out.replace(/==([^=\n]+)==/g, '<mark class="px-1 rounded bg-[#f2b880]/20 text-[#f7cba0]">$1</mark>')
+    out = out.replace(/==([^=\n]+)==/g, '<mark class="px-1 rounded-lg bg-accent-soft text-accent-fg">$1</mark>')
     out = out.replace(/~~([^~\n]+)~~/g, '<del class="md-del">$1</del>')
     out = out.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
     out = out.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">[图片: $1]</a>')
@@ -164,11 +164,11 @@ export function handleMarkdownCodeCopy(e: MouseEvent, onCopied?: () => void): vo
     btn.textContent = '已复制'
     btn.classList.remove('is-copied')
     void btn.offsetWidth
-    btn.classList.add('is-copied', 'text-emerald-300', 'border-emerald-400/50', 'bg-emerald-500/12')
+    btn.classList.add('is-copied', 'text-ok', 'border-ok-border', 'bg-ok-soft')
     onCopied?.()
     const timer = window.setTimeout(() => {
       btn.textContent = '复制代码'
-      btn.classList.remove('is-copied', 'text-emerald-300', 'border-emerald-400/50', 'bg-emerald-500/12')
+      btn.classList.remove('is-copied', 'text-ok', 'border-ok-border', 'bg-ok-soft')
       delete btn.dataset.copyTimer
     }, 1500)
     btn.dataset.copyTimer = String(timer)

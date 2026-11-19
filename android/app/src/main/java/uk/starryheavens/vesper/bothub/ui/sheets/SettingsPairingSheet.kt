@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -65,8 +66,11 @@ import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
 import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
-import uk.starryheavens.vesper.bothub.ui.theme.BOTHUB_THEME_OPTIONS
+import uk.starryheavens.vesper.bothub.ui.theme.BOTHUB_ACCENT_OPTIONS
+import uk.starryheavens.vesper.bothub.ui.theme.BOTHUB_COLOR_MODE_OPTIONS
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
+import uk.starryheavens.vesper.bothub.ui.theme.encodeThemePreference
+import uk.starryheavens.vesper.bothub.ui.theme.parseThemePreference
 import java.io.File
 import java.util.Locale
 
@@ -626,18 +630,22 @@ private fun ThemeSelectorCard(
     onSelect: (String) -> Unit
 ) {
     val theme = BotHubThemeTokens
+    val (activeMode, activeAccent) = remember(activeThemeId) {
+        parseThemePreference(activeThemeId)
+    }
+
     SpecularGlassCard(
-        cornerRadius = 18.dp,
+        cornerRadius = 12.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(top = 12.dp, bottom = 13.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
+            modifier = Modifier.padding(top = 12.dp, bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 15.dp),
+                    .padding(horizontal = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -650,64 +658,145 @@ private fun ThemeSelectorCard(
                     softWrap = false
                 )
                 Text(
-                    text = BOTHUB_THEME_OPTIONS.find { it.id == activeThemeId }?.label ?: theme.label,
+                    text = theme.label,
                     fontSize = 12.sp,
-                    color = theme.accent,
+                    fontWeight = FontWeight.Medium,
+                    color = theme.textSecondary,
                     maxLines = 1,
                     softWrap = false
                 )
             }
 
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(BOTHUB_THEME_OPTIONS, key = { it.id }) { opt ->
-                    val chosen = opt.id == activeThemeId
-                    val pillShape = RoundedCornerShape(13.dp)
-                    Row(
-                        modifier = Modifier
-                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                onSelect(opt.id)
-                            }
-                            .clip(pillShape)
-                            .background(
-                                if (chosen) theme.accent.copy(alpha = 0.16f) else theme.inputTop,
-                                pillShape
-                            )
-                            .border(
-                                BorderStroke(
-                                    if (chosen) 1.2.dp else 0.8.dp,
-                                    if (chosen) theme.accent else theme.divider
-                                ),
-                                pillShape
-                            )
-                            .padding(horizontal = 11.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
+                Text(
+                    text = "外观模式",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = theme.textMuted,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                val segOuterShape = RoundedCornerShape(10.dp)
+                val segTabShape = RoundedCornerShape(8.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(segOuterShape)
+                        .background(theme.inputTop, segOuterShape)
+                        .border(1.dp, theme.divider, segOuterShape)
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    BOTHUB_COLOR_MODE_OPTIONS.forEach { modeOpt ->
+                        val selected = modeOpt.id == activeMode
                         Box(
                             modifier = Modifier
-                                .size(15.dp)
-                                .clip(CircleShape)
-                                .background(opt.swatchBg, CircleShape)
-                                .border(1.5.dp, opt.swatchAccent, CircleShape),
+                                .weight(1f)
+                                .sizeIn(minHeight = 34.dp)
+                                .tactileClickable(pressedScale = 0.96f, hapticOnTap = true) {
+                                    if (!selected) {
+                                        onSelect(encodeThemePreference(modeOpt.id, activeAccent))
+                                    }
+                                }
+                                .clip(segTabShape)
+                                .then(
+                                    if (selected) {
+                                        Modifier
+                                            .background(theme.cardTop, segTabShape)
+                                            .border(1.dp, theme.rimHighlight, segTabShape)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
                             contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = modeOpt.label,
+                                fontSize = 12.5.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (selected) theme.textPrimary else theme.textMuted,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "强调色",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = theme.textMuted,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(horizontal = 14.dp)
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(BOTHUB_ACCENT_OPTIONS, key = { it.id }) { opt ->
+                        val chosen = opt.id == activeAccent
+                        val swatchColor = if (theme.isLight) opt.lightSwatch else opt.darkSwatch
+                        val pillShape = RoundedCornerShape(10.dp)
+                        Row(
+                            modifier = Modifier
+                                .tactileClickable(pressedScale = 0.95f, hapticOnTap = true) {
+                                    if (!chosen) {
+                                        onSelect(encodeThemePreference(activeMode, opt.id))
+                                    }
+                                }
+                                .clip(pillShape)
+                                .background(
+                                    if (chosen) {
+                                        swatchColor.copy(alpha = if (theme.isLight) 0.12f else 0.16f)
+                                    } else {
+                                        theme.inputTop
+                                    },
+                                    pillShape
+                                )
+                                .border(
+                                    BorderStroke(
+                                        if (chosen) 1.2.dp else 1.dp,
+                                        if (chosen) swatchColor else theme.divider
+                                    ),
+                                    pillShape
+                                )
+                                .padding(horizontal = 11.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(6.dp)
-                                    .background(opt.swatchAccent, CircleShape)
+                                    .size(13.dp)
+                                    .clip(CircleShape)
+                                    .background(swatchColor, CircleShape)
+                                    .border(
+                                        1.dp,
+                                        if (theme.isLight) Color(0x26000000) else Color(0x33FFFFFF),
+                                        CircleShape
+                                    )
+                            )
+                            Text(
+                                text = opt.label,
+                                fontSize = 12.sp,
+                                fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (chosen) theme.textPrimary else theme.textSecondary,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
-                        Text(
-                            text = opt.label,
-                            fontSize = 12.sp,
-                            fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (chosen) theme.textPrimary else theme.textMuted,
-                            maxLines = 1,
-                            softWrap = false
-                        )
                     }
                 }
             }

@@ -608,41 +608,41 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
     <div class="modal-section flex flex-col gap-2.5">
       <div class="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <div class="text-xs font-semibold text-white">双层模型架构 · 近 7 天调用概览</div>
-          <p class="text-[11px] text-slate-400 mt-0.5">
+          <div class="text-xs font-semibold text-fg">双层模型架构 · 近 7 天调用概览</div>
+          <p class="text-xs text-fg-muted mt-0.5">
             渠道只需配一次 Key，模型按需分配至免费池或付费池；付费调用严格按单任务/单 Bot 护栏控制。
           </p>
         </div>
-        <span class="font-mono text-[10.5px] px-2.5 py-0.5 rounded-full border border-[#fff8ee]/12 text-slate-300">
+        <span class="font-mono text-xs px-2.5 py-0.5 rounded-full border border-line text-fg-sub">
           成功率 {{ successRateLabel }}
         </span>
       </div>
 
       <div class="grid grid-cols-3 gap-2">
-        <div class="rounded-xl border border-emerald-400/20 bg-emerald-400/6 px-3 py-2">
-          <div class="text-[10.5px] text-emerald-300">免费池调用 (7日)</div>
-          <div class="font-mono text-sm font-semibold text-white mt-0.5">
-            {{ usage7d?.free_calls || 0 }} <span class="text-[10.5px] font-normal text-slate-400">次</span>
+        <div class="rounded-xl border border-ok-border bg-ok-soft px-3 py-2">
+          <div class="text-xs text-ok">免费池调用 (7日)</div>
+          <div class="font-mono text-sm font-semibold text-fg mt-0.5">
+            {{ usage7d?.free_calls || 0 }} <span class="text-xs font-normal text-fg-muted">次</span>
           </div>
-          <div class="font-mono text-[10px] text-slate-400">
+          <div class="font-mono text-xs text-fg-muted">
             {{ formatTokenCount(usage7d?.free_tokens || 0) }} Tokens
           </div>
         </div>
-        <div class="rounded-xl border border-[#f2b880]/22 bg-[#f2b880]/6 px-3 py-2">
-          <div class="text-[10.5px] text-[#f2b880]">付费池调用 (7日)</div>
-          <div class="font-mono text-sm font-semibold text-white mt-0.5">
-            {{ usage7d?.paid_calls || 0 }} <span class="text-[10.5px] font-normal text-slate-400">次</span>
+        <div class="rounded-xl border border-accent-border bg-accent-soft px-3 py-2">
+          <div class="text-xs text-accent-fg">付费池调用 (7日)</div>
+          <div class="font-mono text-sm font-semibold text-fg mt-0.5">
+            {{ usage7d?.paid_calls || 0 }} <span class="text-xs font-normal text-fg-muted">次</span>
           </div>
-          <div class="font-mono text-[10px] text-slate-400">
+          <div class="font-mono text-xs text-fg-muted">
             {{ formatTokenCount(usage7d?.paid_tokens || 0) }} Tokens
           </div>
         </div>
-        <div class="rounded-xl border border-[#fff8ee]/12 bg-[#060913]/60 px-3 py-2">
-          <div class="text-[10.5px] text-slate-300">总调用次数</div>
-          <div class="font-mono text-sm font-semibold text-white mt-0.5">
-            {{ usage7d?.total_calls || 0 }} <span class="text-[10.5px] font-normal text-slate-400">次</span>
+        <div class="rounded-xl border border-line bg-canvas px-3 py-2">
+          <div class="text-xs text-fg-sub">总调用次数</div>
+          <div class="font-mono text-sm font-semibold text-fg mt-0.5">
+            {{ usage7d?.total_calls || 0 }} <span class="text-xs font-normal text-fg-muted">次</span>
           </div>
-          <div class="font-mono text-[10px] text-slate-400">
+          <div class="font-mono text-xs text-fg-muted">
             免费占比
             {{
               (usage7d?.total_calls || 0) > 0
@@ -655,29 +655,29 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
 
       <div
         v-if="(usage7d?.top_models?.length || 0) > 0 || (usage7d?.top_callers?.length || 0) > 0"
-        class="pt-1 border-t border-[#fff8ee]/8 flex flex-col gap-2"
+        class="pt-1 border-t border-line flex flex-col gap-2"
       >
         <button
           type="button"
           @click="showUsageDetail = !showUsageDetail"
-          class="self-start text-[11px] text-[#f2b880] hover:text-[#f7cba0] cursor-pointer"
+          class="self-start text-xs text-accent-fg hover:text-accent-fg cursor-pointer"
         >
           {{ showUsageDetail ? '收起 7 日双维明细 ▲' : '展开 7 日按模型 / 按 Bot 与任务消耗排行 ▼' }}
         </button>
 
         <div v-if="showUsageDetail" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <div class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-2.5 flex flex-col gap-1.5">
-            <div class="text-[11px] font-semibold text-slate-200">按模型调用排行 (7日)</div>
+          <div class="rounded-xl border border-line bg-canvas p-2.5 flex flex-col gap-1.5">
+            <div class="text-xs font-semibold text-fg">按模型调用排行 (7日)</div>
             <div
               v-for="row in (usage7d?.top_models || []).slice(0, 8)"
               :key="`${row.target_id}_${row.tier}`"
-              class="flex items-center justify-between gap-2 text-[10.5px]"
+              class="flex items-center justify-between gap-2 text-xs"
             >
-              <span class="font-mono text-slate-300 truncate flex-1">{{ row.model_id }}</span>
+              <span class="font-mono text-fg-sub truncate flex-1">{{ row.model_id }}</span>
               <span
                 :class="[
                   'font-mono shrink-0',
-                  row.tier === 'paid' ? 'text-[#f2b880]' : 'text-emerald-300',
+                  row.tier === 'paid' ? 'text-accent-fg' : 'text-ok',
                 ]"
               >
                 {{ row.calls }}次 · {{ formatTokenCount(row.tokens) }}
@@ -685,17 +685,17 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
             </div>
           </div>
 
-          <div class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-2.5 flex flex-col gap-1.5">
-            <div class="text-[11px] font-semibold text-slate-200">按 Bot / 任务消耗排行 (7日)</div>
+          <div class="rounded-xl border border-line bg-canvas p-2.5 flex flex-col gap-1.5">
+            <div class="text-xs font-semibold text-fg">按 Bot / 任务消耗排行 (7日)</div>
             <div
               v-for="(c, idx) in (usage7d?.top_callers || []).slice(0, 8)"
               :key="`${c.bot_id}_${c.task_id}_${c.source}_${idx}`"
-              class="flex items-center justify-between gap-2 text-[10.5px]"
+              class="flex items-center justify-between gap-2 text-xs"
             >
-              <span class="text-slate-300 truncate flex-1">{{ callerDisplayLabel(c.bot_id, c.task_id, c.source) }}</span>
-              <span class="font-mono text-slate-300 shrink-0">
-                <span class="text-emerald-300">{{ c.free_calls }}免</span>
-                <span v-if="c.paid_calls > 0" class="text-[#f2b880]"> / {{ c.paid_calls }}付</span>
+              <span class="text-fg-sub truncate flex-1">{{ callerDisplayLabel(c.bot_id, c.task_id, c.source) }}</span>
+              <span class="font-mono text-fg-sub shrink-0">
+                <span class="text-ok">{{ c.free_calls }}免</span>
+                <span v-if="c.paid_calls > 0" class="text-accent-fg"> / {{ c.paid_calls }}付</span>
                 · {{ formatTokenCount(c.tokens) }}
               </span>
             </div>
@@ -711,8 +711,8 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
     <div v-if="subTab === 'providers'" class="flex flex-col gap-3">
       <div class="modal-section flex flex-col gap-2">
         <div class="flex items-center justify-between gap-2 flex-wrap">
-          <span class="text-xs font-semibold text-[#f2b880]">快速添加模型渠道</span>
-          <span class="text-[10.5px] text-slate-400">仅填入公开标准接口地址，API Key 由你自行填写</span>
+          <span class="text-xs font-semibold text-accent-fg">快速添加模型渠道</span>
+          <span class="text-xs text-fg-muted">仅填入公开标准接口地址，API Key 由你自行填写</span>
         </div>
         <div class="flex items-center gap-1.5 flex-wrap">
           <button
@@ -721,7 +721,7 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
             type="button"
             :title="preset.hint"
             @click="addProviderFromPreset(preset)"
-            class="min-h-[30px] px-2.5 py-1 rounded-lg border border-[#fff8ee]/14 hover:border-[#f2b880]/55 hover:bg-[#f2b880]/12 text-[11px] text-slate-200 hover:text-[#f7cba0] transition cursor-pointer"
+            class="min-h-[30px] px-2.5 py-1 rounded-lg border border-line hover:border-accent-border hover:bg-accent-soft text-xs text-fg hover:text-accent-fg transition cursor-pointer"
           >
             + {{ preset.label }}
           </button>
@@ -730,10 +730,10 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
 
       <div
         v-if="providers.length === 0"
-        class="rounded-2xl border border-dashed border-[#fff8ee]/15 bg-[#060913]/55 px-4 py-7 text-center flex flex-col items-center gap-2"
+        class="rounded-xl border border-dashed border-line bg-canvas px-4 py-7 text-center flex flex-col items-center gap-2"
       >
-        <div class="text-xs font-semibold text-slate-200">尚未添加任何模型渠道</div>
-        <p class="text-[11px] text-slate-400 max-w-md leading-relaxed">
+        <div class="text-xs font-semibold text-fg">尚未添加任何模型渠道</div>
+        <p class="text-xs text-fg-muted max-w-md leading-relaxed">
           点击上方常用渠道模板或「自定义中转」填入 Base URL 与 API Key，即可零消耗拉取全量模型并一键分配至免费池或付费池。
         </p>
       </div>
@@ -742,10 +742,10 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
         v-for="provider in providers"
         :key="provider.id"
         :class="[
-          'rounded-2xl border transition-colors',
+          'rounded-xl border transition-colors',
           provider.enabled
-            ? 'border-[#fff8ee]/14 bg-[#070b15]/85'
-            : 'border-[#fff8ee]/8 bg-[#060811]/55 opacity-75',
+            ? 'border-line bg-canvas'
+            : 'border-line bg-canvas opacity-75',
         ]"
       >
         <!-- Provider Header -->
@@ -758,23 +758,23 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
             <span
               :class="[
                 'w-2 h-2 rounded-full shrink-0',
-                provider.enabled && provider.api_key ? 'bg-emerald-400' : 'bg-slate-500',
+                provider.enabled && provider.api_key ? 'bg-ok' : 'bg-fg-muted',
               ]"
               aria-hidden="true"
             />
-            <span class="text-xs font-semibold text-white truncate">{{ provider.name || provider.id }}</span>
-            <span class="font-mono text-[10px] px-1.5 py-0.5 rounded-md border border-[#fff8ee]/12 text-slate-300 shrink-0">
+            <span class="text-xs font-semibold text-fg truncate">{{ provider.name || provider.id }}</span>
+            <span class="font-mono text-xs px-1.5 py-0.5 rounded-lg border border-line text-fg-sub shrink-0">
               {{ provider.protocol === 'gemini' ? 'Gemini' : 'OpenAI 兼容' }}
             </span>
             <span
               v-if="providerAssignedCounts(provider.id).free > 0"
-              class="font-mono text-[10px] px-1.5 py-0.5 rounded-md border border-emerald-400/28 bg-emerald-400/10 text-emerald-300 shrink-0"
+              class="font-mono text-xs px-1.5 py-0.5 rounded-lg border border-ok-border bg-ok-soft text-ok shrink-0"
             >
               免费 {{ providerAssignedCounts(provider.id).free }}
             </span>
             <span
               v-if="providerAssignedCounts(provider.id).paid > 0"
-              class="font-mono text-[10px] px-1.5 py-0.5 rounded-md border border-[#f2b880]/32 bg-[#f2b880]/10 text-[#f2b880] shrink-0"
+              class="font-mono text-xs px-1.5 py-0.5 rounded-lg border border-accent-border bg-accent-soft text-accent-fg shrink-0"
             >
               付费 {{ providerAssignedCounts(provider.id).paid }}
             </span>
@@ -790,28 +790,28 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
               :class="[
                 'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors cursor-pointer',
                 provider.enabled
-                  ? 'border-[#f2b880]/60 bg-[#f2b880]/25'
-                  : 'border-[#fff8ee]/15 bg-[#050811]',
+                  ? 'border-accent-border bg-accent-soft'
+                  : 'border-line bg-canvas',
               ]"
             >
               <span
                 :class="[
                   'inline-block h-3.5 w-3.5 rounded-full transition-transform',
-                  provider.enabled ? 'translate-x-4 bg-[#f2b880]' : 'translate-x-0.5 bg-slate-500',
+                  provider.enabled ? 'translate-x-4 bg-accent' : 'translate-x-0.5 bg-fg-muted',
                 ]"
               />
             </button>
             <button
               type="button"
               @click="expandedProviderId = expandedProviderId === provider.id ? '' : provider.id"
-              class="min-h-[28px] px-2.5 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] whitespace-nowrap cursor-pointer"
+              class="min-h-[28px] px-2.5 rounded-lg border border-line text-xs text-fg-sub hover:border-accent-border hover:text-accent-fg whitespace-nowrap cursor-pointer"
             >
               {{ expandedProviderId === provider.id ? '收起' : '配置模型' }}
             </button>
             <button
               type="button"
               @click="removeProvider(provider)"
-              class="min-h-[28px] px-2.5 rounded-lg border border-rose-400/25 text-[11px] text-rose-300 hover:bg-rose-400/12 whitespace-nowrap cursor-pointer"
+              class="min-h-[28px] px-2.5 rounded-lg border border-danger-border text-xs text-danger hover:bg-danger-soft whitespace-nowrap cursor-pointer"
             >
               删除
             </button>
@@ -821,44 +821,44 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
         <!-- Expanded Provider Body -->
         <div
           v-if="expandedProviderId === provider.id"
-          class="border-t border-[#fff8ee]/10 px-3.5 py-3 flex flex-col gap-3"
+          class="border-t border-line px-3.5 py-3 flex flex-col gap-3"
         >
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <label class="flex flex-col gap-1 text-[11px] text-slate-300">
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>渠道名称</span>
               <input
                 :value="provider.name"
                 @input="updateProviderField(provider.id, { name: ($event.target as HTMLInputElement).value })"
                 type="text"
                 placeholder="如：OpenRouter / 硅基流动"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 py-1.5 text-xs text-white focus:border-[#f2b880]/60"
+                class="min-h-[38px] rounded-xl border border-line bg-canvas px-2.5 py-1.5 text-xs text-fg focus:border-accent"
               />
             </label>
-            <label class="flex flex-col gap-1 text-[11px] text-slate-300">
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>接口协议</span>
               <select
                 :value="provider.protocol"
                 @change="updateProviderField(provider.id, { protocol: ($event.target as HTMLSelectElement).value })"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 py-1.5 text-xs text-white focus:border-[#f2b880]/60"
+                class="min-h-[38px] rounded-xl border border-line bg-canvas px-2.5 py-1.5 text-xs text-fg focus:border-accent"
               >
                 <option value="openai">OpenAI 兼容 (/v1)</option>
                 <option value="gemini">Google Gemini (AI Studio)</option>
               </select>
             </label>
-            <label class="flex flex-col gap-1 text-[11px] text-slate-300">
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>备注 (可选)</span>
               <input
                 :value="provider.note || ''"
                 @input="updateProviderField(provider.id, { note: ($event.target as HTMLInputElement).value })"
                 type="text"
                 placeholder="如：中转主站 / 仅免费号"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 py-1.5 text-xs text-white focus:border-[#f2b880]/60"
+                class="min-h-[38px] rounded-xl border border-line bg-canvas px-2.5 py-1.5 text-xs text-fg focus:border-accent"
               />
             </label>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <label class="flex flex-col gap-1 text-[11px] text-slate-300">
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>Base URL（自动清洗末尾 /chat/completions）</span>
               <input
                 :value="provider.base_url"
@@ -866,10 +866,10 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 @blur="normalizeProviderUrl(provider)"
                 type="text"
                 placeholder="https://api.example.com/v1"
-                class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-2.5 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
+                class="min-h-[38px] rounded-xl border border-line bg-canvas px-2.5 py-1.5 font-mono text-xs text-fg focus:border-accent"
               />
             </label>
-            <label class="flex flex-col gap-1 text-[11px] text-slate-300">
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>API Key（同渠道免费/付费模型共享）</span>
               <SecretInput
                 :model-value="provider.api_key"
@@ -881,14 +881,14 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
           </div>
 
           <!-- Zero-Cost Model Discovery & Manual Model Input -->
-          <div class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-2.5 flex flex-col gap-2.5">
+          <div class="rounded-xl border border-line bg-canvas p-2.5 flex flex-col gap-2.5">
             <div class="flex items-center justify-between gap-2 flex-wrap">
-              <div class="text-[11px] font-medium text-slate-200">模型发现与池分配</div>
+              <div class="text-xs font-medium text-fg">模型发现与池分配</div>
               <button
                 type="button"
                 :disabled="fetchingProviderId === provider.id"
                 @click="fetchFullModels(provider)"
-                class="min-h-[30px] px-3 rounded-lg border border-[#f2b880]/45 bg-[#f2b880]/14 hover:bg-[#f2b880]/22 text-[11px] font-medium text-[#f7cba0] cursor-pointer disabled:opacity-50"
+                class="min-h-[30px] px-3 rounded-lg border border-accent-border bg-accent-soft hover:bg-accent-soft text-xs font-medium text-accent-fg cursor-pointer disabled:opacity-50"
               >
                 {{
                   fetchingProviderId === provider.id
@@ -907,47 +907,47 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 type="text"
                 placeholder="手动输入模型 ID（支持逗号分隔），如 deepseek-chat"
                 @keydown.enter.prevent="addManualModels(provider.id, 'free')"
-                class="flex-1 min-w-[200px] min-h-[32px] rounded-lg border border-[#fff8ee]/12 bg-[#070b15] px-2.5 text-[11px] font-mono text-white placeholder-slate-500 focus:border-[#f2b880]/55"
+                class="flex-1 min-w-[200px] min-h-[32px] rounded-lg border border-line bg-canvas px-2.5 text-xs font-mono text-fg placeholder:text-fg-muted focus:border-accent"
               />
               <button
                 type="button"
                 @click="addManualModels(provider.id, 'free')"
-                class="min-h-[32px] px-2.5 rounded-lg border border-emerald-400/35 bg-emerald-400/10 hover:bg-emerald-400/18 text-[11px] text-emerald-300 cursor-pointer"
+                class="min-h-[32px] px-2.5 rounded-lg border border-ok-border bg-ok-soft hover:bg-ok-soft text-xs text-ok cursor-pointer"
               >
                 + 免费池
               </button>
               <button
                 type="button"
                 @click="addManualModels(provider.id, 'paid')"
-                class="min-h-[32px] px-2.5 rounded-lg border border-[#f2b880]/35 bg-[#f2b880]/10 hover:bg-[#f2b880]/18 text-[11px] text-[#f2b880] cursor-pointer"
+                class="min-h-[32px] px-2.5 rounded-lg border border-accent-border bg-accent-soft hover:bg-accent-soft text-xs text-accent-fg cursor-pointer"
               >
                 + 付费池
               </button>
             </div>
 
             <!-- Searchable Full Model List -->
-            <div v-if="fetchedByProvider[provider.id]" class="flex flex-col gap-2 pt-1 border-t border-[#fff8ee]/8">
+            <div v-if="fetchedByProvider[provider.id]" class="flex flex-col gap-2 pt-1 border-t border-line">
               <div class="flex items-center gap-2 flex-wrap">
                 <input
                   v-model="fetchedByProvider[provider.id].query"
                   type="search"
                   placeholder="搜索模型名，如 flash / qwen / claude / :free..."
-                  class="flex-1 min-w-[180px] min-h-[30px] rounded-lg border border-[#fff8ee]/12 bg-[#070b15] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55"
+                  class="flex-1 min-w-[180px] min-h-[30px] rounded-lg border border-line bg-canvas px-2.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent"
                 />
-                <span class="font-mono text-[10.5px] text-slate-400">
+                <span class="font-mono text-xs text-fg-muted">
                   匹配 {{ filteredFetchedModels(provider.id).length }} / {{ fetchedByProvider[provider.id].models.length }}
                 </span>
                 <button
                   type="button"
                   @click="batchAssignAllLikelyFree(provider.id)"
-                  class="min-h-[26px] px-2 rounded-md border border-emerald-400/38 bg-emerald-400/10 text-[10.5px] text-emerald-300 hover:bg-emerald-400/18 cursor-pointer"
+                  class="min-h-[26px] px-2 rounded-lg border border-ok-border bg-ok-soft text-xs text-ok hover:bg-ok-soft cursor-pointer"
                 >
                   智能筛选免费模型加池
                 </button>
                 <button
                   type="button"
                   @click="batchAssignFiltered(provider.id, 'free', 24)"
-                  class="min-h-[26px] px-2 rounded-md border border-emerald-400/28 text-[10.5px] text-emerald-300 hover:bg-emerald-400/12 cursor-pointer"
+                  class="min-h-[26px] px-2 rounded-lg border border-ok-border text-xs text-ok hover:bg-ok-soft cursor-pointer"
                 >
                   前24个加免费池
                 </button>
@@ -959,10 +959,10 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                   type="button"
                   @click="fetchedByProvider[provider.id].filterTag = ''"
                   :class="[
-                    'px-2 py-0.5 rounded-md text-[10.5px] border cursor-pointer',
+                    'px-2 py-0.5 rounded-lg text-xs border cursor-pointer',
                     !fetchedByProvider[provider.id].filterTag
-                      ? 'border-[#f2b880]/50 bg-[#f2b880]/15 text-[#f7cba0]'
-                      : 'border-[#fff8ee]/10 text-slate-400 hover:text-slate-200',
+                      ? 'border-accent-border bg-accent-soft text-accent-fg'
+                      : 'border-line text-fg-muted hover:text-fg',
                   ]"
                 >
                   全部
@@ -976,10 +976,10 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                       fetchedByProvider[provider.id].filterTag === tag ? '' : tag
                   "
                   :class="[
-                    'px-2 py-0.5 rounded-md font-mono text-[10.5px] border cursor-pointer',
+                    'px-2 py-0.5 rounded-lg font-mono text-xs border cursor-pointer',
                     fetchedByProvider[provider.id].filterTag === tag
-                      ? 'border-[#f2b880]/50 bg-[#f2b880]/15 text-[#f7cba0]'
-                      : 'border-[#fff8ee]/10 text-slate-400 hover:text-slate-200',
+                      ? 'border-accent-border bg-accent-soft text-accent-fg'
+                      : 'border-line text-fg-muted hover:text-fg',
                   ]"
                 >
                   {{ tag }}
@@ -991,18 +991,18 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 <div
                   v-for="mid in filteredFetchedModels(provider.id).slice(0, 150)"
                   :key="mid"
-                  class="flex items-center justify-between gap-2 rounded-lg border border-[#fff8ee]/8 bg-[#070b15]/80 px-2.5 py-1.5"
+                  class="flex items-center justify-between gap-2 rounded-lg border border-line bg-canvas px-2.5 py-1.5"
                 >
-                  <span class="font-mono text-[11px] text-slate-200 truncate flex-1" :title="mid">{{ mid }}</span>
+                  <span class="font-mono text-xs text-fg truncate flex-1" :title="mid">{{ mid }}</span>
                   <div class="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
                       @click="assignModelToTier(provider.id, mid, 'free')"
                       :class="[
-                        'px-2 py-0.5 rounded-md text-[10.5px] border transition cursor-pointer',
+                        'px-2 py-0.5 rounded-lg text-xs border transition cursor-pointer',
                         modelTierOf(provider.id, mid) === 'free'
-                          ? 'border-emerald-400/60 bg-emerald-400/20 text-emerald-200 font-semibold'
-                          : 'border-[#fff8ee]/12 text-slate-400 hover:border-emerald-400/40 hover:text-emerald-300',
+                          ? 'border-ok-border bg-ok-soft text-ok font-semibold'
+                          : 'border-line text-fg-muted hover:border-ok-border hover:text-ok',
                       ]"
                     >
                       {{ modelTierOf(provider.id, mid) === 'free' ? '已在免费池' : '免费池' }}
@@ -1011,10 +1011,10 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                       type="button"
                       @click="assignModelToTier(provider.id, mid, 'paid')"
                       :class="[
-                        'px-2 py-0.5 rounded-md text-[10.5px] border transition cursor-pointer',
+                        'px-2 py-0.5 rounded-lg text-xs border transition cursor-pointer',
                         modelTierOf(provider.id, mid) === 'paid'
-                          ? 'border-[#f2b880]/60 bg-[#f2b880]/20 text-[#f7cba0] font-semibold'
-                          : 'border-[#fff8ee]/12 text-slate-400 hover:border-[#f2b880]/40 hover:text-[#f2b880]',
+                          ? 'border-accent-border bg-accent-soft text-accent-fg font-semibold'
+                          : 'border-line text-fg-muted hover:border-accent-border hover:text-accent-fg',
                       ]"
                     >
                       {{ modelTierOf(provider.id, mid) === 'paid' ? '已在付费池' : '付费池' }}
@@ -1023,7 +1023,7 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 </div>
                 <div
                   v-if="filteredFetchedModels(provider.id).length > 150"
-                  class="text-center text-[10.5px] text-slate-400 py-1"
+                  class="text-center text-xs text-fg-muted py-1"
                 >
                   当前匹配超过 150 个模型，请使用上方搜索框缩小范围
                 </div>
@@ -1040,10 +1040,10 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
       <div class="modal-section flex flex-col gap-2.5">
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <div>
-            <div class="text-xs font-semibold text-white">
+            <div class="text-xs font-semibold text-fg">
               {{ activeTier === 'paid' ? '付费模型池 · 调度策略与健康探测' : '免费模型池 · 调度策略与健康探测' }}
             </div>
-            <p class="text-[11px] text-slate-400 mt-0.5">
+            <p class="text-xs text-fg-muted mt-0.5">
               {{
                 activeTier === 'paid'
                   ? '仅在显式选择付费模型，或单任务/单 Bot 主动开启「允许付费兜底」时才会触发。'
@@ -1056,7 +1056,7 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
               v-if="hasFailedProbeInTier(activeTier)"
               type="button"
               @click="disableFailedInTier(activeTier)"
-              class="min-h-[30px] px-2.5 rounded-lg border border-rose-400/40 bg-rose-400/12 hover:bg-rose-400/20 text-[11px] text-rose-300 cursor-pointer"
+              class="min-h-[30px] px-2.5 rounded-lg border border-danger-border bg-danger-soft hover:bg-danger-soft text-xs text-danger cursor-pointer"
             >
               停用异常模型
             </button>
@@ -1065,7 +1065,7 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
               type="button"
               :disabled="clearingCooldown"
               @click="clearCooldown('')"
-              class="min-h-[30px] px-2.5 rounded-lg border border-amber-400/40 bg-amber-400/12 hover:bg-amber-400/20 text-[11px] text-amber-200 cursor-pointer disabled:opacity-50"
+              class="min-h-[30px] px-2.5 rounded-lg border border-warn-border bg-warn-soft hover:bg-warn-soft text-xs text-warn cursor-pointer disabled:opacity-50"
             >
               全部解封冷却
             </button>
@@ -1073,7 +1073,7 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
               type="button"
               :disabled="Boolean(probingPoolTier) || activeTierModels.length === 0"
               @click="probePoolTier(activeTier)"
-              class="min-h-[30px] px-3 rounded-lg border border-[#f2b880]/40 bg-[#f2b880]/12 hover:bg-[#f2b880]/20 text-[11px] font-medium text-[#f7cba0] cursor-pointer disabled:opacity-45"
+              class="min-h-[30px] px-3 rounded-lg border border-accent-border bg-accent-soft hover:bg-accent-soft text-xs font-medium text-accent-fg cursor-pointer disabled:opacity-45"
             >
               {{
                 probingPoolTier === activeTier
@@ -1095,12 +1095,12 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
             :class="[
               'rounded-xl border px-2.5 py-2 text-left transition cursor-pointer',
               activeTierStrategy === opt.id
-                ? 'border-[#f2b880]/60 bg-[#f2b880]/14 text-white'
-                : 'border-[#fff8ee]/10 bg-[#060913]/55 text-slate-400 hover:border-[#fff8ee]/25',
+                ? 'border-accent-border bg-accent-soft text-fg'
+                : 'border-line bg-canvas text-fg-muted hover:border-line-strong',
             ]"
           >
-            <div class="text-[11px] font-semibold">{{ opt.label }}</div>
-            <div class="text-[10px] opacity-80 mt-0.5 leading-snug">{{ opt.desc }}</div>
+            <div class="text-xs font-semibold">{{ opt.label }}</div>
+            <div class="text-xs opacity-80 mt-0.5 leading-snug">{{ opt.desc }}</div>
           </button>
         </div>
       </div>
@@ -1108,18 +1108,18 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
       <!-- Empty Pool Notice -->
       <div
         v-if="activeTierModels.length === 0"
-        class="rounded-2xl border border-dashed border-[#fff8ee]/15 bg-[#060913]/55 px-4 py-7 text-center flex flex-col items-center gap-2.5"
+        class="rounded-xl border border-dashed border-line bg-canvas px-4 py-7 text-center flex flex-col items-center gap-2.5"
       >
-        <div class="text-xs font-semibold text-slate-200">
+        <div class="text-xs font-semibold text-fg">
           {{ activeTier === 'paid' ? '付费模型池暂无模型' : '免费模型池暂无模型' }}
         </div>
-        <p class="text-[11px] text-slate-400 max-w-md leading-relaxed">
+        <p class="text-xs text-fg-muted max-w-md leading-relaxed">
           前往「渠道管理」拉取任意渠道的全量模型列表，点击对应模型右侧的「{{ activeTier === 'paid' ? '付费池' : '免费池' }}」按钮即可一键加入。
         </p>
         <button
           type="button"
           @click="subTab = 'providers'"
-          class="min-h-[32px] px-3.5 rounded-xl border border-[#f2b880]/45 bg-[#f2b880]/12 text-xs text-[#f7cba0] hover:bg-[#f2b880]/20 cursor-pointer"
+          class="min-h-[32px] px-3.5 rounded-xl border border-accent-border bg-accent-soft text-xs text-accent-fg hover:bg-accent-soft cursor-pointer"
         >
           去渠道管理分配模型
         </button>
@@ -1133,37 +1133,37 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
           :class="[
             'rounded-xl border px-3 py-2.5 flex flex-col gap-2 transition-colors',
             m.enabled && providerMap.get(m.provider_id)?.enabled
-              ? 'border-[#fff8ee]/12 bg-[#070b15]/85'
-              : 'border-[#fff8ee]/8 bg-[#060811]/50 opacity-65',
+              ? 'border-line bg-canvas'
+              : 'border-line bg-canvas opacity-65',
           ]"
         >
           <div class="flex items-start justify-between gap-2 flex-wrap">
             <div class="min-w-0 flex-1 flex flex-col gap-1">
               <div class="flex items-center gap-1.5 flex-wrap">
-                <span class="font-mono text-[10.5px] text-slate-500">#{{ idx + 1 }}</span>
-                <span class="text-[11px] px-1.5 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#0d1426] text-slate-200">
+                <span class="font-mono text-xs text-fg-muted">#{{ idx + 1 }}</span>
+                <span class="text-xs px-1.5 py-0.5 rounded-lg border border-line bg-card text-fg">
                   {{ providerMap.get(m.provider_id)?.name || m.provider_id }}
                 </span>
-                <span class="font-mono text-xs font-semibold text-white break-all">{{ m.model_id }}</span>
+                <span class="font-mono text-xs font-semibold text-fg break-all">{{ m.model_id }}</span>
               </div>
 
               <!-- Capability & Health Pills -->
-              <div class="flex items-center gap-1.5 flex-wrap text-[10.5px]">
+              <div class="flex items-center gap-1.5 flex-wrap text-xs">
                 <span
                   v-if="m.supports_tools === true"
-                  class="px-1.5 py-0.5 rounded-md border border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                  class="px-1.5 py-0.5 rounded-lg border border-ok-border bg-ok-soft text-ok"
                 >
                   Tools 可用
                 </span>
                 <span
                   v-else-if="m.supports_tools === false"
-                  class="px-1.5 py-0.5 rounded-md border border-slate-500/30 bg-slate-500/10 text-slate-400"
+                  class="px-1.5 py-0.5 rounded-lg border border-line bg-subtle text-fg-muted"
                 >
                   不支持 Tools
                 </span>
                 <span
                   v-if="m.supports_thinking === true"
-                  class="px-1.5 py-0.5 rounded-md border border-cyan-400/30 bg-cyan-400/10 text-cyan-300"
+                  class="px-1.5 py-0.5 rounded-lg border border-info-border bg-info-soft text-info"
                 >
                   Thinking
                 </span>
@@ -1171,20 +1171,20 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 <template v-if="healthForModel(m)">
                   <span
                     v-if="(healthForModel(m)?.cooldown_sec || 0) > 0"
-                    class="font-mono px-1.5 py-0.5 rounded-md border border-amber-400/35 bg-amber-400/12 text-amber-200"
+                    class="font-mono px-1.5 py-0.5 rounded-lg border border-warn-border bg-warn-soft text-warn"
                   >
                     冷却中 {{ healthForModel(m)?.cooldown_sec }}s
                   </span>
                   <span
                     v-else-if="(healthForModel(m)?.last_latency_ms || 0) > 0"
-                    class="font-mono px-1.5 py-0.5 rounded-md border border-emerald-400/25 bg-emerald-400/8 text-emerald-300"
+                    class="font-mono px-1.5 py-0.5 rounded-lg border border-ok-border bg-ok-soft text-ok"
                   >
                     正常 · {{ healthForModel(m)?.last_latency_ms }}ms
                   </span>
                 </template>
                 <span
                   v-else-if="m.last_latency_ms"
-                  class="font-mono px-1.5 py-0.5 rounded-md border border-[#fff8ee]/12 text-slate-300"
+                  class="font-mono px-1.5 py-0.5 rounded-lg border border-line text-fg-sub"
                 >
                   上次 {{ m.last_latency_ms }}ms
                 </span>
@@ -1192,10 +1192,10 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 <span
                   v-if="probeMsgByKey[canonicalModelTargetId(m.provider_id, m.model_id)]"
                   :class="[
-                    'font-mono text-[10.5px]',
+                    'font-mono text-xs',
                     probeMsgByKey[canonicalModelTargetId(m.provider_id, m.model_id)].ok
-                      ? 'text-emerald-300'
-                      : 'text-rose-300',
+                      ? 'text-ok'
+                      : 'text-danger',
                   ]"
                 >
                   {{ probeMsgByKey[canonicalModelTargetId(m.provider_id, m.model_id)].msg }}
@@ -1209,7 +1209,7 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 type="button"
                 :disabled="probingKey === canonicalModelTargetId(m.provider_id, m.model_id)"
                 @click="probeSingleModel(m)"
-                class="min-h-[28px] px-2 rounded-lg border border-[#fff8ee]/14 hover:border-[#f2b880]/45 text-[11px] text-slate-200 hover:text-[#f7cba0] cursor-pointer disabled:opacity-50"
+                class="min-h-[28px] px-2 rounded-lg border border-line hover:border-accent-border text-xs text-fg hover:text-accent-fg cursor-pointer disabled:opacity-50"
               >
                 {{ probingKey === canonicalModelTargetId(m.provider_id, m.model_id) ? '测速中...' : '测速' }}
               </button>
@@ -1217,14 +1217,14 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 v-if="(healthForModel(m)?.cooldown_sec || 0) > 0"
                 type="button"
                 @click="clearCooldown(canonicalModelTargetId(m.provider_id, m.model_id))"
-                class="min-h-[28px] px-2 rounded-lg border border-amber-400/40 bg-amber-400/12 text-[11px] text-amber-200 cursor-pointer"
+                class="min-h-[28px] px-2 rounded-lg border border-warn-border bg-warn-soft text-xs text-warn cursor-pointer"
               >
                 解封
               </button>
               <button
                 type="button"
                 @click="moveModelToOtherTier(m)"
-                class="min-h-[28px] px-2 rounded-lg border border-[#fff8ee]/12 hover:border-[#f2b880]/40 text-[11px] text-slate-300 hover:text-[#f7cba0] cursor-pointer"
+                class="min-h-[28px] px-2 rounded-lg border border-line hover:border-accent-border text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
               >
                 {{ activeTier === 'paid' ? '移至免费池' : '移至付费池' }}
               </button>
@@ -1233,7 +1233,7 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 :disabled="idx === 0"
                 @click="movePooledModel(activeTier, idx, -1)"
                 aria-label="上移优先级"
-                class="min-h-[28px] px-1.5 rounded-lg border border-[#fff8ee]/10 text-[11px] text-slate-300 hover:border-[#f2b880]/40 disabled:opacity-30 cursor-pointer"
+                class="min-h-[28px] px-1.5 rounded-lg border border-line text-xs text-fg-sub hover:border-accent-border disabled:opacity-30 cursor-pointer"
               >
                 ↑
               </button>
@@ -1242,7 +1242,7 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 :disabled="idx === activeTierModels.length - 1"
                 @click="movePooledModel(activeTier, idx, 1)"
                 aria-label="下移优先级"
-                class="min-h-[28px] px-1.5 rounded-lg border border-[#fff8ee]/10 text-[11px] text-slate-300 hover:border-[#f2b880]/40 disabled:opacity-30 cursor-pointer"
+                class="min-h-[28px] px-1.5 rounded-lg border border-line text-xs text-fg-sub hover:border-accent-border disabled:opacity-30 cursor-pointer"
               >
                 ↓
               </button>
@@ -1255,14 +1255,14 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 :class="[
                   'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors cursor-pointer mx-0.5',
                   m.enabled
-                    ? 'border-[#f2b880]/60 bg-[#f2b880]/25'
-                    : 'border-[#fff8ee]/15 bg-[#050811]',
+                    ? 'border-accent-border bg-accent-soft'
+                    : 'border-line bg-canvas',
                 ]"
               >
                 <span
                   :class="[
                     'inline-block h-3.5 w-3.5 rounded-full transition-transform',
-                    m.enabled ? 'translate-x-4 bg-[#f2b880]' : 'translate-x-0.5 bg-slate-500',
+                    m.enabled ? 'translate-x-4 bg-accent' : 'translate-x-0.5 bg-fg-muted',
                   ]"
                 />
               </button>
@@ -1270,7 +1270,7 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 type="button"
                 @click="removePooledModel(m)"
                 aria-label="移出模型池"
-                class="min-h-[28px] px-2 rounded-lg border border-rose-400/25 text-[11px] text-rose-300 hover:bg-rose-400/12 whitespace-nowrap cursor-pointer"
+                class="min-h-[28px] px-2 rounded-lg border border-danger-border text-xs text-danger hover:bg-danger-soft whitespace-nowrap cursor-pointer"
               >
                 移除
               </button>

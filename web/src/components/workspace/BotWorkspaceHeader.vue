@@ -154,23 +154,23 @@ onBeforeUnmount(() => {
           />
           <BotAvatar v-else :avatar-style="bot?.avatar_style" :state="bot?.state" size="sm" />
 
-          <h1 class="text-xs sm:text-[13.5px] font-semibold text-white truncate max-w-[9rem] sm:max-w-[13rem]">
+          <h1 class="text-xs sm:text-sm font-semibold text-fg truncate max-w-[9rem] sm:max-w-[13rem]">
             {{ bot?.name || 'BotHub' }}
           </h1>
 
           <span
             v-if="bot?.state && bot.state !== 'idle'"
-            class="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#f2b880]/15 text-[#ffe2be] font-mono text-[10px] leading-none shrink-0"
+            class="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-soft text-accent-fg font-mono text-xs leading-none shrink-0"
           >
             <span :class="['w-1.5 h-1.5 rounded-full', botStateDotClass(bot?.state)]" aria-hidden="true" />
             <span>{{ botStateLabel(bot?.state) }}</span>
           </span>
 
-          <!-- Inline Topic Pill (Compact chevron on mobile when on main timeline; full label when custom thread active or on sm+) -->
+          <!-- Inline Topic Pill -->
           <template v-if="bot && store.state.botView === 'stream'">
             <span
               :class="[
-                'h-3.5 w-px bg-[#fff8ee]/12 shrink-0',
+                'h-3.5 w-px bg-line shrink-0',
                 !store.state.activeThreadId ? 'hidden sm:inline-block' : ''
               ]"
               aria-hidden="true"
@@ -181,11 +181,11 @@ onBeforeUnmount(() => {
               aria-label="切换或新建独立话题"
               title="切换或新建独立话题"
               @click.stop="topicMenuOpen = !topicMenuOpen"
-              class="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.07] cursor-pointer max-w-[6.5rem] sm:max-w-[9.5rem]"
+              class="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-xs text-fg-sub hover:text-fg hover:bg-hover cursor-pointer max-w-[6.5rem] sm:max-w-[9.5rem]"
             >
               <span
                 :class="[
-                  'text-[#f2b880]/80 font-mono',
+                  'text-accent-fg font-mono',
                   !store.state.activeThreadId ? 'hidden sm:inline' : ''
                 ]"
               >#</span>
@@ -195,7 +195,7 @@ onBeforeUnmount(() => {
                   !store.state.activeThreadId ? 'hidden sm:inline' : ''
                 ]"
               >{{ activeThreadTitle }}</span>
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" :class="['shrink-0 text-slate-400 transition-transform duration-150', topicMenuOpen ? 'rotate-180 text-[#f2b880]' : '']">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" :class="['shrink-0 text-fg-muted transition-transform duration-150', topicMenuOpen ? 'rotate-180 text-accent-fg' : '']">
                 <polyline points="6 9 12 15 18 9" />
               </svg>
             </button>
@@ -213,18 +213,18 @@ onBeforeUnmount(() => {
         >
           <div
             v-if="topicMenuOpen && bot"
-            class="aero-glass absolute left-0 top-full mt-2 z-50 w-64 rounded-2xl border border-[#fff8ee]/16 p-1.5 origin-top-left flex flex-col gap-0.5"
+            class="aero-glass absolute left-0 top-full mt-2 z-50 w-64 rounded-xl border border-line-strong p-1.5 origin-top-left flex flex-col gap-0.5"
           >
             <button
               type="button"
               @click="handlePickTopic('')"
               :class="[
-                'w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs cursor-pointer text-left',
-                !store.state.activeThreadId ? 'bg-[#f2b880]/18 text-[#ffe2be] font-medium' : 'text-slate-200 hover:bg-white/[0.06]'
+                'w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs cursor-pointer text-left',
+                !store.state.activeThreadId ? 'bg-accent-soft text-accent-fg font-medium' : 'text-fg hover:bg-hover'
               ]"
             >
               <span># 主时间线</span>
-              <span v-if="!store.state.activeThreadId" class="font-mono text-[10px] text-[#f2b880]">当前</span>
+              <span v-if="!store.state.activeThreadId" class="font-mono text-xs text-accent-fg">当前</span>
             </button>
 
             <div v-if="store.state.botThreads.length > 0" class="max-h-48 overflow-y-auto flex flex-col gap-0.5">
@@ -232,8 +232,8 @@ onBeforeUnmount(() => {
                 v-for="th in store.state.botThreads"
                 :key="th.id"
                 :class="[
-                  'flex items-center justify-between gap-1 px-2.5 py-1.5 rounded-xl text-xs',
-                  store.state.activeThreadId === th.id ? 'bg-[#f2b880]/18 text-[#ffe2be] font-medium' : 'text-slate-300 hover:bg-white/[0.06]'
+                  'flex items-center justify-between gap-1 px-2.5 py-1.5 rounded-lg text-xs',
+                  store.state.activeThreadId === th.id ? 'bg-accent-soft text-accent-fg font-medium' : 'text-fg-sub hover:bg-hover'
                 ]"
               >
                 <button
@@ -242,33 +242,33 @@ onBeforeUnmount(() => {
                   class="flex-1 min-w-0 text-left truncate cursor-pointer"
                 >
                   # {{ th.title }}
-                  <span v-if="th.msg_count > 0" class="font-mono text-[10px] opacity-60 ml-0.5">({{ th.msg_count }})</span>
+                  <span v-if="th.msg_count > 0" class="font-mono text-xs opacity-60 ml-0.5">({{ th.msg_count }})</span>
                 </button>
                 <button
                   type="button"
                   title="删除此话题"
                   @click.stop="store.deleteThread(th.id)"
-                  class="px-1.5 py-0.5 rounded text-[11px] text-slate-400 hover:text-rose-300 cursor-pointer shrink-0"
+                  class="px-1.5 py-0.5 rounded-lg text-xs text-fg-muted hover:text-danger cursor-pointer shrink-0"
                 >
                   ×
                 </button>
               </div>
             </div>
 
-            <div class="my-1 border-t border-[#fff8ee]/10" />
+            <div class="my-1 border-t border-line" />
             <button
               v-if="store.state.timeline.length >= 2"
               type="button"
               :disabled="summarizing"
               @click="handleQuickSummarize"
-              class="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs text-emerald-300 hover:bg-emerald-500/12 cursor-pointer text-left disabled:opacity-50"
+              class="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-ok hover:bg-ok-soft cursor-pointer text-left disabled:opacity-50"
             >
               <span>{{ summarizing ? '正在提炼...' : '提炼当前话题存为记忆' }}</span>
             </button>
             <button
               type="button"
               @click="handleCreateNewTopic"
-              class="w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs text-[#ffe2be] hover:bg-[#f2b880]/15 cursor-pointer text-left font-medium"
+              class="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-accent-fg hover:bg-accent-soft cursor-pointer text-left font-medium"
             >
               <span>+ 开启新独立话题</span>
             </button>
@@ -277,7 +277,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Center Floating View Switcher Island (Desktop / Tablet) -->
+    <!-- Center View Switcher (Desktop / Tablet) -->
     <div v-if="bot" class="hidden sm:inline-flex">
       <SegmentedTabs v-model="store.state.botView" :items="VIEW_TABS" aria-label="Bot 子视图" />
     </div>
@@ -289,13 +289,13 @@ onBeforeUnmount(() => {
         title="收藏与个人行动台"
         aria-label="收藏与个人行动台"
         @click="store.state.workhubTab = store.unreadStashCount.value > 0 ? 'stash' : 'todos'; store.state.showWorkhubModal = true"
-        class="sm:hidden btn-tactile relative min-h-[38px] min-w-[38px] inline-flex items-center justify-center rounded-full text-slate-300 cursor-pointer shrink-0"
+        class="sm:hidden btn-tactile relative min-h-[38px] min-w-[38px] inline-flex items-center justify-center rounded-full text-fg-sub cursor-pointer shrink-0"
       >
         <span
           v-if="store.unreadStashCount.value > 0 || store.pendingTodoCount.value > 0"
           :class="[
             'absolute top-1.5 right-1.5 w-2 h-2 rounded-full',
-            store.unreadStashCount.value > 0 ? 'bg-rose-400' : 'bg-cyan-400'
+            store.unreadStashCount.value > 0 ? 'bg-danger' : 'bg-info'
           ]"
           aria-hidden="true"
         />
@@ -312,7 +312,7 @@ onBeforeUnmount(() => {
         aria-label="切换对话宽度"
         :class="[
           'hidden lg:inline-flex min-h-[34px] items-center justify-center gap-1.5 px-2.5 rounded-full text-xs font-medium cursor-pointer shrink-0',
-          store.state.chatWide ? 'btn-tactile-gold' : 'btn-tactile text-slate-300',
+          store.state.chatWide ? 'btn-tactile-gold' : 'btn-tactile text-fg-sub',
         ]"
       >
         <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -352,14 +352,14 @@ onBeforeUnmount(() => {
         aria-label="切换协同副屏"
         :class="[
           'hidden lg:inline-flex relative min-h-[34px] items-center justify-center gap-1.5 px-2.5 rounded-full text-xs font-medium cursor-pointer shrink-0',
-          store.state.sideInspectorOpen ? 'btn-tactile-gold' : 'btn-tactile text-slate-300',
+          store.state.sideInspectorOpen ? 'btn-tactile-gold' : 'btn-tactile text-fg-sub',
         ]"
       >
         <span
           v-if="!store.state.sideInspectorOpen && (store.unreadStashCount.value > 0 || store.expiringAssetCount.value > 0)"
           :class="[
             'absolute top-1 right-1 w-1.5 h-1.5 rounded-full',
-            store.unreadStashCount.value > 0 ? 'bg-rose-400' : 'bg-amber-400',
+            store.unreadStashCount.value > 0 ? 'bg-danger' : 'bg-warn',
           ]"
           aria-hidden="true"
         />
@@ -378,7 +378,7 @@ onBeforeUnmount(() => {
           aria-label="更多操作"
           title="更多操作"
           @click="handleMoreButtonClick"
-          class="btn-tactile min-h-[38px] min-w-[38px] sm:min-h-[34px] sm:min-w-[34px] inline-flex items-center justify-center rounded-full text-slate-300 cursor-pointer"
+          class="btn-tactile min-h-[38px] min-w-[38px] sm:min-h-[34px] sm:min-w-[34px] inline-flex items-center justify-center rounded-full text-fg-sub cursor-pointer"
         >
           <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
             <circle cx="5" cy="12" r="1.75" />
@@ -400,7 +400,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             @click="emit('openChatSearch'); closeMoreMenu()"
-            class="min-h-[40px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
+            class="min-h-[40px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-fg hover:bg-hover cursor-pointer text-left"
           >
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <span>查找聊天记录</span>
@@ -408,7 +408,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             @click="store.state.showLogsModal = true; closeMoreMenu()"
-            class="min-h-[40px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
+            class="min-h-[40px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-fg hover:bg-hover cursor-pointer text-left"
           >
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
             <span>系统推送与流水</span>
@@ -416,42 +416,29 @@ onBeforeUnmount(() => {
           <button
             type="button"
             @click="store.toggleSound(); closeMoreMenu()"
-            class="min-h-[40px] sm:min-h-[34px] w-full flex items-center justify-between gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
+            class="min-h-[40px] sm:min-h-[34px] w-full flex items-center justify-between gap-2.5 px-3 rounded-lg text-xs text-fg hover:bg-hover cursor-pointer text-left"
           >
             <span class="inline-flex items-center gap-2.5">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>
               <span>回复提示音</span>
             </span>
-            <span class="font-mono text-[10px]" :class="store.state.soundEnabled ? 'text-[#f2b880]' : 'text-slate-500'">
+            <span class="font-mono text-xs" :class="store.state.soundEnabled ? 'text-accent-fg' : 'text-fg-muted'">
               {{ store.state.soundEnabled ? '开' : '关' }}
             </span>
           </button>
           <button
             type="button"
-            @click="store.toggleAmbientMotion(); closeMoreMenu()"
-            class="min-h-[40px] sm:min-h-[34px] w-full flex items-center justify-between gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
-          >
-            <span class="inline-flex items-center gap-2.5">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="10" /><polygon v-if="store.state.ambientMotionPaused" points="10 8 16 12 10 16 10 8" /><template v-else><line x1="10" y1="15" x2="10" y2="9" /><line x1="14" y1="15" x2="14" y2="9" /></template></svg>
-              <span>{{ store.state.ambientMotionPaused ? '恢复背景动效' : '暂停背景动效' }}</span>
-            </span>
-            <span class="font-mono text-[10px]" :class="!store.state.ambientMotionPaused ? 'text-[#f2b880]' : 'text-slate-500'">
-              {{ store.state.ambientMotionPaused ? '已暂停' : '运行' }}
-            </span>
-          </button>
-          <button
-            type="button"
             @click="emit('exportMarkdown'); closeMoreMenu()"
-            class="min-h-[40px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-slate-200 hover:bg-[#f2b880]/14 hover:text-[#f2b880] cursor-pointer text-left"
+            class="min-h-[40px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-fg hover:bg-hover cursor-pointer text-left"
           >
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
             <span>导出 Markdown</span>
           </button>
-          <div class="my-1 border-t border-[#fff8ee]/10" />
+          <div class="my-1 border-t border-line" />
           <button
             type="button"
             @click="emit('clearTimeline'); closeMoreMenu()"
-            class="min-h-[40px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-rose-300 hover:bg-rose-500/15 cursor-pointer text-left"
+            class="min-h-[40px] sm:min-h-[34px] w-full flex items-center gap-2.5 px-3 rounded-lg text-xs text-danger hover:bg-danger-soft cursor-pointer text-left"
           >
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
             <span>清空对话流</span>

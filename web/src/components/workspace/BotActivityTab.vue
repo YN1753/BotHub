@@ -97,40 +97,40 @@ onMounted(() => {
     <div class="max-w-4xl mx-auto flex flex-col gap-3">
       <div class="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <h2 class="text-base sm:text-lg font-semibold text-white">
+          <h2 class="text-base sm:text-lg font-semibold text-fg">
             {{ bot?.name || '当前 Bot' }} 的专属运行脉搏
           </h2>
-          <span class="text-[11px] font-mono text-slate-400">
+          <span class="text-xs font-mono text-fg-muted">
             仅显示该会话自身的工具/技能调用、绑定例程与专属推送
           </span>
         </div>
         <div class="flex items-center gap-2 flex-wrap">
-          <div class="inline-flex rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-0.5 text-[11px]">
+          <div class="inline-flex rounded-xl border border-line bg-canvas p-0.5 text-xs">
             <button
               type="button"
               @click="activityFilter = 'all'"
-              :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'all' ? 'bg-[#f2b880]/20 text-[#f2b880]' : 'text-slate-400 hover:text-white']"
+              :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'all' ? 'bg-accent-soft text-accent-fg' : 'text-fg-muted hover:text-fg']"
             >
               全部 ({{ activityEntries.length }})
             </button>
             <button
               type="button"
               @click="activityFilter = 'tool'"
-              :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'tool' ? 'bg-[#f2b880]/20 text-[#f2b880]' : 'text-slate-400 hover:text-white']"
+              :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'tool' ? 'bg-accent-soft text-accent-fg' : 'text-fg-muted hover:text-fg']"
             >
               工具/技能
             </button>
             <button
               type="button"
               @click="activityFilter = 'routine'"
-              :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'routine' ? 'bg-cyan-500/20 text-cyan-200' : 'text-slate-400 hover:text-white']"
+              :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'routine' ? 'bg-info-soft text-info' : 'text-fg-muted hover:text-fg']"
             >
               例程
             </button>
             <button
               type="button"
               @click="activityFilter = 'error'"
-              :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'error' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400 hover:text-white']"
+              :class="['px-2.5 py-1 rounded-lg cursor-pointer transition-colors', activityFilter === 'error' ? 'bg-danger-soft text-danger' : 'text-fg-muted hover:text-fg']"
             >
               仅异常
             </button>
@@ -142,17 +142,17 @@ onMounted(() => {
             aria-label="筛选运行脉搏"
             placeholder="筛选日志..."
             @keydown.escape="clearSearchOnEscape($event, activityQuery, () => { activityQuery = '' })"
-            class="w-36 min-h-[30px] rounded-xl border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55 focus:outline-none"
+            class="w-36 min-h-[30px] rounded-xl border border-line bg-canvas px-2.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
           />
         </div>
       </div>
-      <div v-if="filteredActivityEntries.length === 0" class="vesper-card rounded-2xl p-8 text-center flex flex-col items-center gap-2 text-sm text-slate-400">
+      <div v-if="filteredActivityEntries.length === 0" class="vesper-card rounded-xl p-8 text-center flex flex-col items-center gap-2 text-sm text-fg-muted">
         <span>{{ activityEntries.length ? '当前筛选条件下无匹配运行记录' : '暂无该 Bot 的专属运行记录' }}</span>
         <button
           v-if="activityFilter !== 'all' || activityQuery.trim()"
           type="button"
           @click="activityFilter = 'all'; activityQuery = ''"
-          class="px-3 py-1 rounded-lg border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] cursor-pointer"
+          class="px-3 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
         >
           重置筛选条件
         </button>
@@ -168,19 +168,19 @@ onMounted(() => {
               <span
                 v-if="act.status"
                 :class="[
-                  'px-1.5 py-0.5 rounded font-mono text-[10px] border shrink-0',
+                  'px-1.5 py-0.5 rounded font-mono text-xs border shrink-0',
                   act.status === 'error'
-                    ? 'border-rose-400/40 bg-rose-500/10 text-rose-300'
-                    : 'border-emerald-400/40 bg-emerald-500/10 text-emerald-300',
+                    ? 'border-danger-border bg-danger-soft text-danger'
+                    : 'border-ok-border bg-ok-soft text-ok',
                 ]"
               >
                 {{ act.status }}
               </span>
-              <strong class="text-sm text-white truncate">{{ act.title }}</strong>
+              <strong class="text-sm text-fg truncate">{{ act.title }}</strong>
             </div>
-            <span :class="['font-mono text-[11px] shrink-0', (act.durationMs || 0) >= 3000 ? 'text-amber-300' : 'text-slate-400']">{{ act.time }}</span>
+            <span :class="['font-mono text-xs shrink-0', (act.durationMs || 0) >= 3000 ? 'text-warn' : 'text-fg-muted']">{{ act.time }}</span>
           </div>
-          <p class="text-xs text-slate-300 mt-1">{{ act.detail }}</p>
+          <p class="text-xs text-fg-sub mt-1">{{ act.detail }}</p>
         </article>
       </div>
     </div>

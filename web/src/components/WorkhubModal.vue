@@ -111,7 +111,7 @@ function openAssetOpsFromBriefing() {
   >
     <div class="flex items-center justify-between gap-2 flex-wrap shrink-0">
       <SegmentedTabs v-model="activeTab" :items="TAB_ITEMS" aria-label="行动台视图切换" />
-      <span class="font-mono text-[11px] text-slate-400">
+      <span class="font-mono text-xs text-fg-muted">
         待办 {{ store.pendingTodoCount.value }} 项 · 收藏 {{ store.unreadStashCount.value }} 未读 · 文档 {{ store.state.notes.length }} 份
       </span>
     </div>

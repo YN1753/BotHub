@@ -177,11 +177,11 @@ export function botStateLabel(state?: string): string {
 }
 
 export function botStateDotClass(state?: string): string {
-  if (state === 'thinking') return 'bg-amber-400 animate-pulse'
-  if (state === 'working') return 'bg-[#f2b880] animate-pulse'
-  if (state === 'done') return 'bg-emerald-400'
-  if (state === 'blocked') return 'bg-rose-400'
-  return 'bg-slate-500'
+  if (state === 'thinking') return 'bg-warn animate-pulse'
+  if (state === 'working') return 'bg-accent animate-pulse'
+  if (state === 'done') return 'bg-ok'
+  if (state === 'blocked') return 'bg-danger'
+  return 'bg-fg-muted'
 }
 
 export function summarizeAssetsMonthlyCost(

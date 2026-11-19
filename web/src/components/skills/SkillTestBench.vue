@@ -94,15 +94,15 @@ async function runLiveTest() {
 </script>
 
 <template>
-  <div class="rounded-xl border border-cyan-400/30 bg-[#060914] p-4 flex flex-col gap-2.5">
+  <div class="rounded-xl border border-info-border bg-canvas p-4 flex flex-col gap-2.5">
     <div class="flex items-center justify-between gap-2">
-      <h4 class="text-xs font-semibold text-cyan-200 truncate">
+      <h4 class="text-xs font-semibold text-info truncate">
         实时调试工具: skill_{{ skill.slug }}
       </h4>
       <button
         type="button"
         @click="emit('close')"
-        class="text-[11px] text-slate-400 hover:text-white cursor-pointer shrink-0"
+        class="text-xs text-fg-muted hover:text-fg cursor-pointer shrink-0"
       >
         收起
       </button>
@@ -112,25 +112,25 @@ async function runLiveTest() {
       <label
         v-for="field in parsedSchema"
         :key="field.key"
-        class="flex flex-col gap-1 text-[11px] text-slate-300"
+        class="flex flex-col gap-1 text-xs text-fg-sub"
       >
         <span class="flex items-center justify-between gap-2">
-          <span class="font-mono text-cyan-300">
+          <span class="font-mono text-info">
             {{ field.key }}
-            <span v-if="field.required" class="text-rose-300">*</span>
-            <span class="text-slate-500 text-[10px] ml-1">({{ field.type || 'string' }})</span>
+            <span v-if="field.required" class="text-danger">*</span>
+            <span class="text-fg-muted text-xs ml-1">({{ field.type || 'string' }})</span>
           </span>
-          <span v-if="field.description" class="text-[10.5px] text-slate-500 truncate">{{ field.description }}</span>
+          <span v-if="field.description" class="text-xs text-fg-muted truncate">{{ field.description }}</span>
         </span>
         <input
           v-model="testArgs[field.key]"
           :type="field.type === 'integer' ? 'number' : 'text'"
           :placeholder="field.type === 'boolean' ? 'true 或 false' : '输入测试参数值'"
-          class="min-h-[34px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white focus:border-cyan-400/55 focus:outline-none"
+          class="min-h-[34px] rounded-lg border border-line bg-canvas px-2.5 text-xs text-fg focus:border-info focus:outline-none"
         />
       </label>
     </div>
-    <div v-else class="text-[11px] text-slate-500">
+    <div v-else class="text-xs text-fg-muted">
       该 Webhook 工具无需输入参数，可直接发送测试请求。
     </div>
 
@@ -138,27 +138,27 @@ async function runLiveTest() {
       type="button"
       :disabled="testing"
       @click="runLiveTest"
-      class="min-h-[36px] px-3 py-1.5 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-xs font-medium text-cyan-200 hover:bg-cyan-500/30 cursor-pointer disabled:opacity-50"
+      class="min-h-[36px] px-3 py-1.5 rounded-xl bg-info-soft border border-info-border text-xs font-medium text-info hover:bg-info-soft cursor-pointer disabled:opacity-50"
     >
       {{ testing ? '正在请求远端接口...' : '发送测试请求' }}
     </button>
 
-    <div v-if="testResult" class="rounded-lg bg-[#050811] border border-[#fff8ee]/10 p-2.5 text-[11px] font-mono">
-      <div v-if="testResult.error" class="text-rose-300">{{ testResult.error }}</div>
+    <div v-if="testResult" class="rounded-lg bg-canvas border border-line p-2.5 text-xs font-mono">
+      <div v-if="testResult.error" class="text-danger">{{ testResult.error }}</div>
       <template v-else>
         <div class="flex items-center justify-between gap-2 mb-1">
-          <span :class="(testResult.statusCode || 200) >= 400 ? 'text-amber-300' : 'text-emerald-300'">
+          <span :class="(testResult.statusCode || 200) >= 400 ? 'text-warn' : 'text-ok'">
             HTTP {{ testResult.statusCode || 200 }} · {{ testResult.latencyMs }}ms
           </span>
           <button
             type="button"
             @click="copyTestOutput(testResult.output)"
-            class="px-2 py-0.5 rounded border border-[#fff8ee]/12 text-[10px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+            class="px-2 py-0.5 rounded border border-line text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
           >
             复制响应
           </button>
         </div>
-        <pre class="whitespace-pre-wrap break-all text-slate-300 max-h-48 overflow-y-auto">{{ formatTestOutput(testResult.output) }}</pre>
+        <pre class="whitespace-pre-wrap break-all text-fg-sub max-h-48 overflow-y-auto">{{ formatTestOutput(testResult.output) }}</pre>
       </template>
     </div>
   </div>

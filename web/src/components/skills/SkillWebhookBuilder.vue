@@ -156,49 +156,49 @@ function removeHeaderRow(idx: number) {
 
 <template>
   <div class="flex flex-col gap-3">
-    <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
-      <span class="text-slate-500">快速脚手架:</span>
+    <div class="flex items-center gap-1.5 flex-wrap text-xs">
+      <span class="text-fg-muted">快速脚手架:</span>
       <button
         type="button"
         @click="emit('applyTemplate', 'get')"
-        class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-cyan-400/45 hover:text-cyan-200 cursor-pointer"
+        class="px-2 py-0.5 rounded-lg border border-line bg-canvas text-fg-sub hover:border-info-border hover:text-info cursor-pointer"
       >
         GET 查询模板
       </button>
       <button
         type="button"
         @click="emit('applyTemplate', 'post')"
-        class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 bg-[#050811] text-slate-300 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+        class="px-2 py-0.5 rounded-lg border border-line bg-canvas text-fg-sub hover:border-accent-border hover:text-accent-fg cursor-pointer"
       >
         POST JSON 模板
       </button>
     </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-      <div class="flex flex-col gap-1 text-xs text-slate-300">
+      <div class="flex flex-col gap-1 text-xs text-fg-sub">
         <span>请求方法</span>
         <CustomSelect v-model="methodModel" :options="METHOD_OPTIONS" aria-label="请求方法" />
       </div>
-      <label class="sm:col-span-2 flex flex-col gap-1 text-xs text-slate-300">
-        <span>Endpoint URL (支持 <code class="text-[#f2b880]">&#123;&#123;key&#125;&#125;</code> 参数插值)</span>
+      <label class="sm:col-span-2 flex flex-col gap-1 text-xs text-fg-sub">
+        <span>Endpoint URL (支持 <code class="text-accent-fg">&#123;&#123;key&#125;&#125;</code> 参数插值)</span>
         <input
           v-model="urlModel"
           type="url"
           placeholder="https://api.example.com/v1/item?q={{query}}"
           required
-          class="min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-1.5 font-mono text-xs text-white focus:border-[#f2b880]/60"
+          class="min-h-[38px] rounded-xl border border-line bg-canvas px-3 py-1.5 font-mono text-xs text-fg focus:border-accent"
         />
-        <p v-if="urlSafetyWarning" class="text-[10.5px] text-amber-300/90 leading-snug">
+        <p v-if="urlSafetyWarning" class="text-xs text-warn leading-snug">
           {{ urlSafetyWarning }}
         </p>
-        <div v-if="declaredParamKeys.length > 0" class="flex items-center gap-1 flex-wrap text-[10.5px]">
-          <span class="text-slate-500">插入变量:</span>
+        <div v-if="declaredParamKeys.length > 0" class="flex items-center gap-1 flex-wrap text-xs">
+          <span class="text-fg-muted">插入变量:</span>
           <button
             v-for="pk in declaredParamKeys"
             :key="pk"
             type="button"
             @click="urlModel = `${urlModel}{{${pk}}}`"
-            class="px-1.5 py-0.5 rounded border border-[#fff8ee]/12 bg-[#050811] font-mono text-[#f2b880] hover:border-[#f2b880]/45 cursor-pointer"
+            class="px-1.5 py-0.5 rounded border border-line bg-canvas font-mono text-accent-fg hover:border-accent-border cursor-pointer"
           >
             &#123;&#123;{{ pk }}&#125;&#125;
           </button>
@@ -206,9 +206,9 @@ function removeHeaderRow(idx: number) {
       </label>
     </div>
 
-    <label class="flex flex-col gap-1 text-xs text-slate-300">
+    <label class="flex flex-col gap-1 text-xs text-fg-sub">
       <span v-if="httpMethod === 'GET'">补充调用说明 (可选)</span>
-      <span v-else>Body 请求模板 (支持 <code class="text-[#f2b880]">&#123;&#123;key&#125;&#125;</code> 插值或留空自动传 JSON)</span>
+      <span v-else>Body 请求模板 (支持 <code class="text-accent-fg">&#123;&#123;key&#125;&#125;</code> 插值或留空自动传 JSON)</span>
       <textarea
         v-model="instructionModel"
         rows="3"
@@ -217,9 +217,9 @@ function removeHeaderRow(idx: number) {
             ? '给模型的参数提示，例如：city 建议传英文城市名'
             : '{&quot;target&quot;: &quot;{{target}}&quot;, &quot;note&quot;: &quot;{{note}}&quot;}'
         "
-        class="auto-size-textarea rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-[11.5px] text-white focus:border-[#f2b880]/60"
+        class="auto-size-textarea rounded-xl border border-line bg-canvas px-3 py-2 font-mono text-xs text-fg focus:border-accent"
       />
-      <p v-if="bodyJsonWarning" class="text-[10.5px] text-amber-300/90 leading-snug">
+      <p v-if="bodyJsonWarning" class="text-xs text-warn leading-snug">
         {{ bodyJsonWarning }}
       </p>
     </label>
@@ -227,33 +227,33 @@ function removeHeaderRow(idx: number) {
     <!-- Undeclared interpolation variable quick-fix banner -->
     <div
       v-if="undeclaredTokens.length > 0"
-      class="rounded-xl border border-cyan-400/35 bg-cyan-500/10 px-3 py-2 flex items-center justify-between gap-2 flex-wrap text-[11px] text-cyan-200"
+      class="rounded-xl border border-info-border bg-info-soft px-3 py-2 flex items-center justify-between gap-2 flex-wrap text-xs text-info"
     >
       <span>
-        检测到未声明的插值变量：<code class="font-mono text-cyan-100">{{ undeclaredTokens.join(', ') }}</code>
+        检测到未声明的插值变量：<code class="font-mono text-info">{{ undeclaredTokens.join(', ') }}</code>
       </span>
       <button
         type="button"
         @click="addMissingParams"
-        class="px-2.5 py-0.5 rounded-lg border border-cyan-400/45 bg-cyan-500/20 hover:bg-cyan-500/30 font-medium text-cyan-100 cursor-pointer shrink-0"
+        class="px-2.5 py-0.5 rounded-lg border border-info-border bg-info-soft hover:bg-info-soft font-medium text-info cursor-pointer shrink-0"
       >
         + 一键补齐参数声明
       </button>
     </div>
 
     <!-- Dynamic Parameter Schema -->
-    <div class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-2.5 flex flex-col gap-2">
+    <div class="rounded-xl border border-line bg-canvas p-2.5 flex flex-col gap-2">
       <div class="flex items-center justify-between">
-        <span class="text-[11px] font-medium text-slate-300">输入参数定义 (编译为 Function Calling Schema)</span>
+        <span class="text-xs font-medium text-fg-sub">输入参数定义 (编译为 Function Calling Schema)</span>
         <button
           type="button"
           @click="addParamRow"
-          class="text-[11px] text-[#f2b880] hover:underline cursor-pointer"
+          class="text-xs text-accent-fg hover:underline cursor-pointer"
         >
           + 添加参数
         </button>
       </div>
-      <div v-if="paramRows.length === 0" class="text-[11px] text-slate-500">
+      <div v-if="paramRows.length === 0" class="text-xs text-fg-muted">
         无入参；若 URL/Body 中包含插值变量，请在这里声明参数名。
       </div>
       <div
@@ -265,7 +265,7 @@ function removeHeaderRow(idx: number) {
           v-model="p.key"
           type="text"
           placeholder="参数名 key"
-          class="sm:col-span-3 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 font-mono text-[11px] text-white"
+          class="sm:col-span-3 min-h-[32px] rounded-lg border border-line bg-canvas px-2 font-mono text-xs text-fg"
         />
         <div class="sm:col-span-2">
           <CustomSelect v-model="p.type" :options="PARAM_TYPE_OPTIONS" aria-label="参数类型" />
@@ -274,29 +274,29 @@ function removeHeaderRow(idx: number) {
           v-model="p.description"
           type="text"
           placeholder="参数说明"
-          class="sm:col-span-3 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 text-[11px] text-white"
+          class="sm:col-span-3 min-h-[32px] rounded-lg border border-line bg-canvas px-2 text-xs text-fg"
         />
         <input
           v-model="p.default"
           type="text"
           placeholder="默认值(可选)"
-          class="sm:col-span-2 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 font-mono text-[11px] text-white"
+          class="sm:col-span-2 min-h-[32px] rounded-lg border border-line bg-canvas px-2 font-mono text-xs text-fg"
         />
         <div class="sm:col-span-2 flex items-center justify-between gap-1">
-          <label class="inline-flex items-center gap-1 text-[10.5px] text-slate-400 cursor-pointer">
-            <input v-model="p.required" type="checkbox" class="accent-[#f2b880]" />
+          <label class="inline-flex items-center gap-1 text-xs text-fg-muted cursor-pointer">
+            <input v-model="p.required" type="checkbox" class="accent-accent" />
             <span>必填</span>
           </label>
           <button
             type="button"
             @click="removeParamRow(idx)"
-            class="text-[11px] text-rose-400 hover:text-rose-300 cursor-pointer"
+            class="text-xs text-danger hover:text-danger cursor-pointer"
           >
             删
           </button>
         </div>
       </div>
-      <div v-if="paramRows.length > 0" class="hidden sm:grid sm:grid-cols-12 gap-1.5 text-[10px] text-slate-500 px-0.5">
+      <div v-if="paramRows.length > 0" class="hidden sm:grid sm:grid-cols-12 gap-1.5 text-xs text-fg-muted px-0.5">
         <span class="col-span-3">参数键名</span>
         <span class="col-span-2">类型</span>
         <span class="col-span-3">语义描述</span>
@@ -306,13 +306,13 @@ function removeHeaderRow(idx: number) {
     </div>
 
     <!-- Custom Headers -->
-    <div class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-2.5 flex flex-col gap-2">
+    <div class="rounded-xl border border-line bg-canvas p-2.5 flex flex-col gap-2">
       <div class="flex items-center justify-between">
-        <span class="text-[11px] font-medium text-slate-300">请求头 Headers (可选)</span>
+        <span class="text-xs font-medium text-fg-sub">请求头 Headers (可选)</span>
         <button
           type="button"
           @click="addHeaderRow"
-          class="text-[11px] text-[#f2b880] hover:underline cursor-pointer"
+          class="text-xs text-accent-fg hover:underline cursor-pointer"
         >
           + 添加请求头
         </button>
@@ -326,18 +326,18 @@ function removeHeaderRow(idx: number) {
           v-model="h.key"
           type="text"
           placeholder="Header 名 (如 Authorization)"
-          class="col-span-5 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 font-mono text-[11px] text-white"
+          class="col-span-5 min-h-[32px] rounded-lg border border-line bg-canvas px-2 font-mono text-xs text-fg"
         />
         <input
           v-model="h.value"
           type="text"
           placeholder="Header 值 (如 Bearer xxx)"
-          class="col-span-6 min-h-[32px] rounded-lg border border-[#fff8ee]/10 bg-[#070a13] px-2 font-mono text-[11px] text-white"
+          class="col-span-6 min-h-[32px] rounded-lg border border-line bg-canvas px-2 font-mono text-xs text-fg"
         />
         <button
           type="button"
           @click="removeHeaderRow(idx)"
-          class="col-span-1 text-[11px] text-rose-400 hover:text-rose-300 cursor-pointer text-right"
+          class="col-span-1 text-xs text-danger hover:text-danger cursor-pointer text-right"
         >
           删
         </button>

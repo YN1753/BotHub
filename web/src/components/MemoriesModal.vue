@@ -394,15 +394,15 @@ watch(
     @close="closeModal"
   >
     <form @submit.prevent="handleAdd" class="modal-section grid grid-cols-1 sm:grid-cols-4 gap-3 shrink-0">
-      <div class="flex flex-col gap-1 text-xs text-slate-300">
+      <div class="flex flex-col gap-1 text-xs text-fg-sub">
         <span>可见作用域</span>
         <CustomSelect v-model="scope" :options="scopeOptions" aria-label="可见作用域" />
       </div>
-      <div class="flex flex-col gap-1 text-xs text-slate-300">
+      <div class="flex flex-col gap-1 text-xs text-fg-sub">
         <span>记忆分类</span>
         <CustomSelect v-model="category" :options="CAT_OPTIONS" aria-label="记忆分类" />
       </div>
-      <div class="flex flex-col gap-1 text-xs text-slate-300">
+      <div class="flex flex-col gap-1 text-xs text-fg-sub">
         <span>重要权重</span>
         <CustomSelect
           :model-value="String(importance)"
@@ -411,14 +411,14 @@ watch(
           @update:model-value="importance = Number($event) || 3"
         />
       </div>
-      <label class="flex flex-col gap-1 text-xs text-slate-300">
+      <label class="flex flex-col gap-1 text-xs text-fg-sub">
         <span>事实键名 (同域唯一)</span>
         <input
           v-model="factKey"
           type="text"
           placeholder="如 user_nickname"
           required
-          class="min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 font-mono text-xs text-white focus:border-[#f2b880]/60"
+          class="min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 font-mono text-xs text-fg focus:border-accent"
         />
       </label>
       <div class="sm:col-span-4 flex flex-col gap-1.5">
@@ -429,21 +429,21 @@ watch(
             placeholder="写一条给这个 Bot 或全局记住的事实、性格偏好、重要约定..."
             aria-label="记忆内容"
             required
-            class="flex-1 min-h-[40px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 py-2 text-xs text-white focus:border-[#f2b880]/60"
+            class="flex-1 min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 text-xs text-fg focus:border-accent"
           />
-          <label class="inline-flex items-center gap-1.5 text-xs text-slate-300 px-2 cursor-pointer shrink-0">
-            <input v-model="pinned" type="checkbox" class="accent-[#f2b880]" />
+          <label class="inline-flex items-center gap-1.5 text-xs text-fg-sub px-2 cursor-pointer shrink-0">
+            <input v-model="pinned" type="checkbox" class="accent-accent" />
             <span>置顶核心记忆</span>
           </label>
           <button
             type="submit"
             :disabled="saving"
-            class="min-h-[40px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50 shrink-0"
+            class="min-h-[40px] px-5 py-2 rounded-xl bg-accent hover:bg-accent-hover text-on-accent font-semibold text-xs cursor-pointer disabled:opacity-50 shrink-0"
           >
             {{ duplicateFactExists ? '覆盖更新记忆' : '写入记忆' }}
           </button>
         </div>
-        <span v-if="duplicateFactExists" class="text-[11px] font-mono text-amber-300/90">
+        <span v-if="duplicateFactExists" class="text-xs font-mono text-warn">
           提示：同作用域内已存在键名「{{ factKey.trim() }}」，提交后将覆写原有内容
         </span>
       </div>
@@ -457,7 +457,7 @@ watch(
           placeholder="搜索键名、内容或 Bot 专属域..."
           aria-label="搜索长期记忆"
           @keydown.escape="clearSearchOnEscape($event, searchQuery, () => { searchQuery = '' })"
-          class="w-full sm:w-52 min-h-[34px] rounded-xl border border-[#fff8ee]/12 bg-[#060914] px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-[#f2b880]/60"
+          class="w-full sm:w-52 min-h-[34px] rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent"
         />
         <div class="w-44">
           <CustomSelect v-model="filterScope" :options="filterScopeOptions" aria-label="按作用域筛选" />
@@ -467,10 +467,10 @@ watch(
           type="button"
           @click="filterScope = filterScope === `bot:${store.activeBot.value.id}` ? 'all' : `bot:${store.activeBot.value.id}`"
           :class="[
-            'min-h-[34px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+            'min-h-[34px] px-2.5 rounded-xl border text-xs cursor-pointer transition-colors',
             filterScope === `bot:${store.activeBot.value.id}`
-              ? 'border-cyan-400/55 bg-cyan-500/15 text-cyan-200'
-              : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+              ? 'border-info-border bg-info-soft text-info'
+              : 'border-line text-fg-muted hover:text-fg'
           ]"
         >
           只看当前Bot
@@ -483,10 +483,10 @@ watch(
           :aria-pressed="pinnedOnly"
           @click="pinnedOnly = !pinnedOnly"
           :class="[
-            'min-h-[34px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+            'min-h-[34px] px-2.5 rounded-xl border text-xs cursor-pointer transition-colors',
             pinnedOnly
-              ? 'border-amber-400/55 bg-amber-400/15 text-amber-200'
-              : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+              ? 'border-warn-border bg-warn-soft text-warn'
+              : 'border-line text-fg-muted hover:text-fg'
           ]"
         >
           仅置顶
@@ -496,10 +496,10 @@ watch(
           :aria-pressed="coreOnly"
           @click="coreOnly = !coreOnly"
           :class="[
-            'min-h-[34px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+            'min-h-[34px] px-2.5 rounded-xl border text-xs cursor-pointer transition-colors',
             coreOnly
-              ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
-              : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+              ? 'border-accent-border bg-accent-soft text-accent-fg'
+              : 'border-line text-fg-muted hover:text-fg'
           ]"
         >
           核心 W4+
@@ -509,10 +509,10 @@ watch(
           :aria-pressed="unrecalledOnly"
           @click="unrecalledOnly = !unrecalledOnly"
           :class="[
-            'min-h-[34px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+            'min-h-[34px] px-2.5 rounded-xl border text-xs cursor-pointer transition-colors',
             unrecalledOnly
-              ? 'border-amber-400/55 bg-amber-500/15 text-amber-200'
-              : 'border-[#fff8ee]/12 text-slate-400 hover:text-white'
+              ? 'border-warn-border bg-warn-soft text-warn'
+              : 'border-line text-fg-muted hover:text-fg'
           ]"
         >
           0次召回
@@ -521,7 +521,7 @@ watch(
           type="button"
           :disabled="consolidating"
           @click="handleConsolidateScope"
-          class="min-h-[34px] px-3 rounded-xl border border-cyan-400/35 text-[11px] text-cyan-200 hover:bg-cyan-400/15 cursor-pointer disabled:opacity-50"
+          class="min-h-[34px] px-3 rounded-xl border border-info-border text-xs text-info hover:bg-info-soft cursor-pointer disabled:opacity-50"
         >
           {{ consolidating ? '合并中...' : '合并冗余' }}
         </button>
@@ -530,7 +530,7 @@ watch(
           type="button"
           :disabled="pruning"
           @click="handlePruneScope"
-          class="min-h-[34px] px-3 rounded-xl border border-[#f2b880]/35 text-[11px] text-[#f2b880] hover:bg-[#f2b880]/15 cursor-pointer disabled:opacity-50"
+          class="min-h-[34px] px-3 rounded-xl border border-accent-border text-xs text-accent-fg hover:bg-accent-soft cursor-pointer disabled:opacity-50"
         >
           {{ pruning ? '整理中...' : '清理冷门记忆' }}
         </button>
@@ -538,14 +538,14 @@ watch(
       <SegmentedTabs v-model="filterCat" :items="FILTER_TABS" variant="subtle" aria-label="记忆分类筛选" />
     </div>
 
-    <div class="flex items-center justify-between gap-2 flex-wrap px-1 text-[11px] font-mono text-slate-400 shrink-0">
+    <div class="flex items-center justify-between gap-2 flex-wrap px-1 text-xs font-mono text-fg-muted shrink-0">
       <div class="flex items-center gap-2.5 flex-wrap">
         <span>当前视图 {{ memoryStats.total }} 条 · 置顶 {{ memoryStats.pinned }} 条 · 累计召回 {{ memoryStats.recalls }} 次</span>
         <button
           v-if="filteredMemories.length > 0"
           type="button"
           @click="toggleSelectAllFiltered"
-          class="text-cyan-300 hover:underline cursor-pointer"
+          class="text-info hover:underline cursor-pointer"
         >
           {{ filteredMemories.every((m) => selectedIds.includes(m.id)) ? '取消全选' : '全选本页' }}
         </button>
@@ -556,7 +556,7 @@ watch(
             type="button"
             :disabled="bulkBusy"
             @click="runBulkScope('global')"
-            class="px-2 py-0.5 rounded border border-cyan-400/40 text-cyan-200 hover:bg-cyan-500/12 cursor-pointer disabled:opacity-50"
+            class="px-2 py-0.5 rounded border border-info-border text-info hover:bg-info-soft cursor-pointer disabled:opacity-50"
           >
             批量升全局 ({{ selectedIds.length }})
           </button>
@@ -565,7 +565,7 @@ watch(
             type="button"
             :disabled="bulkBusy"
             @click="runBulkScope(`bot:${store.activeBot.value.id}`)"
-            class="px-2 py-0.5 rounded border border-[#f2b880]/40 text-[#f2b880] hover:bg-[#f2b880]/12 cursor-pointer disabled:opacity-50"
+            class="px-2 py-0.5 rounded border border-accent-border text-accent-fg hover:bg-accent-soft cursor-pointer disabled:opacity-50"
           >
             批量收归当前Bot
           </button>
@@ -573,7 +573,7 @@ watch(
             type="button"
             :disabled="bulkBusy"
             @click="runBulkPin(true)"
-            class="px-2 py-0.5 rounded border border-amber-400/40 text-amber-200 hover:bg-amber-500/12 cursor-pointer disabled:opacity-50"
+            class="px-2 py-0.5 rounded border border-warn-border text-warn hover:bg-warn-soft cursor-pointer disabled:opacity-50"
           >
             批量置顶
           </button>
@@ -581,7 +581,7 @@ watch(
             type="button"
             :disabled="bulkBusy"
             @click="runBulkDelete"
-            class="px-2 py-0.5 rounded border border-rose-400/40 text-rose-300 hover:bg-rose-500/12 cursor-pointer disabled:opacity-50"
+            class="px-2 py-0.5 rounded border border-danger-border text-danger hover:bg-danger-soft cursor-pointer disabled:opacity-50"
           >
             批量移除
           </button>
@@ -589,7 +589,7 @@ watch(
         <button
           type="button"
           @click="exportVisibleMemoriesMarkdown"
-          class="text-slate-300 hover:text-[#f2b880] cursor-pointer"
+          class="text-fg-sub hover:text-accent-fg cursor-pointer"
         >
           导出 .md
         </button>
@@ -597,13 +597,13 @@ watch(
     </div>
 
     <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
-      <div v-if="filteredMemories.length === 0" class="py-10 text-center flex flex-col items-center gap-2 text-sm text-slate-500">
+      <div v-if="filteredMemories.length === 0" class="py-10 text-center flex flex-col items-center gap-2 text-sm text-fg-muted">
         <span>{{ store.state.memories.length ? '当前筛选下无记忆条目' : '尚未写入长期记忆条目' }}</span>
         <button
           v-if="searchQuery || filterCat !== 'all' || filterScope !== 'all' || pinnedOnly || coreOnly || unrecalledOnly"
           type="button"
           @click="searchQuery = ''; filterCat = 'all'; filterScope = 'all'; pinnedOnly = false; coreOnly = false; unrecalledOnly = false"
-          class="px-3 py-1 rounded-full border border-[#fff8ee]/12 text-xs text-slate-300 hover:text-[#f2b880] cursor-pointer"
+          class="px-3 py-1 rounded-full border border-line text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
         >
           重置记忆筛选
         </button>
@@ -612,7 +612,7 @@ watch(
         v-for="m in filteredMemories"
         :key="m.id"
         @pointermove="trackSpotlight"
-        class="stagger-item luxury-card rounded-xl p-3.5"
+        class="stagger-item vesper-card rounded-xl p-3.5"
       >
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
@@ -621,70 +621,70 @@ watch(
               :checked="selectedIds.includes(m.id)"
               @change="toggleSelectMem(m.id)"
               :aria-label="`选择记忆 ${m.fact_key}`"
-              class="accent-[#f2b880] cursor-pointer shrink-0"
+              class="accent-accent cursor-pointer shrink-0"
             />
             <span
               v-if="m.pinned"
-              class="font-mono text-[10px] px-1.5 py-0.5 rounded border border-amber-400/50 bg-amber-400/15 text-amber-200 shrink-0"
+              class="font-mono text-xs px-1.5 py-0.5 rounded border border-warn-border bg-warn-soft text-warn shrink-0"
             >
               置顶
             </span>
-            <span class="font-mono text-[10px] px-1.5 py-0.5 rounded border border-[#fff8ee]/12 bg-[#fff8ee]/[0.04] text-slate-300 shrink-0">
+            <span class="font-mono text-xs px-1.5 py-0.5 rounded border border-line bg-subtle text-fg-sub shrink-0">
               W{{ m.importance || 3 }}
             </span>
-            <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-[#f2b880]/30 bg-[#f2b880]/10 text-[#f2b880] shrink-0">
+            <span class="font-mono text-xs px-2 py-0.5 rounded-lg border border-accent-border bg-accent-soft text-accent-fg shrink-0">
               {{ m.category }}
             </span>
-            <span class="font-mono text-[10.5px] px-2 py-0.5 rounded-md border border-cyan-400/25 bg-cyan-500/10 text-cyan-200 shrink-0">
+            <span class="font-mono text-xs px-2 py-0.5 rounded-lg border border-info-border bg-info-soft text-info shrink-0">
               {{ scopeLabel(m.scope) }}
             </span>
-            <strong class="font-mono text-xs text-white truncate">{{ m.fact_key }}</strong>
+            <strong class="font-mono text-xs text-fg truncate">{{ m.fact_key }}</strong>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
-            <span v-if="m.recall_count" class="font-mono text-[10.5px] text-emerald-300/80">
+            <span v-if="m.recall_count" class="font-mono text-xs text-ok">
               召回 {{ m.recall_count }} 次
             </span>
-            <span class="font-mono text-[10.5px] text-slate-500">{{ formatTime(m.updated_at) }}</span>
+            <span class="font-mono text-xs text-fg-muted">{{ formatTime(m.updated_at) }}</span>
             <button
               type="button"
               v-if="m.scope !== 'global' || store.activeBot.value"
               @click="toggleScopePromote(m)"
-              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 text-[11px] text-cyan-200/85 hover:text-cyan-200 hover:border-cyan-400/40 cursor-pointer"
+              class="px-2 py-0.5 rounded-lg border border-line text-xs text-info hover:text-info hover:border-info-border cursor-pointer"
             >
               {{ (m.scope || 'global') === 'global' ? '收归私有' : '升为全局' }}
             </button>
             <button
               type="button"
               @click="togglePin(m)"
-              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+              class="px-2 py-0.5 rounded-lg border border-line text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
             >
               {{ m.pinned ? '取消置顶' : '置顶' }}
             </button>
             <button
               type="button"
               @click="copyMemoryContent(m.content)"
-              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+              class="px-2 py-0.5 rounded-lg border border-line text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
             >
               复制
             </button>
             <button
               type="button"
               @click="editingMemId === m.id ? (editingMemId = null) : startEdit(m)"
-              class="px-2 py-0.5 rounded-md border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-white cursor-pointer"
+              class="px-2 py-0.5 rounded-lg border border-line text-xs text-fg-sub hover:text-fg cursor-pointer"
             >
               {{ editingMemId === m.id ? '取消' : '编辑' }}
             </button>
             <button
               type="button"
               @click="handleDelete(m.id)"
-              class="px-2 py-0.5 rounded-md border border-rose-400/35 text-[11px] text-rose-300 hover:bg-rose-500/15 cursor-pointer"
+              class="px-2 py-0.5 rounded-lg border border-danger-border text-xs text-danger hover:bg-danger-soft cursor-pointer"
             >
               移除
             </button>
           </div>
         </div>
 
-        <div v-if="editingMemId === m.id" class="mt-2.5 flex flex-col gap-2 pt-2 border-t border-[#fff8ee]/8">
+        <div v-if="editingMemId === m.id" class="mt-2.5 flex flex-col gap-2 pt-2 border-t border-line">
           <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
             <CustomSelect v-model="editScope" :options="scopeOptions" aria-label="编辑记忆作用域" />
             <CustomSelect v-model="editCategory" :options="CAT_OPTIONS" aria-label="编辑记忆分类" />
@@ -694,8 +694,8 @@ watch(
               aria-label="编辑记忆权重"
               @update:model-value="editImportance = Number($event) || 3"
             />
-            <label class="inline-flex items-center gap-1.5 text-xs text-slate-300 px-2 cursor-pointer">
-              <input v-model="editPinned" type="checkbox" class="accent-[#f2b880]" />
+            <label class="inline-flex items-center gap-1.5 text-xs text-fg-sub px-2 cursor-pointer">
+              <input v-model="editPinned" type="checkbox" class="accent-accent" />
               <span>置顶核心记忆</span>
             </label>
           </div>
@@ -706,18 +706,18 @@ watch(
               placeholder="Enter 保存 · Esc 取消"
               @keydown.enter.prevent="saveEdit(m)"
               @keydown.escape.stop="editingMemId = null"
-              class="flex-1 min-h-[34px] rounded-lg border border-[#f2b880]/40 bg-[#050811] px-2.5 text-xs text-white"
+              class="flex-1 min-h-[34px] rounded-lg border border-accent-border bg-canvas px-2.5 text-xs text-fg"
             />
             <button
               type="button"
               @click="saveEdit(m)"
-              class="px-3 py-1 rounded-lg bg-[#f2b880] text-[#070a13] font-semibold text-xs cursor-pointer"
+              class="px-3 py-1 rounded-lg bg-accent text-on-accent font-semibold text-xs cursor-pointer"
             >
               保存
             </button>
           </div>
         </div>
-        <p v-else class="text-xs text-slate-200 mt-1.5 leading-relaxed">{{ m.content }}</p>
+        <p v-else class="text-xs text-fg mt-1.5 leading-relaxed">{{ m.content }}</p>
       </article>
     </div>
   </BaseModal>

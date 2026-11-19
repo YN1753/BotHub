@@ -283,7 +283,7 @@ async function dispatchTodoToBot(t: TodoItem) {
           type="text"
           required
           placeholder="记录要办的事，或直接让对话里的助手用 manage_todos 帮你记..."
-          class="sm:col-span-5 min-h-[38px] rounded-xl border border-[#fff8ee]/12 bg-[#050811] px-3 text-xs text-white focus:border-[#f2b880]/60"
+          class="sm:col-span-5 min-h-[38px] rounded-xl border border-line bg-canvas px-3 text-xs text-fg focus:border-accent"
         />
         <div class="sm:col-span-2">
           <CustomSelect v-model="newTodoPriority" :options="PRIORITY_OPTIONS" compact aria-label="优先级" />
@@ -303,38 +303,38 @@ async function dispatchTodoToBot(t: TodoItem) {
         <button
           type="submit"
           :disabled="savingTodo"
-          class="sm:col-span-1 min-h-[38px] rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer disabled:opacity-50"
+          class="sm:col-span-1 min-h-[38px] rounded-xl bg-accent hover:bg-accent-hover text-on-accent font-semibold text-xs cursor-pointer disabled:opacity-50"
         >
           新增
         </button>
       </div>
-      <div class="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-400">
-        <span class="font-mono text-[10.5px] text-slate-500">快捷截止:</span>
+      <div class="flex items-center gap-1.5 flex-wrap text-xs text-fg-muted">
+        <span class="font-mono text-xs text-fg-muted">快捷截止:</span>
         <button
           type="button"
           @click="newTodoDueAt = offsetDateStr(0)"
-          class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          class="px-2 py-0.5 rounded-lg border border-line hover:border-accent-border hover:text-accent-fg cursor-pointer"
         >
           今天
         </button>
         <button
           type="button"
           @click="newTodoDueAt = offsetDateStr(1)"
-          class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          class="px-2 py-0.5 rounded-lg border border-line hover:border-accent-border hover:text-accent-fg cursor-pointer"
         >
           明天
         </button>
         <button
           type="button"
           @click="newTodoDueAt = offsetDateStr(3)"
-          class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          class="px-2 py-0.5 rounded-lg border border-line hover:border-accent-border hover:text-accent-fg cursor-pointer"
         >
           3天后
         </button>
         <button
           type="button"
           @click="newTodoDueAt = offsetDateStr(7)"
-          class="px-2 py-0.5 rounded-md border border-[#fff8ee]/10 hover:border-[#f2b880]/45 hover:text-[#f2b880] cursor-pointer"
+          class="px-2 py-0.5 rounded-lg border border-line hover:border-accent-border hover:text-accent-fg cursor-pointer"
         >
           一周内
         </button>
@@ -352,10 +352,10 @@ async function dispatchTodoToBot(t: TodoItem) {
           :aria-pressed="urgentOnly"
           @click="urgentOnly = !urgentOnly"
           :class="[
-            'min-h-[32px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+            'min-h-[32px] px-2.5 rounded-xl border text-xs cursor-pointer transition-colors',
             urgentOnly
-              ? 'border-rose-400/50 bg-rose-500/15 text-rose-200'
-              : 'border-[#fff8ee]/10 text-slate-400 hover:text-white',
+              ? 'border-danger-border bg-danger-soft text-danger'
+              : 'border-line text-fg-muted hover:text-fg',
           ]"
         >
           仅高优/逾期
@@ -365,10 +365,10 @@ async function dispatchTodoToBot(t: TodoItem) {
           :aria-pressed="dueTodayOnly"
           @click="dueTodayOnly = !dueTodayOnly"
           :class="[
-            'min-h-[32px] px-2.5 rounded-xl border text-[11px] cursor-pointer transition-colors',
+            'min-h-[32px] px-2.5 rounded-xl border text-xs cursor-pointer transition-colors',
             dueTodayOnly
-              ? 'border-[#f2b880]/55 bg-[#f2b880]/15 text-[#f2b880]'
-              : 'border-[#fff8ee]/10 text-slate-400 hover:text-white',
+              ? 'border-accent-border bg-accent-soft text-accent-fg'
+              : 'border-line text-fg-muted hover:text-fg',
           ]"
         >
           今日截止
@@ -379,27 +379,27 @@ async function dispatchTodoToBot(t: TodoItem) {
           aria-label="筛选待办"
           placeholder="筛选待办..."
           @keydown.escape="clearSearchOnEscape($event, todoSearch, () => { todoSearch = '' })"
-          class="w-32 sm:w-40 min-h-[32px] rounded-xl border border-[#fff8ee]/10 bg-[#050811] px-2.5 text-[11px] text-white placeholder-slate-500 focus:border-[#f2b880]/55"
+          class="w-32 sm:w-40 min-h-[32px] rounded-xl border border-line bg-canvas px-2.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent"
         />
       </div>
       <button
         type="button"
         :disabled="doneTodoCount === 0"
         @click="clearDoneTodos"
-        class="px-3 py-1 rounded-lg border border-[#fff8ee]/10 text-[11px] text-slate-400 hover:text-rose-300 hover:border-rose-400/35 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        class="px-3 py-1 rounded-lg border border-line text-xs text-fg-muted hover:text-danger hover:border-danger-border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
       >
         清理已完成 ({{ doneTodoCount }})
       </button>
     </div>
 
     <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
-      <div v-if="filteredTodos.length === 0" class="py-12 text-center flex flex-col items-center gap-2 text-xs text-slate-500">
+      <div v-if="filteredTodos.length === 0" class="py-12 text-center flex flex-col items-center gap-2 text-xs text-fg-muted">
         <span>{{ store.state.todos.length ? '当前筛选条件无匹配待办' : '当前暂无待办；在任意支持工具的助手对话里说「帮我记一下待办」，也会自动出现在这里。' }}</span>
         <button
           v-if="todoSearch || urgentOnly || dueTodayOnly || filterTodoBotId"
           type="button"
           @click="todoSearch = ''; urgentOnly = false; dueTodayOnly = false; filterTodoBotId = ''"
-          class="px-3 py-1 rounded-full border border-[#fff8ee]/12 text-slate-300 hover:text-[#f2b880] cursor-pointer"
+          class="px-3 py-1 rounded-full border border-line text-fg-sub hover:text-accent-fg cursor-pointer"
         >
           重置待办筛选
         </button>
@@ -408,7 +408,7 @@ async function dispatchTodoToBot(t: TodoItem) {
         <article
           v-for="t in filteredTodos"
           :key="t.id"
-          class="luxury-card rounded-xl px-3.5 py-2.5 flex flex-col gap-2"
+          class="vesper-card rounded-xl px-3.5 py-2.5 flex flex-col gap-2"
         >
           <div class="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
             <div class="flex items-start gap-2.5 min-w-0 flex-1">
@@ -417,63 +417,63 @@ async function dispatchTodoToBot(t: TodoItem) {
                 :checked="t.status === 'done'"
                 @change="toggleTodoDone(t)"
                 :aria-label="`完成 ${t.title}`"
-                class="mt-1 accent-[#f2b880] cursor-pointer shrink-0"
+                class="mt-1 accent-accent cursor-pointer shrink-0"
               />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span
                     :class="[
                       'text-sm font-medium',
-                      t.status === 'done' ? 'line-through text-slate-500' : 'text-white',
+                      t.status === 'done' ? 'line-through text-fg-muted' : 'text-fg',
                     ]"
                   >
                     {{ t.title }}
                   </span>
                   <span
                     v-if="t.priority === 'high'"
-                    class="px-1.5 py-0.5 rounded font-mono text-[10px] border border-rose-400/45 bg-rose-500/12 text-rose-300"
+                    class="px-1.5 py-0.5 rounded font-mono text-xs border border-danger-border bg-danger-soft text-danger"
                   >
                     高优
                   </span>
                   <span
                     v-if="t.status === 'doing'"
-                    class="px-1.5 py-0.5 rounded font-mono text-[10px] border border-[#f2b880]/45 bg-[#f2b880]/12 text-[#f7cba0]"
+                    class="px-1.5 py-0.5 rounded font-mono text-xs border border-accent-border bg-accent-soft text-accent-fg"
                   >
                     进行中
                   </span>
                   <span
                     v-if="t.due_at"
                     :class="[
-                      'px-1.5 py-0.5 rounded font-mono text-[10px] border',
+                      'px-1.5 py-0.5 rounded font-mono text-xs border',
                       isOverdue(t)
-                        ? 'border-rose-400/45 bg-rose-500/15 text-rose-300'
-                        : 'border-[#fff8ee]/12 text-slate-400',
+                        ? 'border-danger-border bg-danger-soft text-danger'
+                        : 'border-line text-fg-muted',
                     ]"
                   >
                     {{ formatTodoDueLabel(t) }}
                   </span>
                   <span
                     v-if="t.bot_id"
-                    class="px-1.5 py-0.5 rounded font-mono text-[10px] bg-cyan-500/10 text-cyan-200 border border-cyan-400/25"
+                    class="px-1.5 py-0.5 rounded font-mono text-xs bg-info-soft text-info border border-info-border"
                   >
                     {{ botNameById(t.bot_id) }}
                   </span>
                 </div>
-                <p v-if="t.notes" class="text-xs text-slate-400 mt-1 whitespace-pre-line">{{ t.notes }}</p>
+                <p v-if="t.notes" class="text-xs text-fg-muted mt-1 whitespace-pre-line">{{ t.notes }}</p>
               </div>
             </div>
             <div class="flex items-center gap-1.5 flex-wrap shrink-0">
               <button
                 type="button"
                 @click="cycleTodoProgress(t)"
-                class="px-2 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-[#f2b880] cursor-pointer"
+                class="px-2 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
               >
                 {{ t.status === 'pending' ? '推进中' : t.status === 'doing' ? '标完成' : '重开' }}
               </button>
               <button
                 type="button"
                 @click="editingTodoId === t.id ? (editingTodoId = null) : startEditTodo(t)"
-                class="px-2 py-1 rounded-lg border border-[#fff8ee]/12 text-[11px] text-slate-300 hover:text-white cursor-pointer"
+                class="px-2 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-fg cursor-pointer"
               >
                 {{ editingTodoId === t.id ? '取消' : '编辑' }}
               </button>
@@ -481,28 +481,28 @@ async function dispatchTodoToBot(t: TodoItem) {
                 v-if="t.status !== 'done'"
                 type="button"
                 @click="dispatchTodoToBot(t)"
-                class="px-2.5 py-1 rounded-lg border border-[#f2b880]/40 bg-[#f2b880]/12 text-[11px] text-[#f7cba0] hover:bg-[#f2b880]/22 cursor-pointer"
+                class="px-2.5 py-1 rounded-lg border border-accent-border bg-accent-soft text-xs text-accent-fg hover:bg-accent-soft cursor-pointer"
               >
                 派 Bot 推进
               </button>
               <button
                 type="button"
                 @click="removeTodo(t.id)"
-                class="px-2 py-1 rounded-lg border border-rose-400/30 text-[11px] text-rose-300 hover:bg-rose-500/15 cursor-pointer"
+                class="px-2 py-1 rounded-lg border border-danger-border text-xs text-danger hover:bg-danger-soft cursor-pointer"
               >
                 删
               </button>
             </div>
           </div>
 
-          <div v-if="editingTodoId === t.id" class="pt-2 border-t border-[#fff8ee]/8 grid grid-cols-1 sm:grid-cols-12 gap-2">
+          <div v-if="editingTodoId === t.id" class="pt-2 border-t border-line grid grid-cols-1 sm:grid-cols-12 gap-2">
             <input
               v-model="editTodoTitle"
               type="text"
               placeholder="待办标题"
               @keydown.enter.prevent="saveEditTodo(t)"
               @keydown.escape.stop="editingTodoId = null"
-              class="sm:col-span-6 min-h-[34px] rounded-lg border border-[#f2b880]/40 bg-[#050811] px-2.5 text-xs text-white"
+              class="sm:col-span-6 min-h-[34px] rounded-lg border border-accent-border bg-canvas px-2.5 text-xs text-fg"
             />
             <div class="sm:col-span-2">
               <CustomSelect v-model="editTodoPriority" :options="PRIORITY_OPTIONS" compact aria-label="编辑优先级" />
@@ -525,12 +525,12 @@ async function dispatchTodoToBot(t: TodoItem) {
               placeholder="补充步骤或备注 (Enter 保存 · Esc 取消)..."
               @keydown.enter.prevent="saveEditTodo(t)"
               @keydown.escape.stop="editingTodoId = null"
-              class="sm:col-span-10 min-h-[34px] rounded-lg border border-[#fff8ee]/12 bg-[#050811] px-2.5 text-xs text-white"
+              class="sm:col-span-10 min-h-[34px] rounded-lg border border-line bg-canvas px-2.5 text-xs text-fg"
             />
             <button
               type="button"
               @click="saveEditTodo(t)"
-              class="sm:col-span-2 min-h-[34px] rounded-lg bg-[#f2b880] text-[#070a13] font-semibold text-xs cursor-pointer"
+              class="sm:col-span-2 min-h-[34px] rounded-lg bg-accent text-on-accent font-semibold text-xs cursor-pointer"
             >
               保存修改
             </button>

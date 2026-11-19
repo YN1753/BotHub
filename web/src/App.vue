@@ -3,7 +3,6 @@ import { ref, reactive, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from './stores/useAppStore'
 import { BotHubApi } from './api/client'
 import { lazyOverlayChunk } from './utils/lazyComponent'
-import StarfieldBg from './components/StarfieldBg.vue'
 import LoginGate from './components/LoginGate.vue'
 import Sidebar from './components/Sidebar.vue'
 import BotWorkspace from './components/BotWorkspace.vue'
@@ -264,16 +263,14 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="relative min-h-dvh"
+    class="relative min-h-dvh bg-canvas text-fg"
     :data-ambient-paused="store.state.ambientMotionPaused || undefined"
     :data-app-shell="isAppShell ? '1' : undefined"
   >
-    <StarfieldBg />
-
     <!-- Initial Loading Gate -->
     <div
       v-if="!store.state.authChecked"
-      class="relative z-10 min-h-dvh flex items-center justify-center gap-3 text-xs font-mono text-slate-400"
+      class="relative z-10 min-h-dvh flex items-center justify-center gap-3 text-xs font-mono text-fg-muted"
     >
       <span class="thinking-dots inline-flex items-center gap-1" aria-hidden="true">
         <span /><span /><span />
@@ -284,13 +281,10 @@ onBeforeUnmount(() => {
     <!-- Auth Gate -->
     <LoginGate v-else-if="!store.state.authenticated" />
 
-    <!-- Main Persistent GrokBot Workspace (Floating Spatial Islands on Desktop, Full-Bleed on Mobile) -->
+    <!-- Main Persistent Full-Bleed Workspace -->
     <div
       v-else
-      :class="[
-        'relative z-10 h-dvh w-full flex overflow-hidden md:p-2.5 transition-[gap] duration-250',
-        desktopCollapsed ? 'md:gap-0' : 'md:gap-2.5'
-      ]"
+      class="relative z-10 h-dvh w-full flex overflow-hidden bg-main"
     >
       <Sidebar
         :mobile-open="mobileSidebarOpen"
@@ -301,7 +295,7 @@ onBeforeUnmount(() => {
 
       <main
         :inert="mobileSidebarOpen || undefined"
-        class="workspace-island relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden md:rounded-[24px] md:border md:border-[#fff8ee]/12"
+        class="workspace-island relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-main"
       >
         <MobileImRoster
           v-if="!isAppShell"
@@ -368,9 +362,9 @@ onBeforeUnmount(() => {
       <div
         v-if="!isOnline"
         role="status"
-        class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 rounded-full border border-rose-400/45 bg-[#120912]/95 px-4 py-1.5 text-xs text-rose-200 shadow-2xl backdrop-blur-xl"
+        class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 rounded-full border border-danger-border bg-card px-4 py-1.5 text-xs text-danger shadow-lg"
       >
-        <span class="w-2 h-2 rounded-full bg-rose-400 animate-pulse" aria-hidden="true" />
+        <span class="w-2 h-2 rounded-full bg-danger animate-pulse" aria-hidden="true" />
         <span>网络连接已断开，正在等待恢复...</span>
       </div>
     </Transition>
@@ -395,16 +389,16 @@ onBeforeUnmount(() => {
         @focusin="store.pauseToast"
         @focusout="store.resumeToast"
         :class="[
-          'toast-host aero-glass overflow-hidden fixed top-[max(0.875rem,env(safe-area-inset-top,0.875rem))] left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-[60] max-w-[min(92vw,24rem)] flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 shadow-2xl border',
+          'toast-host aero-glass overflow-hidden fixed top-[max(0.875rem,env(safe-area-inset-top,0.875rem))] left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-[60] max-w-[min(92vw,24rem)] flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-xs text-fg border',
           /失败|错误|异常|超时|失效|无法/.test(store.state.toastMessage)
-            ? 'border-rose-400/55'
-            : 'border-[#f2b880]/45'
+            ? 'border-danger-border'
+            : 'border-accent-border'
         ]"
       >
         <span
           :class="[
             'w-1.5 h-1.5 rounded-full shrink-0',
-            /失败|错误|异常|超时|失效|无法/.test(store.state.toastMessage) ? 'bg-rose-400' : 'bg-[#f2b880]'
+            /失败|错误|异常|超时|失效|无法/.test(store.state.toastMessage) ? 'bg-danger' : 'bg-accent'
           ]"
           aria-hidden="true"
         />
@@ -413,7 +407,7 @@ onBeforeUnmount(() => {
           type="button"
           aria-label="关闭提示"
           @click="store.state.toastMessage = ''"
-          class="p-1 rounded-md text-slate-400 hover:text-white cursor-pointer shrink-0"
+          class="p-1 rounded-lg text-fg-muted hover:text-fg hover:bg-hover cursor-pointer shrink-0"
         >
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -424,7 +418,7 @@ onBeforeUnmount(() => {
           aria-hidden="true"
           :class="[
             'toast-progress-bar pointer-events-none absolute inset-x-0 bottom-0 h-[1.5px] opacity-65',
-            /失败|错误|异常|超时|失效|无法/.test(store.state.toastMessage) ? 'bg-rose-400' : 'bg-[#f2b880]'
+            /失败|错误|异常|超时|失效|无法/.test(store.state.toastMessage) ? 'bg-danger' : 'bg-accent'
           ]"
         />
       </div>

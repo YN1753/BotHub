@@ -74,7 +74,7 @@
 .bot-aura {
   background: radial-gradient(
     circle var(--in-oklab),
-    var(--bot-glow, rgba(242, 184, 128, 0.38)) 0%,
+    var(--bot-glow, rgba(var(--accent-rgb), 0.3)) 0%,
     transparent 70%
   );
   transition:
@@ -132,7 +132,7 @@ html[data-color-mode="light"] .bot-light-outline {
 
 .bot-avatar-root:focus-visible {
   border-radius: 9999px;
-  outline: 2px solid #f2b880;
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
   box-shadow: none;
 }

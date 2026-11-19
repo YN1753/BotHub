@@ -1,40 +1,59 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="obsidian" data-color-mode="dark" class="dark">
+<html lang="zh-CN" data-color-mode="dark" data-accent="blue" class="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="dark" />
-  <meta name="theme-color" content="#080c1c" />
+  <meta name="theme-color" content="#111317" />
   <script>
     (function () {
-      var KEY = 'bothub_theme';
-      var LIGHT_THEMES = { daylight: '#f2f5fa', parchment: '#f4eee2' };
-      var DARK_THEMES = {
-        obsidian: '#080c1c',
-        ocean: '#061320',
-        emerald: '#061510',
-        amethyst: '#110b22'
+      var MODE_KEY = 'bothub_color_mode';
+      var ACCENT_KEY = 'bothub_accent';
+      var LEGACY_KEY = 'bothub_theme';
+      var VALID_MODES = { dark: 1, light: 1, system: 1 };
+      var VALID_ACCENTS = { amber: 1, blue: 1, cyan: 1, emerald: 1, violet: 1, mono: 1 };
+      var LEGACY_MAP = {
+        obsidian: { mode: 'dark', accent: 'amber' },
+        ocean: { mode: 'dark', accent: 'cyan' },
+        emerald: { mode: 'dark', accent: 'emerald' },
+        amethyst: { mode: 'dark', accent: 'violet' },
+        daylight: { mode: 'light', accent: 'blue' },
+        parchment: { mode: 'light', accent: 'amber' },
+        system: { mode: 'system', accent: 'blue' }
       };
-      var saved = 'obsidian';
-      try { saved = localStorage.getItem(KEY) || 'obsidian'; } catch (e) {}
+      var mode = '';
+      var accent = '';
+      try {
+        mode = localStorage.getItem(MODE_KEY) || '';
+        accent = localStorage.getItem(ACCENT_KEY) || '';
+        if (!mode && !accent) {
+          var legacy = localStorage.getItem(LEGACY_KEY);
+          if (legacy && LEGACY_MAP[legacy]) {
+            mode = LEGACY_MAP[legacy].mode;
+            accent = LEGACY_MAP[legacy].accent;
+            localStorage.setItem(MODE_KEY, mode);
+            localStorage.setItem(ACCENT_KEY, accent);
+          }
+        }
+      } catch (e) {}
+      if (!VALID_MODES[mode]) mode = 'dark';
+      if (!VALID_ACCENTS[accent]) accent = 'blue';
       var prefersLight = false;
       try {
         prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
       } catch (e) {}
-      var resolved = saved === 'system' ? (prefersLight ? 'daylight' : 'obsidian') : saved;
-      if (!LIGHT_THEMES[resolved] && !DARK_THEMES[resolved]) resolved = 'obsidian';
-      var isLight = !!LIGHT_THEMES[resolved];
+      var resolved = mode === 'system' ? (prefersLight ? 'light' : 'dark') : mode;
       var root = document.documentElement;
-      root.dataset.theme = resolved;
-      root.dataset.colorMode = isLight ? 'light' : 'dark';
-      root.classList.toggle('dark', !isLight);
+      root.dataset.colorMode = resolved;
+      root.dataset.accent = accent;
+      root.classList.toggle('dark', resolved === 'dark');
       var schemeMeta = document.querySelector('meta[name="color-scheme"]');
       if (schemeMeta) {
-        schemeMeta.setAttribute('content', saved === 'system' ? 'light dark' : (isLight ? 'light' : 'dark'));
+        schemeMeta.setAttribute('content', mode === 'system' ? 'light dark' : resolved);
       }
       var themeMeta = document.querySelector('meta[name="theme-color"]');
       if (themeMeta) {
-        themeMeta.setAttribute('content', LIGHT_THEMES[resolved] || DARK_THEMES[resolved]);
+        themeMeta.setAttribute('content', resolved === 'light' ? '#ffffff' : '#111317');
       }
     })();
   </script>

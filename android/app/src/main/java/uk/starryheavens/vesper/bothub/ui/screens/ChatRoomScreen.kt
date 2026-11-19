@@ -11,7 +11,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -80,7 +79,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -116,7 +114,6 @@ import uk.starryheavens.vesper.bothub.ui.components.SpecularHairline
 import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
 import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
 import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
-import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
 import uk.starryheavens.vesper.bothub.ui.sheets.ModelPickerSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.resolveModelOptionDisplayName
@@ -323,11 +320,7 @@ fun ChatRoomScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(theme.topBarTop, theme.topBarBottom)
-                    )
-                )
+                .background(theme.topBarTop)
                 .statusBarsPadding()
         ) {
             Row(
@@ -399,7 +392,7 @@ fun ChatRoomScreen(
                         Text(
                             text = "成员协作发言中...",
                             style = TextStyle(
-                                fontSize = 10.5.sp,
+                                fontSize = 11.sp,
                                 color = if (theme.isLight) theme.accentDeep else theme.accentLight,
                                 platformStyle = NoFontPaddingStyle
                             ),
@@ -422,31 +415,16 @@ fun ChatRoomScreen(
                             }
                             .clip(CircleShape)
                             .background(
-                                Brush.verticalGradient(
-                                    if (showSearchBar) {
-                                        listOf(
-                                            theme.accent.copy(alpha = 0.22f),
-                                            theme.accentDeep.copy(alpha = 0.12f)
-                                        )
-                                    } else {
-                                        listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)
-                                    }
-                                ),
+                                if (showSearchBar) {
+                                    theme.accent.copy(alpha = if (theme.isLight) 0.12f else 0.18f)
+                                } else {
+                                    theme.secondaryBtnTop
+                                },
                                 CircleShape
                             )
                             .border(
-                                BorderStroke(
-                                    0.85.dp,
-                                    if (showSearchBar) {
-                                        specularRimBrush(
-                                            theme.accent.copy(alpha = 0.55f),
-                                            theme.accent.copy(alpha = 0.22f),
-                                            Color.Transparent
-                                        )
-                                    } else {
-                                        specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
-                                    }
-                                ),
+                                1.dp,
+                                if (showSearchBar) theme.accent.copy(alpha = 0.45f) else theme.divider,
                                 CircleShape
                             ),
                         contentAlignment = Alignment.Center
@@ -468,17 +446,8 @@ fun ChatRoomScreen(
                             .size(36.dp)
                             .tactileClickable(pressedScale = 0.92f, hapticOnTap = true, onClick = onOpenChatInfo)
                             .clip(CircleShape)
-                            .background(
-                                Brush.verticalGradient(listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)),
-                                CircleShape
-                            )
-                            .border(
-                                BorderStroke(
-                                    0.85.dp,
-                                    specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
-                                ),
-                                CircleShape
-                            ),
+                            .background(theme.secondaryBtnTop, CircleShape)
+                            .border(1.dp, theme.divider, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -937,11 +906,16 @@ fun ChatRoomScreen(
                         val isActiveHit = msg.id == activeMatchedTurnId
                         val isSearchHit = msg.id in matchedTurnIds
                         val userShape = RoundedCornerShape(
-                            topStart = 18.dp,
+                            topStart = 14.dp,
                             topEnd = 4.dp,
-                            bottomStart = 18.dp,
-                            bottomEnd = 18.dp
+                            bottomStart = 14.dp,
+                            bottomEnd = 14.dp
                         )
+                        val userHitBorder = when {
+                            isActiveHit -> Modifier.border(1.5.dp, theme.accentLight, userShape)
+                            isSearchHit -> Modifier.border(1.dp, theme.accent.copy(alpha = 0.65f), userShape)
+                            else -> Modifier
+                        }
 
                         Box(
                             modifier = Modifier.fillMaxWidth(),
@@ -950,35 +924,9 @@ fun ChatRoomScreen(
                             Box(
                                 modifier = Modifier
                                     .widthIn(max = 304.dp)
-                                    .shadow(
-                                        4.dp,
-                                        userShape,
-                                        ambientColor = Color.Black.copy(alpha = if (theme.isLight) 0.14f else 0.40f)
-                                    )
                                     .clip(userShape)
-                                    .background(
-                                        Brush.verticalGradient(
-                                            listOf(theme.userBubbleTop, theme.userBubbleBottom)
-                                        ),
-                                        userShape
-                                    )
-                                    .border(
-                                        BorderStroke(
-                                            if (isActiveHit) 1.5.dp else 0.85.dp,
-                                            if (isActiveHit) {
-                                                SolidColor(theme.accentLight)
-                                            } else if (isSearchHit) {
-                                                SolidColor(theme.accent.copy(alpha = 0.65f))
-                                            } else {
-                                                specularRimBrush(
-                                                    theme.accent.copy(alpha = 0.45f),
-                                                    theme.accent.copy(alpha = 0.18f),
-                                                    theme.accent.copy(alpha = 0.08f)
-                                                )
-                                            }
-                                        ),
-                                        userShape
-                                    )
+                                    .background(theme.userBubbleTop, userShape)
+                                    .then(userHitBorder)
                                     .combinedClickable(
                                         onClick = {},
                                         onLongClick = {
@@ -1056,9 +1004,9 @@ fun ChatRoomScreen(
                         }
                         val aiShape = RoundedCornerShape(
                             topStart = 4.dp,
-                            topEnd = 18.dp,
-                            bottomStart = 18.dp,
-                            bottomEnd = 18.dp
+                            topEnd = 14.dp,
+                            bottomStart = 14.dp,
+                            bottomEnd = 14.dp
                         )
 
                         Row(
@@ -1112,38 +1060,19 @@ fun ChatRoomScreen(
                                         }
                                     }
 
+                                    val aiBorderWidth = if (isActiveHit) 1.5.dp else 1.dp
+                                    val aiBorderColor = when {
+                                        isActiveHit -> theme.accentLight
+                                        isSearchHit -> theme.accent.copy(alpha = 0.65f)
+                                        else -> theme.divider
+                                    }
+
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .shadow(
-                                                5.dp,
-                                                aiShape,
-                                                ambientColor = Color.Black.copy(alpha = if (theme.isLight) 0.12f else 0.45f)
-                                            )
                                             .clip(aiShape)
-                                            .background(
-                                                Brush.verticalGradient(
-                                                    listOf(theme.aiBubbleTop, theme.aiBubbleBottom)
-                                                ),
-                                                aiShape
-                                            )
-                                            .border(
-                                                BorderStroke(
-                                                    if (isActiveHit) 1.5.dp else 0.85.dp,
-                                                    if (isActiveHit) {
-                                                        SolidColor(theme.accentLight)
-                                                    } else if (isSearchHit) {
-                                                        SolidColor(theme.accent.copy(alpha = 0.65f))
-                                                    } else {
-                                                        specularRimBrush(
-                                                            theme.rimHighlight,
-                                                            theme.rimMid,
-                                                            theme.rimSubtle
-                                                        )
-                                                    }
-                                                ),
-                                                aiShape
-                                            )
+                                            .background(theme.aiBubbleTop, aiShape)
+                                            .border(aiBorderWidth, aiBorderColor, aiShape)
                                             .combinedClickable(
                                                 onClick = {},
                                                 onLongClick = {
@@ -1402,7 +1331,7 @@ fun ChatRoomScreen(
                                                 )
                                                 Text(
                                                     text = "换模型重试",
-                                                    fontSize = 10.5.sp,
+                                                    fontSize = 11.5.sp,
                                                     fontWeight = FontWeight.Medium,
                                                     color = theme.accent,
                                                     maxLines = 1,
@@ -1423,11 +1352,11 @@ fun ChatRoomScreen(
                                                         imageVector = Icons.Default.ContentCopy,
                                                         contentDescription = "复制",
                                                         tint = theme.textMuted,
-                                                        modifier = Modifier.size(11.dp)
+                                                        modifier = Modifier.size(12.dp)
                                                     )
                                                     Text(
                                                         text = "复制",
-                                                        fontSize = 10.5.sp,
+                                                        fontSize = 11.5.sp,
                                                         color = theme.textMuted,
                                                         maxLines = 1,
                                                         softWrap = false
@@ -1451,7 +1380,7 @@ fun ChatRoomScreen(
                                                     )
                                                     Text(
                                                         text = "引用",
-                                                        fontSize = 10.5.sp,
+                                                        fontSize = 11.5.sp,
                                                         color = theme.textMuted,
                                                         maxLines = 1,
                                                         softWrap = false
@@ -1547,9 +1476,9 @@ fun ChatRoomScreen(
                 Row(
                     modifier = Modifier
                         .shadow(
-                            8.dp,
+                            6.dp,
                             pillShape,
-                            ambientColor = Color.Black.copy(alpha = if (theme.isLight) 0.16f else 0.65f)
+                            ambientColor = Color.Black.copy(alpha = if (theme.isLight) 0.14f else 0.45f)
                         )
                         .tactileClickable(pressedScale = 0.92f, hapticOnTap = true) {
                             scope.launch {
@@ -1559,21 +1488,8 @@ fun ChatRoomScreen(
                             }
                         }
                         .clip(pillShape)
-                        .background(
-                            Brush.verticalGradient(listOf(theme.popoverTop, theme.popoverBottom)),
-                            pillShape
-                        )
-                        .border(
-                            BorderStroke(
-                                0.85.dp,
-                                specularRimBrush(
-                                    theme.accent.copy(alpha = 0.48f),
-                                    theme.accent.copy(alpha = 0.18f),
-                                    Color.Transparent
-                                )
-                            ),
-                            pillShape
-                        )
+                        .background(theme.popoverTop, pillShape)
+                        .border(1.dp, theme.rimHighlight, pillShape)
                         .padding(horizontal = 12.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -1680,11 +1596,7 @@ fun ChatRoomScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(theme.bottomBarTop, theme.bottomBarBottom)
-                    )
-                )
+                .background(theme.bottomBarTop)
                 .navigationBarsPadding()
         ) {
             SpecularHairline()
@@ -1696,9 +1608,9 @@ fun ChatRoomScreen(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val inputShape = RoundedCornerShape(20.dp)
+                val inputShape = RoundedCornerShape(18.dp)
                 val inputBorder by animateColorAsState(
-                    targetValue = if (composerFocused) theme.accent.copy(alpha = 0.50f) else theme.rimMid,
+                    targetValue = if (composerFocused) theme.accent else theme.divider,
                     animationSpec = tween(150),
                     label = "composerBorder"
                 )
@@ -1707,11 +1619,8 @@ fun ChatRoomScreen(
                         .weight(1f)
                         .sizeIn(minHeight = 40.dp)
                         .clip(inputShape)
-                        .background(
-                            Brush.verticalGradient(listOf(theme.inputTop, theme.inputBottom)),
-                            inputShape
-                        )
-                        .border(0.9.dp, inputBorder, inputShape),
+                        .background(theme.inputTop, inputShape)
+                        .border(if (composerFocused) 1.2.dp else 1.dp, inputBorder, inputShape),
                     contentAlignment = Alignment.CenterStart
                 ) {
                     BasicTextField(
@@ -1753,31 +1662,16 @@ fun ChatRoomScreen(
                         }
                         .clip(CircleShape)
                         .background(
-                            Brush.verticalGradient(
-                                if (showPlusDrawer) {
-                                    listOf(
-                                        theme.accent.copy(alpha = 0.22f),
-                                        theme.accentDeep.copy(alpha = 0.12f)
-                                    )
-                                } else {
-                                    listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)
-                                }
-                            ),
+                            if (showPlusDrawer) {
+                                theme.accent.copy(alpha = if (theme.isLight) 0.12f else 0.18f)
+                            } else {
+                                theme.secondaryBtnTop
+                            },
                             CircleShape
                         )
                         .border(
-                            BorderStroke(
-                                0.85.dp,
-                                if (showPlusDrawer) {
-                                    specularRimBrush(
-                                        theme.accent.copy(alpha = 0.50f),
-                                        theme.accent.copy(alpha = 0.20f),
-                                        Color.Transparent
-                                    )
-                                } else {
-                                    specularRimBrush(theme.rimMid, theme.rimSubtle, Color.Transparent)
-                                }
-                            ),
+                            1.dp,
+                            if (showPlusDrawer) theme.accent.copy(alpha = 0.45f) else theme.divider,
                             CircleShape
                         ),
                     contentAlignment = Alignment.Center
@@ -2046,7 +1940,7 @@ private fun PlusTrayItem(
     modifier: Modifier = Modifier
 ) {
     val theme = BotHubThemeTokens
-    val sqShape = RoundedCornerShape(16.dp)
+    val sqShape = RoundedCornerShape(12.dp)
     Column(
         modifier = modifier.tactileClickable(
             pressedScale = 0.92f,
@@ -2058,38 +1952,10 @@ private fun PlusTrayItem(
     ) {
         Box(
             modifier = Modifier
-                .size(54.dp)
-                .shadow(
-                    4.dp,
-                    sqShape,
-                    ambientColor = Color.Black.copy(alpha = if (theme.isLight) 0.12f else 0.40f)
-                )
+                .size(52.dp)
                 .clip(sqShape)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color(
-                                red = (theme.secondaryBtnTop.red * 0.84f + tile.accent.red * 0.16f).coerceIn(0f, 1f),
-                                green = (theme.secondaryBtnTop.green * 0.84f + tile.accent.green * 0.16f).coerceIn(0f, 1f),
-                                blue = (theme.secondaryBtnTop.blue * 0.84f + tile.accent.blue * 0.16f).coerceIn(0f, 1f),
-                                alpha = 1f
-                            ),
-                            theme.secondaryBtnBottom
-                        )
-                    ),
-                    sqShape
-                )
-                .border(
-                    BorderStroke(
-                        0.85.dp,
-                        specularRimBrush(
-                            tile.accent.copy(alpha = 0.50f),
-                            tile.accent.copy(alpha = 0.16f),
-                            theme.rimSubtle
-                        )
-                    ),
-                    sqShape
-                ),
+                .background(theme.secondaryBtnTop, sqShape)
+                .border(1.dp, theme.divider, sqShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(

@@ -1,380 +1,160 @@
 /* ============================================================================
-   Sculpted Tactile Glass Design System (Islands, Bevels, Wells & Jewel Controls)
-   Placed inside @layer components so Tailwind utility classes (absolute, fixed,
-   border-*, p-*, text-*) always compose cleanly without cascade collisions.
+   Flat Restrained Modern Surfaces (Hairline Borders, Zero Glow, Clean Depth)
+   Placed inside @layer components so Tailwind utility classes compose cleanly.
    ============================================================================ */
 @layer components {
   .sidebar-console {
-    background:
-      radial-gradient(125% 55% at 25% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.1) 0%, transparent 56%),
-      radial-gradient(100% 60% at 80% 100% var(--in-oklab), var(--bg-glow-2) 0%, transparent 58%),
-      linear-gradient(180deg var(--in-oklab), var(--surface-sidebar-top) 0%, var(--surface-sidebar-bottom) 100%);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      inset -1px 0 0 var(--border-glass),
-      0 24px 56px -12px var(--shadow-ambient);
-    backdrop-filter: blur(26px) saturate(135%);
+    background: var(--surface-sidebar);
   }
 
   .workspace-island {
     position: relative;
-    background:
-      radial-gradient(85% 42% at 50% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.06) 0%, transparent 62%),
-      radial-gradient(65% 45% at 92% 95% var(--in-oklab), var(--bg-glow-2) 0%, transparent 60%),
-      linear-gradient(180deg var(--in-oklab), var(--surface-workspace-top) 0%, var(--surface-workspace-bottom) 100%);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      0 26px 64px -14px var(--shadow-ambient);
-    backdrop-filter: blur(24px) saturate(130%);
+    background: var(--surface-main);
+  }
+
+  .vesper-card,
+  .luxury-card,
+  .modal-section {
+    position: relative;
+    background: var(--surface-card);
+    border: 1px solid var(--border-line);
+    border-radius: 0.75rem;
   }
 
   .modal-section {
-    background:
-      radial-gradient(115% 85% at 95% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.08) 0%, transparent 56%),
-      radial-gradient(90% 70% at 5% 100% var(--in-oklab), var(--bg-glow-2) 0%, transparent 60%),
-      linear-gradient(180deg var(--in-oklab), var(--surface-card-top) 0%, var(--surface-card-bottom) 100%);
-    border: 1px solid var(--border-glass);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      0 12px 28px -8px var(--shadow-ambient);
-    border-radius: 1.125rem;
     padding: 0.95rem 1.05rem;
-  }
-
-  /* Primary Accent Jewel Action Button */
-  .btn-jewel {
-    background: linear-gradient(
-      180deg var(--in-oklab),
-      var(--accent-gold) 0%,
-      var(--accent-gold-deep) 100%
-    );
-    color: var(--on-accent);
-    border: 1px solid rgba(var(--accent-rgb), 0.65);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.38),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
-      0 8px 22px -4px rgba(var(--accent-rgb), 0.36),
-      0 2px 5px var(--shadow-ambient);
-    font-weight: 600;
-  }
-
-  /* Global Jewel Upgrade for Primary bg-[#f2b880] CTA Buttons */
-  button.bg-\[\#f2b880\] {
-    background: linear-gradient(
-      180deg var(--in-oklab),
-      var(--accent-gold) 0%,
-      var(--accent-gold-deep) 100%
-    );
-    color: var(--on-accent);
-    border: 1px solid rgba(var(--accent-rgb), 0.65);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.38),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.25),
-      0 8px 22px -4px rgba(var(--accent-rgb), 0.36),
-      0 2px 5px var(--shadow-ambient);
-  }
-
-  /* Secondary Convex Keycap Button */
-  .btn-tactile {
-    background: linear-gradient(
-      180deg var(--in-oklab),
-      var(--surface-card-top) 0%,
-      var(--surface-card-bottom) 100%
-    );
-    border: 1px solid var(--border-glass);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.16),
-      0 6px 16px -4px var(--shadow-ambient);
-    color: var(--text-sub);
-  }
-
-  /* Warm Glazed Accent Pill Button */
-  .btn-tactile-gold {
-    background: linear-gradient(
-      180deg var(--in-oklab),
-      rgba(var(--accent-rgb), 0.22) 0%,
-      rgba(var(--accent-rgb), 0.1) 100%
-    );
-    border: 1px solid var(--border-gold);
-    box-shadow:
-      inset 0 1px 0 rgba(var(--accent-rgb), 0.24),
-      0 6px 18px -4px rgba(var(--accent-rgb), 0.2);
-    color: var(--accent-gold-light);
-  }
-
-  @media (hover: hover) {
-    .btn-jewel:not(:disabled):hover,
-    button.bg-\[\#f2b880\]:not(:disabled):hover {
-      filter: brightness(1.06);
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.5),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.22),
-        0 12px 28px -4px rgba(var(--accent-rgb), 0.48),
-        0 3px 8px var(--shadow-ambient);
-    }
-
-    .btn-tactile:not(:disabled):hover {
-      border-color: var(--border-gold);
-      color: var(--text-main);
-      box-shadow:
-        inset 0 1px 0 var(--hairline-top),
-        0 10px 22px -5px var(--shadow-ambient),
-        0 0 16px -4px rgba(var(--accent-rgb), 0.22);
-    }
-
-    .btn-tactile-gold:not(:disabled):hover {
-      background: linear-gradient(
-        180deg var(--in-oklab),
-        rgba(var(--accent-rgb), 0.32) 0%,
-        rgba(var(--accent-rgb), 0.16) 100%
-      );
-      border-color: var(--accent-gold);
-      color: var(--text-main);
-      box-shadow:
-        inset 0 1px 0 rgba(var(--accent-rgb), 0.36),
-        0 10px 24px -4px rgba(var(--accent-rgb), 0.28);
-    }
-  }
-
-  /* Machined Recessed Track / Input Groove */
-  .well-recessed {
-    background: linear-gradient(
-      180deg var(--in-oklab),
-      var(--surface-input-top) 0%,
-      var(--surface-input-bottom) 100%
-    );
-    border: 1px solid var(--border-glass);
-    box-shadow:
-      inset 0 2px 6px rgba(0, 0, 0, 0.22),
-      inset 0 -1px 0 var(--hairline-top),
-      0 1px 0 var(--border-glass);
-  }
-
-  /* Active Sidebar Roster Card Elevation */
-  .roster-card-active {
-    background:
-      radial-gradient(120% 95% at 0% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.2) 0%, transparent 62%),
-      linear-gradient(135deg var(--in-oklab), var(--surface-card-top) 0%, var(--surface-card-bottom) 100%);
-    border: 1px solid var(--border-gold);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      0 10px 24px -6px var(--shadow-ambient),
-      0 0 20px -6px rgba(var(--accent-rgb), 0.18);
-  }
-
-  /* Hero Starter Stage Soft Ambient Glow */
-  .starter-stage-halo {
-    position: relative;
-  }
-  .starter-stage-halo::before {
-    content: '';
-    position: absolute;
-    inset: -24px;
-    border-radius: 9999px;
-    background:
-      radial-gradient(circle var(--in-oklab), rgba(var(--accent-rgb), 0.2) 0%, var(--bg-glow-2) 45%, transparent 72%);
-    filter: blur(14px);
-    pointer-events: none;
-  }
-
-  /* 3D Sculpted User Chat Message & Action Bar Surfaces */
-  .msg-bubble-user {
-    background:
-      radial-gradient(120% 90% at 15% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.18) 0%, transparent 58%),
-      linear-gradient(145deg var(--in-oklab), var(--surface-bubble-user-top) 0%, var(--surface-bubble-user-bottom) 100%);
-    border: 1px solid var(--border-gold);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      0 12px 28px -8px var(--shadow-ambient),
-      0 2px 10px -2px rgba(var(--accent-rgb), 0.12);
-    backdrop-filter: blur(14px);
-  }
-
-  .msg-action-bar {
-    background: linear-gradient(
-      180deg var(--in-oklab),
-      var(--surface-popover-top) 0%,
-      var(--surface-popover-bottom) 100%
-    );
-    border: 1px solid var(--border-glass);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      0 8px 20px -4px var(--shadow-ambient);
-    backdrop-filter: blur(14px);
-  }
-
-  .aero-glass {
-    background: linear-gradient(180deg var(--in-oklab), var(--surface-popover-top) 0%, var(--surface-popover-bottom) 100%);
-    border: 1px solid var(--border-glass);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      0 20px 46px var(--shadow-ambient);
-    backdrop-filter: blur(20px);
-  }
-
-  .vesper-card {
-    position: relative;
-    background:
-      radial-gradient(120% 80% at 50% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.05) 0%, transparent 58%),
-      linear-gradient(180deg var(--in-oklab), var(--surface-card-top) 0%, var(--surface-card-bottom) 100%);
-    border: 1px solid var(--border-glass);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      0 14px 32px -6px var(--shadow-ambient);
-    backdrop-filter: blur(18px);
-  }
-
-  /* Flagship Cursor-Tracking Specular Edge & Surface Spotlight Cards */
-  .luxury-card {
-    position: relative;
-    overflow: hidden;
-    isolation: isolate;
-    background:
-      radial-gradient(125% 90% at 85% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.085) 0%, transparent 56%),
-      radial-gradient(90% 80% at 10% 100% var(--in-oklab), var(--bg-glow-2) 0%, transparent 58%),
-      linear-gradient(180deg var(--in-oklab), var(--surface-card-top) 0%, var(--surface-card-bottom) 100%);
-    border: 1px solid var(--border-glass);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      0 16px 38px -8px var(--shadow-ambient);
-    backdrop-filter: blur(20px);
-    transition:
-      transform 240ms var(--ease-snappy),
-      border-color 220ms ease-out,
-      box-shadow 260ms ease-out;
-  }
-
-  .luxury-card > * {
-    position: relative;
-    z-index: 2;
-  }
-
-  .luxury-card::before,
-  .luxury-card::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 280ms ease-out;
-  }
-
-  .luxury-card::before {
-    z-index: 1;
-    background: radial-gradient(
-      280px circle at var(--mx, 50%) var(--my, 0%),
-      rgba(var(--accent-rgb), 0.095),
-      transparent 68%
-    );
-  }
-
-  .luxury-card::after {
-    z-index: 3;
-    padding: 1px;
-    background: radial-gradient(
-      200px circle at var(--mx, 50%) var(--my, 0%),
-      rgba(var(--accent-rgb), 0.65),
-      transparent 70%
-    );
-    -webkit-mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    mask-composite: exclude;
-  }
-
-  @media (hover: hover) {
-    .luxury-card:hover::before,
-    .luxury-card:hover::after {
-      opacity: 1;
-    }
   }
 
   .vesper-card-interactive {
     transition:
-      transform 240ms var(--ease-snappy),
-      border-color 200ms ease-out,
-      background-color 200ms ease-out,
-      box-shadow 240ms ease-out;
+      border-color 150ms ease-out,
+      background-color 150ms ease-out,
+      box-shadow 150ms ease-out;
   }
-  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+
+  @media (hover: hover) {
     .vesper-card-interactive:hover {
-      transform: translateY(-3px);
-      box-shadow:
-        inset 0 1px 0 var(--hairline-top),
-        0 20px 44px -10px var(--shadow-ambient);
+      border-color: var(--border-strong);
+      box-shadow: 0 2px 8px var(--shadow-soft);
     }
   }
 
-  /* Flagship Sculpted Glass Command Composer with Gradient Specular Rim */
+  /* Primary Solid Button */
+  .btn-jewel {
+    background: var(--accent);
+    color: var(--on-accent);
+    border: 1px solid transparent;
+    font-weight: 500;
+  }
+
+  /* Secondary Flat Bordered Button */
+  .btn-tactile {
+    background: var(--surface-card);
+    color: var(--fg-sub);
+    border: 1px solid var(--border-line);
+  }
+
+  /* Accent Soft Tinted Pill / Button */
+  .btn-tactile-gold {
+    background: var(--accent-soft);
+    color: var(--accent-fg);
+    border: 1px solid var(--accent-border);
+  }
+
+  @media (hover: hover) {
+    .btn-jewel:not(:disabled):hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-tactile:not(:disabled):hover {
+      background: var(--surface-hover);
+      color: var(--fg-main);
+      border-color: var(--border-strong);
+    }
+
+    .btn-tactile-gold:not(:disabled):hover {
+      background: rgba(var(--accent-rgb), 0.2);
+      border-color: var(--accent);
+      color: var(--accent-fg);
+    }
+  }
+
+  /* Recessed Surface Track / Well */
+  .well-recessed {
+    background: var(--surface-canvas);
+    border: 1px solid var(--border-line);
+  }
+
+  /* Active Sidebar Roster Card */
+  .roster-card-active {
+    background: var(--surface-hover);
+    border: 1px solid var(--border-strong);
+  }
+
+  /* Starter Stage Container */
+  .starter-stage-halo {
+    position: relative;
+  }
+
+  /* Clean Solid User Chat Message Bubble */
+  .msg-bubble-user {
+    background: var(--accent);
+    color: var(--on-accent);
+    border: 1px solid transparent;
+  }
+
+  .msg-action-bar {
+    background: var(--surface-card);
+    border: 1px solid var(--border-strong);
+    box-shadow: 0 6px 18px -6px var(--shadow-soft);
+  }
+
+  .aero-glass {
+    background: var(--surface-card);
+    border: 1px solid var(--border-strong);
+    box-shadow: 0 10px 30px -8px var(--shadow-soft);
+  }
+
+  /* Clean Command Composer Dock */
   .composer-dock {
     position: relative;
-    background:
-      radial-gradient(90% 100% at 50% 0% var(--in-oklab), rgba(var(--accent-rgb), 0.08) 0%, transparent 62%),
-      linear-gradient(180deg var(--in-oklab), var(--surface-card-top) 0%, var(--surface-dialog-bottom) 100%);
-    border: 1px solid var(--border-glass);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.16),
-      0 24px 56px -10px var(--shadow-ambient),
-      0 4px 16px var(--shadow-ambient);
-    backdrop-filter: blur(24px) saturate(140%);
+    background: var(--surface-card);
+    border: 1px solid var(--border-strong);
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 20px -6px var(--shadow-soft);
     transition:
-      border-color 220ms ease-out,
-      box-shadow 280ms ease-out,
-      transform 240ms var(--ease-snappy);
-  }
-  .composer-dock:focus-within {
-    border-color: var(--border-gold);
-    box-shadow:
-      inset 0 1px 0 var(--hairline-top),
-      0 0 0 1px rgba(var(--accent-rgb), 0.18),
-      0 26px 60px -10px var(--shadow-ambient),
-      0 0 32px -6px rgba(var(--accent-rgb), 0.22);
-  }
-  .composer-dock.is-streaming {
-    border-color: var(--border-gold);
-    box-shadow:
-      inset 0 1px 0 rgba(var(--accent-rgb), 0.24),
-      0 0 0 1px rgba(var(--accent-rgb), 0.18),
-      0 24px 56px -10px var(--shadow-ambient);
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .composer-dock.is-streaming {
-      animation: composerBreath 2.4s ease-in-out infinite;
-    }
+      border-color 150ms ease-out,
+      box-shadow 150ms ease-out;
   }
 
-  /* Pure CSS Conic-Gradient Health Donut Ring */
+  .composer-dock:focus-within {
+    border-color: var(--accent);
+    box-shadow:
+      0 0 0 2px var(--accent-soft),
+      0 4px 20px -6px var(--shadow-soft);
+  }
+
+  .composer-dock.is-streaming {
+    border-color: var(--accent-border);
+  }
+
+  /* Pure CSS Conic-Gradient Health Donut Ring (flat center cutout) */
   .health-donut-ring {
+    position: relative;
     border-radius: 9999px;
     background: conic-gradient(
-      #34d399 0% var(--ok-stop, 100%),
-      #fbbf24 var(--ok-stop, 100%) var(--warn-stop, 100%),
-      #fb7185 var(--warn-stop, 100%) 100%
+      var(--ok) 0% var(--ok-stop, 100%),
+      var(--warn) var(--ok-stop, 100%) var(--warn-stop, 100%),
+      var(--danger) var(--warn-stop, 100%) 100%
     );
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 5.5px));
-    mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 5.5px));
   }
-}
 
-@keyframes composerBreath {
-  0%, 100% {
-    box-shadow:
-      inset 0 1px 0 rgba(242, 184, 128, 0.16),
-      0 0 0 1px rgba(242, 184, 128, 0.1),
-      0 18px 46px rgba(0, 0, 0, 0.54);
-  }
-  50% {
-    box-shadow:
-      inset 0 1px 0 rgba(242, 184, 128, 0.26),
-      0 0 24px rgba(242, 184, 128, 0.14),
-      0 18px 46px rgba(0, 0, 0, 0.54);
+  .health-donut-ring::after {
+    content: "";
+    position: absolute;
+    inset: 6px;
+    border-radius: 9999px;
+    background: var(--surface-card);
   }
 }
 
@@ -430,7 +210,7 @@
 .reveal-actions {
   opacity: 0;
   transform: translateY(2px);
-  transition: opacity 180ms ease-out, transform 180ms var(--ease-snappy);
+  transition: opacity 150ms ease-out, transform 150ms var(--ease-snappy);
 }
 .reveal-host[data-is-last="true"] .reveal-actions {
   opacity: 0.72;
@@ -506,21 +286,15 @@
 }
 
 /* ============================================================================
-   Theme-Unified Calendar Date Picker Popover (All 6 Dark & Light Themes)
+   Theme-Unified Calendar Date Picker Popover
    Progressive enhancement: CSS Anchor Positioning when supported, fixed fallback otherwise.
    ============================================================================ */
 .calendar-popover {
   width: min(312px, calc(100vw - 16px));
-  background: linear-gradient(
-    180deg var(--in-oklab),
-    var(--surface-popover-top) 0%,
-    var(--surface-popover-bottom) 100%
-  );
-  border: 1px solid var(--border-gold);
-  box-shadow:
-    inset 0 1px 0 var(--hairline-top),
-    0 20px 44px -10px var(--shadow-ambient);
-  color: var(--text-main);
+  background: var(--surface-card);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 10px 30px -8px var(--shadow-soft);
+  color: var(--fg-main);
 }
 
 @supports (position-area: block-end) {
@@ -533,53 +307,49 @@
 }
 
 .cal-nav-btn {
-  color: var(--text-sub);
+  color: var(--fg-sub);
   border: 1px solid transparent;
 }
 .cal-nav-btn:hover {
-  background: rgba(var(--accent-rgb), 0.14);
-  color: var(--text-main);
+  background: var(--surface-hover);
+  color: var(--fg-main);
 }
 
 .cal-day-cell {
   border: 1px solid transparent;
 }
 .cal-cell-inmonth {
-  color: var(--text-main);
+  color: var(--fg-main);
 }
 .cal-cell-inmonth:hover {
-  background: rgba(var(--accent-rgb), 0.16);
-  border-color: rgba(var(--accent-rgb), 0.35);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 .cal-cell-outmonth {
-  color: var(--text-muted);
+  color: var(--fg-muted);
   opacity: 0.48;
 }
 .cal-cell-outmonth:hover {
   opacity: 0.85;
-  background: rgba(var(--accent-rgb), 0.1);
+  background: var(--surface-hover);
 }
 .cal-cell-today {
-  color: var(--accent-gold);
-  border-color: var(--border-gold);
-  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent-fg);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
 }
-.cal-cell-selected {
-  background: linear-gradient(
-    180deg var(--in-oklab),
-    var(--accent-gold) 0%,
-    var(--accent-gold-deep) 100%
-  );
-  color: var(--on-accent) !important;
-  border-color: rgba(var(--accent-rgb), 0.7);
-  box-shadow: 0 4px 12px -2px rgba(var(--accent-rgb), 0.4);
+.cal-day-cell.cal-cell-selected {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: transparent;
 }
 .cal-preset-chip {
-  border: 1px solid var(--border-glass);
-  background: var(--surface-input-top);
-  color: var(--text-sub);
+  border: 1px solid var(--border-line);
+  background: var(--surface-canvas);
+  color: var(--fg-sub);
 }
 .cal-preset-chip:hover {
-  border-color: var(--border-gold);
-  color: var(--accent-gold);
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  color: var(--fg-main);
 }

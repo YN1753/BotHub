@@ -35,7 +35,7 @@ const hasUnreadBadge = computed(
     v-if="props.shape === 'pill'"
     type="button"
     aria-label="返回消息列表"
-    class="btn-tactile md:hidden min-h-[38px] px-2.5 rounded-full inline-flex items-center gap-1 text-xs font-medium text-[#fff8ee] cursor-pointer shrink-0"
+    class="btn-tactile md:hidden min-h-[38px] px-2.5 rounded-full inline-flex items-center gap-1 text-xs font-medium text-fg cursor-pointer shrink-0"
     @click="emit('openMobileMenu')"
   >
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
@@ -47,7 +47,7 @@ const hasUnreadBadge = computed(
     v-else
     type="button"
     aria-label="打开菜单"
-    class="btn-tactile md:hidden min-h-[42px] min-w-[42px] rounded-xl inline-flex items-center justify-center text-slate-200 cursor-pointer shrink-0"
+    class="btn-tactile md:hidden min-h-[42px] min-w-[42px] rounded-xl inline-flex items-center justify-center text-fg cursor-pointer shrink-0"
     @click="emit('openMobileMenu')"
   >
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -63,14 +63,14 @@ const hasUnreadBadge = computed(
     aria-label="展开侧边栏"
     title="展开侧边栏"
     :class="[
-      'btn-tactile relative hidden md:inline-flex items-center justify-center w-9 h-9 text-slate-200 cursor-pointer shrink-0',
+      'btn-tactile relative hidden md:inline-flex items-center justify-center w-9 h-9 text-fg cursor-pointer shrink-0',
       shape === 'pill' ? 'rounded-full' : 'rounded-xl',
     ]"
     @click="emit('toggleDesktopSidebar')"
   >
     <span
       v-if="hasUnreadBadge"
-      class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#f2b880] shadow-[0_0_6px_#f2b880]"
+      class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-accent shadow-[0_0_6px_#f2b880]"
       aria-hidden="true"
     />
     <svg viewBox="0 0 24 24" :width="shape === 'pill' ? 15 : 16" :height="shape === 'pill' ? 15 : 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

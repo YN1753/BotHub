@@ -124,33 +124,29 @@ onBeforeUnmount(() => {
     @pointerup="handlePointerUp"
   >
     <div class="relative flex flex-col min-h-0 max-h-[90dvh] sm:max-h-[86dvh]">
-      <!-- Subtle top warm hairline glow -->
-      <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#f2b880]/45 to-transparent" aria-hidden="true" />
-
-      <div class="sm:hidden w-10 h-1 rounded-full bg-[#fff8ee]/20 mx-auto mt-2.5 shrink-0" aria-hidden="true" />
+      <div class="sm:hidden w-10 h-1 rounded-full bg-line-strong mx-auto mt-2.5 shrink-0" aria-hidden="true" />
 
       <div
-        class="flex items-start justify-between gap-3 px-4 sm:px-5 pt-4 pb-3.5 border-b border-[#fff8ee]/10 shrink-0"
-        style="background: radial-gradient(85% 140% at 12% 0%, rgba(var(--accent-rgb), 0.1) 0%, transparent 62%), var(--surface-dialog-header)"
+        class="flex items-start justify-between gap-3 px-4 sm:px-5 pt-4 pb-3.5 bg-card border-b border-line shrink-0"
       >
         <div class="min-w-0">
-          <h3 :id="titleId" class="text-base sm:text-lg font-semibold text-white tracking-tight">
+          <h3 :id="titleId" class="text-base sm:text-lg font-semibold text-fg tracking-tight">
             {{ title }}
           </h3>
-          <p v-if="subtitle" :id="subtitleId" class="text-xs text-slate-400 mt-0.5">
+          <p v-if="subtitle" :id="subtitleId" class="text-xs text-fg-muted mt-0.5">
             {{ subtitle }}
           </p>
         </div>
 
         <div class="flex items-center gap-2 shrink-0 flex-wrap">
           <slot name="header-actions" />
-          <kbd aria-hidden="true" class="well-recessed hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-mono text-slate-400">Esc</kbd>
+          <kbd aria-hidden="true" class="well-recessed hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-lg text-xs font-mono text-fg-muted">Esc</kbd>
           <button
             type="button"
             aria-label="关闭窗口"
             title="关闭 (Esc)"
             @click="requestAnimatedClose"
-            class="btn-tactile min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] inline-flex items-center justify-center rounded-xl text-slate-300 hover:text-[#f2b880] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2b880] cursor-pointer"
+            class="btn-tactile min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] inline-flex items-center justify-center rounded-lg text-fg-sub hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />
