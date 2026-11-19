@@ -1565,11 +1565,11 @@ fun ModelPickerSheet(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(
-                                    if (selected) theme.accent.copy(alpha = 0.14f) else theme.cardSurface
+                                    if (selected) theme.accent.copy(alpha = 0.14f) else theme.cardTop
                                 )
                                 .border(
                                     width = if (selected) 1.dp else 0.5.dp,
-                                    color = if (selected) theme.accent else theme.cardBorder,
+                                    color = if (selected) theme.accent else theme.rimSubtle,
                                     shape = RoundedCornerShape(14.dp)
                                 )
                                 .clickable { onSelect(opt.id) }
