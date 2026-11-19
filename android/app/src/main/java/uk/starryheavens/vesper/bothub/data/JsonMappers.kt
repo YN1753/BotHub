@@ -109,8 +109,56 @@ object JsonMappers {
             groupMode = b.optString("group_mode", "smart"),
             announcement = b.optString("announcement", ""),
             updatedAt = b.optString("updated_at", ""),
-            allowPaidFallback = b.optBoolean("allow_paid_fallback", false)
+            allowPaidFallback = b.optBoolean("allow_paid_fallback", false),
+            allowedTools = optStringList(b, "allowed_tools"),
+            skillIds = optStringList(b, "skill_ids")
         )
+    }
+
+    fun parseSkills(arr: JSONArray?): List<SkillItemUi> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val s = arr.optJSONObject(i) ?: continue
+                val id = s.optString("id", "").trim()
+                if (id.isNotEmpty()) {
+                    add(
+                        SkillItemUi(
+                            id = id,
+                            slug = s.optString("slug", ""),
+                            name = s.optString("name", id).ifBlank { id },
+                            description = s.optString("description", ""),
+                            kind = s.optString("kind", "prompt").ifBlank { "prompt" },
+                            enabled = s.optBoolean("enabled", true)
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun parseMemories(arr: JSONArray?): List<MemoryItemUi> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val m = arr.optJSONObject(i) ?: continue
+                val id = m.optLong("id", 0L)
+                if (id > 0L) {
+                    add(
+                        MemoryItemUi(
+                            id = id,
+                            scope = m.optString("scope", "global"),
+                            category = m.optString("category", "fact"),
+                            factKey = m.optString("fact_key", ""),
+                            content = m.optString("content", ""),
+                            importance = m.optInt("importance", 3),
+                            pinned = m.optBoolean("pinned", false),
+                            updatedAt = m.optString("updated_at", "")
+                        )
+                    )
+                }
+            }
+        }
     }
 
     fun parseBots(arr: JSONArray?): List<BotItem> {
@@ -150,6 +198,8 @@ object JsonMappers {
                     .put("announcement", b.announcement)
                     .put("updated_at", b.updatedAt)
                     .put("allow_paid_fallback", b.allowPaidFallback)
+                    .put("allowed_tools", JSONArray().apply { b.allowedTools.forEach { put(it) } })
+                    .put("skill_ids", JSONArray().apply { b.skillIds.forEach { put(it) } })
             )
         }
         return arr.toString()
@@ -391,6 +441,42 @@ object JsonMappers {
 
     fun parseModelUsageSummary(obj: JSONObject?): ModelUsageSummaryItem {
         if (obj == null) return ModelUsageSummaryItem()
+        val topModelsArr = obj.optJSONArray("top_models")
+        val topModels = buildList {
+            if (topModelsArr != null) {
+                for (i in 0 until topModelsArr.length()) {
+                    val m = topModelsArr.optJSONObject(i) ?: continue
+                    add(
+                        ModelUsageModelStatItem(
+                            targetId = m.optString("target_id", ""),
+                            modelId = m.optString("model_id", ""),
+                            tier = m.optString("tier", "free"),
+                            calls = m.optInt("calls", 0),
+                            tokens = m.optInt("tokens", 0),
+                            avgLatencyMs = m.optLong("avg_latency_ms", 0L)
+                        )
+                    )
+                }
+            }
+        }
+        val topCallersArr = obj.optJSONArray("top_callers")
+        val topCallers = buildList {
+            if (topCallersArr != null) {
+                for (i in 0 until topCallersArr.length()) {
+                    val c = topCallersArr.optJSONObject(i) ?: continue
+                    add(
+                        ModelUsageCallerStatItem(
+                            botId = c.optString("bot_id", ""),
+                            taskId = c.optString("task_id", ""),
+                            source = c.optString("source", ""),
+                            freeCalls = c.optInt("free_calls", 0),
+                            paidCalls = c.optInt("paid_calls", 0),
+                            tokens = c.optInt("tokens", 0)
+                        )
+                    )
+                }
+            }
+        }
         return ModelUsageSummaryItem(
             days = obj.optInt("days", 7),
             totalCalls = obj.optInt("total_calls", 0),
@@ -398,7 +484,9 @@ object JsonMappers {
             freeCalls = obj.optInt("free_calls", 0),
             paidCalls = obj.optInt("paid_calls", 0),
             freeTokens = obj.optInt("free_tokens", 0),
-            paidTokens = obj.optInt("paid_tokens", 0)
+            paidTokens = obj.optInt("paid_tokens", 0),
+            topModels = topModels,
+            topCallers = topCallers
         )
     }
 

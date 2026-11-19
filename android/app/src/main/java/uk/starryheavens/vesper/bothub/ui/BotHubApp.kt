@@ -47,6 +47,7 @@ import uk.starryheavens.vesper.bothub.ui.screens.ImChatsTabScreen
 import uk.starryheavens.vesper.bothub.ui.screens.ServiceFeedScreen
 import uk.starryheavens.vesper.bothub.ui.screens.StashTabScreen
 import uk.starryheavens.vesper.bothub.ui.sheets.AgentSessionsSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.BotMemoriesSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.BotProfileSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.ChatInfoSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.CreateFriendSheet
@@ -206,6 +207,8 @@ fun BotHubApp(
                             onSelectThread = viewModel::selectBotThread,
                             onCreateThread = viewModel::createNewBotThread,
                             onDeleteThread = viewModel::deleteBotThread,
+                            onSummarizeThread = viewModel::summarizeActiveThreadToMemory,
+                            onForkFromTurn = viewModel::forkThreadFromTurn,
                             onRetryTurnWithModel = viewModel::retryTurnWithModel,
                             onCopyText = { txt ->
                                 clipboard.setText(AnnotatedString(txt))
@@ -347,7 +350,9 @@ fun BotHubApp(
                                     onTogglePin = viewModel::toggleStashPin,
                                     onReprocess = viewModel::reprocessStashItem,
                                     onDelete = viewModel::deleteStashItem,
-                                    onAskAi = viewModel::askAiAboutStashItem
+                                    onAskAi = viewModel::askAiAboutStashItem,
+                                    onConvertToTodo = viewModel::convertStashToTodo,
+                                    onConvertToNote = viewModel::convertStashToNote
                                 )
 
                                 BotHubTab.HUB -> HubTabScreen(
@@ -387,6 +392,7 @@ fun BotHubApp(
             onSendMessage = { viewModel.openChatRoom(freshBot.id) },
             onTogglePin = { viewModel.togglePinBot(freshBot) },
             onStartGroupWithBot = { viewModel.openCreateGroup(freshBot.id) },
+            onOpenMemories = { viewModel.openBotMemories(freshBot) },
             onEditBot = {
                 viewModel.dismissBotProfile()
                 editingBot = freshBot
@@ -396,11 +402,26 @@ fun BotHubApp(
         )
     }
 
+    viewModel.inspectingMemoriesBot?.let { memBot ->
+        BotMemoriesSheet(
+            bot = memBot,
+            memories = viewModel.botMemories,
+            loading = viewModel.botMemoriesLoading,
+            onCreateMemory = { cat, fk, body, pin ->
+                viewModel.createBotMemory(memBot, cat, fk, body, pin)
+            },
+            onTogglePin = viewModel::toggleBotMemoryPin,
+            onDeleteMemory = viewModel::deleteBotMemory,
+            onDismiss = viewModel::dismissBotMemories
+        )
+    }
+
     editingBot?.let { targetBot ->
         val freshBot = viewModel.bots.find { it.id == targetBot.id } ?: targetBot
         EditBotSheet(
             bot = freshBot,
-            onSave = { name, roleTitle, avatarStyle, traits, systemPrompt, groupMode, announcement, allowPaid ->
+            availableSkills = viewModel.skills,
+            onSave = { name, roleTitle, avatarStyle, traits, systemPrompt, groupMode, announcement, allowPaid, tools, skIds ->
                 viewModel.saveBotEdits(
                     botId = freshBot.id,
                     name = name,
@@ -410,7 +431,9 @@ fun BotHubApp(
                     systemPrompt = systemPrompt,
                     groupMode = groupMode,
                     announcement = announcement,
-                    allowPaidFallback = allowPaid
+                    allowPaidFallback = allowPaid,
+                    allowedTools = tools,
+                    skillIds = skIds
                 )
                 editingBot = null
             },
@@ -450,7 +473,8 @@ fun BotHubApp(
 
     if (viewModel.showCreateFriendSheet) {
         CreateFriendSheet(
-            onSubmit = { name, roleTitle, avatarStyle, botMode, traits, systemPrompt, allowPaid ->
+            availableSkills = viewModel.skills,
+            onSubmit = { name, roleTitle, avatarStyle, botMode, traits, systemPrompt, allowPaid, tools, skIds ->
                 viewModel.createNewFriend(
                     name = name,
                     roleTitle = roleTitle,
@@ -458,7 +482,9 @@ fun BotHubApp(
                     botMode = botMode,
                     traits = traits,
                     systemPrompt = systemPrompt,
-                    allowPaidFallback = allowPaid
+                    allowPaidFallback = allowPaid,
+                    allowedTools = tools,
+                    skillIds = skIds
                 )
             },
             onDismiss = viewModel::dismissCreateFriend

@@ -300,10 +300,40 @@ async function convertToTodo(item: StashItem) {
       tags: item.tags || '收藏转化',
       status: 'pending',
     })
-    await store.refreshWorkspaceSlices(['todos'])
-    store.notify('已一键转化为个人待办事项')
+    item.read_count = (item.read_count || 0) + 1
+    await BotHubApi.updateStash(item.id, { mark_read: true }).catch(() => {})
+    await store.refreshWorkspaceSlices(['todos', 'stash'])
+    if (needsRemoteQuery.value) void fetchFilteredStash()
+    store.notify('已一键转化为待办事项并标为已读')
   } catch (err: any) {
     store.notify(err.message || '转化为待办失败')
+  }
+}
+
+async function convertToNote(item: StashItem) {
+  const sections: string[] = []
+  if (item.url) sections.push(`> 原链接：[${item.domain || item.url}](${item.url})`)
+  if (item.ai_tldr) sections.push(`### AI 核心结论\n\n${item.ai_tldr}`)
+  if (item.points && item.points.length > 0) {
+    sections.push(`### 核心干货要点\n\n${item.points.map((p) => `- ${p}`).join('\n')}`)
+  }
+  if (item.user_note) sections.push(`### 个人批注\n\n${item.user_note}`)
+  if (sections.length === 0 && item.raw_input) sections.push(item.raw_input)
+  try {
+    await BotHubApi.createNote({
+      bot_id: store.activeBot.value?.id || '',
+      title: item.title || item.raw_input.slice(0, 50) || '收藏整理笔记',
+      content: sections.join('\n\n'),
+      category: 'deliverable',
+      pinned: false,
+    })
+    item.read_count = (item.read_count || 0) + 1
+    await BotHubApi.updateStash(item.id, { mark_read: true }).catch(() => {})
+    await store.refreshWorkspaceSlices(['notes', 'stash'])
+    if (needsRemoteQuery.value) void fetchFilteredStash()
+    store.notify('已整理保存至工作笔记并标为已读')
+  } catch (err: any) {
+    store.notify(err.message || '存为工作笔记失败')
   }
 }
 
@@ -667,6 +697,13 @@ async function saveEdit(item: StashItem) {
                 class="px-2 py-1 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-[11px] text-cyan-200 hover:bg-cyan-500/20 cursor-pointer"
               >
                 转待办
+              </button>
+              <button
+                type="button"
+                @click="convertToNote(item)"
+                class="px-2 py-1 rounded-lg border border-emerald-400/30 bg-emerald-500/10 text-[11px] text-emerald-200 hover:bg-emerald-500/20 cursor-pointer"
+              >
+                存为笔记
               </button>
               <button
                 type="button"

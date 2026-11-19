@@ -330,8 +330,20 @@ export interface ModelUsageModelStat {
   model_id: string
   tier: string
   calls: number
+  success_calls?: number
+  free_calls?: number
+  paid_calls?: number
   tokens: number
   avg_latency_ms: number
+}
+
+export interface ModelUsageCallerStat {
+  bot_id: string
+  task_id: string
+  source: string
+  free_calls: number
+  paid_calls: number
+  tokens: number
 }
 
 export interface ModelUsageSummary {
@@ -343,6 +355,7 @@ export interface ModelUsageSummary {
   free_tokens: number
   paid_tokens: number
   top_models?: ModelUsageModelStat[]
+  top_callers?: ModelUsageCallerStat[]
 }
 
 export interface ModelPoolEntry {

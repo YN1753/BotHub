@@ -84,6 +84,8 @@ fun StashTabScreen(
     onReprocess: (StashItemUi) -> Unit,
     onDelete: (StashItemUi) -> Unit,
     onAskAi: (StashItemUi) -> Unit,
+    onConvertToTodo: (StashItemUi) -> Unit = {},
+    onConvertToNote: (StashItemUi) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val theme = BotHubThemeTokens
@@ -510,6 +512,29 @@ fun StashTabScreen(
                                     tint = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFDA4AF),
                                     contentDescription = "删除",
                                     onClick = { onDelete(item) }
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                TactileSecondaryButton(
+                                    text = "转待办",
+                                    accent = true,
+                                    cornerRadius = 11.dp,
+                                    minHeight = 34.dp,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                                    onClick = { onConvertToTodo(item) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TactileSecondaryButton(
+                                    text = "存为笔记",
+                                    cornerRadius = 11.dp,
+                                    minHeight = 34.dp,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                                    onClick = { onConvertToNote(item) },
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }

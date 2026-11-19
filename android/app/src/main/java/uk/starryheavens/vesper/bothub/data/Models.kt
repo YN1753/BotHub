@@ -233,6 +233,26 @@ data class ModelHealthItem(
 )
 
 @Immutable
+data class ModelUsageModelStatItem(
+    val targetId: String = "",
+    val modelId: String = "",
+    val tier: String = "free",
+    val calls: Int = 0,
+    val tokens: Int = 0,
+    val avgLatencyMs: Long = 0L
+)
+
+@Immutable
+data class ModelUsageCallerStatItem(
+    val botId: String = "",
+    val taskId: String = "",
+    val source: String = "",
+    val freeCalls: Int = 0,
+    val paidCalls: Int = 0,
+    val tokens: Int = 0
+)
+
+@Immutable
 data class ModelUsageSummaryItem(
     val days: Int = 7,
     val totalCalls: Int = 0,
@@ -240,7 +260,52 @@ data class ModelUsageSummaryItem(
     val freeCalls: Int = 0,
     val paidCalls: Int = 0,
     val freeTokens: Int = 0,
-    val paidTokens: Int = 0
+    val paidTokens: Int = 0,
+    val topModels: List<ModelUsageModelStatItem> = emptyList(),
+    val topCallers: List<ModelUsageCallerStatItem> = emptyList()
+)
+
+@Immutable
+data class SkillItemUi(
+    val id: String,
+    val slug: String = "",
+    val name: String,
+    val description: String = "",
+    val kind: String = "prompt",
+    val enabled: Boolean = true
+)
+
+@Immutable
+data class MemoryItemUi(
+    val id: Long,
+    val scope: String = "global",
+    val category: String = "fact",
+    val factKey: String = "",
+    val content: String = "",
+    val importance: Int = 3,
+    val pinned: Boolean = false,
+    val updatedAt: String = ""
+)
+
+@Immutable
+data class BatchModelProbeEntryItem(
+    val targetId: String,
+    val providerId: String,
+    val modelId: String,
+    val tier: String = "free",
+    val ok: Boolean = false,
+    val latencyMs: Long = 0L,
+    val error: String = "",
+    val supportsTools: Boolean? = null,
+    val supportsThinking: Boolean? = null
+)
+
+@Immutable
+data class BatchModelProbePayload(
+    val results: List<BatchModelProbeEntryItem> = emptyList(),
+    val modelHealth: Map<String, ModelHealthItem> = emptyMap(),
+    val pooledModels: List<PooledModelItem>? = null,
+    val modelOptions: List<ModelOptionItem>? = null
 )
 
 @Immutable
@@ -268,6 +333,7 @@ data class ModelProbeResultItem(
 @Immutable
 data class BootstrapPayload(
     val bots: List<BotItem>,
+    val skills: List<SkillItemUi> = emptyList(),
     val notifications: List<NotificationItem>,
     val dashboard: DashboardSnapshot,
     val stashItems: List<StashItemUi> = emptyList(),
@@ -284,6 +350,7 @@ data class BootstrapPayload(
 
 data class DashboardSlicePayload(
     val bots: List<BotItem>? = null,
+    val skills: List<SkillItemUi>? = null,
     val assets: List<AssetItem>? = null,
     val assetCategories: List<AssetCategoryItem>? = null,
     val tasks: List<TaskItem>? = null,
@@ -345,7 +412,9 @@ data class BotItem(
     val groupMode: String = "smart",
     val announcement: String = "",
     val updatedAt: String = "",
-    val allowPaidFallback: Boolean = false
+    val allowPaidFallback: Boolean = false,
+    val allowedTools: List<String> = emptyList(),
+    val skillIds: List<String> = emptyList()
 ) {
     fun resolveGroupMembers(allBots: List<BotItem>): List<BotItem> {
         val specialists = allBots.filter { !it.isGroup }

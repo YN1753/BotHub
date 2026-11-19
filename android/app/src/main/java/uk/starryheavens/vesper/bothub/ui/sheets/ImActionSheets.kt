@@ -7,11 +7,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,8 +28,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -45,13 +51,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.BotItem
+import uk.starryheavens.vesper.bothub.data.MemoryItemUi
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
+import uk.starryheavens.vesper.bothub.data.SkillItemUi
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
@@ -74,6 +83,102 @@ private val AVATAR_OPTIONS = listOf(
     "critic:rose" to "绯红"
 )
 
+private val ANDROID_BUILTIN_TOOLS = listOf(
+    "manage_todos" to "个人待办",
+    "manage_notes" to "工作笔记",
+    "manage_stash" to "收藏闪念",
+    "manage_tasks" to "定时提醒",
+    "workspace_briefing" to "今日简报",
+    "send_notification" to "主动推送",
+    "web_search" to "联网检索",
+    "read_url" to "阅读网页",
+    "calculate_eval" to "数学计算",
+    "datetime_calc" to "日期推算",
+    "remember_fact" to "写入记忆",
+    "recall_memory" to "检索记忆",
+    "manage_memory" to "整理记忆",
+    "consult_bot" to "协同队友",
+    "manage_assets" to "数字资产",
+    "query_nezha_nodes" to "探针巡检"
+)
+
+private fun defaultToolsForModeAndroid(botMode: String): List<String> = when (botMode) {
+    "companion" -> listOf("remember_fact", "recall_memory")
+    "worker" -> listOf(
+        "web_search", "read_url", "calculate_eval", "datetime_calc",
+        "manage_notes", "manage_todos", "manage_stash", "manage_assets", "query_nezha_nodes",
+        "remember_fact", "recall_memory", "manage_memory"
+    )
+    else -> listOf(
+        "manage_todos", "manage_notes", "manage_stash", "manage_tasks",
+        "workspace_briefing", "send_notification", "web_search", "read_url",
+        "calculate_eval", "datetime_calc", "remember_fact", "recall_memory",
+        "manage_memory", "consult_bot", "manage_assets"
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ToolAndSkillSelectorBlock(
+    selectedTools: List<String>,
+    onToggleTool: (String) -> Unit,
+    selectedSkillIds: List<String>,
+    availableSkills: List<SkillItemUi>,
+    onToggleSkill: (String) -> Unit
+) {
+    val theme = BotHubThemeTokens
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "内置工具权限 (${selectedTools.size})",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = theme.textMuted
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            ANDROID_BUILTIN_TOOLS.forEach { (tid, label) ->
+                val checked = tid in selectedTools
+                TactileSecondaryButton(
+                    text = label,
+                    accent = checked,
+                    cornerRadius = 9.dp,
+                    minHeight = 29.dp,
+                    contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp),
+                    onClick = { onToggleTool(tid) }
+                )
+            }
+        }
+
+        if (availableSkills.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "挂载自定义技能卡 (${selectedSkillIds.size}/${availableSkills.size})",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = theme.textMuted
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                availableSkills.forEach { sk ->
+                    val checked = sk.id in selectedSkillIds
+                    TactileSecondaryButton(
+                        text = sk.name,
+                        accent = checked,
+                        cornerRadius = 9.dp,
+                        minHeight = 29.dp,
+                        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp),
+                        onClick = { onToggleSkill(sk.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
 /**
  * 1. Contact / Group Profile Card Sheet ("资料卡").
  */
@@ -85,6 +190,7 @@ fun BotProfileSheet(
     onSendMessage: () -> Unit,
     onTogglePin: () -> Unit,
     onStartGroupWithBot: () -> Unit,
+    onOpenMemories: () -> Unit = {},
     onEditBot: () -> Unit,
     onDeleteBot: () -> Unit,
     onDismiss: () -> Unit
@@ -266,6 +372,12 @@ fun BotProfileSheet(
                         onClick = onStartGroupWithBot,
                         modifier = Modifier.weight(1f)
                     )
+                    TactileSecondaryButton(
+                        text = "长期记忆",
+                        minHeight = 42.dp,
+                        onClick = onOpenMemories,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
                 TactileSecondaryButton(
                     text = "编辑资料",
@@ -285,6 +397,222 @@ fun BotProfileSheet(
             }
 
             Spacer(modifier = Modifier.height(6.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BotMemoriesSheet(
+    bot: BotItem,
+    memories: List<MemoryItemUi>,
+    loading: Boolean,
+    onCreateMemory: (category: String, factKey: String, content: String, pinned: Boolean) -> Unit,
+    onTogglePin: (MemoryItemUi) -> Unit,
+    onDeleteMemory: (MemoryItemUi) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val theme = BotHubThemeTokens
+    var showAddForm by remember { mutableStateOf(false) }
+    var factKey by remember { mutableStateOf("") }
+    var content by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("preference") }
+    var pinned by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = theme.sheetBg,
+        scrimColor = theme.scrim,
+        tonalElevation = 0.dp,
+        dragHandle = { ObsidianSheetDragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "${bot.name} · 长期记忆库",
+                        fontSize = 17.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = theme.textPrimary
+                    )
+                    Text(
+                        text = "共 ${memories.size} 条记忆（含本 Bot 专属与全局共享记忆）",
+                        fontSize = 11.5.sp,
+                        color = theme.textMuted
+                    )
+                }
+                TactileSecondaryButton(
+                    text = if (showAddForm) "收起" else "+ 新增",
+                    accent = true,
+                    cornerRadius = 999.dp,
+                    minHeight = 32.dp,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                    onClick = { showAddForm = !showAddForm }
+                )
+            }
+
+            if (showAddForm) {
+                SpecularGlassCard(cornerRadius = 15.dp, modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("preference" to "偏好", "fact" to "事实", "project" to "项目").forEach { (cid, lbl) ->
+                                TactileSecondaryButton(
+                                    text = lbl,
+                                    accent = category == cid,
+                                    cornerRadius = 9.dp,
+                                    minHeight = 28.dp,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp),
+                                    onClick = { category = cid }
+                                )
+                            }
+                        }
+                        ObsidianGlassInput(
+                            value = factKey,
+                            onValueChange = { factKey = it },
+                            label = "记忆主题标签",
+                            placeholder = "如：回答风格 / 服务器运维规则",
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        ObsidianGlassInput(
+                            value = content,
+                            onValueChange = { content = it },
+                            label = "记忆内容",
+                            placeholder = "希望 Bot 长期牢记的偏好或事实...",
+                            singleLine = false,
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("置顶长期注入", fontSize = 12.5.sp, color = theme.textSecondary)
+                            TactileToggle(checked = pinned, onCheckedChange = { pinned = it })
+                        }
+                        TactilePrimaryButton(
+                            text = "写入记忆",
+                            enabled = content.isNotBlank(),
+                            minHeight = 40.dp,
+                            onClick = {
+                                onCreateMemory(category, factKey.ifBlank { "note" }, content.trim(), pinned)
+                                factKey = ""
+                                content = ""
+                                pinned = false
+                                showAddForm = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (loading && memories.isEmpty()) {
+                    item {
+                        Text(
+                            text = "正在加载长期记忆...",
+                            fontSize = 12.5.sp,
+                            color = theme.textMuted,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                    }
+                } else if (memories.isEmpty()) {
+                    item {
+                        SpecularGlassCard(cornerRadius = 15.dp, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "暂无长期记忆。对话中可通过「提炼记忆」自动沉淀，或点击右上角「+ 新增」写入。",
+                                fontSize = 12.5.sp,
+                                color = theme.textMuted,
+                                modifier = Modifier.padding(14.dp)
+                            )
+                        }
+                    }
+                }
+                items(memories, key = { it.id }) { mem ->
+                    SpecularGlassCard(cornerRadius = 15.dp, modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    CrispTagPill(
+                                        text = if (mem.scope == "global") "全局" else "专属",
+                                        bgColor = theme.inputTop,
+                                        borderColor = theme.rimSubtle,
+                                        textColor = theme.textSecondary
+                                    )
+                                    Text(
+                                        text = mem.factKey.ifBlank { mem.category },
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = theme.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(
+                                        imageVector = if (mem.pinned) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                        contentDescription = "置顶",
+                                        tint = if (mem.pinned) theme.accent else theme.textMuted,
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .clickable { onTogglePin(mem) }
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteOutline,
+                                        contentDescription = "删除记忆",
+                                        tint = Color(0xFFF87171),
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .clickable { onDeleteMemory(mem) }
+                                    )
+                                }
+                            }
+                            Text(
+                                text = mem.content,
+                                fontSize = 12.5.sp,
+                                lineHeight = 18.sp,
+                                color = theme.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
@@ -321,6 +649,7 @@ private fun ProfileFieldRow(label: String, value: String) {
 @Composable
 fun EditBotSheet(
     bot: BotItem,
+    availableSkills: List<SkillItemUi> = emptyList(),
     onSave: (
         name: String,
         roleTitle: String,
@@ -329,7 +658,9 @@ fun EditBotSheet(
         systemPrompt: String,
         groupMode: String,
         announcement: String,
-        allowPaidFallback: Boolean
+        allowPaidFallback: Boolean,
+        allowedTools: List<String>?,
+        skillIds: List<String>?
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -343,6 +674,8 @@ fun EditBotSheet(
     var groupMode by remember(bot.id) { mutableStateOf(bot.groupMode.ifBlank { "smart" }) }
     var announcement by remember(bot.id) { mutableStateOf(bot.announcement) }
     var allowPaidFallback by remember(bot.id) { mutableStateOf(bot.allowPaidFallback) }
+    var selectedTools by remember(bot.id) { mutableStateOf(bot.allowedTools) }
+    var selectedSkillIds by remember(bot.id) { mutableStateOf(bot.skillIds) }
 
     val groupModes = listOf(
         "smart" to "智能协同",
@@ -445,6 +778,26 @@ fun EditBotSheet(
                     maxLines = 4,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                ToolAndSkillSelectorBlock(
+                    selectedTools = selectedTools,
+                    onToggleTool = { tid ->
+                        selectedTools = if (tid in selectedTools) {
+                            selectedTools.filterNot { it == tid }
+                        } else {
+                            selectedTools + tid
+                        }
+                    },
+                    selectedSkillIds = selectedSkillIds,
+                    availableSkills = availableSkills,
+                    onToggleSkill = { sid ->
+                        selectedSkillIds = if (sid in selectedSkillIds) {
+                            selectedSkillIds.filterNot { it == sid }
+                        } else {
+                            selectedSkillIds + sid
+                        }
+                    }
+                )
             }
 
             Row(
@@ -488,7 +841,9 @@ fun EditBotSheet(
                             systemPrompt.trim(),
                             groupMode,
                             announcement.trim(),
-                            allowPaidFallback
+                            allowPaidFallback,
+                            if (bot.isGroup) null else selectedTools,
+                            if (bot.isGroup) null else selectedSkillIds
                         )
                     }
                 },
@@ -577,6 +932,7 @@ private fun AvatarPickerRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateFriendSheet(
+    availableSkills: List<SkillItemUi> = emptyList(),
     onSubmit: (
         name: String,
         roleTitle: String,
@@ -584,7 +940,9 @@ fun CreateFriendSheet(
         botMode: String,
         traits: String,
         systemPrompt: String,
-        allowPaidFallback: Boolean
+        allowPaidFallback: Boolean,
+        allowedTools: List<String>,
+        skillIds: List<String>
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -603,6 +961,8 @@ fun CreateFriendSheet(
     var traits by remember { mutableStateOf("") }
     var systemPrompt by remember { mutableStateOf("") }
     var allowPaidFallback by remember { mutableStateOf(false) }
+    var selectedTools by remember { mutableStateOf(defaultToolsForModeAndroid("hybrid")) }
+    var selectedSkillIds by remember { mutableStateOf<List<String>>(emptyList()) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -644,7 +1004,10 @@ fun CreateFriendSheet(
                         cornerRadius = 11.dp,
                         minHeight = 38.dp,
                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 7.dp),
-                        onClick = { selectedMode = mid },
+                        onClick = {
+                            selectedMode = mid
+                            selectedTools = defaultToolsForModeAndroid(mid)
+                        },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -685,6 +1048,26 @@ fun CreateFriendSheet(
                 singleLine = false,
                 maxLines = 3,
                 modifier = Modifier.fillMaxWidth()
+            )
+
+            ToolAndSkillSelectorBlock(
+                selectedTools = selectedTools,
+                onToggleTool = { tid ->
+                    selectedTools = if (tid in selectedTools) {
+                        selectedTools.filterNot { it == tid }
+                    } else {
+                        selectedTools + tid
+                    }
+                },
+                selectedSkillIds = selectedSkillIds,
+                availableSkills = availableSkills,
+                onToggleSkill = { sid ->
+                    selectedSkillIds = if (sid in selectedSkillIds) {
+                        selectedSkillIds.filterNot { it == sid }
+                    } else {
+                        selectedSkillIds + sid
+                    }
+                }
             )
 
             Row(
@@ -731,7 +1114,9 @@ fun CreateFriendSheet(
                             selectedMode,
                             traits.trim(),
                             prompt,
-                            allowPaidFallback
+                            allowPaidFallback,
+                            selectedTools,
+                            selectedSkillIds
                         )
                     }
                 },

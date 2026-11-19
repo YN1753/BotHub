@@ -215,3 +215,79 @@ func TestManageModelsAndManageSkillsConciergeTools(t *testing.T) {
 		t.Fatalf("manage_skills delete failed: err=%v out=%s", err, delOut)
 	}
 }
+
+func TestManageBotsSetupBlueprintAndUsageCallers(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "blueprint.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	eng := NewEngine(st, &fakeTaskController{st: st})
+	ctx := WithToolScope(context.Background(), ToolScope{
+		BotID:         store.DefaultConciergeBotID,
+		TimelineBotID: store.DefaultConciergeBotID,
+	})
+
+	bpOut, err := eng.ExecuteTool(ctx, "manage_bots", `{
+		"action": "setup_blueprint",
+		"name": "运维晨报官",
+		"role_title": "每日服务器与资产巡检助手",
+		"bot_mode": "worker",
+		"allowed_tools": ["manage_assets", "query_nezha_nodes"],
+		"skill_specs": [{
+			"slug": "ops_checklist",
+			"name": "巡检清单",
+			"kind": "prompt",
+			"description": "汇总节点负载和即将到期资产",
+			"instruction": "输出高危异常并给出处置建议"
+		}],
+		"task_spec": {
+			"name": "每日晨间巡检",
+			"type": "bot_prompt",
+			"cron_expr": "0 8 * * *",
+			"prompt": "请巡检全部节点和 14 天内到期资产"
+		}
+	}`)
+	if err != nil || !strings.Contains(bpOut, `"action":"setup_blueprint"`) {
+		t.Fatalf("setup_blueprint failed: err=%v out=%s", err, bpOut)
+	}
+
+	var parsed struct {
+		OK                bool     `json:"ok"`
+		BotID             string   `json:"bot_id"`
+		AllowPaidFallback bool     `json:"allow_paid_fallback"`
+		SkillIDs          []string `json:"skill_ids"`
+		Task              struct {
+			ID                string `json:"id"`
+			BotID             string `json:"bot_id"`
+			AllowPaidFallback bool   `json:"allow_paid_fallback"`
+		} `json:"task"`
+	}
+	if err := json.Unmarshal([]byte(bpOut), &parsed); err != nil {
+		t.Fatalf("unmarshal blueprint output: %v", err)
+	}
+	if !parsed.OK || parsed.BotID == "" || parsed.AllowPaidFallback {
+		t.Fatalf("expected valid free-locked bot from blueprint, got %+v", parsed)
+	}
+	if len(parsed.SkillIDs) != 1 || parsed.Task.ID == "" || parsed.Task.BotID != parsed.BotID || parsed.Task.AllowPaidFallback {
+		t.Fatalf("expected bound skill and free-locked task from blueprint, got %+v", parsed)
+	}
+
+	_ = st.RecordModelUsage(store.ModelUsageRecord{
+		TargetID:         "pool:or_1::qwen/qwen3:free",
+		ProviderID:       "or_1",
+		ModelID:          "qwen/qwen3:free",
+		Tier:             store.ModelTierFree,
+		Source:           "chat",
+		BotID:            parsed.BotID,
+		PromptTokens:     120,
+		CompletionTokens: 80,
+		LatencyMs:        420,
+		Success:          true,
+	})
+	sum, err := st.SummarizeModelUsage(7)
+	if err != nil || len(sum.TopCallers) == 0 || sum.TopCallers[0].BotID != parsed.BotID {
+		t.Fatalf("expected top_callers breakdown in usage summary, err=%v sum=%+v", err, sum)
+	}
+}

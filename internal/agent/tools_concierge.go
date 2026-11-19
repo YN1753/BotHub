@@ -367,6 +367,84 @@ func normalizeSkillSlug(raw, fallbackName string) string {
 	return res
 }
 
+type skillUpsertInput struct {
+	ID          string `json:"id"`
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	Description string `json:"description"`
+	Instruction string `json:"instruction"`
+	HTTPMethod  string `json:"http_method"`
+	HTTPURL     string `json:"http_url"`
+	Enabled     *bool  `json:"enabled"`
+}
+
+func (e *Engine) findSkillByMatch(id, slug, name string) *store.Skill {
+	all, _ := e.store.ListSkills()
+	wantID := strings.TrimSpace(id)
+	wantSlug := strings.TrimSpace(slug)
+	wantName := strings.TrimSpace(name)
+	for i := range all {
+		if (wantID != "" && all[i].ID == wantID) ||
+			(wantSlug != "" && strings.EqualFold(all[i].Slug, wantSlug)) ||
+			(wantName != "" && strings.EqualFold(all[i].Name, wantName)) {
+			return &all[i]
+		}
+	}
+	return nil
+}
+
+func (e *Engine) upsertSkillFromParams(in skillUpsertInput) (*store.Skill, error) {
+	existing := e.findSkillByMatch(in.ID, in.Slug, in.Name)
+	var sk store.Skill
+	if existing != nil {
+		sk = *existing
+	} else {
+		buf := make([]byte, 4)
+		_, _ = rand.Read(buf)
+		sk = store.Skill{
+			ID:           "sk_" + hex.EncodeToString(buf),
+			Kind:         "prompt",
+			HTTPMethod:   "GET",
+			HTTPHeaders:  "{}",
+			ParamsSchema: "[]",
+			Enabled:      true,
+		}
+	}
+	if v := notifier.StripEmoji(strings.TrimSpace(in.Name)); v != "" {
+		sk.Name = v
+	}
+	if sk.Name == "" {
+		return nil, fmt.Errorf("技能名称 name 不能为空")
+	}
+	if v := strings.TrimSpace(in.Slug); v != "" || sk.Slug == "" {
+		sk.Slug = normalizeSkillSlug(v, sk.Name)
+	}
+	if v := strings.ToLower(strings.TrimSpace(in.Kind)); v == "webhook" || v == "prompt" {
+		sk.Kind = v
+	}
+	if v := notifier.StripEmoji(strings.TrimSpace(in.Description)); v != "" {
+		sk.Description = v
+	}
+	if v := notifier.StripEmoji(strings.TrimSpace(in.Instruction)); v != "" {
+		sk.Instruction = v
+	}
+	if v := strings.TrimSpace(in.HTTPMethod); v != "" {
+		sk.HTTPMethod = strings.ToUpper(v)
+	}
+	if v := strings.TrimSpace(in.HTTPURL); v != "" {
+		sk.HTTPURL = v
+	}
+	if in.Enabled != nil {
+		sk.Enabled = *in.Enabled
+	}
+	if err := e.store.SaveSkill(sk); err != nil {
+		return nil, err
+	}
+	e.publishAssistantUpdate("skills")
+	return &sk, nil
+}
+
 func (e *Engine) toolManageSkills(_ context.Context, argsJSON string) (string, error) {
 	var args struct {
 		Action      string `json:"action"`
@@ -388,18 +466,7 @@ func (e *Engine) toolManageSkills(_ context.Context, argsJSON string) (string, e
 	}
 
 	findSkill := func() *store.Skill {
-		all, _ := e.store.ListSkills()
-		wantID := strings.TrimSpace(args.ID)
-		wantSlug := strings.TrimSpace(args.Slug)
-		wantName := strings.TrimSpace(args.Name)
-		for i := range all {
-			if (wantID != "" && all[i].ID == wantID) ||
-				(wantSlug != "" && strings.EqualFold(all[i].Slug, wantSlug)) ||
-				(wantName != "" && strings.EqualFold(all[i].Name, wantName)) {
-				return &all[i]
-			}
-		}
-		return nil
+		return e.findSkillByMatch(args.ID, args.Slug, args.Name)
 	}
 
 	bindSkillToBot := func(skillID, botID, botName string, unbind bool) (*store.Bot, error) {
@@ -463,53 +530,20 @@ func (e *Engine) toolManageSkills(_ context.Context, argsJSON string) (string, e
 		return string(b), nil
 
 	case "upsert":
-		existing := findSkill()
-		var sk store.Skill
-		if existing != nil {
-			sk = *existing
-		} else {
-			buf := make([]byte, 4)
-			_, _ = rand.Read(buf)
-			sk = store.Skill{
-				ID:           "sk_" + hex.EncodeToString(buf),
-				Kind:         "prompt",
-				HTTPMethod:   "GET",
-				HTTPHeaders:  "{}",
-				ParamsSchema: "[]",
-				Enabled:      true,
-			}
-		}
-		if v := notifier.StripEmoji(strings.TrimSpace(args.Name)); v != "" {
-			sk.Name = v
-		}
-		if sk.Name == "" {
-			return "", fmt.Errorf("技能名称 name 不能为空")
-		}
-		if v := strings.TrimSpace(args.Slug); v != "" || sk.Slug == "" {
-			sk.Slug = normalizeSkillSlug(v, sk.Name)
-		}
-		if v := strings.ToLower(strings.TrimSpace(args.Kind)); v == "webhook" || v == "prompt" {
-			sk.Kind = v
-		}
-		if v := notifier.StripEmoji(strings.TrimSpace(args.Description)); v != "" {
-			sk.Description = v
-		}
-		if v := notifier.StripEmoji(strings.TrimSpace(args.Instruction)); v != "" {
-			sk.Instruction = v
-		}
-		if v := strings.TrimSpace(args.HTTPMethod); v != "" {
-			sk.HTTPMethod = strings.ToUpper(v)
-		}
-		if v := strings.TrimSpace(args.HTTPURL); v != "" {
-			sk.HTTPURL = v
-		}
-		if args.Enabled != nil {
-			sk.Enabled = *args.Enabled
-		}
-		if err := e.store.SaveSkill(sk); err != nil {
+		sk, err := e.upsertSkillFromParams(skillUpsertInput{
+			ID:          args.ID,
+			Slug:        args.Slug,
+			Name:        args.Name,
+			Kind:        args.Kind,
+			Description: args.Description,
+			Instruction: args.Instruction,
+			HTTPMethod:  args.HTTPMethod,
+			HTTPURL:     args.HTTPURL,
+			Enabled:     args.Enabled,
+		})
+		if err != nil {
 			return "", err
 		}
-		e.publishAssistantUpdate("skills")
 
 		var boundBotName string
 		if strings.TrimSpace(args.BotID) != "" || strings.TrimSpace(args.BotName) != "" {

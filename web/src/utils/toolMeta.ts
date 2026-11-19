@@ -143,6 +143,7 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
   reorder: '调整优先级',
   upsert: '保存配置',
   bind_bot: '挂载到 Bot',
+  setup_blueprint: '一站式套装编排',
 }
 
 export function summarizeToolStep(

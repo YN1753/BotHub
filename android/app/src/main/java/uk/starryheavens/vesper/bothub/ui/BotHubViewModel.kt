@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Call
+import uk.starryheavens.vesper.bothub.data.AgentHistoryMessage
 import uk.starryheavens.vesper.bothub.data.AgentSessionSummary
 import uk.starryheavens.vesper.bothub.data.AssetCategoryItem
 import uk.starryheavens.vesper.bothub.data.AssetItem
@@ -28,6 +29,7 @@ import uk.starryheavens.vesper.bothub.data.BotThreadItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.JsonMappers
+import uk.starryheavens.vesper.bothub.data.MemoryItemUi
 import uk.starryheavens.vesper.bothub.data.ModelConfigPayload
 import uk.starryheavens.vesper.bothub.data.ModelHealthItem
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
@@ -36,6 +38,7 @@ import uk.starryheavens.vesper.bothub.data.ModelUsageSummaryItem
 import uk.starryheavens.vesper.bothub.data.NotificationItem
 import uk.starryheavens.vesper.bothub.data.PoolStrategiesItem
 import uk.starryheavens.vesper.bothub.data.PooledModelItem
+import uk.starryheavens.vesper.bothub.data.SkillItemUi
 import uk.starryheavens.vesper.bothub.data.StashItemUi
 import uk.starryheavens.vesper.bothub.data.TaskItem
 import uk.starryheavens.vesper.bothub.data.TodoItemUi
@@ -187,6 +190,18 @@ class BotHubViewModel(
     var modelUsageSummary by mutableStateOf(ModelUsageSummaryItem())
         private set
 
+    var skills by mutableStateOf<List<SkillItemUi>>(emptyList())
+        private set
+
+    var inspectingMemoriesBot by mutableStateOf<BotItem?>(null)
+        private set
+
+    var botMemories by mutableStateOf<List<MemoryItemUi>>(emptyList())
+        private set
+
+    var botMemoriesLoading by mutableStateOf(false)
+        private set
+
     var isRefreshing by mutableStateOf(false)
         private set
 
@@ -287,7 +302,40 @@ class BotHubViewModel(
                         }
                     }
                     "bot_message" -> {
-                        scheduleSilentLiveSync()
+                        val bId = obj.optString("bot_id", "")
+                        val thId = obj.optString("thread_id", "")
+                        val mId = obj.optLong("id", 0L)
+                        val mRole = obj.optString("role", "")
+                        val mKind = obj.optString("msg_kind", "chat")
+                        if (bId.isNotEmpty() && bId == activeBotId && thId == activeThreadId && !isStreaming && sessionId.isEmpty() && mId > 0L) {
+                            val turnId = "botmsg_$mId"
+                            if (chatMessages.none { it.id == turnId }) {
+                                val target = bots.find { it.id == bId }
+                                val parsedTurn = AgentHistoryMessage(
+                                    id = mId,
+                                    role = mRole,
+                                    content = obj.optString("content", ""),
+                                    reasoningContent = obj.optString("reasoning_content", ""),
+                                    msgKind = mKind,
+                                    senderBotId = obj.optString("sender_bot_id", ""),
+                                    modelUsed = obj.optString("model_used", "")
+                                ).toChatTurnUi(
+                                    idPrefix = "botmsg",
+                                    defaultPersona = target?.name ?: bId,
+                                    defaultModel = target?.model ?: activeModel,
+                                    defaultBotId = bId,
+                                    defaultAvatarStyle = target?.avatarStyle ?: "butler:gold",
+                                    bots = bots
+                                )
+                                chatMessages.add(parsedTurn)
+                                val cacheKey = if (thId.isBlank()) bId else "$bId::$thId"
+                                val snapTurns = chatMessages.toList()
+                                timelineCache[cacheKey] = snapTurns
+                                if (thId.isBlank()) prefs.saveCachedBotMessages(bId, snapTurns)
+                            }
+                        } else if (mKind == "routine") {
+                            scheduleSilentLiveSync()
+                        }
                     }
                     "stash_update" -> {
                         syncDashboardSlices(listOf("stash"))
@@ -333,6 +381,7 @@ class BotHubViewModel(
                     bots = nextBots
                     prefs.saveCachedBots(nextBots)
                 }
+                slice.skills?.let { skills = it }
                 slice.notifications?.let { nextNotifs ->
                     notifications = nextNotifs
                     prefs.saveCachedNotifications(nextNotifs)
@@ -755,6 +804,9 @@ class BotHubViewModel(
 
                     val firstLoad = bots.isEmpty()
                     bots = payload.bots
+                    if (payload.skills.isNotEmpty() || skills.isEmpty()) {
+                        skills = payload.skills
+                    }
                     prefs.saveCachedBots(payload.bots)
                     if (firstLoad && payload.bots.isNotEmpty()) {
                         val chosen = payload.bots.find { it.id == activeBotId } ?: payload.bots.first()
@@ -977,7 +1029,9 @@ class BotHubViewModel(
         traits: String,
         systemPrompt: String,
         model: String = "auto:free",
-        allowPaidFallback: Boolean = false
+        allowPaidFallback: Boolean = false,
+        allowedTools: List<String>? = null,
+        skillIds: List<String> = emptyList()
     ) {
         viewModelScope.launch {
             api.createAiFriend(
@@ -988,7 +1042,9 @@ class BotHubViewModel(
                 traits = traits,
                 systemPrompt = systemPrompt,
                 model = model,
-                allowPaidFallback = allowPaidFallback
+                allowPaidFallback = allowPaidFallback,
+                allowedTools = allowedTools,
+                skillIds = skillIds
             ).onSuccess { created ->
                 showCreateFriendSheet = false
                 bots = listOf(created) + bots.filterNot { it.id == created.id }
@@ -1053,7 +1109,9 @@ class BotHubViewModel(
         systemPrompt: String,
         groupMode: String,
         announcement: String,
-        allowPaidFallback: Boolean? = null
+        allowPaidFallback: Boolean? = null,
+        allowedTools: List<String>? = null,
+        skillIds: List<String>? = null
     ) {
         viewModelScope.launch {
             api.updateBotDetails(
@@ -1065,7 +1123,9 @@ class BotHubViewModel(
                 systemPrompt = systemPrompt,
                 groupMode = groupMode,
                 announcement = announcement,
-                allowPaidFallback = allowPaidFallback
+                allowPaidFallback = allowPaidFallback,
+                allowedTools = allowedTools,
+                skillIds = skillIds
             ).onSuccess { updated ->
                 bots = bots.map { if (it.id == botId) updated else it }
                 if (inspectingBotProfile?.id == botId) {
@@ -1074,6 +1134,59 @@ class BotHubViewModel(
                 showMessage("已保存")
             }.onFailure { err ->
                 showMessage(err.message ?: "保存失败")
+            }
+        }
+    }
+
+    fun openBotMemories(bot: BotItem) {
+        inspectingBotProfile = null
+        inspectingMemoriesBot = bot
+        botMemoriesLoading = true
+        val botScope = "bot:${bot.id}"
+        viewModelScope.launch {
+            val botRes = api.fetchMemories(botScope).getOrDefault(emptyList())
+            val globalRes = api.fetchMemories("global").getOrDefault(emptyList())
+            botMemories = (botRes + globalRes).distinctBy { it.id }
+            botMemoriesLoading = false
+        }
+    }
+
+    fun dismissBotMemories() {
+        inspectingMemoriesBot = null
+    }
+
+    fun createBotMemory(bot: BotItem, category: String, factKey: String, content: String, pinned: Boolean) {
+        if (content.isBlank()) return
+        viewModelScope.launch {
+            api.saveMemory("bot:${bot.id}", category, factKey, content, pinned).onSuccess {
+                showMessage("已写入专属长期记忆")
+                openBotMemories(bot)
+            }.onFailure { err ->
+                showMessage(err.message ?: "写入记忆失败")
+            }
+        }
+    }
+
+    fun toggleBotMemoryPin(mem: MemoryItemUi) {
+        val nextPin = !mem.pinned
+        botMemories = botMemories.map { if (it.id == mem.id) it.copy(pinned = nextPin) else it }
+        viewModelScope.launch {
+            api.toggleMemoryPin(mem.id, nextPin).onFailure { err ->
+                botMemories = botMemories.map { if (it.id == mem.id) it.copy(pinned = mem.pinned) else it }
+                showMessage(err.message ?: "操作失败")
+            }
+        }
+    }
+
+    fun deleteBotMemory(mem: MemoryItemUi) {
+        val prev = botMemories
+        botMemories = botMemories.filterNot { it.id == mem.id }
+        viewModelScope.launch {
+            api.deleteMemory(mem.id).onSuccess {
+                showMessage("已遗忘该条记忆")
+            }.onFailure { err ->
+                botMemories = prev
+                showMessage(err.message ?: "删除失败")
             }
         }
     }
@@ -1161,6 +1274,54 @@ class BotHubViewModel(
                 }
             }.onFailure { err ->
                 showMessage(err.message ?: "删除话题失败")
+            }
+        }
+    }
+
+    fun summarizeActiveThreadToMemory() {
+        if (isStreaming || activeBotId.isBlank()) return
+        val targetBotId = activeBotId
+        val targetThreadId = activeThreadId
+        showMessage("正在提炼话题核心摘要并存入记忆...")
+        viewModelScope.launch {
+            api.summarizeBotThread(targetBotId, targetThreadId, saveToMemory = true).onSuccess { sum ->
+                val shortSum = sum.replace('\n', ' ').take(48)
+                showMessage(if (shortSum.isNotBlank()) "已提炼存入长期记忆：$shortSum" else "已提炼话题摘要并存入记忆")
+                loadBotTimeline(targetBotId, targetThreadId)
+            }.onFailure { err ->
+                showMessage(err.message ?: "提炼话题摘要失败")
+            }
+        }
+    }
+
+    fun forkThreadFromTurn(turn: ChatTurnUi) {
+        if (isStreaming || activeBotId.isBlank()) return
+        val targetBotId = activeBotId
+        val sourceThreadId = activeThreadId
+        val upToMsgId = turn.id.removePrefix("botmsg_").toLongOrNull() ?: 0L
+        viewModelScope.launch {
+            api.forkBotThread(targetBotId, sourceThreadId, upToMsgId).onSuccess { (created, msgPayload) ->
+                if (activeBotId == targetBotId) {
+                    botThreads = msgPayload.threads
+                    activeThreadId = created.id
+                    val target = bots.find { it.id == targetBotId }
+                    val mapped = msgPayload.messages.map { m ->
+                        m.toChatTurnUi(
+                            idPrefix = "botmsg",
+                            defaultPersona = target?.name ?: targetBotId,
+                            defaultModel = target?.model ?: activeModel,
+                            defaultBotId = targetBotId,
+                            defaultAvatarStyle = target?.avatarStyle ?: "butler:gold",
+                            bots = bots
+                        )
+                    }
+                    timelineCache["$targetBotId::${created.id}"] = mapped
+                    chatMessages.clear()
+                    chatMessages.addAll(mapped)
+                    showMessage("已从该消息分叉开启新话题「${created.title}」")
+                }
+            }.onFailure { err ->
+                showMessage(err.message ?: "分叉话题失败")
             }
         }
     }
@@ -1628,6 +1789,53 @@ class BotHubViewModel(
             }
         }
         sendAgentPrompt(summaryBlock)
+    }
+
+    fun convertStashToTodo(item: StashItemUi) {
+        val title = item.title.ifEmpty { item.rawInput.take(60) }.ifEmpty { "收藏转化待办" }
+        val notes = buildList {
+            if (item.aiTldr.isNotBlank()) add("核心结论：${item.aiTldr}")
+            if (item.url.isNotBlank()) add("原链接：${item.url}")
+            if (item.userNote.isNotBlank()) add("批注：${item.userNote}")
+        }.joinToString("\n")
+        viewModelScope.launch {
+            api.createTodo(title = title, notes = notes, priority = "normal").onSuccess { created ->
+                dashboard?.let { cur ->
+                    val nextDash = cur.copy(todos = listOf(created) + cur.todos.filterNot { it.id == created.id })
+                    dashboard = nextDash
+                    prefs.saveCachedDashboard(nextDash)
+                }
+                markStashItemRead(item)
+                showMessage("已一键转化为待办并标为已读")
+                syncDashboardSlices(listOf("todos", "stash"))
+            }.onFailure { err ->
+                showMessage(err.message ?: "转化为待办失败")
+            }
+        }
+    }
+
+    fun convertStashToNote(item: StashItemUi) {
+        val title = item.title.ifEmpty { item.rawInput.take(50) }.ifEmpty { "收藏整理笔记" }
+        val md = buildList {
+            if (item.url.isNotBlank()) add("> 原链接：[${item.domain.ifBlank { item.url }}](${item.url})")
+            if (item.aiTldr.isNotBlank()) add("### AI 核心结论\n\n${item.aiTldr}")
+            if (item.points.isNotEmpty()) {
+                add("### 核心干货要点\n\n" + item.points.joinToString("\n") { "- $it" })
+            }
+            if (item.userNote.isNotBlank()) add("### 个人批注\n\n${item.userNote}")
+            if (isEmpty() && item.rawInput.isNotBlank()) add(item.rawInput)
+        }.joinToString("\n\n")
+        viewModelScope.launch {
+            api.saveNote(existingId = null, title = title, content = md, category = "deliverable", pinned = false)
+                .onSuccess {
+                    markStashItemRead(item)
+                    showMessage("已整理保存至工作笔记并标为已读")
+                    syncDashboardSlices(listOf("notes", "stash"))
+                }
+                .onFailure { err ->
+                    showMessage(err.message ?: "存为工作笔记失败")
+                }
+        }
     }
 
     fun runTask(task: TaskItem) {

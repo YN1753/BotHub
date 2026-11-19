@@ -518,6 +518,7 @@ func (s *Server) handleV2AppApk(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleV2AppBootstrap(w http.ResponseWriter, r *http.Request) {
 	tasks, _ := s.schedulerTasksList()
 	bots, _ := s.store.ListBots()
+	skills, _ := s.store.ListSkills()
 	notifications, _ := s.store.ListNotifications(0, 40, false)
 	assets, _ := s.store.ListAssets()
 	stash, _ := s.store.SearchStashItemsWithKind("", "all", "", "", 60)
@@ -538,6 +539,7 @@ func (s *Server) handleV2AppBootstrap(w http.ResponseWriter, r *http.Request) {
 		"mirror_path":         "/api/v2/app/apk",
 		"apk_url":             "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk",
 		"bots":                bots,
+		"skills":              skills,
 		"notifications":       notifications,
 		"stash":               stash,
 		"assets":              assets,

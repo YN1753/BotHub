@@ -205,6 +205,28 @@ export const BotHubApi = {
       model_health?: Record<string, ModelHealthStats>
       model_options?: ModelOptionDTO[]
     }>('/api/v2/model-pool/test', { method: 'POST', timeoutMs: 90_000, body: JSON.stringify(payload) }),
+  testModelBatch: (payload: {
+    tier?: 'free' | 'paid' | ''
+    disable_failed?: boolean
+    probe_tools?: boolean
+  }) =>
+    apiRequest<{
+      ok: boolean
+      results: Array<{
+        target_id: string
+        provider_id: string
+        model_id: string
+        tier: string
+        ok: boolean
+        latency_ms: number
+        error?: string
+        supports_tools?: boolean
+        supports_thinking?: boolean
+      }>
+      pooled_models?: PooledModel[]
+      model_health?: Record<string, ModelHealthStats>
+      model_options?: ModelOptionDTO[]
+    }>('/api/v2/model-pool/test-batch', { method: 'POST', timeoutMs: 120_000, body: JSON.stringify(payload) }),
   fetchUpstreamModels: (payload: {
     provider_id?: string
     entry_id?: string

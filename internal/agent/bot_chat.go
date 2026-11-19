@@ -26,6 +26,17 @@ func (e *Engine) emitBotState(botID, state, lastSummary string) {
 	}
 }
 
+func (e *Engine) publishLiveChatMessage(msg store.AgentMessage) {
+	if e == nil || e.hub == nil || msg.ID <= 0 {
+		return
+	}
+	if strings.TrimSpace(msg.CreatedAt) == "" {
+		msg.CreatedAt = store.NowShanghai()
+	}
+	e.hub.BumpRevision("messages")
+	e.hub.PublishEvent("bot_message", msg)
+}
+
 func (e *Engine) chatStreamForBot(
 	ctx context.Context,
 	req ChatRequest,
@@ -56,7 +67,7 @@ func (e *Engine) chatStreamForBot(
 	}
 
 	// Persist user message once in this Bot/Group's isolated thread timeline
-	if _, err := e.store.AppendAgentMessage(store.AgentMessage{
+	userEntry := store.AgentMessage{
 		SessionID:    "bot:" + bot.ID,
 		BotID:        bot.ID,
 		ThreadID:     threadID,
@@ -65,9 +76,13 @@ func (e *Engine) chatStreamForBot(
 		Content:      userMsg,
 		ReplyToID:    req.ReplyToID,
 		ReplyPreview: replyPreview,
-	}); err != nil {
+	}
+	mid, err := e.store.AppendAgentMessage(userEntry)
+	if err != nil {
 		return nil, fmt.Errorf("记录消息失败: %w", err)
 	}
+	userEntry.ID = mid
+	e.publishLiveChatMessage(userEntry)
 
 	promptMsg := userMsg
 	if replyPreview != "" {
@@ -412,7 +427,7 @@ func (e *Engine) runSingleBotTurn(
 		if len(toolCalls) == 0 {
 			endedWithTools = false
 			if persistTimeline {
-				_, _ = e.store.AppendAgentMessage(store.AgentMessage{
+				finalEntry := store.AgentMessage{
 					SessionID:        "bot:" + timelineBotID,
 					BotID:            timelineBotID,
 					ThreadID:         threadID,
@@ -423,7 +438,11 @@ func (e *Engine) runSingleBotTurn(
 					ReasoningContent: notifier.StripEmoji(totalReasoning.String()),
 					ToolCalls:        "[]",
 					ModelUsed:        activeTarget.Model,
-				})
+				}
+				if aid, aErr := e.store.AppendAgentMessage(finalEntry); aErr == nil && msgKind != "routine" {
+					finalEntry.ID = aid
+					e.publishLiveChatMessage(finalEntry)
+				}
 			}
 			break
 		}
@@ -651,7 +670,7 @@ func (e *Engine) runSingleBotTurn(
 				msgKind = "chat"
 			}
 			if msgKind != "delegate" {
-				_, _ = e.store.AppendAgentMessage(store.AgentMessage{
+				finalEntry := store.AgentMessage{
 					SessionID:        "bot:" + timelineBotID,
 					BotID:            timelineBotID,
 					ThreadID:         threadID,
@@ -662,7 +681,11 @@ func (e *Engine) runSingleBotTurn(
 					ReasoningContent: notifier.StripEmoji(totalReasoning.String() + sReasoning),
 					ToolCalls:        "[]",
 					ModelUsed:        activeTarget.Model,
-				})
+				}
+				if aid, aErr := e.store.AppendAgentMessage(finalEntry); aErr == nil && msgKind != "routine" {
+					finalEntry.ID = aid
+					e.publishLiveChatMessage(finalEntry)
+				}
 			}
 		} else if strings.TrimSpace(finalContent.String()) == "" {
 			fallback := fmt.Sprintf("已完成工具调用，但生成最终汇总时出错：%v", sErr)

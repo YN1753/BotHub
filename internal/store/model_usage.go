@@ -21,23 +21,36 @@ type ModelUsageRecord struct {
 }
 
 type ModelUsageModelStat struct {
-	TargetID   string `json:"target_id"`
-	ModelID    string `json:"model_id"`
-	Tier       string `json:"tier"`
-	Calls      int    `json:"calls"`
-	Tokens     int    `json:"tokens"`
-	AvgLatency int64  `json:"avg_latency_ms"`
+	TargetID     string `json:"target_id"`
+	ModelID      string `json:"model_id"`
+	Tier         string `json:"tier"`
+	Calls        int    `json:"calls"`
+	SuccessCalls int    `json:"success_calls"`
+	FreeCalls    int    `json:"free_calls"`
+	PaidCalls    int    `json:"paid_calls"`
+	Tokens       int    `json:"tokens"`
+	AvgLatency   int64  `json:"avg_latency_ms"`
+}
+
+type ModelUsageCallerStat struct {
+	BotID     string `json:"bot_id"`
+	TaskID    string `json:"task_id"`
+	Source    string `json:"source"`
+	FreeCalls int    `json:"free_calls"`
+	PaidCalls int    `json:"paid_calls"`
+	Tokens    int    `json:"tokens"`
 }
 
 type ModelUsageSummary struct {
-	Days         int                   `json:"days"`
-	TotalCalls   int                   `json:"total_calls"`
-	SuccessCalls int                   `json:"success_calls"`
-	FreeCalls    int                   `json:"free_calls"`
-	PaidCalls    int                   `json:"paid_calls"`
-	FreeTokens   int                   `json:"free_tokens"`
-	PaidTokens   int                   `json:"paid_tokens"`
-	TopModels    []ModelUsageModelStat `json:"top_models"`
+	Days         int                    `json:"days"`
+	TotalCalls   int                    `json:"total_calls"`
+	SuccessCalls int                    `json:"success_calls"`
+	FreeCalls    int                    `json:"free_calls"`
+	PaidCalls    int                    `json:"paid_calls"`
+	FreeTokens   int                    `json:"free_tokens"`
+	PaidTokens   int                    `json:"paid_tokens"`
+	TopModels    []ModelUsageModelStat  `json:"top_models"`
+	TopCallers   []ModelUsageCallerStat `json:"top_callers"`
 }
 
 func (s *Store) RecordModelUsage(rec ModelUsageRecord) error {
@@ -100,8 +113,9 @@ func (s *Store) SummarizeModelUsage(days int) (ModelUsageSummary, error) {
 		days = 7
 	}
 	summary := ModelUsageSummary{
-		Days:      days,
-		TopModels: []ModelUsageModelStat{},
+		Days:       days,
+		TopModels:  []ModelUsageModelStat{},
+		TopCallers: []ModelUsageCallerStat{},
 	}
 	if s == nil || s.db == nil {
 		return summary, nil
@@ -122,22 +136,42 @@ func (s *Store) SummarizeModelUsage(days int) (ModelUsageSummary, error) {
 	}
 
 	rows, err := s.db.Query(`SELECT target_id, model_id, tier, COUNT(*) AS calls,
+		COALESCE(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END), 0) AS success_calls,
+		COALESCE(SUM(CASE WHEN tier = 'free' THEN 1 ELSE 0 END), 0) AS free_calls,
+		COALESCE(SUM(CASE WHEN tier = 'paid' THEN 1 ELSE 0 END), 0) AS paid_calls,
 		COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS tokens,
 		COALESCE(CAST(AVG(CASE WHEN latency_ms > 0 THEN latency_ms END) AS INTEGER), 0) AS avg_lat
 		FROM model_usage_logs
 		WHERE created_at >= ? AND model_id != ''
 		GROUP BY target_id, model_id, tier
 		ORDER BY calls DESC, tokens DESC
-		LIMIT 6`, since)
-	if err != nil {
-		return summary, nil
+		LIMIT 12`, since)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var st ModelUsageModelStat
+			if scanErr := rows.Scan(&st.TargetID, &st.ModelID, &st.Tier, &st.Calls, &st.SuccessCalls, &st.FreeCalls, &st.PaidCalls, &st.Tokens, &st.AvgLatency); scanErr == nil {
+				summary.TopModels = append(summary.TopModels, st)
+			}
+		}
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var st ModelUsageModelStat
-		if err := rows.Scan(&st.TargetID, &st.ModelID, &st.Tier, &st.Calls, &st.Tokens, &st.AvgLatency); err == nil {
-			summary.TopModels = append(summary.TopModels, st)
+	callerRows, cErr := s.db.Query(`SELECT bot_id, task_id, source,
+		COALESCE(SUM(CASE WHEN tier = 'free' THEN 1 ELSE 0 END), 0) AS free_calls,
+		COALESCE(SUM(CASE WHEN tier = 'paid' THEN 1 ELSE 0 END), 0) AS paid_calls,
+		COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS tokens
+		FROM model_usage_logs
+		WHERE created_at >= ?
+		GROUP BY bot_id, task_id, source
+		ORDER BY (free_calls + paid_calls) DESC, tokens DESC
+		LIMIT 12`, since)
+	if cErr == nil {
+		defer callerRows.Close()
+		for callerRows.Next() {
+			var cs ModelUsageCallerStat
+			if scanErr := callerRows.Scan(&cs.BotID, &cs.TaskID, &cs.Source, &cs.FreeCalls, &cs.PaidCalls, &cs.Tokens); scanErr == nil {
+				summary.TopCallers = append(summary.TopCallers, cs)
+			}
 		}
 	}
 	return summary, nil

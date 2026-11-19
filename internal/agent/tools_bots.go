@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
+	"github.com/YN1753/vesper/bothub/internal/scheduler"
 	"github.com/YN1753/vesper/bothub/internal/store"
+	"github.com/robfig/cron/v3"
 )
 
 func manageBotsToolSpec() ToolSpec {
@@ -18,14 +20,14 @@ func manageBotsToolSpec() ToolSpec {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "manage_bots",
-				Description: "管理 BotHub 工作区中的专属 Bot 与多 Bot 协同群聊（大管家核心能力）。支持 list（查看全部 Bot 与群聊名录）、create_bot（新建专属 Bot）、update_bot（修改已有 Bot 配置）、delete_bot（删除 Bot 或群聊）、create_group（将多位 Bot 拉入协同群聊，支持按名称或 ID 匹配成员）、add_group_members（拉人进群）、remove_group_members（移出群成员）、update_group（更新群聊配置/成员/公告）。",
+				Description: "管理 BotHub 工作区中的专属 Bot 与多 Bot 协同群聊（大管家核心能力）。支持 list（查看全部 Bot 与群聊名录）、create_bot（新建专属 Bot）、update_bot（修改已有 Bot 配置）、delete_bot（删除 Bot 或群聊）、create_group（将多位 Bot 拉入协同群聊，支持按名称或 ID 匹配成员）、add_group_members（拉人进群）、remove_group_members（移出群成员）、update_group（更新群聊配置/成员/公告）、setup_blueprint（一站式原子编排：创建/更新专属 Bot + 自动生成或挂载技能卡 + 创建配套定时任务，全程默认锁定免费池）。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"action": map[string]any{
 							"type":        "string",
-							"enum":        []string{"list", "create_bot", "update_bot", "delete_bot", "create_group", "add_group_members", "remove_group_members", "update_group"},
-							"description": "操作类型：list | create_bot | update_bot | delete_bot | create_group | add_group_members | remove_group_members | update_group",
+							"enum":        []string{"list", "create_bot", "update_bot", "delete_bot", "create_group", "add_group_members", "remove_group_members", "update_group", "setup_blueprint"},
+							"description": "操作类型：list | create_bot | update_bot | delete_bot | create_group | add_group_members | remove_group_members | update_group | setup_blueprint",
 						},
 						"bot_id": map[string]any{
 							"type":        "string",
@@ -116,6 +118,41 @@ func manageBotsToolSpec() ToolSpec {
 						"announcement": map[string]any{
 							"type":        "string",
 							"description": "可选：群公告内容",
+						},
+						"skill_ids": map[string]any{
+							"type":        "array",
+							"items":       map[string]any{"type": "string"},
+							"description": "可选：要挂载的已有技能 ID 或 slug 列表（setup_blueprint / create_bot 使用）",
+						},
+						"skill_specs": map[string]any{
+							"type":        "array",
+							"description": "setup_blueprint 时可选：要同步创建或更新的自定义技能定义列表（每项含 name, slug, kind, description, instruction, http_method, http_url）",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"slug":        map[string]any{"type": "string"},
+									"name":        map[string]any{"type": "string"},
+									"kind":        map[string]any{"type": "string"},
+									"description": map[string]any{"type": "string"},
+									"instruction": map[string]any{"type": "string"},
+									"http_method": map[string]any{"type": "string"},
+									"http_url":    map[string]any{"type": "string"},
+								},
+							},
+						},
+						"task_spec": map[string]any{
+							"type":        "object",
+							"description": "setup_blueprint 时可选：配套定时任务定义（name, type, cron_expr, run_at, prompt, model, allow_paid_fallback, max_paid_calls_per_day）",
+							"properties": map[string]any{
+								"name":                   map[string]any{"type": "string"},
+								"type":                   map[string]any{"type": "string"},
+								"cron_expr":              map[string]any{"type": "string"},
+								"run_at":                 map[string]any{"type": "string"},
+								"prompt":                 map[string]any{"type": "string"},
+								"model":                  map[string]any{"type": "string"},
+								"allow_paid_fallback":    map[string]any{"type": "boolean"},
+								"max_paid_calls_per_day": map[string]any{"type": "integer"},
+							},
 						},
 					},
 					"required": []string{"action"},
@@ -397,6 +434,18 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 		IncludeSelf       bool     `json:"include_self"`
 		GroupMode         string   `json:"group_mode"`
 		Announcement      string   `json:"announcement"`
+		SkillIDs          []string `json:"skill_ids"`
+		SkillSpecs        []skillUpsertInput `json:"skill_specs"`
+		TaskSpec          *struct {
+			Name               string `json:"name"`
+			Type               string `json:"type"`
+			CronExpr           string `json:"cron_expr"`
+			RunAt              string `json:"run_at"`
+			Prompt             string `json:"prompt"`
+			Model              string `json:"model"`
+			AllowPaidFallback  *bool  `json:"allow_paid_fallback"`
+			MaxPaidCallsPerDay int    `json:"max_paid_calls_per_day"`
+		} `json:"task_spec"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 manage_bots 参数失败: %w", err)
@@ -886,6 +935,181 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 			"member_ids":   nextIDs,
 			"member_names": nextNames,
 			"unresolved":   unresolved,
+		})
+		return string(out), nil
+
+	case "setup_blueprint":
+		botName := notifier.StripEmoji(strings.TrimSpace(args.Name))
+		if botName == "" {
+			botName = notifier.StripEmoji(strings.TrimSpace(args.BotName))
+		}
+		if botName == "" && strings.TrimSpace(args.BotID) == "" {
+			return "", fmt.Errorf("setup_blueprint 需要提供 name（Bot 名称）或 bot_id")
+		}
+
+		// 1. Upsert skill_specs + resolve existing skill_ids/slugs
+		boundSkillSet := make(map[string]bool)
+		boundSkillIDs := make([]string, 0, len(args.SkillSpecs)+len(args.SkillIDs))
+		boundSkills := make([]store.Skill, 0, len(args.SkillSpecs))
+		addSkillID := func(id string) {
+			if id != "" && !boundSkillSet[id] {
+				boundSkillSet[id] = true
+				boundSkillIDs = append(boundSkillIDs, id)
+			}
+		}
+		for _, spec := range args.SkillSpecs {
+			sk, sErr := e.upsertSkillFromParams(spec)
+			if sErr != nil {
+				return "", fmt.Errorf("创建套装技能失败: %w", sErr)
+			}
+			addSkillID(sk.ID)
+			boundSkills = append(boundSkills, *sk)
+		}
+		for _, rawSk := range args.SkillIDs {
+			if found := e.findSkillByMatch(rawSk, rawSk, rawSk); found != nil {
+				addSkillID(found.ID)
+			}
+		}
+
+		// 2. Create or update Bot (strictly default allow_paid_fallback = false)
+		var onlySingle bool
+		existingBot := findBotByIDOrName(allBots, args.BotID, botName, &onlySingle)
+		botMode := store.NormalizeBotMode(args.BotMode)
+		if strings.TrimSpace(args.BotMode) == "" {
+			botMode = store.BotModeHybrid
+		}
+		var targetBot store.Bot
+		if existingBot != nil {
+			targetBot = *existingBot
+			for _, curSk := range existingBot.SkillIDList() {
+				addSkillID(curSk)
+			}
+			if len(args.AllowedTools) > 0 {
+				tList := resolveAllowedToolsForNewBot(args.AllowedTools, targetBot.BotMode)
+				tb, _ := json.Marshal(tList)
+				targetBot.AllowedTools = string(tb)
+			}
+		} else {
+			roleTitle := notifier.StripEmoji(strings.TrimSpace(args.RoleTitle))
+			if roleTitle == "" {
+				roleTitle = "专属自动化助手"
+			}
+			traits := notifier.StripEmoji(strings.TrimSpace(args.Traits))
+			sysPrompt := notifier.StripEmoji(strings.TrimSpace(args.SystemPrompt))
+			if sysPrompt == "" {
+				sysPrompt = fmt.Sprintf("你是用户的专属 Bot「%s」（%s）。优先调动工具与技能核查真实数据并直接落实任务，严禁使用 Emoji。", botName, roleTitle)
+			}
+			tools := resolveAllowedToolsForNewBot(args.AllowedTools, botMode)
+			tb, _ := json.Marshal(tools)
+			model := strings.TrimSpace(args.Model)
+			if model == "" {
+				model = "auto:free"
+			}
+			allowPaid := false
+			if args.AllowPaidFallback != nil {
+				allowPaid = *args.AllowPaidFallback
+			}
+			enableThinking := botMode != store.BotModeCompanion
+			if args.EnableThinking != nil {
+				enableThinking = *args.EnableThinking
+			}
+			targetBot = store.Bot{
+				ID:                genManagedBotID(false),
+				Name:              botName,
+				RoleTitle:         roleTitle,
+				AvatarStyle:       normalizeManageAvatarStyle(args.AvatarStyle, botMode, false),
+				SystemPrompt:      sysPrompt,
+				BotMode:           botMode,
+				MemoryPolicy:      store.MemoryPolicyIsolated,
+				Traits:            traits,
+				Model:             model,
+				AllowPaidFallback: allowPaid,
+				EnableThinking:    enableThinking,
+				AllowedTools:      string(tb),
+				State:             store.BotStateIdle,
+				IsPinned:          args.IsPinned != nil && *args.IsPinned,
+				IsGroup:           false,
+				MemberIDs:         "[]",
+				GroupMode:         "smart",
+				SortOrder:         100,
+			}
+		}
+		if args.AllowPaidFallback != nil {
+			targetBot.AllowPaidFallback = *args.AllowPaidFallback
+		}
+		skBytes, _ := json.Marshal(boundSkillIDs)
+		targetBot.SkillIDs = string(skBytes)
+		if err := e.store.SaveBot(targetBot); err != nil {
+			return "", fmt.Errorf("保存套装 Bot 失败: %w", err)
+		}
+
+		// 3. Optionally create bound scheduled task (strictly default allow_paid_fallback = false)
+		var createdTask *store.Task
+		if args.TaskSpec != nil && strings.TrimSpace(args.TaskSpec.Name) != "" {
+			tType := strings.TrimSpace(args.TaskSpec.Type)
+			if tType == "" {
+				tType = "bot_prompt"
+			}
+			tCron := strings.TrimSpace(args.TaskSpec.CronExpr)
+			tRunAt := strings.TrimSpace(args.TaskSpec.RunAt)
+			if tRunAt != "" {
+				if _, pErr := scheduler.ParseRunAt(tRunAt, nil); pErr != nil {
+					return "", fmt.Errorf("task_spec.run_at 格式错误: %w", pErr)
+				}
+				tCron = ""
+			} else {
+				if tCron == "" {
+					tCron = "0 9 * * *"
+				}
+				if _, cErr := cron.ParseStandard(tCron); cErr != nil {
+					return "", fmt.Errorf("task_spec.cron_expr 无效: %w", cErr)
+				}
+			}
+			paramsJSON := "{}"
+			cleanPrompt := notifier.StripEmoji(strings.TrimSpace(args.TaskSpec.Prompt))
+			if cleanPrompt != "" {
+				pb, _ := json.Marshal(map[string]string{"prompt": cleanPrompt})
+				paramsJSON = string(pb)
+			}
+			tAllowPaid := false
+			if args.TaskSpec.AllowPaidFallback != nil {
+				tAllowPaid = *args.TaskSpec.AllowPaidFallback
+			}
+			buf := make([]byte, 4)
+			_, _ = rand.Read(buf)
+			task := store.Task{
+				ID:                 "task_" + hex.EncodeToString(buf),
+				Name:               notifier.StripEmoji(strings.TrimSpace(args.TaskSpec.Name)),
+				Type:               tType,
+				BotID:              targetBot.ID,
+				Model:              strings.TrimSpace(args.TaskSpec.Model),
+				AllowPaidFallback:  tAllowPaid,
+				MaxPaidCallsPerDay: args.TaskSpec.MaxPaidCallsPerDay,
+				Description:        truncateTitle(cleanPrompt),
+				CronExpr:           tCron,
+				RunAt:              tRunAt,
+				Enabled:            true,
+				Params:             paramsJSON,
+			}
+			if err := e.store.SaveTask(task); err != nil {
+				return "", fmt.Errorf("创建套装定时任务失败: %w", err)
+			}
+			if e.scheduler != nil {
+				_ = e.scheduler.Reload()
+			}
+			createdTask = &task
+			e.publishAssistantUpdate("tasks")
+		}
+		e.publishAssistantUpdate("bots")
+		out, _ := json.Marshal(map[string]any{
+			"ok":                  true,
+			"action":              "setup_blueprint",
+			"bot_id":              targetBot.ID,
+			"bot_name":            targetBot.Name,
+			"allow_paid_fallback": targetBot.AllowPaidFallback,
+			"skill_ids":           boundSkillIDs,
+			"skills":              boundSkills,
+			"task":                createdTask,
 		})
 		return string(out), nil
 

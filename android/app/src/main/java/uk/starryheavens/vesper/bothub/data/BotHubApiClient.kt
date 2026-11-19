@@ -297,6 +297,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
             val dash = JsonMappers.parseDashboard(json)
             BootstrapPayload(
                 bots = JsonMappers.parseBots(json.optJSONArray("bots")),
+                skills = JsonMappers.parseSkills(json.optJSONArray("skills")),
                 notifications = JsonMappers.parseNotifications(json.optJSONArray("notifications")),
                 dashboard = dash,
                 stashItems = JsonMappers.parseStashItems(json.optJSONArray("stash")),
@@ -321,6 +322,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
             val json = executeJson(req, "局部同步失败")
             DashboardSlicePayload(
                 bots = if (json.has("bots")) JsonMappers.parseBots(json.optJSONArray("bots")) else null,
+                skills = if (json.has("skills")) JsonMappers.parseSkills(json.optJSONArray("skills")) else null,
                 assets = if (json.has("assets")) JsonMappers.parseAssets(json.optJSONArray("assets")) else null,
                 assetCategories = if (json.has("asset_categories")) JsonMappers.parseAssetCategories(json.optJSONArray("asset_categories")) else null,
                 tasks = if (json.has("tasks")) JsonMappers.parseTasks(json.optJSONArray("tasks")) else null,
@@ -461,6 +463,54 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .build()
             val json = executeJson(req, "解除冷却失败")
             JsonMappers.parseModelHealth(json.optJSONObject("model_health"))
+        }
+    }
+
+    suspend fun testModelBatch(
+        tier: String = "free",
+        disableFailed: Boolean = false
+    ): Result<BatchModelProbePayload> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("tier", tier.trim())
+                .put("disable_failed", disableFailed)
+                .put("probe_tools", true)
+                .toString()
+            val req = requestBuilder("/api/v2/model-pool/test-batch")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "批量测速失败")
+            val resArr = json.optJSONArray("results")
+            val results = buildList {
+                if (resArr != null) {
+                    for (i in 0 until resArr.length()) {
+                        val o = resArr.optJSONObject(i) ?: continue
+                        add(
+                            BatchModelProbeEntryItem(
+                                targetId = o.optString("target_id", ""),
+                                providerId = o.optString("provider_id", ""),
+                                modelId = o.optString("model_id", ""),
+                                tier = o.optString("tier", "free"),
+                                ok = o.optBoolean("ok", false),
+                                latencyMs = o.optLong("latency_ms", 0L),
+                                error = o.optString("error", ""),
+                                supportsTools = if (o.has("supports_tools") && !o.isNull("supports_tools")) {
+                                    o.optBoolean("supports_tools")
+                                } else null,
+                                supportsThinking = if (o.has("supports_thinking") && !o.isNull("supports_thinking")) {
+                                    o.optBoolean("supports_thinking")
+                                } else null
+                            )
+                        )
+                    }
+                }
+            }
+            BatchModelProbePayload(
+                results = results,
+                modelHealth = JsonMappers.parseModelHealth(json.optJSONObject("model_health")),
+                pooledModels = if (json.has("pooled_models")) JsonMappers.parsePooledModels(json.optJSONArray("pooled_models")) else null,
+                modelOptions = if (json.has("model_options")) JsonMappers.parseModelOptions(json.optJSONArray("model_options")) else null
+            )
         }
     }
 
@@ -764,6 +814,98 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun summarizeBotThread(
+        botId: String,
+        threadId: String,
+        saveToMemory: Boolean = true
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val cleanTid = threadId.trim().ifEmpty { "main" }
+            val encTid = URLEncoder.encode(cleanTid, "UTF-8")
+            val payload = JSONObject().put("save_to_memory", saveToMemory).toString()
+            val req = requestBuilder("/api/v2/bots/$botId/threads/$encTid/summarize")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "提炼话题摘要失败")
+            json.optString("summary", "").trim()
+        }
+    }
+
+    suspend fun forkBotThread(
+        botId: String,
+        sourceThreadId: String,
+        upToMsgId: Long = 0L,
+        title: String = ""
+    ): Result<Pair<BotThreadItem, BotMessagesPayload>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payloadObj = JSONObject()
+                .put("source_thread_id", sourceThreadId.trim())
+                .put("title", title.trim())
+            if (upToMsgId > 0L) payloadObj.put("up_to_msg_id", upToMsgId)
+            val req = requestBuilder("/api/v2/bots/$botId/threads/fork")
+                .post(jsonBody(payloadObj.toString()))
+                .build()
+            val json = executeJson(req, "分叉新话题失败")
+            val created = JsonMappers.parseBotThread(json.optJSONObject("thread") ?: JSONObject())
+            val msgPayload = BotMessagesPayload(
+                messages = JsonMappers.parseHistoryMessages(json.optJSONArray("messages")),
+                threads = JsonMappers.parseBotThreads(json.optJSONArray("threads")),
+                activeThreadId = created.id
+            )
+            created to msgPayload
+        }
+    }
+
+    suspend fun fetchMemories(scope: String): Result<List<MemoryItemUi>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encScope = URLEncoder.encode(scope.trim(), "UTF-8")
+            val req = requestBuilder("/api/agent/memories?scope=$encScope").get().build()
+            val json = executeJson(req, "读取长期记忆失败")
+            JsonMappers.parseMemories(json.optJSONArray("memories"))
+        }
+    }
+
+    suspend fun saveMemory(
+        scope: String,
+        category: String,
+        factKey: String,
+        content: String,
+        pinned: Boolean = false
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("scope", scope.trim())
+                .put("category", category.ifBlank { "fact" })
+                .put("fact_key", factKey.trim())
+                .put("content", content.trim())
+                .put("pinned", pinned)
+                .toString()
+            val req = requestBuilder("/api/agent/memories")
+                .post(jsonBody(payload))
+                .build()
+            executeUnit(req, "写入长期记忆失败")
+        }
+    }
+
+    suspend fun toggleMemoryPin(id: Long, pinned: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject().put("pinned", pinned).toString()
+            val req = requestBuilder("/api/agent/memories/$id")
+                .post(jsonBody(payload))
+                .build()
+            executeUnit(req, "更新记忆置顶状态失败")
+        }
+    }
+
+    suspend fun deleteMemory(id: Long): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/agent/memories/$id")
+                .delete()
+                .build()
+            executeUnit(req, "删除长期记忆失败")
+        }
+    }
+
     suspend fun clearBotMessages(botId: String, threadId: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val qs = if (threadId != null) "?thread_id=${URLEncoder.encode(threadId, "UTF-8")}" else ""
@@ -860,7 +1002,9 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         systemPrompt: String,
         groupMode: String,
         announcement: String,
-        allowPaidFallback: Boolean? = null
+        allowPaidFallback: Boolean? = null,
+        allowedTools: List<String>? = null,
+        skillIds: List<String>? = null
     ): Result<BotItem> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = JSONObject()
@@ -873,6 +1017,16 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("announcement", announcement.trim())
             if (allowPaidFallback != null) {
                 payload.put("allow_paid_fallback", allowPaidFallback)
+            }
+            if (allowedTools != null) {
+                val arr = JSONArray()
+                allowedTools.forEach { arr.put(it) }
+                payload.put("allowed_tools", arr.toString())
+            }
+            if (skillIds != null) {
+                val arr = JSONArray()
+                skillIds.forEach { arr.put(it) }
+                payload.put("skill_ids", arr.toString())
             }
             val req = requestBuilder("/api/v2/bots/$botId")
                 .post(jsonBody(payload.toString()))
@@ -890,19 +1044,25 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         traits: String,
         systemPrompt: String,
         model: String = "auto:free",
-        allowPaidFallback: Boolean = false
+        allowPaidFallback: Boolean = false,
+        allowedTools: List<String>? = null,
+        skillIds: List<String> = emptyList()
     ): Result<BotItem> = withContext(Dispatchers.IO) {
         runCatching {
-            val defaultTools = if (botMode == "companion") {
-                JSONArray()
+            val toolsArr = JSONArray()
+            if (allowedTools != null) {
+                allowedTools.forEach { toolsArr.put(it) }
+            } else if (botMode == "companion") {
+                toolsArr.put("remember_fact").put("recall_memory")
             } else {
-                JSONArray()
-                    .put("list_assets")
-                    .put("query_nezha_nodes")
-                    .put("list_tasks")
-                    .put("manage_stash")
-                    .put("fetch_webpage")
+                listOf(
+                    "manage_todos", "manage_notes", "manage_stash", "manage_tasks",
+                    "manage_assets", "query_nezha_nodes", "web_search", "read_url",
+                    "calculate_eval", "datetime_calc", "remember_fact", "recall_memory"
+                ).forEach { toolsArr.put(it) }
             }
+            val skillArr = JSONArray()
+            skillIds.forEach { skillArr.put(it) }
             val payload = JSONObject()
                 .put("name", name.trim())
                 .put("role_title", roleTitle.trim())
@@ -912,7 +1072,8 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("allow_paid_fallback", allowPaidFallback)
                 .put("traits", traits.trim())
                 .put("system_prompt", systemPrompt.trim())
-                .put("allowed_tools", defaultTools.toString())
+                .put("allowed_tools", toolsArr.toString())
+                .put("skill_ids", skillArr.toString())
                 .put("enable_thinking", botMode != "companion")
                 .toString()
             val req = requestBuilder("/api/v2/bots")

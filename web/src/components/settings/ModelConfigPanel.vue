@@ -53,6 +53,28 @@ const probingKey = ref('')
 const probingPoolTier = ref<'' | 'free' | 'paid'>('')
 const probeMsgByKey = ref<Record<string, { ok: boolean; msg: string }>>({})
 const clearingCooldown = ref(false)
+const showUsageDetail = ref(false)
+
+function isLikelyFreeModelId(id: string): boolean {
+  const lower = id.toLowerCase()
+  return (
+    lower.includes(':free') ||
+    /(^|[-_/])free($|[-_/])/.test(lower) ||
+    /(^|[-_/])zero($|[-_/])/.test(lower)
+  )
+}
+
+function callerDisplayLabel(botId: string, taskId: string, source: string): string {
+  if (taskId) {
+    const task = store.state.tasks.find((t) => t.id === taskId)
+    return task ? `任务 · ${task.name}` : `任务 · ${taskId}`
+  }
+  if (botId) {
+    const bot = store.state.bots.find((b) => b.id === botId)
+    return bot ? bot.name : botId
+  }
+  return source === 'routine' ? '后台例程' : '系统轻模型'
+}
 
 const freeModels = computed(() =>
   props.models.filter((m) => m.tier !== 'paid').sort((a, b) => a.priority - b.priority)
@@ -285,15 +307,15 @@ function filteredFetchedModels(providerId: string): string[] {
   const tag = meta.filterTag
   return meta.models.filter((id) => {
     const lower = id.toLowerCase()
-    if (tag === ':free' && !lower.includes(':free')) return false
+    if (tag === ':free' && !isLikelyFreeModelId(id)) return false
     if (tag && tag !== ':free' && !lower.startsWith(`${tag.toLowerCase()}/`)) return false
     if (q && !lower.includes(q)) return false
     return true
   })
 }
 
-function batchAssignFiltered(providerId: string, tier: 'free' | 'paid') {
-  const list = filteredFetchedModels(providerId).slice(0, 12)
+function batchAssignFiltered(providerId: string, tier: 'free' | 'paid', maxCount = 24) {
+  const list = filteredFetchedModels(providerId).slice(0, maxCount)
   if (list.length === 0) return
   let next = [...props.models]
   let seq = next.filter((m) => m.tier === tier).length
@@ -315,6 +337,40 @@ function batchAssignFiltered(providerId: string, tier: 'free' | 'paid') {
   if (added > 0) {
     emit('update:models', next)
     store.notify(`已批量添加 ${added} 个模型至${tier === 'paid' ? '付费池' : '免费池'}`)
+  } else {
+    store.notify('当前筛出的模型均已存在于模型池中')
+  }
+}
+
+function batchAssignAllLikelyFree(providerId: string) {
+  const meta = fetchedByProvider.value[providerId]
+  if (!meta) return
+  const freeCandidates = meta.models.filter((id) => isLikelyFreeModelId(id)).slice(0, 40)
+  if (freeCandidates.length === 0) {
+    store.notify('当前列表未匹配到含 :free / free 标识的模型，请用搜索框挑选')
+    return
+  }
+  let next = [...props.models]
+  let seq = next.filter((m) => m.tier === 'free').length
+  let added = 0
+  for (const mid of freeCandidates) {
+    if (!next.some((m) => m.provider_id === providerId && m.model_id === mid)) {
+      seq += 1
+      next.push({
+        provider_id: providerId,
+        model_id: mid,
+        tier: 'free',
+        enabled: true,
+        priority: seq * 10,
+      })
+      added += 1
+    }
+  }
+  if (added > 0) {
+    emit('update:models', next)
+    store.notify(`已智能筛选并加入 ${added} 个免费模型至免费池`)
+  } else {
+    store.notify('检测到的免费模型已全部在池中')
   }
 }
 
@@ -460,20 +516,80 @@ async function probePoolTier(tier: 'free' | 'paid') {
   if (tier === 'paid') {
     const ok = await store.openConfirm({
       title: '付费池连通性测速确认',
-      message: `即将对付费模型池中 ${list.length} 个已启用模型发送极短测试请求（每模型约消耗几十 Tokens），用于探测延迟与 Tools 能力。确定继续？`,
-      confirmText: '开始测速',
+      message: `即将对付费模型池中 ${list.length} 个已启用模型并发发送极短测试请求（每模型约消耗几十 Tokens），用于探测延迟与 Tools 能力。确定继续？`,
+      confirmText: '开始并发测速',
       danger: false,
     })
     if (!ok) return
   }
   probingPoolTier.value = tier
   try {
-    for (const m of list) {
-      await probeSingleModel(m)
+    const res = await BotHubApi.testModelBatch({ tier, probe_tools: true })
+    if (res.model_health) store.state.modelHealth = res.model_health
+    if (res.model_options) store.state.modelOptions = res.model_options
+    let okCount = 0
+    let failCount = 0
+    const nextModels = [...props.models]
+    for (const r of res.results || []) {
+      if (r.ok) {
+        okCount += 1
+        const caps: string[] = []
+        if (r.supports_tools === true) caps.push('Tools 可用')
+        else if (r.supports_tools === false) caps.push('无 Tools')
+        if (r.supports_thinking === true) caps.push('Thinking')
+        probeMsgByKey.value[r.target_id] = {
+          ok: true,
+          msg: `${r.latency_ms}ms OK${caps.length ? ' · ' + caps.join(' / ') : ''}`,
+        }
+        const idx = nextModels.findIndex(
+          (x) => x.provider_id === r.provider_id && x.model_id === r.model_id
+        )
+        if (idx >= 0) {
+          nextModels[idx] = {
+            ...nextModels[idx],
+            supports_tools: r.supports_tools ?? nextModels[idx].supports_tools,
+            supports_thinking: r.supports_thinking ?? nextModels[idx].supports_thinking,
+            last_latency_ms: r.latency_ms || nextModels[idx].last_latency_ms,
+          }
+        }
+      } else {
+        failCount += 1
+        probeMsgByKey.value[r.target_id] = { ok: false, msg: r.error || '探测失败' }
+      }
     }
-    store.notify(`${tier === 'paid' ? '付费池' : '免费池'} ${list.length} 个模型测速完成`)
+    emit('update:models', nextModels)
+    store.notify(
+      `${tier === 'paid' ? '付费池' : '免费池'}并发测速完成：${okCount} 个可用${failCount > 0 ? `，${failCount} 个异常` : ''}`
+    )
+  } catch (err: any) {
+    store.notify(err.message || '批量测速失败')
   } finally {
     probingPoolTier.value = ''
+  }
+}
+
+function hasFailedProbeInTier(tier: 'free' | 'paid'): boolean {
+  const list = tier === 'paid' ? paidModels.value : freeModels.value
+  return list.some((m) => {
+    const key = canonicalModelTargetId(m.provider_id, m.model_id)
+    return m.enabled && probeMsgByKey.value[key]?.ok === false
+  })
+}
+
+function disableFailedInTier(tier: 'free' | 'paid') {
+  let disabledCount = 0
+  const next = props.models.map((m) => {
+    if (m.tier !== tier || !m.enabled) return m
+    const key = canonicalModelTargetId(m.provider_id, m.model_id)
+    if (probeMsgByKey.value[key]?.ok === false) {
+      disabledCount += 1
+      return { ...m, enabled: false }
+    }
+    return m
+  })
+  if (disabledCount > 0) {
+    emit('update:models', next)
+    store.notify(`已一键停用 ${disabledCount} 个测速异常的模型，请点击「保存」生效`)
   }
 }
 
@@ -533,6 +649,56 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 ? `${Math.round(((usage7d?.free_calls || 0) / (usage7d?.total_calls || 1)) * 100)}%`
                 : '--'
             }}
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="(usage7d?.top_models?.length || 0) > 0 || (usage7d?.top_callers?.length || 0) > 0"
+        class="pt-1 border-t border-[#fff8ee]/8 flex flex-col gap-2"
+      >
+        <button
+          type="button"
+          @click="showUsageDetail = !showUsageDetail"
+          class="self-start text-[11px] text-[#f2b880] hover:text-[#f7cba0] cursor-pointer"
+        >
+          {{ showUsageDetail ? '收起 7 日双维明细 ▲' : '展开 7 日按模型 / 按 Bot 与任务消耗排行 ▼' }}
+        </button>
+
+        <div v-if="showUsageDetail" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-2.5 flex flex-col gap-1.5">
+            <div class="text-[11px] font-semibold text-slate-200">按模型调用排行 (7日)</div>
+            <div
+              v-for="row in (usage7d?.top_models || []).slice(0, 8)"
+              :key="`${row.target_id}_${row.tier}`"
+              class="flex items-center justify-between gap-2 text-[10.5px]"
+            >
+              <span class="font-mono text-slate-300 truncate flex-1">{{ row.model_id }}</span>
+              <span
+                :class="[
+                  'font-mono shrink-0',
+                  row.tier === 'paid' ? 'text-[#f2b880]' : 'text-emerald-300',
+                ]"
+              >
+                {{ row.calls }}次 · {{ formatTokenCount(row.tokens) }}
+              </span>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-[#fff8ee]/10 bg-[#050811]/70 p-2.5 flex flex-col gap-1.5">
+            <div class="text-[11px] font-semibold text-slate-200">按 Bot / 任务消耗排行 (7日)</div>
+            <div
+              v-for="(c, idx) in (usage7d?.top_callers || []).slice(0, 8)"
+              :key="`${c.bot_id}_${c.task_id}_${c.source}_${idx}`"
+              class="flex items-center justify-between gap-2 text-[10.5px]"
+            >
+              <span class="text-slate-300 truncate flex-1">{{ callerDisplayLabel(c.bot_id, c.task_id, c.source) }}</span>
+              <span class="font-mono text-slate-300 shrink-0">
+                <span class="text-emerald-300">{{ c.free_calls }}免</span>
+                <span v-if="c.paid_calls > 0" class="text-[#f2b880]"> / {{ c.paid_calls }}付</span>
+                · {{ formatTokenCount(c.tokens) }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -773,10 +939,17 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 </span>
                 <button
                   type="button"
-                  @click="batchAssignFiltered(provider.id, 'free')"
+                  @click="batchAssignAllLikelyFree(provider.id)"
+                  class="min-h-[26px] px-2 rounded-md border border-emerald-400/38 bg-emerald-400/10 text-[10.5px] text-emerald-300 hover:bg-emerald-400/18 cursor-pointer"
+                >
+                  智能筛选免费模型加池
+                </button>
+                <button
+                  type="button"
+                  @click="batchAssignFiltered(provider.id, 'free', 24)"
                   class="min-h-[26px] px-2 rounded-md border border-emerald-400/28 text-[10.5px] text-emerald-300 hover:bg-emerald-400/12 cursor-pointer"
                 >
-                  前12个加免费池
+                  前24个加免费池
                 </button>
               </div>
 
@@ -879,6 +1052,14 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
             </p>
           </div>
           <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
+            <button
+              v-if="hasFailedProbeInTier(activeTier)"
+              type="button"
+              @click="disableFailedInTier(activeTier)"
+              class="min-h-[30px] px-2.5 rounded-lg border border-rose-400/40 bg-rose-400/12 hover:bg-rose-400/20 text-[11px] text-rose-300 cursor-pointer"
+            >
+              停用异常模型
+            </button>
             <button
               v-if="hasCoolingInTier(activeTier)"
               type="button"

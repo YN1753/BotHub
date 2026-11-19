@@ -99,6 +99,13 @@ private fun formatTokenShort(tokens: Int): String {
     }
 }
 
+private fun isLikelyFreeModelAndroid(id: String): Boolean {
+    val lower = id.trim().lowercase()
+    return lower.contains(":free") ||
+        Regex("""(^|[-_/])free($|[-_/])""").containsMatchIn(lower) ||
+        Regex("""(^|[-_/])zero($|[-_/])""").containsMatchIn(lower)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModelConfigSheet(
@@ -131,6 +138,8 @@ fun ModelConfigSheet(
 
     var fetchingProviderId by remember { mutableStateOf("") }
     var probingTargetId by remember { mutableStateOf("") }
+    var probingBatchTier by remember { mutableStateOf("") }
+    var showUsageDetail by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -261,45 +270,125 @@ fun ModelConfigSheet(
             }
 
             // 7-Day Telemetry Summary Strip
-            SpecularGlassCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
-                Row(
+            SpecularGlassCard(
+                cornerRadius = 16.dp,
+                onClick = {
+                    if (usageSummary.topModels.isNotEmpty() || usageSummary.topCallers.isNotEmpty()) {
+                        showUsageDetail = !showUsageDetail
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 9.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("7日免费池", fontSize = 10.5.sp, color = Color(0xFF34D399))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("7日免费池", fontSize = 10.5.sp, color = Color(0xFF34D399))
+                            Text(
+                                text = "${usageSummary.freeCalls}次 · ${formatTokenShort(usageSummary.freeTokens)}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Monospace,
+                                color = theme.textPrimary
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("7日付费池", fontSize = 10.5.sp, color = theme.accent)
+                            Text(
+                                text = "${usageSummary.paidCalls}次 · ${formatTokenShort(usageSummary.paidTokens)}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Monospace,
+                                color = theme.textPrimary
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("成功率", fontSize = 10.5.sp, color = theme.textMuted)
+                            val rate = if (usageSummary.totalCalls > 0) {
+                                "${(usageSummary.successCalls * 100) / usageSummary.totalCalls}%"
+                            } else "--"
+                            Text(
+                                text = rate,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Monospace,
+                                color = theme.textPrimary
+                            )
+                        }
+                    }
+
+                    if (usageSummary.topModels.isNotEmpty() || usageSummary.topCallers.isNotEmpty()) {
                         Text(
-                            text = "${usageSummary.freeCalls}次 · ${formatTokenShort(usageSummary.freeTokens)}",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace,
-                            color = theme.textPrimary
+                            text = if (showUsageDetail) "收起按模型/按Bot消耗明细" else "点击展开 7日按模型 / 按Bot与任务明细",
+                            fontSize = 10.5.sp,
+                            color = theme.accent
                         )
                     }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("7日付费池", fontSize = 10.5.sp, color = theme.accent)
-                        Text(
-                            text = "${usageSummary.paidCalls}次 · ${formatTokenShort(usageSummary.paidTokens)}",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace,
-                            color = theme.textPrimary
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("成功率", fontSize = 10.5.sp, color = theme.textMuted)
-                        val rate = if (usageSummary.totalCalls > 0) {
-                            "${(usageSummary.successCalls * 100) / usageSummary.totalCalls}%"
-                        } else "--"
-                        Text(
-                            text = rate,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace,
-                            color = theme.textPrimary
-                        )
+
+                    if (showUsageDetail) {
+                        if (usageSummary.topModels.isNotEmpty()) {
+                            HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
+                            Text("按模型调用排行", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = theme.textSecondary)
+                            usageSummary.topModels.take(6).forEach { m ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = m.modelId,
+                                        fontSize = 10.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = theme.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                    )
+                                    Text(
+                                        text = "${m.calls}次 · ${formatTokenShort(m.tokens)}",
+                                        fontSize = 10.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = if (m.tier == "paid") theme.accent else Color(0xFF34D399)
+                                    )
+                                }
+                            }
+                        }
+                        if (usageSummary.topCallers.isNotEmpty()) {
+                            HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
+                            Text("按 Bot / 任务消耗排行", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = theme.textSecondary)
+                            usageSummary.topCallers.take(6).forEach { c ->
+                                val callerLabel = when {
+                                    c.taskId.isNotBlank() -> "任务:${c.taskId}"
+                                    c.botId.isNotBlank() -> "Bot:${c.botId}"
+                                    else -> if (c.source == "routine") "后台例程" else "系统轻模型"
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = callerLabel,
+                                        fontSize = 10.5.sp,
+                                        color = theme.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                    )
+                                    Text(
+                                        text = "${c.freeCalls}免/${c.paidCalls}付 · ${formatTokenShort(c.tokens)}",
+                                        fontSize = 10.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = if (c.paidCalls > 0) theme.accent else Color(0xFF34D399)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -637,34 +726,65 @@ fun ModelConfigSheet(
                                             onValueChange = { searchQueryMap[prov.id] = it },
                                             placeholder = "搜索模型名（共 ${fetched.size} 个）..."
                                         )
-                                        if (fetched.any { it.contains(":free", ignoreCase = true) }) {
-                                            val tagShape = RoundedCornerShape(9.dp)
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(tagShape)
-                                                    .background(
-                                                        if (onlyFreeTag) Color(0xFF34D399).copy(alpha = 0.18f) else theme.inputTop,
-                                                        tagShape
-                                                    )
-                                                    .border(
-                                                        0.8.dp,
-                                                        if (onlyFreeTag) Color(0xFF34D399) else theme.divider,
-                                                        tagShape
-                                                    )
-                                                    .tactileClickable { freeOnlyFilterMap[prov.id] = !onlyFreeTag }
-                                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                                        val likelyFreeList = fetched.filter { isLikelyFreeModelAndroid(it) }
+                                        if (likelyFreeList.isNotEmpty()) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                Text(
-                                                    text = if (onlyFreeTag) "已筛选 :free 免费模型" else "仅看 :free 模型",
-                                                    fontSize = 11.sp,
-                                                    color = if (onlyFreeTag) Color(0xFF34D399) else theme.textSecondary
-                                                )
+                                                val tagShape = RoundedCornerShape(9.dp)
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(tagShape)
+                                                        .background(
+                                                            if (onlyFreeTag) Color(0xFF34D399).copy(alpha = 0.18f) else theme.inputTop,
+                                                            tagShape
+                                                        )
+                                                        .border(
+                                                            0.8.dp,
+                                                            if (onlyFreeTag) Color(0xFF34D399) else theme.divider,
+                                                            tagShape
+                                                        )
+                                                        .tactileClickable { freeOnlyFilterMap[prov.id] = !onlyFreeTag }
+                                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                                ) {
+                                                    Text(
+                                                        text = if (onlyFreeTag) "已筛选免费模型 (${likelyFreeList.size})" else "仅看免费模型 (${likelyFreeList.size})",
+                                                        fontSize = 11.sp,
+                                                        color = if (onlyFreeTag) Color(0xFF34D399) else theme.textSecondary
+                                                    )
+                                                }
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(tagShape)
+                                                        .background(Color(0xFF34D399).copy(alpha = 0.14f), tagShape)
+                                                        .border(0.8.dp, Color(0xFF34D399).copy(alpha = 0.45f), tagShape)
+                                                        .tactileClickable {
+                                                            var addedCount = 0
+                                                            likelyFreeList.take(40).forEach { mid ->
+                                                                if (draftModels.none { it.providerId == prov.id && it.modelId == mid }) {
+                                                                    assignModelToTier(prov.id, mid, "free")
+                                                                    addedCount += 1
+                                                                }
+                                                            }
+                                                            onShowMessage(
+                                                                if (addedCount > 0) "已将 $addedCount 个免费模型加入免费池" else "免费模型已在池中"
+                                                            )
+                                                        }
+                                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "+ 一键免费加池",
+                                                        fontSize = 11.sp,
+                                                        color = Color(0xFF34D399)
+                                                    )
+                                                }
                                             }
                                         }
 
                                         val filtered = fetched.filter { id ->
                                             val qMatch = query.isBlank() || id.contains(query.trim(), ignoreCase = true)
-                                            val fMatch = !onlyFreeTag || id.contains(":free", ignoreCase = true)
+                                            val fMatch = !onlyFreeTag || isLikelyFreeModelAndroid(id)
                                             qMatch && fMatch
                                         }.take(40)
 
@@ -732,21 +852,90 @@ fun ModelConfigSheet(
                                     color = theme.textPrimary
                                 )
                                 val anyCooling = list.any { (modelHealth[it.canonicalTargetId]?.cooldownSec ?: 0L) > 0L }
-                                if (anyCooling) {
-                                    Text(
-                                        text = "全部解封",
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = theme.accent,
-                                        modifier = Modifier.tactileClickable {
-                                            scope.launch {
-                                                api.clearModelCooldown("").onSuccess { nextHealth ->
-                                                    onHealthUpdated(nextHealth, null, null)
-                                                    onShowMessage("已解除全部冷却状态")
+                                val anyFailedProbe = list.any { it.enabled && probeStatusMap[it.canonicalTargetId]?.first == false }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (anyFailedProbe) {
+                                        Text(
+                                            text = "停用异常",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFF87171),
+                                            modifier = Modifier.tactileClickable {
+                                                var disabledCount = 0
+                                                draftModels = draftModels.map { m ->
+                                                    if (m.tier == tier && m.enabled && probeStatusMap[m.canonicalTargetId]?.first == false) {
+                                                        disabledCount += 1
+                                                        m.copy(enabled = false)
+                                                    } else m
+                                                }
+                                                onShowMessage("已停用 $disabledCount 个异常模型，记得点击右上角「保存」")
+                                            }
+                                        )
+                                    }
+                                    if (anyCooling) {
+                                        Text(
+                                            text = "全部解封",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = theme.accent,
+                                            modifier = Modifier.tactileClickable {
+                                                scope.launch {
+                                                    api.clearModelCooldown("").onSuccess { nextHealth ->
+                                                        onHealthUpdated(nextHealth, null, null)
+                                                        onShowMessage("已解除全部冷却状态")
+                                                    }
                                                 }
                                             }
-                                        }
-                                    )
+                                        )
+                                    }
+                                    if (list.isNotEmpty()) {
+                                        Text(
+                                            text = if (probingBatchTier == tier) "测速中..." else "并发测速",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF34D399),
+                                            modifier = Modifier.tactileClickable {
+                                                if (probingBatchTier.isNotEmpty()) return@tactileClickable
+                                                probingBatchTier = tier
+                                                scope.launch {
+                                                    api.testModelBatch(tier = tier, disableFailed = false)
+                                                        .onSuccess { batch ->
+                                                            var okCnt = 0
+                                                            var failCnt = 0
+                                                            batch.results.forEach { r ->
+                                                                if (r.ok) {
+                                                                    okCnt += 1
+                                                                    val cap = buildString {
+                                                                        append("${r.latencyMs}ms OK")
+                                                                        if (r.supportsTools == true) append(" · Tools可用")
+                                                                        else if (r.supportsTools == false) append(" · 无Tools")
+                                                                    }
+                                                                    probeStatusMap[r.targetId] = true to cap
+                                                                    draftModels = draftModels.map { m ->
+                                                                        if (m.providerId == r.providerId && m.modelId == r.modelId) {
+                                                                            m.copy(
+                                                                                supportsTools = r.supportsTools ?: m.supportsTools,
+                                                                                supportsThinking = r.supportsThinking ?: m.supportsThinking,
+                                                                                lastLatencyMs = if (r.latencyMs > 0) r.latencyMs else m.lastLatencyMs
+                                                                            )
+                                                                        } else m
+                                                                    }
+                                                                } else {
+                                                                    failCnt += 1
+                                                                    probeStatusMap[r.targetId] = false to r.error.ifBlank { "探测失败" }
+                                                                }
+                                                            }
+                                                            onHealthUpdated(batch.modelHealth, batch.pooledModels, batch.modelOptions)
+                                                            onShowMessage("并发测速完成：$okCnt 个可用" + if (failCnt > 0) "，$failCnt 个异常" else "")
+                                                        }
+                                                        .onFailure { err ->
+                                                            onShowMessage(err.message ?: "批量测速失败")
+                                                        }
+                                                    probingBatchTier = ""
+                                                }
+                                            }
+                                        )
+                                    }
                                 }
                             }
                             Row(

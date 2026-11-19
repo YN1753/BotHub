@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -266,5 +267,145 @@ func (s *Server) handleTestModelTarget(w http.ResponseWriter, r *http.Request) {
 		"pooled_models":     models,
 		"model_health":      s.agent.GetModelHealth(),
 		"model_options":     s.agent.ModelOptionsPayload(),
+	})
+}
+
+type batchModelProbeResult struct {
+	TargetID         string `json:"target_id"`
+	ProviderID       string `json:"provider_id"`
+	ModelID          string `json:"model_id"`
+	Tier             string `json:"tier"`
+	OK               bool   `json:"ok"`
+	LatencyMs        int64  `json:"latency_ms"`
+	Error            string `json:"error,omitempty"`
+	SupportsTools    *bool  `json:"supports_tools,omitempty"`
+	SupportsThinking *bool  `json:"supports_thinking,omitempty"`
+}
+
+func (s *Server) handleTestModelBatch(w http.ResponseWriter, r *http.Request) {
+	if s.agent == nil {
+		writeError(w, http.StatusServiceUnavailable, "Agent 引擎未就绪")
+		return
+	}
+	var req struct {
+		Tier          string `json:"tier"`
+		DisableFailed bool   `json:"disable_failed"`
+		ProbeTools    *bool  `json:"probe_tools"`
+	}
+	_ = decodeOptionalJSON(w, r, 8192, &req)
+
+	wantTier := strings.ToLower(strings.TrimSpace(req.Tier))
+	probeTools := true
+	if req.ProbeTools != nil {
+		probeTools = *req.ProbeTools
+	}
+
+	providers, models, strategies := s.store.GetModelConfig()
+	provMap := make(map[string]store.ModelProvider, len(providers))
+	for _, p := range providers {
+		provMap[p.ID] = p
+	}
+
+	var candidates []store.PooledModel
+	for _, m := range models {
+		if !m.Enabled {
+			continue
+		}
+		if wantTier == store.ModelTierFree || wantTier == store.ModelTierPaid {
+			if store.NormalizeModelTier(m.Tier) != wantTier {
+				continue
+			}
+		}
+		p, ok := provMap[m.ProviderID]
+		if !ok || !p.Enabled || strings.TrimSpace(p.APIKey) == "" {
+			continue
+		}
+		candidates = append(candidates, m)
+	}
+	if len(candidates) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":            true,
+			"results":       []batchModelProbeResult{},
+			"pooled_models": models,
+			"model_health":  s.agent.GetModelHealth(),
+			"model_options": s.agent.ModelOptionsPayload(),
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
+	defer cancel()
+
+	results := make([]batchModelProbeResult, len(candidates))
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for idx, item := range candidates {
+		wg.Add(1)
+		go func(i int, pm store.PooledModel) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			p := provMap[pm.ProviderID]
+			tCtx, tCancel := context.WithTimeout(ctx, 20*time.Second)
+			res, err := s.agent.ProbeModelTargetWithCapabilities(tCtx, p.ID, p.BaseURL, p.APIKey, pm.ModelID, p.Protocol, probeTools)
+			tCancel()
+
+			entry := batchModelProbeResult{
+				TargetID:   pm.CanonicalTargetID(),
+				ProviderID: pm.ProviderID,
+				ModelID:    pm.ModelID,
+				Tier:       store.NormalizeModelTier(pm.Tier),
+			}
+			if err != nil {
+				entry.OK = false
+				entry.Error = err.Error()
+				if res != nil {
+					entry.LatencyMs = res.LatencyMs
+				}
+			} else if res != nil {
+				entry.OK = true
+				entry.LatencyMs = res.LatencyMs
+				entry.SupportsTools = res.SupportsTools
+				entry.SupportsThinking = res.SupportsThinking
+			}
+			results[i] = entry
+		}(idx, item)
+	}
+	wg.Wait()
+
+	if req.DisableFailed {
+		failedSet := make(map[string]bool)
+		for _, res := range results {
+			if !res.OK {
+				failedSet[res.TargetID] = true
+			}
+		}
+		if len(failedSet) > 0 {
+			_, latestModels, latestStrat := s.store.GetModelConfig()
+			changed := false
+			for i := range latestModels {
+				if failedSet[latestModels[i].CanonicalTargetID()] && latestModels[i].Enabled {
+					latestModels[i].Enabled = false
+					changed = true
+				}
+			}
+			if changed {
+				_ = s.store.SaveModelConfig(providers, latestModels, latestStrat)
+			} else {
+				_ = strategies
+			}
+		}
+	}
+
+	s.publishAssistantEvent("models")
+	s.publishAssistantEvent("model_health")
+	_, updatedModels, _ := s.store.GetModelConfig()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"results":       results,
+		"pooled_models": updatedModels,
+		"model_health":  s.agent.GetModelHealth(),
+		"model_options": s.agent.ModelOptionsPayload(),
 	})
 }

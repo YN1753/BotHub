@@ -147,6 +147,8 @@ fun ChatRoomScreen(
     onSelectThread: (String) -> Unit = {},
     onCreateThread: (String) -> Unit = {},
     onDeleteThread: (String) -> Unit = {},
+    onSummarizeThread: () -> Unit = {},
+    onForkFromTurn: (ChatTurnUi) -> Unit = {},
     onRetryTurnWithModel: (ChatTurnUi, String, Boolean) -> Unit = { _, _, _ -> },
     onCopyText: (String) -> Unit,
     onDeleteTurn: (ChatTurnUi) -> Unit = {},
@@ -703,6 +705,36 @@ fun ChatRoomScreen(
                         )
                     }
                 }
+
+                if (messages.size >= 2) {
+                    item(key = "__thread_summarize__") {
+                        val pillShape = RoundedCornerShape(999.dp)
+                        Row(
+                            modifier = Modifier
+                                .clip(pillShape)
+                                .background(theme.accent.copy(alpha = 0.12f))
+                                .border(0.85.dp, theme.accent.copy(alpha = 0.36f), pillShape)
+                                .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                    if (!isStreaming) onSummarizeThread()
+                                }
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "提炼摘要存记忆",
+                                tint = theme.accent,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = "提炼记忆",
+                                fontSize = 11.5.sp,
+                                color = if (theme.isLight) theme.accentDeep else theme.accentLight
+                            )
+                        }
+                    }
+                }
             }
             HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
         }
@@ -980,6 +1012,12 @@ fun ChatRoomScreen(
                                         icon = Icons.Default.Share,
                                         iconTint = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399),
                                         onClick = { forwardPayload = "我" to msg.content }
+                                    ),
+                                    GlassMenuAction(
+                                        label = "由此分叉",
+                                        icon = Icons.Default.AutoAwesome,
+                                        iconTint = theme.accent,
+                                        onClick = { onForkFromTurn(msg) }
                                     ),
                                     GlassMenuAction(
                                         label = "删除",
@@ -1360,6 +1398,12 @@ fun ChatRoomScreen(
                                                 val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
                                                 forwardPayload = sender to msg.content
                                             }
+                                        ),
+                                        GlassMenuAction(
+                                            label = "由此分叉",
+                                            icon = Icons.Default.AutoAwesome,
+                                            iconTint = theme.accent,
+                                            onClick = { onForkFromTurn(msg) }
                                         ),
                                         GlassMenuAction(
                                             label = "删除",

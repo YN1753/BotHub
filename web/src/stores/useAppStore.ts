@@ -991,7 +991,8 @@ export function useAppStore() {
           if (!state.timeline.some((t) => msg.id && t.serverId === msg.id)) {
             state.timeline.push({ ...mapServerMessage(msg, undefined, mapOptions()), isLiveNew: true })
           }
-        } else if (msg.bot_id !== state.activeBotId) {
+        } else if (msg.bot_id !== state.activeBotId && msg.msg_kind === 'routine') {
+          // Smart DND: only background routines/alerts increment unread badges; active interactive chat on another device does not
           const target = state.bots.find((b) => b.id === msg.bot_id)
           if (target) target.unread_count = (target.unread_count || 0) + 1
         }
