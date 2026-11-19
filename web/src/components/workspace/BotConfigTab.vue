@@ -12,6 +12,7 @@ import BotAvatarPicker from '../BotAvatarPicker.vue'
 import CustomSelect from '../CustomSelect.vue'
 import SegmentedTabs from '../SegmentedTabs.vue'
 import ToggleSwitch from '../ToggleSwitch.vue'
+import ModelRoutePreview from '../ui/ModelRoutePreview.vue'
 
 const store = useAppStore()
 const bot = store.activeBot
@@ -305,6 +306,13 @@ function openScopedMemoriesManager() {
               v-model="cfgAllowPaidFallback"
               label="允许付费兜底"
               description="开启后，免费池不可用时可回退至付费池"
+            />
+          </div>
+          <div class="md:col-span-2">
+            <ModelRoutePreview
+              :selected-model="cfgModel"
+              :allow-paid-fallback="cfgAllowPaidFallback"
+              :need-tools="cfgTools.length > 0"
             />
           </div>
 

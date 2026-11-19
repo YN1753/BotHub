@@ -53,6 +53,7 @@ import uk.starryheavens.vesper.bothub.ui.sheets.CreateFriendSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.CreateGroupSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.EditBotSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.ManageGroupMembersSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.ModelConfigSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.NotificationDetailSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.SettingsPairingSheet
 import uk.starryheavens.vesper.bothub.ui.theme.VesperBotHubTheme
@@ -503,10 +504,26 @@ fun BotHubApp(
             onRealtimeServiceChanged = viewModel::setRealtimeService,
             onZeroClickChanged = viewModel::setZeroClickCapture,
             onThemeSelected = viewModel::setAppTheme,
+            onOpenModelConfig = viewModel::openModelConfig,
             onTestHealth = viewModel::testConnectivity,
             onUnbindServer = viewModel::unbindServer,
             onShowMessage = viewModel::showMessage,
             onDismiss = viewModel::dismissSettings
+        )
+    }
+
+    if (viewModel.showModelConfigSheet) {
+        ModelConfigSheet(
+            providers = viewModel.modelProviders,
+            pooledModels = viewModel.pooledModels,
+            strategies = viewModel.poolStrategies,
+            modelHealth = viewModel.modelHealth,
+            usageSummary = viewModel.modelUsageSummary,
+            api = api,
+            onApplied = viewModel::applyModelConfigPayload,
+            onHealthUpdated = viewModel::updateModelHealth,
+            onShowMessage = viewModel::showMessage,
+            onDismiss = viewModel::dismissModelConfig
         )
     }
     }

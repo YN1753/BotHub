@@ -15,7 +15,11 @@ import type {
   ModelHealthStats,
   ModelOptionDTO,
   ModelPoolEntry,
+  ModelProvider,
+  ModelUsageSummary,
   NotificationItem,
+  PoolStrategies,
+  PooledModel,
   PushLog,
   SelectOption,
   Skill,
@@ -117,6 +121,19 @@ const state = reactive({
   stash: (initialSnap?.stash || []) as StashItem[],
   stashTags: [] as StashTagCount[],
   modelPool: [] as ModelPoolEntry[],
+  modelProviders: [] as ModelProvider[],
+  pooledModels: [] as PooledModel[],
+  poolStrategies: { free: 'priority', paid: 'priority' } as PoolStrategies,
+  modelUsageSummary: {
+    days: 7,
+    total_calls: 0,
+    success_calls: 0,
+    free_calls: 0,
+    paid_calls: 0,
+    free_tokens: 0,
+    paid_tokens: 0,
+    top_models: [],
+  } as ModelUsageSummary,
   modelOptions: [] as ModelOptionDTO[],
   revisions: {} as Record<string, number>,
   availableTools: [] as AvailableToolMeta[],
@@ -520,6 +537,12 @@ export function useAppStore() {
           if (data.push_logs !== undefined) state.pushLogs = data.push_logs || []
           if (data.configs !== undefined && data.configs) state.configs = data.configs
           if (data.model_pool !== undefined) state.modelPool = data.model_pool || []
+          if (data.model_providers !== undefined) state.modelProviders = data.model_providers || []
+          if (data.pooled_models !== undefined) state.pooledModels = data.pooled_models || []
+          if (data.pool_strategies !== undefined && data.pool_strategies) state.poolStrategies = data.pool_strategies
+          if (data.model_usage_summary !== undefined && data.model_usage_summary) {
+            state.modelUsageSummary = data.model_usage_summary
+          }
           if (data.model_options !== undefined) state.modelOptions = data.model_options || []
           if (data.revisions !== undefined && data.revisions) state.revisions = { ...state.revisions, ...data.revisions }
           if (data.stats?.sent_pushes !== undefined) {
@@ -593,6 +616,10 @@ export function useAppStore() {
         state.stash = data.stash || []
         state.stashTags = data.stash_tags || []
         state.modelPool = data.model_pool || []
+        state.modelProviders = data.model_providers || []
+        state.pooledModels = data.pooled_models || []
+        if (data.pool_strategies) state.poolStrategies = data.pool_strategies
+        if (data.model_usage_summary) state.modelUsageSummary = data.model_usage_summary
         state.modelOptions = data.model_options || []
         if (data.revisions) state.revisions = data.revisions
         state.availableTools = data.available_tools || []

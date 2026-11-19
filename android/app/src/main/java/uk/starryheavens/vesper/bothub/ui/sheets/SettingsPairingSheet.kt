@@ -89,6 +89,7 @@ fun SettingsPairingSheet(
     onRealtimeServiceChanged: (Boolean) -> Unit,
     onZeroClickChanged: (Boolean) -> Unit,
     onThemeSelected: (String) -> Unit = {},
+    onOpenModelConfig: () -> Unit = {},
     onTestHealth: (String) -> Unit,
     onUnbindServer: () -> Unit,
     onShowMessage: (String) -> Unit,
@@ -518,6 +519,41 @@ fun SettingsPairingSheet(
                             subtitle = "分享内容自动存入收藏",
                             checked = zeroClickCaptureEnabled,
                             onCheckedChange = onZeroClickChanged
+                        )
+                    }
+                }
+
+                // 3.5 AI Model Channels & Dual Pools Entry
+                SpecularGlassCard(
+                    cornerRadius = 18.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onOpenModelConfig
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 15.dp, vertical = 13.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "AI 模型渠道与双池",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = theme.textPrimary
+                            )
+                            Text(
+                                text = "管理渠道 Key、免费/付费模型池、调度策略与测速",
+                                fontSize = 11.5.sp,
+                                color = theme.textMuted
+                            )
+                        }
+                        Text(
+                            text = "配置 >",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = theme.accent
                         )
                     }
                 }

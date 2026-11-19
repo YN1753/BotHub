@@ -12,6 +12,7 @@ import BotAvatarPicker from './BotAvatarPicker.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
+import ModelRoutePreview from './ui/ModelRoutePreview.vue'
 
 const store = useAppStore()
 
@@ -203,7 +204,8 @@ watch(
       if (mode.value === 'group') groupNameInputRef.value?.focus()
       else botNameInputRef.value?.focus()
     })
-  }
+  },
+  { immediate: true }
 )
 
 function toggleGroupMember(id: string) {
@@ -441,6 +443,13 @@ async function handleSubmit() {
                 v-model="allowPaidFallback"
                 label="允许付费兜底"
                 description="关闭则严格限免费模型池"
+              />
+            </div>
+            <div class="sm:col-span-2">
+              <ModelRoutePreview
+                :selected-model="model"
+                :allow-paid-fallback="allowPaidFallback"
+                :need-tools="allowedTools.length > 0"
               />
             </div>
           </div>

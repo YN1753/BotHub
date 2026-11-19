@@ -294,7 +294,9 @@ func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
 	}
 
 	snap := eng.GetModelHealth()
-	if snap["pool:google_ai_studio"].CooldownSec <= 0 || snap["pool:google_ai_studio"].Status != "cooling_down" || snap["pool:siliconflow_free"].SuccessCount != 2 || snap["pool:siliconflow_free"].Status != "healthy" {
+	googleHealth := snap["pool:google_ai_studio::gemini-2.5-flash"]
+	sfHealth := snap["pool:siliconflow_free::Qwen/Qwen2.5-7B-Instruct"]
+	if googleHealth.CooldownSec <= 0 || googleHealth.Status != "cooling_down" || sfHealth.SuccessCount != 2 || sfHealth.Status != "healthy" {
 		t.Fatalf("unexpected health snapshot: %+v", snap)
 	}
 
@@ -324,7 +326,7 @@ func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
 	if rErr != nil || len(targets) < 2 {
 		t.Fatalf("ResolveChatTargets primary fallback failed: err=%v targets=%+v", rErr, targets)
 	}
-	if targets[0].ID != "pool:siliconflow_free" || targets[1].ID != "primary" {
+	if targets[0].ID != "pool:siliconflow_free::Qwen/Qwen2.5-7B-Instruct" || targets[1].ID != "primary" {
 		t.Fatalf("expected healthy pool target first and cooled primary moved into cooling tail, got %+v", targets)
 	}
 
@@ -384,10 +386,15 @@ func TestDualPoolMultiModelAndPerTaskPaidGuard(t *testing.T) {
 		seenIDs[o.ID] = o.Tier
 	}
 	_ = optIDs
-	for _, want := range []string{"auto:free", "auto:paid", "pool:free_vendor", "pool:free_vendor::free-m2", "pool:paid_vendor", "pool:paid_vendor::paid-m2"} {
+	for _, want := range []string{"auto:free", "auto:paid", "pool:free_vendor::free-m1", "pool:free_vendor::free-m2", "pool:paid_vendor::paid-m1", "pool:paid_vendor::paid-m2"} {
 		if _, ok := seenIDs[want]; !ok {
 			t.Fatalf("expected ModelOptionsPayload to contain %q, got %+v", want, opts)
 		}
+	}
+	// Legacy pool:<providerID> alias without ::<model> must still resolve cleanly
+	legacyPinned, lErr := eng.ResolveChatTargetsWithContext(context.Background(), "pool:free_vendor", false)
+	if lErr != nil || len(legacyPinned) == 0 || legacyPinned[0].Model != "free-m1" {
+		t.Fatalf("expected legacy pool:free_vendor alias to resolve to free-m1, got err=%v targets=%+v", lErr, legacyPinned)
 	}
 
 	// 1. Per-task guard OFF (false): auto:free MUST NOT include any Paid Pool target
@@ -451,5 +458,201 @@ func TestDualPoolMultiModelAndPerTaskPaidGuard(t *testing.T) {
 	fallbackOnlyPaid, err := eng.ResolveChatTargetsWithContext(ctxAllowed, "auto:free", true)
 	if err != nil || len(fallbackOnlyPaid) != 1 || fallbackOnlyPaid[0].Model != "paid-m1" {
 		t.Fatalf("expected fallback to paid-m1 when allow_paid_fallback=true, got err=%v targets=%+v", err, fallbackOnlyPaid)
+	}
+}
+
+func TestDecoupledProvidersMigrationCapabilitiesStrategiesAndTaskQuota(t *testing.T) {
+	tmpDir := t.TempDir()
+	st, err := store.Open(filepath.Join(tmpDir, "v259_model_config.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	// 1. Seamless lossless migration & deduplication from legacy free_model_pool (same vendor in Free + Paid)
+	if err := st.SaveModelPool([]store.ModelPoolEntry{
+		{
+			ID:       "or_free",
+			Name:     "OpenRouter Free",
+			Tier:     store.ModelTierFree,
+			Provider: "openai",
+			BaseURL:  "https://openrouter.ai/api/v1/chat/completions",
+			APIKey:   "sk-or-shared-secret-1234",
+			Models:   []string{"qwen/qwen3:free"},
+			Enabled:  true,
+			Priority: 10,
+		},
+		{
+			ID:       "or_paid",
+			Name:     "OpenRouter Paid",
+			Tier:     store.ModelTierPaid,
+			Provider: "openai",
+			BaseURL:  "https://openrouter.ai/api/v1/",
+			APIKey:   "sk-or-shared-secret-1234",
+			Models:   []string{"anthropic/claude-sonnet-4"},
+			Enabled:  true,
+			Priority: 10,
+		},
+	}); err != nil {
+		t.Fatalf("SaveModelPool: %v", err)
+	}
+
+	providers, pooled, _ := st.GetModelConfig()
+	if len(providers) != 1 {
+		t.Fatalf("expected identical OpenRouter free+paid entries merged into 1 ModelProvider, got %+v", providers)
+	}
+	if providers[0].BaseURL != "https://openrouter.ai/api/v1" {
+		t.Fatalf("expected CleanProviderBaseURL to strip /chat/completions, got %q", providers[0].BaseURL)
+	}
+	if len(pooled) != 2 {
+		t.Fatalf("expected 2 pooled models across free and paid tiers, got %+v", pooled)
+	}
+
+	eng := NewEngine(st, &fakeTaskController{st: st})
+
+	// Legacy alias ID "pool:or_paid" must still resolve cleanly even after merge
+	aliasTargets, err := eng.ResolveChatTargetsWithContext(context.Background(), "pool:or_paid", true)
+	if err != nil || len(aliasTargets) == 0 || aliasTargets[0].ProviderID != providers[0].ID {
+		t.Fatalf("expected merged alias pool:or_paid to resolve, err=%v targets=%+v", err, aliasTargets)
+	}
+
+	// 2. Zero-cost full model fetch (>24 models) must NOT truncate or fire inference probes
+	var chatCalls int
+	fullModelsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			items := make([]map[string]string, 0, 32)
+			for i := 1; i <= 32; i++ {
+				items = append(items, map[string]string{"id": fmt.Sprintf("vendor/model-%02d:free", i)})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": items})
+			return
+		}
+		chatCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"}}]}`))
+	}))
+	defer fullModelsSrv.Close()
+
+	fullRes, err := eng.FetchAndVerifyUpstreamModels(context.Background(), fullModelsSrv.URL, "sk-test", "openai", false)
+	if err != nil {
+		t.Fatalf("zero-cost fetch failed: %v", err)
+	}
+	if len(fullRes.Models) != 32 || chatCalls != 0 {
+		t.Fatalf("expected all 32 models returned with 0 chat calls, got len=%d chatCalls=%d", len(fullRes.Models), chatCalls)
+	}
+
+	// 3. Capability probing (supports_tools + supports_thinking persisted to SQLite) + NeedTools routing
+	toolSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mid, _ := body["model"].(string)
+		_, hasTools := body["tools"]
+		if mid == "no-tools-model" && hasTools {
+			http.Error(w, `{"error":{"message":"This model does not support tool calling"}}`, http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK","reasoning_content":"step"}}]}`))
+	}))
+	defer toolSrv.Close()
+
+	if err := st.SaveModelConfig(
+		[]store.ModelProvider{
+			{ID: "prov_a", Name: "通道A", Protocol: "openai", BaseURL: toolSrv.URL, APIKey: "sk-prov-a-secret", Enabled: true},
+		},
+		[]store.PooledModel{
+			{ProviderID: "prov_a", ModelID: "no-tools-model", Tier: store.ModelTierFree, Enabled: true, Priority: 10},
+			{ProviderID: "prov_a", ModelID: "full-tools-model", Tier: store.ModelTierFree, Enabled: true, Priority: 20},
+			{ProviderID: "prov_a", ModelID: "paid-pro", Tier: store.ModelTierPaid, Enabled: true, Priority: 10},
+		},
+		store.PoolStrategyConfig{Free: store.PoolStrategyPriority, Paid: store.PoolStrategyPriority},
+	); err != nil {
+		t.Fatalf("SaveModelConfig: %v", err)
+	}
+
+	probe1, err := eng.ProbeModelTargetWithCapabilities(context.Background(), "prov_a", toolSrv.URL, "sk-prov-a-secret", "no-tools-model", "openai", true)
+	if err != nil || probe1.SupportsTools == nil || *probe1.SupportsTools {
+		t.Fatalf("expected no-tools-model supports_tools=false, got err=%v res=%+v", err, probe1)
+	}
+	probe2, err := eng.ProbeModelTargetWithCapabilities(context.Background(), "prov_a", toolSrv.URL, "sk-prov-a-secret", "full-tools-model", "openai", true)
+	if err != nil || probe2.SupportsTools == nil || !*probe2.SupportsTools || probe2.SupportsThinking == nil || !*probe2.SupportsThinking {
+		t.Fatalf("expected full-tools-model supports_tools=true & supports_thinking=true, got err=%v res=%+v", err, probe2)
+	}
+
+	toolTargets, err := eng.ResolveChatTargetsWithOptions(context.Background(), "auto:free", ModelResolveOptions{NeedTools: true})
+	if err != nil || len(toolTargets) < 2 || toolTargets[0].Model != "full-tools-model" {
+		t.Fatalf("expected NeedTools routing to prefer full-tools-model over higher-priority no-tools-model, got err=%v targets=%+v", err, toolTargets)
+	}
+
+	// 4. Intra-pool strategies: round_robin & lowest_latency + ClearModelCooldown
+	if err := st.SaveModelConfig(
+		[]store.ModelProvider{
+			{ID: "prov_a", Name: "通道A", Protocol: "openai", BaseURL: toolSrv.URL, APIKey: "sk-prov-a-secret", Enabled: true},
+		},
+		[]store.PooledModel{
+			{ProviderID: "prov_a", ModelID: "slow-m", Tier: store.ModelTierFree, Enabled: true, Priority: 10, LastLatencyMs: 900},
+			{ProviderID: "prov_a", ModelID: "fast-m", Tier: store.ModelTierFree, Enabled: true, Priority: 20, LastLatencyMs: 120},
+			{ProviderID: "prov_a", ModelID: "paid-pro", Tier: store.ModelTierPaid, Enabled: true, Priority: 10},
+		},
+		store.PoolStrategyConfig{Free: store.PoolStrategyLowestLatency, Paid: store.PoolStrategyPriority},
+	); err != nil {
+		t.Fatalf("SaveModelConfig lowest_latency: %v", err)
+	}
+	latTargets, err := eng.ResolveChatTargetsWithOptions(context.Background(), "auto:free", ModelResolveOptions{})
+	if err != nil || latTargets[0].Model != "fast-m" {
+		t.Fatalf("expected lowest_latency strategy to pick fast-m first, got err=%v targets=%+v", err, latTargets)
+	}
+
+	_ = st.SetConfig(store.KeyFreePoolStrategy, store.PoolStrategyRoundRobin)
+	rr1, _ := eng.ResolveChatTargetsWithOptions(context.Background(), "auto:free", ModelResolveOptions{})
+	rr2, _ := eng.ResolveChatTargetsWithOptions(context.Background(), "auto:free", ModelResolveOptions{})
+	if rr1[0].Model == rr2[0].Model {
+		t.Fatalf("expected round_robin strategy to alternate primary target across calls, got %q and %q", rr1[0].Model, rr2[0].Model)
+	}
+
+	eng.health.recordFailure("pool:prov_a::fast-m", "HTTP 429", true)
+	if !eng.health.isCooling("pool:prov_a::fast-m") {
+		t.Fatalf("expected fast-m cooling down")
+	}
+	eng.ClearModelCooldown("pool:prov_a::fast-m")
+	if eng.health.isCooling("pool:prov_a::fast-m") {
+		t.Fatalf("expected ClearModelCooldown to immediately unblock fast-m")
+	}
+
+	// 5. Usage telemetry & per-task daily paid call limit circuit breaker
+	_ = st.RecordModelUsage(store.ModelUsageRecord{
+		TargetID:         "pool:prov_a::paid-pro",
+		ProviderID:       "prov_a",
+		ModelID:          "paid-pro",
+		Tier:             store.ModelTierPaid,
+		Source:           "routine",
+		TaskID:           "task_daily_guard",
+		PromptTokens:     120,
+		CompletionTokens: 80,
+		LatencyMs:        340,
+		Success:          true,
+	})
+	_ = st.RecordModelUsage(store.ModelUsageRecord{
+		TargetID:         "pool:prov_a::fast-m",
+		ProviderID:       "prov_a",
+		ModelID:          "fast-m",
+		Tier:             store.ModelTierFree,
+		Source:           "chat",
+		PromptTokens:     50,
+		CompletionTokens: 50,
+		LatencyMs:        110,
+		Success:          true,
+	})
+
+	summary, err := st.SummarizeModelUsage(7)
+	if err != nil || summary.FreeCalls != 1 || summary.PaidCalls != 1 || summary.PaidTokens != 200 || summary.FreeTokens != 100 {
+		t.Fatalf("unexpected 7-day usage summary: err=%v summary=%+v", err, summary)
+	}
+
+	quotaCtx := store.WithPaidFallback(context.Background(), true)
+	quotaCtx = store.WithTaskQuota(quotaCtx, "task_daily_guard", 1)
+	if _, qErr := eng.ResolveChatTargetsWithOptions(quotaCtx, "auto:paid", ModelResolveOptions{AllowPaidFallback: true}); qErr == nil || !strings.Contains(qErr.Error(), "今日付费调用已达上限") {
+		t.Fatalf("expected daily paid call quota limit to block task_daily_guard after 1/1 call, got err=%v", qErr)
 	}
 }

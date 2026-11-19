@@ -140,6 +140,8 @@ func (s *Store) PruneOldRecords() error {
 	_, _ = s.db.Exec(`DELETE FROM notifications WHERE read_at != '' AND created_at < datetime('now', '-90 days')`)
 	// Retain latest 2000 bot execution logs via O(1) index offset seek
 	_, _ = s.db.Exec(`DELETE FROM bot_execution_logs WHERE id <= COALESCE((SELECT id FROM bot_execution_logs ORDER BY id DESC LIMIT 1 OFFSET 2000), 0)`)
+	// Retain model usage telemetry logs within 30 days
+	_, _ = s.db.Exec(`DELETE FROM model_usage_logs WHERE created_at < datetime('now', '-30 days')`)
 	// Non-blocking WAL checkpoint to keep db file size lean
 	_, _ = s.db.Exec(`PRAGMA wal_checkpoint(PASSIVE)`)
 	return nil

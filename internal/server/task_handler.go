@@ -105,9 +105,10 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		Description       *string `json:"description"`
 		CronExpr          string  `json:"cron_expr"`
 		RunAt             string  `json:"run_at"`
-		Model             *string `json:"model"`
-		AllowPaidFallback *bool   `json:"allow_paid_fallback"`
-		Enabled           *bool   `json:"enabled"`
+		Model              *string `json:"model"`
+		AllowPaidFallback  *bool   `json:"allow_paid_fallback"`
+		MaxPaidCallsPerDay *int    `json:"max_paid_calls_per_day"`
+		Enabled            *bool   `json:"enabled"`
 		Params            string  `json:"params"`
 	}
 	if !decodeJSON(w, r, 16384, &req) {
@@ -119,6 +120,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if req.Description != nil { existing.Description = strings.TrimSpace(*req.Description) }
 	if req.Model != nil { existing.Model = strings.TrimSpace(*req.Model) }
 	if req.AllowPaidFallback != nil { existing.AllowPaidFallback = *req.AllowPaidFallback }
+	if req.MaxPaidCallsPerDay != nil && *req.MaxPaidCallsPerDay >= 0 { existing.MaxPaidCallsPerDay = *req.MaxPaidCallsPerDay }
 	if req.RunAt != "" {
 		if _, err := scheduler.ParseRunAt(req.RunAt, nil); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())

@@ -80,7 +80,8 @@ data class TaskItem(
     val nextRunAt: String,
     val lastSummary: String,
     val model: String = "",
-    val allowPaidFallback: Boolean = false
+    val allowPaidFallback: Boolean = false,
+    val maxPaidCallsPerDay: Int = 0
 ) {
     fun formattedSchedule(): String {
         val shortNext = formatShortNextRun(nextRunAt)
@@ -126,12 +127,93 @@ data class ModelOptionItem(
 )
 
 @Immutable
+data class ModelProviderItem(
+    val id: String,
+    val name: String,
+    val protocol: String = "openai",
+    val baseUrl: String = "",
+    val apiKey: String = "",
+    val enabled: Boolean = true,
+    val note: String = ""
+)
+
+@Immutable
+data class PooledModelItem(
+    val providerId: String,
+    val modelId: String,
+    val tier: String = "free",
+    val enabled: Boolean = true,
+    val priority: Int = 10,
+    val supportsTools: Boolean? = null,
+    val supportsThinking: Boolean? = null,
+    val lastLatencyMs: Long = 0L
+) {
+    val canonicalTargetId: String
+        get() = "pool:${providerId.trim()}::${modelId.trim()}"
+}
+
+@Immutable
+data class PoolStrategiesItem(
+    val free: String = "priority",
+    val paid: String = "priority"
+)
+
+@Immutable
+data class ModelHealthItem(
+    val targetId: String,
+    val status: String = "healthy",
+    val successCount: Long = 0L,
+    val failCount: Long = 0L,
+    val lastLatencyMs: Long = 0L,
+    val lastError: String = "",
+    val cooldownSec: Long = 0L
+)
+
+@Immutable
+data class ModelUsageSummaryItem(
+    val days: Int = 7,
+    val totalCalls: Int = 0,
+    val successCalls: Int = 0,
+    val freeCalls: Int = 0,
+    val paidCalls: Int = 0,
+    val freeTokens: Int = 0,
+    val paidTokens: Int = 0
+)
+
+@Immutable
+data class ModelConfigPayload(
+    val providers: List<ModelProviderItem> = emptyList(),
+    val models: List<PooledModelItem> = emptyList(),
+    val strategies: PoolStrategiesItem = PoolStrategiesItem(),
+    val modelOptions: List<ModelOptionItem> = emptyList(),
+    val modelHealth: Map<String, ModelHealthItem> = emptyMap(),
+    val usageSummary: ModelUsageSummaryItem = ModelUsageSummaryItem()
+)
+
+@Immutable
+data class ModelProbeResultItem(
+    val ok: Boolean,
+    val latencyMs: Long = 0L,
+    val error: String = "",
+    val supportsTools: Boolean? = null,
+    val supportsThinking: Boolean? = null,
+    val modelHealth: Map<String, ModelHealthItem> = emptyMap(),
+    val pooledModels: List<PooledModelItem>? = null,
+    val modelOptions: List<ModelOptionItem>? = null
+)
+
+@Immutable
 data class BootstrapPayload(
     val bots: List<BotItem>,
     val notifications: List<NotificationItem>,
     val dashboard: DashboardSnapshot,
     val stashItems: List<StashItemUi> = emptyList(),
     val modelOptions: List<ModelOptionItem> = emptyList(),
+    val modelProviders: List<ModelProviderItem> = emptyList(),
+    val pooledModels: List<PooledModelItem> = emptyList(),
+    val poolStrategies: PoolStrategiesItem = PoolStrategiesItem(),
+    val modelHealth: Map<String, ModelHealthItem> = emptyMap(),
+    val modelUsageSummary: ModelUsageSummaryItem = ModelUsageSummaryItem(),
     val revisions: Map<String, Long> = emptyMap()
 )
 
@@ -143,6 +225,11 @@ data class DashboardSlicePayload(
     val notifications: List<NotificationItem>? = null,
     val stashItems: List<StashItemUi>? = null,
     val modelOptions: List<ModelOptionItem>? = null,
+    val modelProviders: List<ModelProviderItem>? = null,
+    val pooledModels: List<PooledModelItem>? = null,
+    val poolStrategies: PoolStrategiesItem? = null,
+    val modelHealth: Map<String, ModelHealthItem>? = null,
+    val modelUsageSummary: ModelUsageSummaryItem? = null,
     val revisions: Map<String, Long> = emptyMap()
 )
 

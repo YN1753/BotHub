@@ -155,6 +155,7 @@ export interface Task {
   bot_id?: string
   model?: string
   allow_paid_fallback?: boolean
+  max_paid_calls_per_day?: number
   description: string
   cron_expr: string
   run_at?: string
@@ -292,6 +293,58 @@ export interface UpstreamModelCheck {
   reason?: string
 }
 
+export type ProviderProtocol = 'openai' | 'gemini'
+export type PoolStrategy = 'priority' | 'round_robin' | 'lowest_latency'
+
+export interface ModelProvider {
+  id: string
+  name: string
+  protocol: ProviderProtocol | string
+  base_url: string
+  api_key: string
+  enabled: boolean
+  note?: string
+  alias_ids?: string[]
+}
+
+export interface PooledModel {
+  provider_id: string
+  model_id: string
+  display_name?: string
+  tier: 'free' | 'paid'
+  enabled: boolean
+  priority: number
+  supports_tools?: boolean
+  supports_thinking?: boolean
+  last_latency_ms?: number
+  last_verified_at?: string
+}
+
+export interface PoolStrategies {
+  free: PoolStrategy
+  paid: PoolStrategy
+}
+
+export interface ModelUsageModelStat {
+  target_id: string
+  model_id: string
+  tier: string
+  calls: number
+  tokens: number
+  avg_latency_ms: number
+}
+
+export interface ModelUsageSummary {
+  days: number
+  total_calls: number
+  success_calls: number
+  free_calls: number
+  paid_calls: number
+  free_tokens: number
+  paid_tokens: number
+  top_models?: ModelUsageModelStat[]
+}
+
 export interface ModelPoolEntry {
   id: string
   name: string
@@ -308,17 +361,23 @@ export interface ModelPoolEntry {
 
 export interface ModelOptionDTO {
   id: string
+  provider_id?: string
   label: string
   tier: 'auto' | 'free' | 'paid' | string
   provider: string
   model: string
   available: boolean
+  supports_tools?: boolean
+  supports_thinking?: boolean
+  last_latency_ms?: number
 }
 
 export interface ModelHealthStats {
   target_id: string
+  status?: string
   success_count: number
   fail_count: number
+  consecutive_fails?: number
   last_latency_ms: number
   last_error?: string
   cooldown_sec: number
@@ -338,6 +397,10 @@ export interface DashboardPayload {
   stash?: StashItem[]
   stash_tags?: StashTagCount[]
   model_pool?: ModelPoolEntry[]
+  model_providers?: ModelProvider[]
+  pooled_models?: PooledModel[]
+  pool_strategies?: PoolStrategies
+  model_usage_summary?: ModelUsageSummary
   model_options?: ModelOptionDTO[]
   revisions?: Record<string, number>
   available_tools?: AvailableToolMeta[]

@@ -26,8 +26,14 @@ import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.JsonMappers
+import uk.starryheavens.vesper.bothub.data.ModelConfigPayload
+import uk.starryheavens.vesper.bothub.data.ModelHealthItem
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
+import uk.starryheavens.vesper.bothub.data.ModelProviderItem
+import uk.starryheavens.vesper.bothub.data.ModelUsageSummaryItem
 import uk.starryheavens.vesper.bothub.data.NotificationItem
+import uk.starryheavens.vesper.bothub.data.PoolStrategiesItem
+import uk.starryheavens.vesper.bothub.data.PooledModelItem
 import uk.starryheavens.vesper.bothub.data.StashItemUi
 import uk.starryheavens.vesper.bothub.data.TaskItem
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
@@ -50,6 +56,9 @@ class BotHubViewModel(
         private set
 
     var showSettingsSheet by mutableStateOf(!prefs.isLikelyPaired)
+        private set
+
+    var showModelConfigSheet by mutableStateOf(false)
         private set
 
     var biometricUnlocked by mutableStateOf(!prefs.biometricAppLockEnabled || !prefs.isLikelyPaired)
@@ -150,6 +159,21 @@ class BotHubViewModel(
         private set
 
     var modelOptions by mutableStateOf(prefs.loadCachedDashboard()?.modelOptions ?: emptyList())
+        private set
+
+    var modelProviders by mutableStateOf<List<ModelProviderItem>>(emptyList())
+        private set
+
+    var pooledModels by mutableStateOf<List<PooledModelItem>>(emptyList())
+        private set
+
+    var poolStrategies by mutableStateOf(PoolStrategiesItem())
+        private set
+
+    var modelHealth by mutableStateOf<Map<String, ModelHealthItem>>(emptyMap())
+        private set
+
+    var modelUsageSummary by mutableStateOf(ModelUsageSummaryItem())
         private set
 
     var isRefreshing by mutableStateOf(false)
@@ -302,6 +326,11 @@ class BotHubViewModel(
                 slice.modelOptions?.let { nextOpts ->
                     modelOptions = nextOpts
                 }
+                slice.modelProviders?.let { modelProviders = it }
+                slice.pooledModels?.let { pooledModels = it }
+                slice.poolStrategies?.let { poolStrategies = it }
+                slice.modelHealth?.let { modelHealth = it }
+                slice.modelUsageSummary?.let { modelUsageSummary = it }
                 val curDash = dashboard
                 if (curDash != null && (slice.assets != null || slice.tasks != null || slice.assetCategories != null || slice.modelOptions != null)) {
                     val nextDash = curDash.copy(
@@ -333,6 +362,42 @@ class BotHubViewModel(
                 loadBotTimeline(activeBotId)
             }
         }
+    }
+
+    fun openModelConfig() {
+        showSettingsSheet = false
+        showModelConfigSheet = true
+        refreshModelConfig()
+    }
+
+    fun dismissModelConfig() {
+        showModelConfigSheet = false
+    }
+
+    fun applyModelConfigPayload(payload: ModelConfigPayload) {
+        modelProviders = payload.providers
+        pooledModels = payload.models
+        poolStrategies = payload.strategies
+        if (payload.modelOptions.isNotEmpty()) {
+            modelOptions = payload.modelOptions
+        }
+        modelHealth = payload.modelHealth
+        modelUsageSummary = payload.usageSummary
+    }
+
+    fun refreshModelConfig() {
+        if (!prefs.isLikelyPaired || prefs.bearerToken.isEmpty()) return
+        viewModelScope.launch {
+            api.fetchModelConfig().onSuccess { payload ->
+                applyModelConfigPayload(payload)
+            }
+        }
+    }
+
+    fun updateModelHealth(next: Map<String, ModelHealthItem>, nextModels: List<PooledModelItem>? = null, nextOptions: List<ModelOptionItem>? = null) {
+        modelHealth = next
+        if (nextModels != null) pooledModels = nextModels
+        if (nextOptions != null) modelOptions = nextOptions
     }
 
     fun showMessage(message: String) {
@@ -651,6 +716,11 @@ class BotHubViewModel(
                     dashboard = payload.dashboard
                     prefs.saveCachedDashboard(payload.dashboard)
                     modelOptions = payload.modelOptions.ifEmpty { payload.dashboard.modelOptions }
+                    modelProviders = payload.modelProviders
+                    pooledModels = payload.pooledModels
+                    poolStrategies = payload.poolStrategies
+                    modelHealth = payload.modelHealth
+                    modelUsageSummary = payload.modelUsageSummary
                     if (payload.revisions.isNotEmpty()) {
                         lastRevisions = lastRevisions + payload.revisions
                     }

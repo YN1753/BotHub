@@ -478,7 +478,8 @@ html[data-color-mode="light"] .bg-\[\#f2b880\],
 html[data-color-mode="light"] button.bg-\[\#f2b880\] *,
 html[data-color-mode="light"] .bg-\[\#f2b880\] *,
 html[data-color-mode="light"] button.bg-rose-500,
-html[data-color-mode="light"] button.bg-rose-500 * {
+html[data-color-mode="light"] button.bg-rose-500 *,
+html[data-color-mode="light"] [role="tab"][data-active="true"] {
   color: var(--on-accent) !important;
 }
 
@@ -486,6 +487,7 @@ html[data-color-mode="light"] button.bg-rose-500 * {
 html[data-color-mode="light"] .text-emerald-200,
 html[data-color-mode="light"] .text-emerald-300,
 html[data-color-mode="light"] .text-emerald-300\/80,
+html[data-color-mode="light"] .text-emerald-300\/90,
 html[data-color-mode="light"] .text-emerald-400,
 html[data-color-mode="light"] .hover\:text-emerald-200:hover,
 html[data-color-mode="light"] .hover\:text-emerald-300:hover {

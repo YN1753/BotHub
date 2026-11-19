@@ -305,6 +305,116 @@ object JsonMappers {
         }
     }
 
+    fun parseModelProviders(arr: JSONArray?): List<ModelProviderItem> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val id = o.optString("id", "").trim()
+                if (id.isNotEmpty()) {
+                    add(
+                        ModelProviderItem(
+                            id = id,
+                            name = o.optString("name", id).ifBlank { id },
+                            protocol = o.optString("protocol", "openai").ifBlank { "openai" },
+                            baseUrl = o.optString("base_url", ""),
+                            apiKey = o.optString("api_key", ""),
+                            enabled = o.optBoolean("enabled", true),
+                            note = o.optString("note", "")
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun parsePooledModels(arr: JSONArray?): List<PooledModelItem> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val pid = o.optString("provider_id", "").trim()
+                val mid = o.optString("model_id", "").trim()
+                if (pid.isNotEmpty() && mid.isNotEmpty()) {
+                    add(
+                        PooledModelItem(
+                            providerId = pid,
+                            modelId = mid,
+                            tier = o.optString("tier", "free").ifBlank { "free" },
+                            enabled = o.optBoolean("enabled", true),
+                            priority = o.optInt("priority", 10),
+                            supportsTools = if (o.has("supports_tools") && !o.isNull("supports_tools")) {
+                                o.optBoolean("supports_tools")
+                            } else null,
+                            supportsThinking = if (o.has("supports_thinking") && !o.isNull("supports_thinking")) {
+                                o.optBoolean("supports_thinking")
+                            } else null,
+                            lastLatencyMs = o.optLong("last_latency_ms", 0L)
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun parsePoolStrategies(obj: JSONObject?): PoolStrategiesItem {
+        if (obj == null) return PoolStrategiesItem()
+        return PoolStrategiesItem(
+            free = obj.optString("free", "priority").ifBlank { "priority" },
+            paid = obj.optString("paid", "priority").ifBlank { "priority" }
+        )
+    }
+
+    fun parseModelHealth(obj: JSONObject?): Map<String, ModelHealthItem> {
+        if (obj == null) return emptyMap()
+        return buildMap {
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val item = obj.optJSONObject(k) ?: continue
+                put(
+                    k,
+                    ModelHealthItem(
+                        targetId = item.optString("target_id", k).ifBlank { k },
+                        status = item.optString("status", "healthy"),
+                        successCount = item.optLong("success_count", 0L),
+                        failCount = item.optLong("fail_count", 0L),
+                        lastLatencyMs = item.optLong("last_latency_ms", 0L),
+                        lastError = item.optString("last_error", ""),
+                        cooldownSec = item.optLong("cooldown_sec", 0L)
+                    )
+                )
+            }
+        }
+    }
+
+    fun parseModelUsageSummary(obj: JSONObject?): ModelUsageSummaryItem {
+        if (obj == null) return ModelUsageSummaryItem()
+        return ModelUsageSummaryItem(
+            days = obj.optInt("days", 7),
+            totalCalls = obj.optInt("total_calls", 0),
+            successCalls = obj.optInt("success_calls", 0),
+            freeCalls = obj.optInt("free_calls", 0),
+            paidCalls = obj.optInt("paid_calls", 0),
+            freeTokens = obj.optInt("free_tokens", 0),
+            paidTokens = obj.optInt("paid_tokens", 0)
+        )
+    }
+
+    fun parseModelConfigPayload(json: JSONObject): ModelConfigPayload {
+        val provArr = json.optJSONArray("providers") ?: json.optJSONArray("model_providers")
+        val modArr = json.optJSONArray("models") ?: json.optJSONArray("pooled_models")
+        val stratObj = json.optJSONObject("strategies") ?: json.optJSONObject("pool_strategies")
+        return ModelConfigPayload(
+            providers = parseModelProviders(provArr),
+            models = parsePooledModels(modArr),
+            strategies = parsePoolStrategies(stratObj),
+            modelOptions = parseModelOptions(json.optJSONArray("model_options")),
+            modelHealth = parseModelHealth(json.optJSONObject("model_health")),
+            usageSummary = parseModelUsageSummary(json.optJSONObject("model_usage_summary"))
+        )
+    }
+
     fun parseRevisions(obj: JSONObject?): Map<String, Long> {
         if (obj == null) return emptyMap()
         return buildMap {
@@ -335,7 +445,8 @@ object JsonMappers {
                         nextRunAt = t.optString("next_run_at", "--"),
                         lastSummary = lastRun?.optString("summary")?.ifEmpty { "等待执行" } ?: "等待执行",
                         model = t.optString("model", ""),
-                        allowPaidFallback = t.optBoolean("allow_paid_fallback", false)
+                        allowPaidFallback = t.optBoolean("allow_paid_fallback", false),
+                        maxPaidCallsPerDay = t.optInt("max_paid_calls_per_day", 0)
                     )
                 )
             }

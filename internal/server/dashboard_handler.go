@@ -46,6 +46,8 @@ func (s *Server) safeMaskedConfigs() map[string]string {
 	delete(cfgs, store.KeyAdminPassHash)
 	delete(cfgs, store.KeySessionSecret)
 	delete(cfgs, store.KeyFreeModelPool)
+	delete(cfgs, store.KeyModelProviders)
+	delete(cfgs, store.KeyPooledModels)
 	store.MaskSensitiveConfigs(cfgs)
 	return cfgs
 }
@@ -163,7 +165,13 @@ func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
 		resp["stats"] = stats
 	}
 	if want["models"] {
+		providers, pooledModels, poolStrategies := s.store.GetModelConfig()
+		usageSummary, _ := s.store.SummarizeModelUsage(7)
 		resp["model_pool"] = store.MaskModelPool(s.store.GetModelPool())
+		resp["model_providers"] = store.MaskModelProviders(providers)
+		resp["pooled_models"] = pooledModels
+		resp["pool_strategies"] = poolStrategies
+		resp["model_usage_summary"] = usageSummary
 		if s.agent != nil {
 			resp["model_options"] = s.agent.ModelOptionsPayload()
 			resp["model_health"] = s.agent.GetModelHealth()
@@ -199,6 +207,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	stashItems, _ := s.store.SearchStashItems("", "all", "", 100)
 	stashTags, _ := s.store.ListTopStashTags(14)
 	modelPool := store.MaskModelPool(s.store.GetModelPool())
+	providers, pooledModels, poolStrategies := s.store.GetModelConfig()
+	usageSummary, _ := s.store.SummarizeModelUsage(7)
 	var modelHealth any
 	var modelOptions any
 	if s.agent != nil {
@@ -214,20 +224,24 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"version":         s.version,
-		"commit":          s.commit,
-		"build_time":      s.buildTime,
-		"modules":         tasks, // 兼容前端历史模块字段
-		"tasks":           tasks,
-		"bots":            bots,
-		"skills":          skills,
-		"todos":           todos,
-		"notes":           notes,
-		"stash":           stashItems,
-		"stash_tags":      stashTags,
-		"model_pool":      modelPool,
-		"model_options":   modelOptions,
-		"model_health":    modelHealth,
+		"version":             s.version,
+		"commit":              s.commit,
+		"build_time":          s.buildTime,
+		"modules":             tasks, // 兼容前端历史模块字段
+		"tasks":               tasks,
+		"bots":                bots,
+		"skills":              skills,
+		"todos":               todos,
+		"notes":               notes,
+		"stash":               stashItems,
+		"stash_tags":          stashTags,
+		"model_pool":          modelPool,
+		"model_providers":     store.MaskModelProviders(providers),
+		"pooled_models":       pooledModels,
+		"pool_strategies":     poolStrategies,
+		"model_usage_summary": usageSummary,
+		"model_options":       modelOptions,
+		"model_health":        modelHealth,
 		"available_tools": agent.AvailableToolsPayload(),
 		"templates":       templates,
 		"agent_sessions":  sessions,

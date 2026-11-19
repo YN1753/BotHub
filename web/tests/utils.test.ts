@@ -23,6 +23,11 @@ import {
   summarizeToolStep,
 } from '../src/utils/toolMeta.ts'
 import {
+  cleanProviderBaseUrl,
+  formatTokenCount,
+  buildRoutePreview,
+} from '../src/utils/modelRouting.ts'
+import {
   parseAvatarStyle,
   composeAvatarStyle,
   getColorPalette,
@@ -511,4 +516,63 @@ test('manage_bots tool metadata, step summaries and butler slash commands work c
   const cmds = buildSlashCommands(butlerBot, [])
   assert.equal(cmds.some((c) => c.cmd === '/newbot'), true)
   assert.equal(cmds.some((c) => c.cmd === '/group'), true)
+})
+
+test('modelRouting normalizes URLs, formats tokens, and previews dual-pool routes accurately', () => {
+  assert.equal(
+    cleanProviderBaseUrl('https://openrouter.ai/api/v1/chat/completions/'),
+    'https://openrouter.ai/api/v1'
+  )
+  assert.equal(cleanProviderBaseUrl('https://api.deepseek.com/v1/models'), 'https://api.deepseek.com/v1')
+  assert.equal(formatTokenCount(850), '850')
+  assert.equal(formatTokenCount(12_500), '12.5K')
+  assert.equal(formatTokenCount(2_340_000), '2.34M')
+
+  const providers = [
+    {
+      id: 'or_1',
+      name: 'OpenRouter',
+      protocol: 'openai',
+      base_url: 'https://openrouter.ai/api/v1',
+      api_key: 'sk-****1234',
+      enabled: true,
+    },
+  ]
+  const pooledModels = [
+    { provider_id: 'or_1', model_id: 'qwen/qwen3:free', tier: 'free' as const, enabled: true, priority: 10 },
+    { provider_id: 'or_1', model_id: 'anthropic/claude-sonnet-4', tier: 'paid' as const, enabled: true, priority: 10 },
+  ]
+
+  const freeOnly = buildRoutePreview({
+    selectedModel: 'auto:free',
+    allowPaidFallback: false,
+    providers,
+    pooledModels,
+    strategies: { free: 'round_robin', paid: 'priority' },
+    needTools: true,
+  })
+  assert.equal(freeOnly.tone, 'free')
+  assert.equal(freeOnly.headline.includes('轮询均摊'), true)
+  assert.equal(freeOnly.headline.includes('严禁触发付费调用'), true)
+
+  const conflictTask = buildRoutePreview({
+    selectedModel: 'auto:paid',
+    allowPaidFallback: false,
+    providers,
+    pooledModels,
+    isTask: true,
+  })
+  assert.equal(conflictTask.tone, 'warn')
+  assert.equal(conflictTask.headline.includes('冲突提醒'), true)
+
+  const paidWithQuota = buildRoutePreview({
+    selectedModel: 'auto:paid',
+    allowPaidFallback: true,
+    maxPaidCallsPerDay: 5,
+    providers,
+    pooledModels,
+    isTask: true,
+  })
+  assert.equal(paidWithQuota.tone, 'paid')
+  assert.equal(paidWithQuota.headline.includes('5 次/日'), true)
 })

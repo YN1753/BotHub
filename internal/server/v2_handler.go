@@ -521,27 +521,36 @@ func (s *Server) handleV2AppBootstrap(w http.ResponseWriter, r *http.Request) {
 	notifications, _ := s.store.ListNotifications(0, 40, false)
 	assets, _ := s.store.ListAssets()
 	stash, _ := s.store.SearchStashItemsWithKind("", "all", "", "", 60)
+	providers, pooledModels, poolStrategies := s.store.GetModelConfig()
+	usageSummary, _ := s.store.SummarizeModelUsage(7)
 	var modelOptions any
+	var modelHealth any
 	if s.agent != nil {
 		modelOptions = s.agent.ModelOptionsPayload()
+		modelHealth = s.agent.GetModelHealth()
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":               true,
-		"version":          s.version,
-		"mirror_path":      "/api/v2/app/apk",
-		"apk_url":          "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk",
-		"bots":             bots,
-		"notifications":    notifications,
-		"stash":            stash,
-		"assets":           assets,
-		"asset_categories": s.store.ListAssetCategories(),
-		"tasks":            tasks,
-		"model_pool":       store.MaskModelPool(s.store.GetModelPool()),
-		"model_options":    modelOptions,
-		"configs":          s.safeMaskedConfigs(),
-		"revisions":        s.revisionsSnapshot(),
-		"server_now":       store.NowShanghai(),
+		"ok":                  true,
+		"version":             s.version,
+		"mirror_path":         "/api/v2/app/apk",
+		"apk_url":             "https://github.com/YN1753/BotHub/releases/latest/download/vesper-bothub-android.apk",
+		"bots":                bots,
+		"notifications":       notifications,
+		"stash":               stash,
+		"assets":              assets,
+		"asset_categories":    s.store.ListAssetCategories(),
+		"tasks":               tasks,
+		"model_pool":          store.MaskModelPool(s.store.GetModelPool()),
+		"model_providers":     store.MaskModelProviders(providers),
+		"pooled_models":       pooledModels,
+		"pool_strategies":     poolStrategies,
+		"model_usage_summary": usageSummary,
+		"model_options":       modelOptions,
+		"model_health":        modelHealth,
+		"configs":             s.safeMaskedConfigs(),
+		"revisions":           s.revisionsSnapshot(),
+		"server_now":          store.NowShanghai(),
 	})
 }
 

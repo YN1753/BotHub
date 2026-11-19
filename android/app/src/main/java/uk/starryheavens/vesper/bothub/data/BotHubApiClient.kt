@@ -301,6 +301,11 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 dashboard = dash,
                 stashItems = JsonMappers.parseStashItems(json.optJSONArray("stash")),
                 modelOptions = dash.modelOptions,
+                modelProviders = JsonMappers.parseModelProviders(json.optJSONArray("model_providers")),
+                pooledModels = JsonMappers.parsePooledModels(json.optJSONArray("pooled_models")),
+                poolStrategies = JsonMappers.parsePoolStrategies(json.optJSONObject("pool_strategies")),
+                modelHealth = JsonMappers.parseModelHealth(json.optJSONObject("model_health")),
+                modelUsageSummary = JsonMappers.parseModelUsageSummary(json.optJSONObject("model_usage_summary")),
                 revisions = dash.revisions
             )
         }
@@ -320,8 +325,138 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 notifications = if (json.has("notifications")) JsonMappers.parseNotifications(json.optJSONArray("notifications")) else null,
                 stashItems = if (json.has("stash")) JsonMappers.parseStashItems(json.optJSONArray("stash")) else null,
                 modelOptions = if (json.has("model_options")) JsonMappers.parseModelOptions(json.optJSONArray("model_options")) else null,
+                modelProviders = if (json.has("model_providers")) JsonMappers.parseModelProviders(json.optJSONArray("model_providers")) else null,
+                pooledModels = if (json.has("pooled_models")) JsonMappers.parsePooledModels(json.optJSONArray("pooled_models")) else null,
+                poolStrategies = if (json.has("pool_strategies")) JsonMappers.parsePoolStrategies(json.optJSONObject("pool_strategies")) else null,
+                modelHealth = if (json.has("model_health")) JsonMappers.parseModelHealth(json.optJSONObject("model_health")) else null,
+                modelUsageSummary = if (json.has("model_usage_summary")) JsonMappers.parseModelUsageSummary(json.optJSONObject("model_usage_summary")) else null,
                 revisions = JsonMappers.parseRevisions(json.optJSONObject("revisions"))
             )
+        }
+    }
+
+    suspend fun fetchModelConfig(): Result<ModelConfigPayload> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/model-config").get().build()
+            val json = executeJson(req, "读取模型配置失败")
+            JsonMappers.parseModelConfigPayload(json)
+        }
+    }
+
+    suspend fun saveModelConfig(
+        providers: List<ModelProviderItem>,
+        models: List<PooledModelItem>,
+        strategies: PoolStrategiesItem
+    ): Result<ModelConfigPayload> = withContext(Dispatchers.IO) {
+        runCatching {
+            val provArr = JSONArray()
+            providers.forEach { p ->
+                provArr.put(
+                    JSONObject()
+                        .put("id", p.id.trim())
+                        .put("name", p.name.trim())
+                        .put("protocol", p.protocol.ifBlank { "openai" })
+                        .put("base_url", p.baseUrl.trim())
+                        .put("api_key", p.apiKey.trim())
+                        .put("enabled", p.enabled)
+                        .put("note", p.note.trim())
+                )
+            }
+            val modArr = JSONArray()
+            models.forEach { m ->
+                val obj = JSONObject()
+                    .put("provider_id", m.providerId.trim())
+                    .put("model_id", m.modelId.trim())
+                    .put("tier", m.tier.ifBlank { "free" })
+                    .put("enabled", m.enabled)
+                    .put("priority", m.priority)
+                    .put("last_latency_ms", m.lastLatencyMs)
+                if (m.supportsTools != null) obj.put("supports_tools", m.supportsTools)
+                if (m.supportsThinking != null) obj.put("supports_thinking", m.supportsThinking)
+                modArr.put(obj)
+            }
+            val payload = JSONObject()
+                .put("providers", provArr)
+                .put("models", modArr)
+                .put(
+                    "strategies",
+                    JSONObject()
+                        .put("free", strategies.free.ifBlank { "priority" })
+                        .put("paid", strategies.paid.ifBlank { "priority" })
+                )
+                .toString()
+            val req = requestBuilder("/api/v2/model-config")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "保存模型配置失败")
+            JsonMappers.parseModelConfigPayload(json)
+        }
+    }
+
+    suspend fun fetchUpstreamModels(
+        providerId: String,
+        protocol: String,
+        baseUrl: String,
+        apiKey: String
+    ): Result<List<String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("provider_id", providerId.trim())
+                .put("protocol", protocol.ifBlank { "openai" })
+                .put("base_url", baseUrl.trim())
+                .put("api_key", apiKey.trim())
+                .put("verify", false)
+                .toString()
+            val req = requestBuilder("/api/v2/model-pool/models")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "拉取模型列表失败")
+            JsonMappers.optStringList(json, "models")
+        }
+    }
+
+    suspend fun probePooledModel(
+        provider: ModelProviderItem,
+        modelId: String
+    ): Result<ModelProbeResultItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("provider_id", provider.id.trim())
+                .put("protocol", provider.protocol.ifBlank { "openai" })
+                .put("base_url", provider.baseUrl.trim())
+                .put("api_key", provider.apiKey.trim())
+                .put("model", modelId.trim())
+                .put("probe_tools", true)
+                .toString()
+            val req = requestBuilder("/api/v2/model-pool/test")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "模型探测失败")
+            ModelProbeResultItem(
+                ok = json.optBoolean("ok", false),
+                latencyMs = json.optLong("latency_ms", 0L),
+                error = json.optString("error", ""),
+                supportsTools = if (json.has("supports_tools") && !json.isNull("supports_tools")) {
+                    json.optBoolean("supports_tools")
+                } else null,
+                supportsThinking = if (json.has("supports_thinking") && !json.isNull("supports_thinking")) {
+                    json.optBoolean("supports_thinking")
+                } else null,
+                modelHealth = JsonMappers.parseModelHealth(json.optJSONObject("model_health")),
+                pooledModels = if (json.has("pooled_models")) JsonMappers.parsePooledModels(json.optJSONArray("pooled_models")) else null,
+                modelOptions = if (json.has("model_options")) JsonMappers.parseModelOptions(json.optJSONArray("model_options")) else null
+            )
+        }
+    }
+
+    suspend fun clearModelCooldown(targetId: String = ""): Result<Map<String, ModelHealthItem>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject().put("target_id", targetId.trim()).toString()
+            val req = requestBuilder("/api/v2/model-pool/cooldown/clear")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "解除冷却失败")
+            JsonMappers.parseModelHealth(json.optJSONObject("model_health"))
         }
     }
 

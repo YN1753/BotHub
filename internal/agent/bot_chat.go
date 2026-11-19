@@ -202,12 +202,6 @@ func (e *Engine) runSingleBotTurn(
 	if req.AllowPaidFallback != nil {
 		allowPaid = *req.AllowPaidFallback
 	}
-	targets, err := e.ResolveChatTargetsWithContext(ctx, rawModel, allowPaid)
-	if err != nil {
-		e.emitBotState(actingBot.ID, store.BotStateBlocked, err.Error())
-		return nil, err
-	}
-	activeTarget := targets[0]
 
 	var thinkFlag *bool
 	if req.EnableThinking != nil {
@@ -216,6 +210,20 @@ func (e *Engine) runSingleBotTurn(
 		v := actingBot.EnableThinking
 		thinkFlag = &v
 	}
+
+	attachedSkills, _ := e.store.GetSkillsByIDs(actingBot.SkillIDList())
+	tools := filterToolsForBot(actingBot, attachedSkills)
+
+	targets, err := e.ResolveChatTargetsWithOptions(ctx, rawModel, ModelResolveOptions{
+		AllowPaidFallback: allowPaid,
+		NeedTools:         len(tools) > 0,
+		NeedThinking:      thinkFlag != nil && *thinkFlag,
+	})
+	if err != nil {
+		e.emitBotState(actingBot.ID, store.BotStateBlocked, err.Error())
+		return nil, err
+	}
+	activeTarget := targets[0]
 
 	threadID := strings.TrimSpace(req.ThreadID)
 	statusHint := "正在思考..."
@@ -245,8 +253,6 @@ func (e *Engine) runSingleBotTurn(
 		e.store.TouchRecalledMemories(recalledIDs)
 	}
 
-	attachedSkills, _ := e.store.GetSkillsByIDs(actingBot.SkillIDList())
-	tools := filterToolsForBot(actingBot, attachedSkills)
 	hasRosterTool := false
 	for _, td := range tools {
 		if td.Function.Name == "consult_bot" || td.Function.Name == "manage_bots" {
@@ -360,7 +366,7 @@ func (e *Engine) runSingleBotTurn(
 	turnReadCache := make(map[string]string)
 
 	for round := 0; round < maxRounds; round++ {
-		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(ctx, targets, messages, tools, thinkFlag, emit, func(deltaReasoning, deltaContent string) {
+		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(toolCtx, targets, messages, tools, thinkFlag, emit, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
 				clean := notifier.StripEmoji(deltaReasoning)
 				totalReasoning.WriteString(clean)

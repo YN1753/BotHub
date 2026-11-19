@@ -171,6 +171,10 @@ func manageTasksToolSpec() ToolSpec {
 							"type":        "boolean",
 							"description": "可选：是否允许该任务在免费池不可用或指定付费模型时使用付费模型池（默认 false，防误消耗）",
 						},
+						"max_paid_calls_per_day": map[string]any{
+							"type":        "integer",
+							"description": "可选：单任务每日付费调用上限次数（0 表示不限，超限自动熔断并告警）",
+						},
 						"description": map[string]any{
 							"type":        "string",
 							"description": "任务说明（upsert 时使用）",
@@ -568,9 +572,10 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		DelayMinutes      int    `json:"delay_minutes"`
 		Prompt            string `json:"prompt"`
 		Enabled           *bool  `json:"enabled"`
-		Model             string `json:"model"`
-		AllowPaidFallback *bool  `json:"allow_paid_fallback"`
-		Description       string `json:"description"`
+		Model              string `json:"model"`
+		AllowPaidFallback  *bool  `json:"allow_paid_fallback"`
+		MaxPaidCallsPerDay *int   `json:"max_paid_calls_per_day"`
+		Description        string `json:"description"`
 		Params            string `json:"params"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
@@ -721,6 +726,9 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		}
 		if args.AllowPaidFallback != nil {
 			task.AllowPaidFallback = *args.AllowPaidFallback
+		}
+		if args.MaxPaidCallsPerDay != nil && *args.MaxPaidCallsPerDay >= 0 {
+			task.MaxPaidCallsPerDay = *args.MaxPaidCallsPerDay
 		}
 		if strings.TrimSpace(args.Params) != "" {
 			var js map[string]any

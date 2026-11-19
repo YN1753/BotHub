@@ -7,7 +7,13 @@ import type {
   BotExecutionLog,
   BotThread,
   DashboardPayload,
+  ModelHealthStats,
+  ModelOptionDTO,
   ModelPoolEntry,
+  ModelProvider,
+  ModelUsageSummary,
+  PoolStrategies,
+  PooledModel,
   Skill,
   StashItem,
   StashTagCount,
@@ -135,28 +141,76 @@ export const BotHubApi = {
     ),
   saveConfig: (payload: Record<string, string>) =>
     apiRequest('/api/config', { method: 'POST', body: JSON.stringify(payload) }),
+  getModelConfig: () =>
+    apiRequest<{
+      ok: boolean
+      providers: ModelProvider[]
+      models: PooledModel[]
+      strategies: PoolStrategies
+      model_options?: ModelOptionDTO[]
+      model_health?: Record<string, ModelHealthStats>
+      model_usage_summary?: ModelUsageSummary
+    }>('/api/v2/model-config'),
+  saveModelConfig: (payload: {
+    providers: ModelProvider[]
+    models: PooledModel[]
+    strategies: PoolStrategies
+  }) =>
+    apiRequest<{
+      ok: boolean
+      providers: ModelProvider[]
+      models: PooledModel[]
+      strategies: PoolStrategies
+      model_options?: ModelOptionDTO[]
+      model_health?: Record<string, ModelHealthStats>
+      model_usage_summary?: ModelUsageSummary
+    }>('/api/v2/model-config', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  clearModelCooldown: (target_id = '') =>
+    apiRequest<{
+      ok: boolean
+      model_health?: Record<string, ModelHealthStats>
+      model_options?: ModelOptionDTO[]
+    }>('/api/v2/model-pool/cooldown/clear', {
+      method: 'POST',
+      body: JSON.stringify({ target_id }),
+    }),
   saveModelPool: (entries: ModelPoolEntry[]) =>
     apiRequest<{ ok: boolean; model_pool: ModelPoolEntry[] }>('/api/v2/model-pool', {
       method: 'POST',
       body: JSON.stringify({ entries }),
     }),
   testModelTarget: (payload: {
-    target_id: string
-    provider: string
+    provider_id?: string
+    entry_id?: string
+    target_id?: string
+    protocol?: string
+    provider?: string
     base_url: string
     api_key: string
     model: string
+    probe_tools?: boolean
   }) =>
     apiRequest<{
       ok: boolean
+      target_id?: string
       latency_ms: number
-      reply: string
-      model_health?: Record<string, any>
-      message: string
+      preview?: string
+      error?: string
+      supports_tools?: boolean
+      supports_thinking?: boolean
+      pooled_models?: PooledModel[]
+      model_health?: Record<string, ModelHealthStats>
+      model_options?: ModelOptionDTO[]
     }>('/api/v2/model-pool/test', { method: 'POST', timeoutMs: 90_000, body: JSON.stringify(payload) }),
   fetchUpstreamModels: (payload: {
-    target_id: string
-    provider: string
+    provider_id?: string
+    entry_id?: string
+    target_id?: string
+    protocol?: string
+    provider?: string
     base_url: string
     api_key: string
     verify?: boolean

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
@@ -26,6 +27,8 @@ type Engine struct {
 	hub                   *pushstream.Hub
 	httpClient            *http.Client
 	health                *ModelHealthTracker
+	freeRR                atomic.Uint64
+	paidRR                atomic.Uint64
 	allowLocalhostForTest bool
 	stashSem              chan struct{}
 	biliAPIBase           string
@@ -212,15 +215,23 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 		})
 	}
 
-	freeTargets := activePoolTargetsByTier(e.store, store.ModelTierFree)
+	_, _, strategies := e.store.GetModelConfig()
+	freeTargets := e.orderPoolTargets(activePoolTargetsByTier(e.store, store.ModelTierFree), store.ModelTierFree, strategies.Free, ModelResolveOptions{})
 	if isConfigTrue(e.store, store.KeyPoolForLight, true) {
 		candidates = append(candidates, freeTargets...)
 	}
 
-	paidTargets := activePoolTargetsByTier(e.store, store.ModelTierPaid)
+	paidTargets := e.orderPoolTargets(activePoolTargetsByTier(e.store, store.ModelTierPaid), store.ModelTierPaid, strategies.Paid, ModelResolveOptions{})
 	// Per-task paid protection: only touch Paid Pool if explicitly allowed on ctx, OR legacy unguarded call with no Free Pool configured
-	if (explicitPaid && allowPaid) || (!explicitPaid && len(freeTargets) == 0 && lightKey == "") || (!explicitPaid && len(freeTargets) > 0 && lightKey == "" && isConfigTrue(e.store, store.KeyPoolFallback, true)) {
-		candidates = append(candidates, paidTargets...)
+	wantPaid := (explicitPaid && allowPaid) || (!explicitPaid && len(freeTargets) == 0 && lightKey == "") || (!explicitPaid && len(freeTargets) > 0 && lightKey == "" && isConfigTrue(e.store, store.KeyPoolFallback, true))
+	if wantPaid && len(paidTargets) > 0 {
+		if qErr := e.checkTaskPaidQuota(ctx); qErr != nil {
+			if len(candidates) == 0 {
+				return "", qErr
+			}
+		} else {
+			candidates = append(candidates, paidTargets...)
+		}
 	}
 
 	if len(candidates) == 0 {
@@ -284,6 +295,7 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			errMsg := fmt.Sprintf("%s HTTP %d: %s", target.Label, resp.StatusCode, strings.TrimSpace(string(rawBytes)))
 			e.health.recordFailure(target.ID, errMsg, resp.StatusCode == http.StatusTooManyRequests)
+			e.recordModelUsage(ctx, target, "light", nil, time.Since(turnStart).Milliseconds(), false)
 			lastErr = fmt.Errorf("%s", errMsg)
 			continue
 		}
@@ -294,13 +306,17 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 					Content string `json:"content"`
 				} `json:"message"`
 			} `json:"choices"`
+			Usage *TokenUsage `json:"usage,omitempty"`
 		}
 		if err := json.Unmarshal(rawBytes, &parsed); err != nil || len(parsed.Choices) == 0 {
 			e.health.recordFailure(target.ID, "解析响应失败", false)
+			e.recordModelUsage(ctx, target, "light", nil, time.Since(turnStart).Milliseconds(), false)
 			lastErr = fmt.Errorf("%s 解析响应失败", target.Label)
 			continue
 		}
-		e.health.recordSuccess(target.ID, time.Since(turnStart).Milliseconds())
+		elapsedMs := time.Since(turnStart).Milliseconds()
+		e.health.recordSuccess(target.ID, elapsedMs)
+		e.recordModelUsage(ctx, target, "light", parsed.Usage, elapsedMs, true)
 		return notifier.StripEmoji(strings.TrimSpace(parsed.Choices[0].Message.Content)), nil
 	}
 
@@ -858,22 +874,27 @@ func (e *Engine) streamRoundWithFailover(
 			},
 		)
 		if err == nil {
-			e.health.recordSuccess(target.ID, time.Since(turnStart).Milliseconds())
+			elapsedMs := time.Since(turnStart).Milliseconds()
+			e.health.recordSuccess(target.ID, elapsedMs)
+			e.recordModelUsage(ctx, target, "chat", usage, elapsedMs, true)
 			return rReasoning, rContent, tcs, usage, target, nil
 		}
 		if ctx.Err() != nil {
 			return "", "", nil, nil, target, err
 		}
 		lastErr = err
+		elapsedMs := time.Since(turnStart).Milliseconds()
 		lowerMsg := strings.ToLower(err.Error())
 		is429 := strings.Contains(err.Error(), "(429)") || strings.Contains(lowerMsg, "rate")
 		isTransient := is429 || strings.Contains(err.Error(), "(502)") || strings.Contains(err.Error(), "(503)") || strings.Contains(err.Error(), "(504)") || strings.Contains(lowerMsg, "eof") || strings.Contains(lowerMsg, "reset")
 		if len(targets) == 1 && idx == 0 && !isTransient {
 			e.health.recordFailure(target.ID, err.Error(), is429)
+			e.recordModelUsage(ctx, target, "chat", nil, elapsedMs, false)
 			return "", "", nil, nil, target, err
 		}
 		if len(targets) > 1 || idx > 0 || isTransient {
 			e.health.recordFailure(target.ID, err.Error(), is429)
+			e.recordModelUsage(ctx, target, "chat", nil, elapsedMs, false)
 		}
 		if emittedAny {
 			return "", "", nil, nil, target, err
@@ -883,6 +904,43 @@ func (e *Engine) streamRoundWithFailover(
 		return "", "", nil, nil, ModelTarget{}, lastErr
 	}
 	return "", "", nil, nil, ModelTarget{}, fmt.Errorf("无可用模型节点")
+}
+
+func (e *Engine) recordModelUsage(ctx context.Context, target ModelTarget, source string, usage *TokenUsage, latencyMs int64, success bool) {
+	if e == nil || e.store == nil || strings.TrimSpace(target.Model) == "" {
+		return
+	}
+	taskID, _ := store.TaskQuotaFromContext(ctx)
+	sc := toolScopeFromContext(ctx)
+	tier := strings.TrimSpace(target.Tier)
+	if tier == "" {
+		if target.ID == "primary" {
+			tier = store.ModelTierPaid
+		} else {
+			tier = store.ModelTierFree
+		}
+	}
+	if taskID != "" && source == "chat" {
+		source = "routine"
+	}
+	var promptTokens, completionTokens int
+	if usage != nil {
+		promptTokens = usage.PromptTokens
+		completionTokens = usage.CompletionTokens
+	}
+	_ = e.store.RecordModelUsage(store.ModelUsageRecord{
+		TargetID:         target.ID,
+		ProviderID:       target.ProviderID,
+		ModelID:          target.Model,
+		Tier:             tier,
+		Source:           source,
+		TaskID:           taskID,
+		BotID:            sc.BotID,
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		LatencyMs:        latencyMs,
+		Success:          success,
+	})
 }
 
 // trimContextMessages safely drops the oldest middle conversation turns when upstream rejects context length,

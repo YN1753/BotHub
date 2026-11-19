@@ -6,14 +6,13 @@ import { lazyPanelChunk } from '../utils/lazyComponent'
 import { resolveTabSlideTransition, type DirectionalTransitionName } from '../utils/motion'
 import { checkPasskeyCapabilities, registerPasskeyCeremony } from '../utils/passkey'
 import { useAppTheme } from '../utils/theme'
-import type { ModelPoolEntry, UpstreamModelCheck } from '../types/bothub'
+import type { ModelProvider, PoolStrategies, PooledModel } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 import SecretInput from './ui/SecretInput.vue'
-import ToggleSwitch from './ToggleSwitch.vue'
 
 const SettingsSecurityTab = lazyPanelChunk(() => import('./settings/SettingsSecurityTab.vue'))
-const ModelPoolSection = lazyPanelChunk(() => import('./settings/ModelPoolSection.vue'))
+const ModelConfigPanel = lazyPanelChunk(() => import('./settings/ModelConfigPanel.vue'))
 
 const store = useAppStore()
 const { themeId, themeOptions, setAppTheme } = useAppTheme()
@@ -35,26 +34,10 @@ const SETTINGS_TABS = [
   { id: 'security', label: '安全与数据灾备' },
 ]
 
-// Dual Model Pools (Free Pool + Paid Pool; paid fallback controlled strictly per task/bot)
-const freePoolEntries = ref<ModelPoolEntry[]>([])
-const paidPoolEntries = ref<ModelPoolEntry[]>([])
-const probingId = ref('')
-const probeResults = ref<Record<string, { ok: boolean; msg: string }>>({})
-const fetchingModelsId = ref('')
-const verifyOnFetch = ref(true)
-const fetchedModelMeta = ref<
-  Record<
-    string,
-    {
-      usable: UpstreamModelCheck[]
-      failed: UpstreamModelCheck[]
-      filteredOutCount: number
-      unverifiedCount: number
-      showFailed: boolean
-      query: string
-    }
-  >
->({})
+// Decoupled Two-Layer Model Config (Providers + Free/Paid Pooled Models + Intra-Pool Strategies)
+const draftProviders = ref<ModelProvider[]>([])
+const draftModels = ref<PooledModel[]>([])
+const draftStrategies = ref<PoolStrategies>({ free: 'priority', paid: 'priority' })
 
 const nezhaUrl = ref('')
 const nezhaDbPath = ref('')
@@ -69,40 +52,23 @@ const passkeyCapable = ref(false)
 const passkeyCount = ref(0)
 const savedSnapshot = ref('')
 
-function hydratePoolLists() {
-  const raw = (store.state.modelPool || []).map((x) => ({
-    ...x,
-    tier: (x.tier === 'paid' ? 'paid' : 'free') as 'free' | 'paid',
-    models: Array.isArray(x.models) ? [...x.models] : x.model ? [x.model] : [],
+function hydrateModelConfigDrafts() {
+  draftProviders.value = (store.state.modelProviders || []).map((p) => ({
+    ...p,
+    alias_ids: p.alias_ids ? [...p.alias_ids] : undefined,
   }))
-  const frees = raw.filter((x) => x.tier !== 'paid')
-  const paids = raw.filter((x) => x.tier === 'paid')
-
-  const c = store.state.configs || {}
-  if (paids.length === 0 && (c['deepseek_api_key'] || '').trim()) {
-    const legacyModel = (c['ai_model'] || '').trim()
-    paids.push({
-      id: 'legacy_paid_primary',
-      name: '主力配置 (已导入付费池)',
-      tier: 'paid',
-      provider: 'deepseek',
-      base_url: c['deepseek_base_url'] || '',
-      api_key: c['deepseek_api_key'] || '',
-      model: legacyModel,
-      models: legacyModel ? [legacyModel] : [],
-      enabled: true,
-      priority: 10,
-      note: '已从旧版主力设置自动迁移至付费模型池',
-    })
+  draftModels.value = (store.state.pooledModels || []).map((m) => ({ ...m }))
+  draftStrategies.value = {
+    free: store.state.poolStrategies?.free || 'priority',
+    paid: store.state.poolStrategies?.paid || 'priority',
   }
-  freePoolEntries.value = frees
-  paidPoolEntries.value = paids
 }
 
 function currentConfigSnapshot(): string {
   return JSON.stringify({
-    freePoolEntries: freePoolEntries.value,
-    paidPoolEntries: paidPoolEntries.value,
+    providers: draftProviders.value,
+    models: draftModels.value,
+    strategies: draftStrategies.value,
     nezhaUrl: nezhaUrl.value.trim(),
     nezhaDbPath: nezhaDbPath.value.trim(),
     cfApiToken: cfApiToken.value.trim(),
@@ -116,18 +82,32 @@ const hasUnsavedChanges = computed(() =>
 
 watch(
   () => store.state.showSettingsModal,
-  (open) => {
+  async (open) => {
     if (!open) return
     const c = store.state.configs || {}
-    hydratePoolLists()
-    probeResults.value = {}
-    fetchedModelMeta.value = {}
+    hydrateModelConfigDrafts()
 
     nezhaUrl.value = c['nezha_url'] || ''
     nezhaDbPath.value = c['nezha_db_path'] || ''
     cfApiToken.value = c['cf_api_token'] || ''
     biliSessdata.value = c['bili_sessdata'] || ''
     savedSnapshot.value = currentConfigSnapshot()
+
+    // Refresh latest model telemetry & 7d usage asynchronously without blocking modal open
+    void BotHubApi.getModelConfig()
+      .then((res) => {
+        store.state.modelProviders = res.providers || []
+        store.state.pooledModels = res.models || []
+        if (res.strategies) store.state.poolStrategies = res.strategies
+        if (res.model_health) store.state.modelHealth = res.model_health
+        if (res.model_usage_summary) store.state.modelUsageSummary = res.model_usage_summary
+        if (!hasUnsavedChanges.value) {
+          hydrateModelConfigDrafts()
+          savedSnapshot.value = currentConfigSnapshot()
+        }
+      })
+      .catch(() => {})
+
     void checkPasskeyCapabilities().then((caps) => {
       passkeyCapable.value = caps.platformSupported
     })
@@ -136,7 +116,8 @@ watch(
         passkeyCount.value = st.count || 0
       })
       .catch(() => {})
-  }
+  },
+  { immediate: true }
 )
 
 function closeModal() {
@@ -146,149 +127,41 @@ function closeModal() {
 async function saveAllConfig() {
   saving.value = true
   try {
-    const normalizeEntry = (e: ModelPoolEntry, tier: 'free' | 'paid', idx: number): ModelPoolEntry => {
-      const models = Array.from(
-        new Set([...(e.models || []), e.model || ''].map((m) => m.trim()).filter(Boolean))
-      )
-      return {
-        ...e,
-        tier,
-        models,
-        model: models[0] || '',
-        priority: (idx + 1) * 10,
-      }
-    }
-    const mergedPool: ModelPoolEntry[] = [
-      ...freePoolEntries.value.map((e, i) => normalizeEntry(e, 'free', i)),
-      ...paidPoolEntries.value.map((e, i) => normalizeEntry(e, 'paid', i)),
-    ]
-
     const cfgPayload: Record<string, string> = {
       nezha_url: nezhaUrl.value.trim(),
       nezha_db_path: nezhaDbPath.value.trim(),
       cf_api_token: cfApiToken.value.trim(),
       bili_sessdata: biliSessdata.value.trim(),
     }
-    // If user removed all paid nodes, also clear legacy single key so deleted credentials cannot remain active.
-    if (paidPoolEntries.value.length === 0 && (store.state.configs?.['deepseek_api_key'] || '').trim()) {
+    const hasPaidModel = draftModels.value.some((m) => m.tier === 'paid')
+    if (!hasPaidModel && (store.state.configs?.['deepseek_api_key'] || '').trim()) {
       cfgPayload.deepseek_api_key = ''
       cfgPayload.deepseek_base_url = ''
       cfgPayload.ai_model = ''
     }
 
     await BotHubApi.saveConfig(cfgPayload)
-    await BotHubApi.saveModelPool(mergedPool)
-    store.notify('双模型池与系统凭据已安全保存')
+    const modelRes = await BotHubApi.saveModelConfig({
+      providers: draftProviders.value,
+      models: draftModels.value,
+      strategies: draftStrategies.value,
+    })
+    store.state.modelProviders = modelRes.providers || []
+    store.state.pooledModels = modelRes.models || []
+    if (modelRes.strategies) store.state.poolStrategies = modelRes.strategies
+    if (modelRes.model_options) store.state.modelOptions = modelRes.model_options
+    if (modelRes.model_health) store.state.modelHealth = modelRes.model_health
+    if (modelRes.model_usage_summary) store.state.modelUsageSummary = modelRes.model_usage_summary
+
+    store.notify('模型渠道、双池策略与系统凭据已保存')
     await store.loadDashboard(false)
-    hydratePoolLists()
+    hydrateModelConfigDrafts()
     savedSnapshot.value = currentConfigSnapshot()
   } catch (err: any) {
     store.notify(err.message)
   } finally {
     saving.value = false
   }
-}
-
-function healthForTarget(key: string) {
-  return store.state.modelHealth?.[key]
-}
-
-function healthBadgeText(key: string): string {
-  const h = healthForTarget(key)
-  if (!h) return ''
-  if (h.cooldown_sec > 0) return `冷却中 ${h.cooldown_sec}s`
-  if (h.success_count > 0) return `成功 ${h.success_count} · ${h.last_latency_ms}ms`
-  if (h.fail_count > 0) return `异常 (${h.fail_count})`
-  return ''
-}
-
-async function probeTarget(targetId: string, provider: string, baseUrl: string, apiKey: string, modelId: string) {
-  if (probingId.value) return
-  if (!modelId.trim()) {
-    store.notify('请先拉取可用模型并选中或填写模型 ID')
-    return
-  }
-  probingId.value = targetId
-  delete probeResults.value[targetId]
-  try {
-    const res = await BotHubApi.testModelTarget({
-      target_id: targetId,
-      provider,
-      base_url: baseUrl.trim(),
-      api_key: apiKey.trim(),
-      model: modelId.trim(),
-    })
-    probeResults.value[targetId] = { ok: true, msg: res.message || `${res.latency_ms}ms OK` }
-    if (res.model_health) {
-      store.state.modelHealth = res.model_health
-    }
-  } catch (err: any) {
-    probeResults.value[targetId] = { ok: false, msg: err.message || '连接失败' }
-  } finally {
-    probingId.value = ''
-  }
-}
-
-async function fetchModelsForTarget(
-  targetId: string,
-  provider: string,
-  baseUrl: string,
-  apiKey: string,
-  entry?: ModelPoolEntry
-) {
-  if (fetchingModelsId.value) return
-  if (!baseUrl.trim()) {
-    store.notify('请先填写 Base URL 再拉取实时模型列表')
-    return
-  }
-  fetchingModelsId.value = targetId
-  try {
-    const res = await BotHubApi.fetchUpstreamModels({
-      target_id: targetId,
-      provider,
-      base_url: baseUrl.trim(),
-      api_key: apiKey.trim(),
-      verify: verifyOnFetch.value,
-    })
-    const checked = res.checked_models || (res.models || []).map((id) => ({ id, usable: true }))
-    const usable = checked.filter((c) => c.usable)
-    const failed = checked.filter((c) => !c.usable)
-    fetchedModelMeta.value[targetId] = {
-      usable,
-      failed,
-      filteredOutCount: res.filtered_out_count || 0,
-      unverifiedCount: res.unverified_count || 0,
-      showFailed: usable.length === 0 && failed.length > 0,
-      query: '',
-    }
-    if (usable.length > 0) {
-      if (entry && !entry.model?.trim() && (!entry.models || entry.models.length === 0)) {
-        entry.model = usable[0].id
-        entry.models = [usable[0].id]
-      }
-      const skipInfo =
-        failed.length > 0 || (res.filtered_out_count || 0) > 0
-          ? `（已自动剔除 ${failed.length + (res.filtered_out_count || 0)} 个不可用/非对话模型）`
-          : ''
-      store.notify(`已筛选出 ${usable.length} 个实测可用模型${skipInfo}`)
-    } else if (failed.length > 0) {
-      store.notify(`已拉取列表但实测均不可用 (${failed.length} 个)，可展开下方查看原因`)
-    } else {
-      store.notify('上游接口未返回可用对话模型')
-    }
-  } catch (err: any) {
-    store.notify(`拉取模型失败: ${err.message}`)
-  } finally {
-    fetchingModelsId.value = ''
-  }
-}
-
-function filteredUsableChecks(targetId: string): UpstreamModelCheck[] {
-  const meta = fetchedModelMeta.value[targetId]
-  if (!meta) return []
-  const q = meta.query.trim().toLowerCase()
-  if (!q) return meta.usable
-  return meta.usable.filter((c) => c.id.toLowerCase().includes(q))
 }
 
 async function handleTestPush() {
@@ -378,55 +251,17 @@ async function handleQuickCreatePasskey() {
 
     <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
       <Transition :name="settingsTabTransition" mode="out-in">
-        <!-- Tab: Dual Model Pools (Free Pool + Paid Pool) -->
+        <!-- Tab: Decoupled Model Providers & Free/Paid Pools -->
         <form v-if="activeTab === 'ai'" key="ai" @submit.prevent="saveAllConfig" class="flex flex-col gap-3.5">
-          <div class="modal-section flex items-center justify-between gap-3 flex-wrap">
-            <div class="min-w-0 flex-1">
-              <div class="text-xs font-semibold text-white">双池分层路由与防付费保护</div>
-              <p class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                将免费渠道与付费渠道独立管理；所有自动化任务与 Bot 默认仅走免费模型池，「允许付费兜底」按单任务 / 单 Bot 独立开启。
-              </p>
-            </div>
-            <ToggleSwitch
-              v-model="verifyOnFetch"
-              label="拉取时自动实测模型可用性"
-              description="自动剔除 429/404 与非对话模型"
-            />
-          </div>
-
-          <ModelPoolSection
-            tier="free"
-            :verify-on-fetch="verifyOnFetch"
-            v-model:pool-entries="freePoolEntries"
-            :probing-id="probingId"
-            :probe-results="probeResults"
-            :fetching-models-id="fetchingModelsId"
-            :fetched-model-meta="fetchedModelMeta"
-            :health-for-target="healthForTarget"
-            :health-badge-text="healthBadgeText"
-            :filtered-usable-checks="filteredUsableChecks"
-            :probe-target="probeTarget"
-            :fetch-models-for-target="fetchModelsForTarget"
-          />
-
-          <ModelPoolSection
-            tier="paid"
-            :verify-on-fetch="verifyOnFetch"
-            v-model:pool-entries="paidPoolEntries"
-            :probing-id="probingId"
-            :probe-results="probeResults"
-            :fetching-models-id="fetchingModelsId"
-            :fetched-model-meta="fetchedModelMeta"
-            :health-for-target="healthForTarget"
-            :health-badge-text="healthBadgeText"
-            :filtered-usable-checks="filteredUsableChecks"
-            :probe-target="probeTarget"
-            :fetch-models-for-target="fetchModelsForTarget"
+          <ModelConfigPanel
+            v-model:providers="draftProviders"
+            v-model:models="draftModels"
+            v-model:strategies="draftStrategies"
           />
 
           <div class="flex justify-end pt-1">
             <button type="submit" :disabled="saving" class="min-h-[44px] sm:min-h-[36px] px-5 py-2 rounded-xl bg-[#f2b880] hover:bg-[#f7cba0] text-[#070a13] font-semibold text-xs cursor-pointer">
-              {{ saving ? '保存中...' : '保存双模型池与系统凭据' }}
+              {{ saving ? '保存中...' : '保存模型配置与系统凭据' }}
             </button>
           </div>
         </form>

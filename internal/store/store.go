@@ -38,6 +38,10 @@ const (
 	KeyLightBaseURL      = "light_base_url"
 	KeyLightModel        = "light_model"
 	KeyFreeModelPool     = "free_model_pool"
+	KeyModelProviders    = "model_providers"
+	KeyPooledModels      = "pooled_models"
+	KeyFreePoolStrategy  = "free_pool_strategy"
+	KeyPaidPoolStrategy  = "paid_pool_strategy"
 	KeyPoolForLight      = "pool_for_light"
 	KeyPoolFallback      = "pool_fallback"
 	KeyAppBearerToken    = "app_bearer_token"
@@ -56,6 +60,38 @@ const (
 
 type paidFallbackCtxKey struct{}
 type taskModelCtxKey struct{}
+type taskQuotaCtxKey struct{}
+
+type TaskQuota struct {
+	TaskID        string
+	MaxPaidPerDay int
+}
+
+// WithTaskQuota binds a scheduled task's ID and daily paid call guardrail limit (0 = unlimited) to ctx.
+func WithTaskQuota(ctx context.Context, taskID string, maxPaidPerDay int) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if maxPaidPerDay < 0 {
+		maxPaidPerDay = 0
+	}
+	return context.WithValue(ctx, taskQuotaCtxKey{}, TaskQuota{
+		TaskID:        strings.TrimSpace(taskID),
+		MaxPaidPerDay: maxPaidPerDay,
+	})
+}
+
+// TaskQuotaFromContext extracts the task ID and daily paid call limit bound to ctx, if any.
+func TaskQuotaFromContext(ctx context.Context) (taskID string, maxPaidPerDay int) {
+	if ctx == nil {
+		return "", 0
+	}
+	q, ok := ctx.Value(taskQuotaCtxKey{}).(TaskQuota)
+	if !ok {
+		return "", 0
+	}
+	return strings.TrimSpace(q.TaskID), q.MaxPaidPerDay
+}
 
 // WithPaidFallback binds a per-task or per-bot paid-model fallback permission to ctx.
 // Background tasks default to disallowing paid fallback unless explicitly enabled.
@@ -378,7 +414,25 @@ CREATE TRIGGER IF NOT EXISTS stash_items_au AFTER UPDATE ON stash_items BEGIN
 	VALUES ('delete', old.rowid, old.title, old.ai_tldr, old.ai_points, old.tags, old.user_note, old.content_excerpt);
 	INSERT INTO stash_fts(rowid, title, ai_tldr, ai_points, tags, user_note, content_excerpt)
 	VALUES (new.rowid, new.title, new.ai_tldr, new.ai_points, new.tags, new.user_note, new.content_excerpt);
-END;`
+END;
+
+CREATE TABLE IF NOT EXISTS model_usage_logs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	target_id TEXT NOT NULL DEFAULT '',
+	provider_id TEXT NOT NULL DEFAULT '',
+	model_id TEXT NOT NULL DEFAULT '',
+	tier TEXT NOT NULL DEFAULT 'free',
+	source TEXT NOT NULL DEFAULT 'chat',
+	task_id TEXT NOT NULL DEFAULT '',
+	bot_id TEXT NOT NULL DEFAULT '',
+	prompt_tokens INTEGER NOT NULL DEFAULT 0,
+	completion_tokens INTEGER NOT NULL DEFAULT 0,
+	latency_ms INTEGER NOT NULL DEFAULT 0,
+	success INTEGER NOT NULL DEFAULT 1,
+	created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_model_usage_created ON model_usage_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_model_usage_task_day ON model_usage_logs(task_id, tier, created_at DESC);`
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
 	}
@@ -407,6 +461,7 @@ END;`
 		`ALTER TABLE tasks ADD COLUMN run_at TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE tasks ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE tasks ADD COLUMN allow_paid_fallback INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE tasks ADD COLUMN max_paid_calls_per_day INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range alters {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
