@@ -29,6 +29,8 @@ const (
 func DefaultConciergeBot() Bot {
 	toolsJSON, _ := json.Marshal([]string{
 		"manage_bots",
+		"manage_models",
+		"manage_skills",
 		"consult_bot",
 		"manage_tasks",
 		"manage_todos",
@@ -66,8 +68,9 @@ func DefaultConciergeBot() Bot {
 你的核心能力与行动准则：
 1. 创建与管理专属 Bot：当用户想要新增角色、专家、伴聊或工具助理，或调整已有 Bot 的名字、定位、人设、模型、工具权限时，直接调用 manage_bots（create_bot / update_bot / list / delete_bot）落地执行。
 2. 拉群与多 Bot 协同：当用户想把几位 Bot 拉进一个讨论群、给现有群加人或移人、调整群协同模式（smart / sequential / parallel / mention_only）或设置群公告时，直接调用 manage_bots（create_group / add_group_members / remove_group_members / update_group）一步完成；需要跨成员分工调查时可调用 consult_bot。
-3. 调度与个人工作台：遇到定时/单次提醒、待办拆解、文档整理、链接收藏或资产台账需求，直接调用对应工具（manage_tasks / manage_todos / manage_notes / manage_stash / manage_assets）落实并回报真实结果。
-4. 保持真诚清晰，绝不假装执行过未调用的工具，严禁使用任何 Emoji 表情。`),
+3. 调度与个人工作台：遇到定时/单次提醒、待办拆解、文档整理、链接收藏、自定义技能（manage_skills）或资产台账需求，直接调用对应工具（manage_tasks / manage_todos / manage_notes / manage_stash / manage_assets / manage_skills）落实并回报真实结果。
+4. AI 模型池巡检与调优：当用户询问模型池状态、近 7 日免费/付费调用量、要求解除冷却或调整免费/付费池调度策略时，直接调用 manage_models。创建或修改任何 Bot 与定时任务时，allow_paid_fallback 默认严格保持 false（仅走免费池），只有用户明确要求开启付费兜底时才可设为 true。
+5. 保持真诚清晰，绝不假装执行过未调用的工具，严禁使用任何 Emoji 表情。`),
 	}
 }
 

@@ -150,3 +150,68 @@ func TestManageBotsLifecycleCreateBotAndGroup(t *testing.T) {
 		t.Fatalf("list failed: err=%v out=%s", err, listRes)
 	}
 }
+
+func TestManageModelsAndManageSkillsConciergeTools(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "concierge_tools.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	// Verify concierge seeded with manage_models and manage_skills
+	concierge, _ := st.GetBot(store.DefaultConciergeBotID)
+	if concierge == nil || !strings.Contains(concierge.AllowedTools, "manage_models") || !strings.Contains(concierge.AllowedTools, "manage_skills") {
+		t.Fatalf("expected concierge to have manage_models and manage_skills, got %+v", concierge)
+	}
+
+	_ = st.SaveModelConfig(
+		[]store.ModelProvider{
+			{ID: "or_1", Name: "OpenRouter", Protocol: "openai", BaseURL: "https://openrouter.ai/api/v1", APIKey: "sk-top-secret-never-leak", Enabled: true},
+		},
+		[]store.PooledModel{
+			{ProviderID: "or_1", ModelID: "qwen/qwen3:free", Tier: store.ModelTierFree, Enabled: true, Priority: 10},
+			{ProviderID: "or_1", ModelID: "anthropic/claude-sonnet-4", Tier: store.ModelTierPaid, Enabled: true, Priority: 10},
+		},
+		store.PoolStrategyConfig{Free: store.PoolStrategyPriority, Paid: store.PoolStrategyPriority},
+	)
+
+	eng := NewEngine(st, &fakeTaskController{st: st})
+	ctx := WithToolScope(context.Background(), ToolScope{
+		BotID:         store.DefaultConciergeBotID,
+		TimelineBotID: store.DefaultConciergeBotID,
+	})
+
+	// 1. manage_models status must NEVER leak raw API keys
+	statusOut, err := eng.ExecuteTool(ctx, "manage_models", `{"action":"status"}`)
+	if err != nil || !strings.Contains(statusOut, `"ok":true`) {
+		t.Fatalf("manage_models status failed: err=%v out=%s", err, statusOut)
+	}
+	if strings.Contains(statusOut, "sk-top-secret-never-leak") {
+		t.Fatalf("manage_models leaked raw API key: %s", statusOut)
+	}
+
+	// 2. manage_models set_strategy + clear_cooldown + move_tier
+	eng.health.recordFailure("pool:or_1::qwen/qwen3:free", "HTTP 429", true)
+	_, err = eng.ExecuteTool(ctx, "manage_models", `{"action":"clear_cooldown","model_id":"qwen/qwen3:free"}`)
+	if err != nil || eng.health.isCooling("pool:or_1::qwen/qwen3:free") {
+		t.Fatalf("expected manage_models clear_cooldown to unblock model, err=%v", err)
+	}
+	_, err = eng.ExecuteTool(ctx, "manage_models", `{"action":"set_strategy","free_strategy":"round_robin"}`)
+	if err != nil || st.GetPoolStrategies().Free != store.PoolStrategyRoundRobin {
+		t.Fatalf("expected manage_models set_strategy to set round_robin, err=%v", err)
+	}
+
+	// 3. manage_skills upsert + bind_bot + list + delete
+	skOut, err := eng.ExecuteTool(ctx, "manage_skills", `{"action":"upsert","name":"日报提炼","kind":"prompt","description":"结构化整理当日进展","instruction":"按三段式输出今日成果、阻塞与明日计划","bot_id":"concierge"}`)
+	if err != nil || !strings.Contains(skOut, "日报提炼") {
+		t.Fatalf("manage_skills upsert failed: err=%v out=%s", err, skOut)
+	}
+	updatedConcierge, _ := st.GetBot(store.DefaultConciergeBotID)
+	if updatedConcierge == nil || len(updatedConcierge.SkillIDList()) != 1 {
+		t.Fatalf("expected skill bound to concierge, got %+v", updatedConcierge)
+	}
+	delOut, err := eng.ExecuteTool(ctx, "manage_skills", `{"action":"delete","name":"日报提炼"}`)
+	if err != nil || !strings.Contains(delOut, `"ok":true`) {
+		t.Fatalf("manage_skills delete failed: err=%v out=%s", err, delOut)
+	}
+}

@@ -100,6 +100,20 @@ export const BUILTIN_SLASH_SPECS: readonly SlashCommandSpec[] = [
     anyOfTools: ['manage_bots'],
   },
   {
+    cmd: '/models',
+    title: '巡检双模型池与 7 日用量',
+    desc: '查看免费池/付费池健康度、7日 Token 统计或一键解封冷却',
+    prompt: '请调用 manage_models(action="status") 巡检当前免费池与付费池健康状态及近 7 日调用统计。',
+    anyOfTools: ['manage_models'],
+  },
+  {
+    cmd: '/newskill',
+    title: '对话创建自定义技能',
+    desc: '让大管家创建 Prompt 或 Webhook 技能并挂载给指定 Bot',
+    prompt: '请调用 manage_skills(action="upsert") 帮我创建一个自定义技能：',
+    anyOfTools: ['manage_skills'],
+  },
+  {
     cmd: '/consult',
     title: '协调团队成员协办',
     desc: '调用其他专精 Bot 协助完成子任务并汇总',

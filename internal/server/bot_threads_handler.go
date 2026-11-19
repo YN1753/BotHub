@@ -52,21 +52,28 @@ func (s *Server) handleGetBotMessages(w http.ResponseWriter, r *http.Request) {
 			bot.State = store.BotStateIdle
 		}
 		if s.push != nil && s.push.Hub() != nil {
+			s.push.Hub().BumpRevision("bots")
 			s.push.Hub().PublishEvent("bot_state", map[string]any{
 				"bot_id":       id,
 				"state":        bot.State,
+				"last_summary": bot.LastSummary,
 				"unread_count": 0,
 			})
 		}
 	}
 
 	if compact {
-		writeJSON(w, http.StatusOK, map[string]any{
+		payload := map[string]any{
 			"ok":        true,
 			"bot":       bot,
 			"thread_id": threadID,
 			"messages":  msgs,
-		})
+		}
+		if r.URL.Query().Get("include_threads") == "1" {
+			threads, _ := s.store.ListBotThreads(id)
+			payload["threads"] = threads
+		}
+		writeJSON(w, http.StatusOK, payload)
 		return
 	}
 

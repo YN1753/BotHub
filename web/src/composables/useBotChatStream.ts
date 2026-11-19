@@ -47,7 +47,14 @@ export function useBotChatStream(options: {
     abortCtrl?.abort()
   }
 
-  async function sendPrompt(overrideText?: string) {
+  async function sendPrompt(
+    overrideText?: string,
+    turnOpts?: {
+      overrideModel?: string
+      allowPaidOnce?: boolean
+      replaceAssistantMsg?: ChatMessageUI
+    }
+  ) {
     if (store.state.isStreaming) return
     const msg = (overrideText ?? inputPrompt.value).trim()
     if (!msg) return
@@ -60,6 +67,7 @@ export function useBotChatStream(options: {
     const botId = curBot.id
     const activeThreadSnapshot = store.state.activeThreadId || ''
     const quote = replyTarget.value
+    const effectiveModel = (turnOpts?.overrideModel || selectedModel.value || 'auto:free').trim()
     lastPrompt.value = msg
     if (!overrideText) {
       inputPrompt.value = ''
@@ -68,6 +76,31 @@ export function useBotChatStream(options: {
     onClosePopovers?.()
     replyTarget.value = null
     relaySteps.value = []
+
+    // In-place replacement when retrying with another model: remove the old assistant reply and its paired user turn
+    if (turnOpts?.replaceAssistantMsg) {
+      const targetMsg = turnOpts.replaceAssistantMsg
+      const aIdx = store.state.timeline.findIndex((m) => m.localId === targetMsg.localId)
+      if (aIdx >= 0) {
+        let uIdx = -1
+        for (let i = aIdx - 1; i >= 0; i--) {
+          if (store.state.timeline[i]?.role === 'user') {
+            uIdx = i
+            break
+          }
+        }
+        const userMsg = uIdx >= 0 ? store.state.timeline[uIdx] : null
+        if (targetMsg.serverId) {
+          await BotHubApi.deleteBotMessage(botId, targetMsg.serverId).catch(() => {})
+        }
+        if (userMsg?.serverId) {
+          await BotHubApi.deleteBotMessage(botId, userMsg.serverId).catch(() => {})
+        }
+        store.state.timeline = store.state.timeline.filter(
+          (m) => m.localId !== targetMsg.localId && (!userMsg || m.localId !== userMsg.localId)
+        )
+      }
+    }
 
     store.state.isStreaming = true
     abortCtrl = new AbortController()
@@ -79,7 +112,7 @@ export function useBotChatStream(options: {
       senderBotId: 'user',
       senderName: '管理员',
       avatarStyle: 'cyan',
-      model: selectedModel.value,
+      model: effectiveModel,
       msgKind: 'chat',
       createdAt: new Date().toISOString(),
       content: msg,
@@ -105,7 +138,7 @@ export function useBotChatStream(options: {
         senderName: bName,
         roleTitle,
         avatarStyle: style,
-        model: selectedModel.value,
+        model: effectiveModel,
         msgKind: 'chat',
         createdAt: new Date().toISOString(),
         content: '',
@@ -172,8 +205,9 @@ export function useBotChatStream(options: {
           bot_id: botId,
           thread_id: store.state.activeThreadId || '',
           message: msg,
-          model: selectedModel.value,
+          model: effectiveModel,
           enable_thinking: enableThinking.value,
+          ...(turnOpts?.allowPaidOnce ? { allow_paid_fallback: true } : {}),
           reply_to_id: quote?.serverId || 0,
           reply_preview: quote?.preview || '',
         }),

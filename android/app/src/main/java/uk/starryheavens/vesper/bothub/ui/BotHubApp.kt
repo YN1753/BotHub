@@ -193,14 +193,20 @@ fun BotHubApp(
                             modelOptions = viewModel.modelOptions,
                             enableThinking = viewModel.enableThinking,
                             messages = viewModel.messages,
+                            botThreads = viewModel.botThreads,
+                            activeThreadId = viewModel.activeThreadId,
                             inputText = viewModel.inputText,
                             isStreaming = viewModel.isStreaming,
                             onBack = viewModel::closeChatRoom,
                             onInputChange = viewModel::updateInputText,
-                            onSendPrompt = viewModel::sendAgentPrompt,
+                            onSendPrompt = { prompt -> viewModel.sendAgentPrompt(prompt) },
                             onStop = { viewModel.stopAgentStream(notifyUser = true) },
                             onModelChange = viewModel::updateModel,
                             onThinkingChange = viewModel::updateThinking,
+                            onSelectThread = viewModel::selectBotThread,
+                            onCreateThread = viewModel::createNewBotThread,
+                            onDeleteThread = viewModel::deleteBotThread,
+                            onRetryTurnWithModel = viewModel::retryTurnWithModel,
                             onCopyText = { txt ->
                                 clipboard.setText(AnnotatedString(txt))
                                 viewModel.showMessage("已复制")
@@ -347,12 +353,23 @@ fun BotHubApp(
                                 BotHubTab.HUB -> HubTabScreen(
                                     modifier = contentModifier,
                                     snapshot = viewModel.dashboard,
+                                    bots = viewModel.bots,
+                                    modelOptions = viewModel.modelOptions,
                                     onRunTask = viewModel::runTask,
                                     onToggleTask = viewModel::toggleTask,
                                     onSyncAssets = viewModel::syncAssets,
                                     onSaveAsset = viewModel::saveAssetItem,
+                                    onQuickRenewAsset = viewModel::quickRenewAsset,
                                     onDeleteAsset = viewModel::deleteAssetItem,
-                                    onSaveAssetCategories = viewModel::saveAssetCategories
+                                    onSaveAssetCategories = viewModel::saveAssetCategories,
+                                    onSaveTask = viewModel::saveTaskItem,
+                                    onDeleteTask = viewModel::deleteTaskItem,
+                                    onCreateTodo = viewModel::createTodoItem,
+                                    onToggleTodoDone = viewModel::toggleTodoDone,
+                                    onUpdateTodo = viewModel::updateTodoItem,
+                                    onDeleteTodo = viewModel::deleteTodoItem,
+                                    onSaveNote = viewModel::saveNoteItem,
+                                    onDeleteNote = viewModel::deleteNoteItem
                                 )
                             }
                         }

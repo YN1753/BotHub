@@ -20,9 +20,11 @@ import kotlinx.coroutines.withContext
 import okhttp3.Call
 import uk.starryheavens.vesper.bothub.data.AgentSessionSummary
 import uk.starryheavens.vesper.bothub.data.AssetCategoryItem
+import uk.starryheavens.vesper.bothub.data.AssetItem
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.BotItem
+import uk.starryheavens.vesper.bothub.data.BotThreadItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.JsonMappers
@@ -36,8 +38,11 @@ import uk.starryheavens.vesper.bothub.data.PoolStrategiesItem
 import uk.starryheavens.vesper.bothub.data.PooledModelItem
 import uk.starryheavens.vesper.bothub.data.StashItemUi
 import uk.starryheavens.vesper.bothub.data.TaskItem
+import uk.starryheavens.vesper.bothub.data.TodoItemUi
+import uk.starryheavens.vesper.bothub.data.WorkNoteItemUi
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 import uk.starryheavens.vesper.bothub.sync.RealtimePushService
+import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicLong
 
 class BotHubViewModel(
@@ -83,6 +88,12 @@ class BotHubViewModel(
         private set
 
     var activeBotId by mutableStateOf(prefs.lastActiveBotId)
+        private set
+
+    var botThreads by mutableStateOf<List<BotThreadItem>>(emptyList())
+        private set
+
+    var activeThreadId by mutableStateOf("")
         private set
 
     var draftsByBot by mutableStateOf(prefs.loadBotDrafts())
@@ -222,7 +233,7 @@ class BotHubViewModel(
                             scheduleSilentLiveSync()
                         } else {
                             val changed = mutableListOf<String>()
-                            listOf("bots", "tasks", "assets", "stash", "models", "notifications", "configs").forEach { k ->
+                            listOf("bots", "tasks", "assets", "todos", "notes", "stash", "models", "notifications", "configs").forEach { k ->
                                 if ((revs[k] ?: 0L) > (lastRevisions[k] ?: 0L)) {
                                     changed.add(k)
                                 }
@@ -233,7 +244,7 @@ class BotHubViewModel(
                                 syncDashboardSlices(changed)
                             }
                             if (msgBumped && activeBotId.isNotBlank() && !isStreaming && sessionId.isEmpty()) {
-                                loadBotTimeline(activeBotId)
+                                loadBotTimeline(activeBotId, activeThreadId)
                             }
                         }
                     }
@@ -253,7 +264,7 @@ class BotHubViewModel(
                         val hasUnread = obj.has("unread_count")
                         val unreadVal = obj.optInt("unread_count", 0)
                         if (bId.isNotEmpty()) {
-                            bots = bots.map {
+                            val updated = bots.map {
                                 if (it.id == bId) {
                                     it.copy(
                                         state = st.ifEmpty { it.state },
@@ -262,13 +273,17 @@ class BotHubViewModel(
                                     )
                                 } else it
                             }
+                            if (updated != bots) {
+                                bots = updated
+                                prefs.saveCachedBots(updated)
+                            }
                         }
                     }
                     "thread_updated" -> {
                         val bId = obj.optString("bot_id", "")
                         syncDashboardSlices(listOf("bots"))
                         if (bId == activeBotId && !isStreaming && sessionId.isEmpty()) {
-                            loadBotTimeline(bId)
+                            loadBotTimeline(bId, activeThreadId)
                         }
                     }
                     "bot_message" -> {
@@ -279,7 +294,14 @@ class BotHubViewModel(
                     }
                     "assistant_update" -> {
                         val rawKinds = obj.optString("kind", "")
-                        val kinds = rawKinds.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        val kinds = rawKinds
+                            .split(",")
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                            .flatMap { k ->
+                                if (k == "workhub") listOf("todos", "notes") else listOf(k)
+                            }
+                            .distinct()
                         if (kinds.any { it == "backup_restored" || it == "dashboard" } || kinds.isEmpty()) {
                             scheduleSilentLiveSync()
                         } else {
@@ -332,10 +354,12 @@ class BotHubViewModel(
                 slice.modelHealth?.let { modelHealth = it }
                 slice.modelUsageSummary?.let { modelUsageSummary = it }
                 val curDash = dashboard
-                if (curDash != null && (slice.assets != null || slice.tasks != null || slice.assetCategories != null || slice.modelOptions != null)) {
+                if (curDash != null && (slice.assets != null || slice.tasks != null || slice.todos != null || slice.notes != null || slice.assetCategories != null || slice.modelOptions != null)) {
                     val nextDash = curDash.copy(
                         assets = slice.assets ?: curDash.assets,
                         tasks = slice.tasks ?: curDash.tasks,
+                        todos = slice.todos ?: curDash.todos,
+                        notes = slice.notes ?: curDash.notes,
                         assetCategories = slice.assetCategories ?: curDash.assetCategories,
                         modelOptions = slice.modelOptions ?: curDash.modelOptions,
                         totalAssets = slice.assets?.size ?: curDash.totalAssets,
@@ -470,6 +494,10 @@ class BotHubViewModel(
 
             if (changedBot || chatMessages.isEmpty()) {
                 sessionId = ""
+                if (changedBot) {
+                    activeThreadId = ""
+                    botThreads = emptyList()
+                }
                 inputText = draftsByBot[botId].orEmpty()
                 val cachedTurns = timelineCache[botId] ?: prefs.loadCachedBotMessages(botId).also { loaded ->
                     if (loaded.isNotEmpty()) timelineCache[botId] = loaded
@@ -871,13 +899,18 @@ class BotHubViewModel(
     fun clearActiveChatHistory() {
         if (isStreaming) return
         val targetId = activeBotId
+        val targetThreadId = activeThreadId
         chatMessages.clear()
         if (targetId.isNotBlank() && sessionId.isEmpty()) {
-            timelineCache.remove(targetId)
-            prefs.saveCachedBotMessages(targetId, emptyList())
+            val cacheKey = if (targetThreadId.isBlank()) targetId else "$targetId::$targetThreadId"
+            timelineCache.remove(cacheKey)
+            if (targetThreadId.isBlank()) {
+                prefs.saveCachedBotMessages(targetId, emptyList())
+            }
             viewModelScope.launch {
-                api.clearBotMessages(targetId).onSuccess {
-                    showMessage("已清空当前聊天记录")
+                api.clearBotMessages(targetId, targetThreadId).onSuccess {
+                    showMessage(if (targetThreadId.isBlank()) "已清空当前主对话记录" else "已清空当前话题记录")
+                    loadBotTimeline(targetId, targetThreadId)
                     refreshAll(silent = true)
                 }.onFailure { err ->
                     showMessage(err.message ?: "清空记录失败")
@@ -1045,13 +1078,13 @@ class BotHubViewModel(
         }
     }
 
-    fun loadBotTimeline(botId: String) {
+    fun loadBotTimeline(botId: String, threadId: String? = null) {
         if (isStreaming || !prefs.isLikelyPaired) return
         viewModelScope.launch {
             if (prefs.bearerToken.isEmpty()) return@launch
-            api.fetchBotMessages(botId).onSuccess { msgs ->
+            api.fetchBotMessagesPayload(botId, threadId).onSuccess { payload ->
                 val target = bots.find { it.id == botId }
-                val mapped = msgs.map { m ->
+                val mapped = payload.messages.map { m ->
                     m.toChatTurnUi(
                         idPrefix = "botmsg",
                         defaultPersona = target?.name ?: botId,
@@ -1061,10 +1094,16 @@ class BotHubViewModel(
                         bots = bots
                     )
                 }
-                timelineCache[botId] = mapped
-                prefs.saveCachedBotMessages(botId, mapped)
+                val resolvedThreadId = payload.activeThreadId
+                val cacheKey = if (resolvedThreadId.isBlank()) botId else "$botId::$resolvedThreadId"
+                timelineCache[cacheKey] = mapped
+                if (resolvedThreadId.isBlank()) {
+                    prefs.saveCachedBotMessages(botId, mapped)
+                }
 
                 if (activeBotId == botId && sessionId.isEmpty() && !isStreaming) {
+                    botThreads = payload.threads
+                    activeThreadId = resolvedThreadId
                     if (target != null) {
                         activeModel = target.model
                         enableThinking = target.enableThinking
@@ -1074,6 +1113,54 @@ class BotHubViewModel(
                         chatMessages.addAll(mapped)
                     }
                 }
+            }
+        }
+    }
+
+    fun selectBotThread(threadId: String) {
+        if (isStreaming || activeBotId.isBlank()) return
+        val clean = threadId.trim()
+        activeThreadId = clean
+        val cacheKey = if (clean.isBlank()) activeBotId else "$activeBotId::$clean"
+        timelineCache[cacheKey]?.let { cached ->
+            chatMessages.clear()
+            chatMessages.addAll(cached)
+        } ?: chatMessages.clear()
+        loadBotTimeline(activeBotId, clean)
+    }
+
+    fun createNewBotThread(title: String = "") {
+        if (isStreaming || activeBotId.isBlank()) return
+        val targetBotId = activeBotId
+        viewModelScope.launch {
+            api.createBotThread(targetBotId, title).onSuccess { (created, allThreads) ->
+                if (activeBotId == targetBotId) {
+                    botThreads = allThreads
+                    activeThreadId = created.id
+                    chatMessages.clear()
+                    showMessage("已开启新话题「${created.title}」")
+                }
+            }.onFailure { err ->
+                showMessage(err.message ?: "新建话题失败")
+            }
+        }
+    }
+
+    fun deleteBotThread(threadId: String) {
+        if (isStreaming || activeBotId.isBlank() || threadId.isBlank()) return
+        val targetBotId = activeBotId
+        viewModelScope.launch {
+            api.deleteBotThread(targetBotId, threadId).onSuccess { remaining ->
+                timelineCache.remove("$targetBotId::$threadId")
+                if (activeBotId == targetBotId) {
+                    botThreads = remaining
+                    if (activeThreadId == threadId) {
+                        selectBotThread("")
+                    }
+                    showMessage("已删除话题")
+                }
+            }.onFailure { err ->
+                showMessage(err.message ?: "删除话题失败")
             }
         }
     }
@@ -1196,7 +1283,11 @@ class BotHubViewModel(
         }
     }
 
-    fun sendAgentPrompt(promptText: String) {
+    fun sendAgentPrompt(
+        promptText: String,
+        overrideModel: String? = null,
+        allowPaidOnce: Boolean = false
+    ) {
         val clean = promptText.trim()
         if (clean.isEmpty() || isStreaming) return
         if (prefs.bearerToken.isEmpty()) {
@@ -1207,15 +1298,20 @@ class BotHubViewModel(
         val activeBotObj = bots.find { it.id == activeBotId }
         val botDisplayName = activeBotObj?.name ?: activePersona
         val botStyle = activeBotObj?.avatarStyle ?: "butler:gold"
+        val effectiveModel = overrideModel?.trim()?.takeIf { it.isNotEmpty() } ?: activeModel
+        val effectiveAllowPaid = if (allowPaidOnce) true else activeBotObj?.allowPaidFallback
         val seq = turnSequence.incrementAndGet()
         val now = System.currentTimeMillis()
         val userTurnId = "u_${now}_$seq"
         val assistantId = "a_${now}_$seq"
 
         val targetBotId = activeBotId
-        inputText = ""
-        if (sessionId.isEmpty() && targetBotId.isNotBlank()) {
-            persistBotDraft(targetBotId, "")
+        val targetThreadId = activeThreadId
+        if (overrideModel == null) {
+            inputText = ""
+            if (sessionId.isEmpty() && targetBotId.isNotBlank()) {
+                persistBotDraft(targetBotId, "")
+            }
         }
         isStreaming = true
         chatMessages.add(
@@ -1223,7 +1319,7 @@ class BotHubViewModel(
                 id = userTurnId,
                 role = "user",
                 persona = botDisplayName,
-                model = activeModel,
+                model = effectiveModel,
                 content = clean
             )
         )
@@ -1232,7 +1328,7 @@ class BotHubViewModel(
                 id = assistantId,
                 role = "assistant",
                 persona = botDisplayName,
-                model = activeModel,
+                model = effectiveModel,
                 content = "",
                 senderBotId = activeBotId,
                 avatarStyle = botStyle
@@ -1244,11 +1340,12 @@ class BotHubViewModel(
                 api.streamChat(
                     sessionId = sessionId,
                     botId = activeBotId,
+                    threadId = targetThreadId,
                     message = clean,
                     persona = activePersona,
-                    model = activeModel,
+                    model = effectiveModel,
                     enableThinking = enableThinking,
-                    allowPaidFallback = activeBotObj?.allowPaidFallback,
+                    allowPaidFallback = effectiveAllowPaid,
                     onCallCreated = { call -> activeStreamCall = call },
                     onSession = { sid ->
                         viewModelScope.launch { sessionId = sid }
@@ -1279,6 +1376,13 @@ class BotHubViewModel(
                             }
                         }
                     },
+                    onDoneModel = { usedModel ->
+                        viewModelScope.launch {
+                            updateTurnById(assistantId) { cur ->
+                                cur.copy(model = usedModel)
+                            }
+                        }
+                    },
                     onError = { err ->
                         viewModelScope.launch {
                             updateTurnById(assistantId) { cur ->
@@ -1297,11 +1401,56 @@ class BotHubViewModel(
                 isStreaming = false
                 if (sessionId.isEmpty() && targetBotId.isNotBlank() && activeBotId == targetBotId) {
                     val snapshotTurns = chatMessages.toList()
-                    timelineCache[targetBotId] = snapshotTurns
-                    prefs.saveCachedBotMessages(targetBotId, snapshotTurns)
+                    val cacheKey = if (targetThreadId.isBlank()) targetBotId else "$targetBotId::$targetThreadId"
+                    timelineCache[cacheKey] = snapshotTurns
+                    if (targetThreadId.isBlank()) {
+                        prefs.saveCachedBotMessages(targetBotId, snapshotTurns)
+                    }
+                    loadBotTimeline(targetBotId, targetThreadId)
                 }
                 refreshAll(silent = true)
             }
+        }
+    }
+
+    fun retryTurnWithModel(
+        assistantTurn: ChatTurnUi,
+        targetModel: String,
+        allowPaidOnce: Boolean
+    ) {
+        if (isStreaming) return
+        val aIdx = chatMessages.indexOfFirst { it.id == assistantTurn.id }
+        if (aIdx < 0) return
+
+        var uIdx = -1
+        for (i in (aIdx - 1) downTo 0) {
+            if (chatMessages[i].role == "user" && chatMessages[i].content.isNotBlank()) {
+                uIdx = i
+                break
+            }
+        }
+        if (uIdx < 0) {
+            showMessage("未找到对应的用户提问，无法原位重试")
+            return
+        }
+        val userTurn = chatMessages[uIdx]
+        val promptToReplay = userTurn.content
+        val targetBotId = activeBotId
+
+        chatMessages.removeAll { it.id == assistantTurn.id || it.id == userTurn.id }
+
+        viewModelScope.launch {
+            if (sessionId.isEmpty() && targetBotId.isNotBlank()) {
+                val aServerId = assistantTurn.id.removePrefix("botmsg_").toLongOrNull() ?: 0L
+                val uServerId = userTurn.id.removePrefix("botmsg_").toLongOrNull() ?: 0L
+                if (aServerId > 0L) api.deleteBotMessage(targetBotId, aServerId)
+                if (uServerId > 0L) api.deleteBotMessage(targetBotId, uServerId)
+            }
+            sendAgentPrompt(
+                promptText = promptToReplay,
+                overrideModel = targetModel,
+                allowPaidOnce = allowPaidOnce
+            )
         }
     }
 
@@ -1607,12 +1756,243 @@ class BotHubViewModel(
         }
     }
 
+    fun quickRenewAsset(asset: AssetItem, months: Int) {
+        if (asset.isPerpetual || months <= 0) return
+        val today = LocalDate.now()
+        val parsedCur = runCatching { LocalDate.parse(asset.dueDate.take(10)) }.getOrNull()
+        val baseDate = if (parsedCur != null && !asset.dueDate.startsWith("2099") && !parsedCur.isBefore(today.minusDays(30))) {
+            parsedCur
+        } else {
+            today
+        }
+        val nextDue = baseDate.plusMonths(months.toLong()).toString()
+        val stepLabel = when (months) {
+            1 -> "1 个月"
+            3 -> "1 季度"
+            12 -> "1 年"
+            else -> "$months 个月"
+        }
+        viewModelScope.launch {
+            api.saveAsset(
+                existingId = asset.id,
+                name = asset.name,
+                category = asset.category,
+                spec = asset.spec,
+                price = asset.price,
+                dueDate = nextDue,
+                autoRenew = asset.autoRenew
+            ).onSuccess {
+                showMessage("已将「${asset.name}」顺延 $stepLabel 至 $nextDue")
+                refreshAll(silent = true)
+            }.onFailure { err ->
+                showMessage(err.message ?: "顺延到期日失败")
+            }
+        }
+    }
+
+    fun saveTaskItem(
+        existingId: String?,
+        name: String,
+        type: String,
+        botId: String,
+        cronExpr: String,
+        runAt: String,
+        description: String,
+        model: String,
+        allowPaidFallback: Boolean,
+        maxPaidCallsPerDay: Int,
+        enabled: Boolean,
+        params: String = "{}"
+    ) {
+        viewModelScope.launch {
+            api.saveTask(
+                existingId = existingId,
+                name = name,
+                type = type,
+                botId = botId,
+                cronExpr = cronExpr,
+                runAt = runAt,
+                description = description,
+                model = model,
+                allowPaidFallback = allowPaidFallback,
+                maxPaidCallsPerDay = maxPaidCallsPerDay,
+                enabled = enabled,
+                params = params
+            ).onSuccess {
+                showMessage("定时任务已保存")
+                refreshAll(silent = true)
+            }.onFailure { err ->
+                showMessage(err.message ?: "保存任务失败")
+            }
+        }
+    }
+
+    fun deleteTaskItem(taskId: String) {
+        val prevDash = dashboard
+        if (prevDash != null) {
+            val nextTasks = prevDash.tasks.filterNot { it.id == taskId }
+            val optimisticDash = prevDash.copy(
+                activeTasks = nextTasks.count { it.enabled },
+                tasks = nextTasks
+            )
+            dashboard = optimisticDash
+            prefs.saveCachedDashboard(optimisticDash)
+        }
+        viewModelScope.launch {
+            api.deleteTask(taskId).onSuccess {
+                showMessage("任务已删除")
+                refreshAll(silent = true)
+            }.onFailure { err ->
+                if (prevDash != null) {
+                    dashboard = prevDash
+                    prefs.saveCachedDashboard(prevDash)
+                }
+                showMessage(err.message ?: "删除任务失败")
+            }
+        }
+    }
+
+    fun createTodoItem(
+        title: String,
+        notes: String = "",
+        dueAt: String = "",
+        priority: String = "normal"
+    ) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            api.createTodo(title, notes, dueAt, priority).onSuccess { created ->
+                dashboard?.let { cur ->
+                    val nextDash = cur.copy(todos = listOf(created) + cur.todos.filterNot { it.id == created.id })
+                    dashboard = nextDash
+                    prefs.saveCachedDashboard(nextDash)
+                }
+                showMessage("已添加待办")
+                syncDashboardSlices(listOf("todos"))
+            }.onFailure { err ->
+                showMessage(err.message ?: "添加待办失败")
+            }
+        }
+    }
+
+    fun toggleTodoDone(todo: TodoItemUi) {
+        val nextStatus = if (todo.isDone) "todo" else "done"
+        val prevDash = dashboard
+        if (prevDash != null) {
+            val optimistic = prevDash.copy(
+                todos = prevDash.todos.map { if (it.id == todo.id) it.copy(status = nextStatus) else it }
+            )
+            dashboard = optimistic
+            prefs.saveCachedDashboard(optimistic)
+        }
+        viewModelScope.launch {
+            api.updateTodo(id = todo.id, status = nextStatus).onSuccess {
+                syncDashboardSlices(listOf("todos"))
+            }.onFailure { err ->
+                if (prevDash != null) {
+                    dashboard = prevDash
+                    prefs.saveCachedDashboard(prevDash)
+                }
+                showMessage(err.message ?: "更新待办状态失败")
+            }
+        }
+    }
+
+    fun updateTodoItem(
+        id: String,
+        title: String,
+        notes: String,
+        dueAt: String,
+        priority: String
+    ) {
+        viewModelScope.launch {
+            api.updateTodo(
+                id = id,
+                title = title,
+                notes = notes,
+                dueAt = dueAt,
+                priority = priority
+            ).onSuccess {
+                showMessage("待办已更新")
+                syncDashboardSlices(listOf("todos"))
+            }.onFailure { err ->
+                showMessage(err.message ?: "更新待办失败")
+            }
+        }
+    }
+
+    fun deleteTodoItem(todoId: String) {
+        val prevDash = dashboard
+        if (prevDash != null) {
+            val optimistic = prevDash.copy(todos = prevDash.todos.filterNot { it.id == todoId })
+            dashboard = optimistic
+            prefs.saveCachedDashboard(optimistic)
+        }
+        viewModelScope.launch {
+            api.deleteTodo(todoId).onSuccess {
+                showMessage("待办已删除")
+                syncDashboardSlices(listOf("todos"))
+            }.onFailure { err ->
+                if (prevDash != null) {
+                    dashboard = prevDash
+                    prefs.saveCachedDashboard(prevDash)
+                }
+                showMessage(err.message ?: "删除待办失败")
+            }
+        }
+    }
+
+    fun saveNoteItem(
+        existingId: String?,
+        title: String,
+        content: String,
+        category: String = "deliverable",
+        pinned: Boolean = false
+    ) {
+        viewModelScope.launch {
+            api.saveNote(
+                existingId = existingId,
+                title = title,
+                content = content,
+                category = category,
+                pinned = pinned
+            ).onSuccess {
+                showMessage("工作笔记已保存")
+                syncDashboardSlices(listOf("notes"))
+            }.onFailure { err ->
+                showMessage(err.message ?: "保存笔记失败")
+            }
+        }
+    }
+
+    fun deleteNoteItem(noteId: String) {
+        val prevDash = dashboard
+        if (prevDash != null) {
+            val optimistic = prevDash.copy(notes = prevDash.notes.filterNot { it.id == noteId })
+            dashboard = optimistic
+            prefs.saveCachedDashboard(optimistic)
+        }
+        viewModelScope.launch {
+            api.deleteNote(noteId).onSuccess {
+                showMessage("工作笔记已删除")
+                syncDashboardSlices(listOf("notes"))
+            }.onFailure { err ->
+                if (prevDash != null) {
+                    dashboard = prevDash
+                    prefs.saveCachedDashboard(prevDash)
+                }
+                showMessage(err.message ?: "删除笔记失败")
+            }
+        }
+    }
+
     private fun formatHumanToolName(toolName: String): String {
         val clean = toolName.trim()
         return when {
             clean == "web_search" -> "联网搜索"
             clean == "read_url" -> "阅读网页"
             clean == "manage_bots" -> "Bot 与群聊管理"
+            clean == "manage_models" -> "AI 模型池巡检调优"
+            clean == "manage_skills" -> "自定义技能工坊"
             clean == "consult_bot" -> "协同成员"
             clean == "manage_todos" -> "待办管理"
             clean == "manage_notes" -> "工作文档"

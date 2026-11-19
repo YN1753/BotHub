@@ -14,6 +14,8 @@ import {
   csvEscapeCell,
   groupModeLabel,
   summarizeAssetsMonthlyCost,
+  summarizeAssetsYearlyCost,
+  inferRecommendedRenewMonths,
   scoreOmnisearchMatch,
 } from '../src/utils/format.ts'
 import {
@@ -89,6 +91,19 @@ test('format utilities produce expected strings', () => {
     ]),
     '$6/月 + ¥30/月'
   )
+  assert.equal(
+    summarizeAssetsYearlyCost([
+      { status: '生效中', price: '$12 / 年' },
+      { status: '生效中', price: '$5 / 月' },
+      { status: '生效中', price: '¥30 / 月' },
+      { status: '已停用', price: '¥999 / 月' },
+    ]),
+    '$72/年 + ¥360/年'
+  )
+  assert.equal(inferRecommendedRenewMonths('$5 / 月'), 1)
+  assert.equal(inferRecommendedRenewMonths('$15 / 季'), 3)
+  assert.equal(inferRecommendedRenewMonths('$21.6 / 年'), 12)
+  assert.equal(inferRecommendedRenewMonths(''), 12)
 })
 
 test('parseJsonStringArray, parseJsonRecord, formatLocalDate and botStateDotClass handle edge cases', () => {
@@ -512,10 +527,14 @@ test('manage_bots tool metadata, step summaries and butler slash commands work c
   assert.equal(step.subtitle, '成员：大管家、代码审查官')
   assert.equal(step.statusLabel, '已完成')
 
-  const butlerBot = { id: 'butler', allowed_tools: '["manage_bots"]' } as any
+  const butlerBot = { id: 'concierge', allowed_tools: '["manage_bots","manage_models","manage_skills"]' } as any
   const cmds = buildSlashCommands(butlerBot, [])
   assert.equal(cmds.some((c) => c.cmd === '/newbot'), true)
   assert.equal(cmds.some((c) => c.cmd === '/group'), true)
+  assert.equal(cmds.some((c) => c.cmd === '/models'), true)
+  assert.equal(cmds.some((c) => c.cmd === '/newskill'), true)
+  assert.equal(formatToolHumanName('manage_models', []), 'AI 模型池巡检调优')
+  assert.equal(formatToolHumanName('manage_skills', []), '自定义技能工坊')
 })
 
 test('modelRouting normalizes URLs, formats tokens, and previews dual-pool routes accurately', () => {

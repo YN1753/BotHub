@@ -300,6 +300,8 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 notifications = JsonMappers.parseNotifications(json.optJSONArray("notifications")),
                 dashboard = dash,
                 stashItems = JsonMappers.parseStashItems(json.optJSONArray("stash")),
+                todos = dash.todos,
+                notes = dash.notes,
                 modelOptions = dash.modelOptions,
                 modelProviders = JsonMappers.parseModelProviders(json.optJSONArray("model_providers")),
                 pooledModels = JsonMappers.parsePooledModels(json.optJSONArray("pooled_models")),
@@ -322,6 +324,8 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 assets = if (json.has("assets")) JsonMappers.parseAssets(json.optJSONArray("assets")) else null,
                 assetCategories = if (json.has("asset_categories")) JsonMappers.parseAssetCategories(json.optJSONArray("asset_categories")) else null,
                 tasks = if (json.has("tasks")) JsonMappers.parseTasks(json.optJSONArray("tasks")) else null,
+                todos = if (json.has("todos")) JsonMappers.parseTodos(json.optJSONArray("todos")) else null,
+                notes = if (json.has("notes")) JsonMappers.parseNotes(json.optJSONArray("notes")) else null,
                 notifications = if (json.has("notifications")) JsonMappers.parseNotifications(json.optJSONArray("notifications")) else null,
                 stashItems = if (json.has("stash")) JsonMappers.parseStashItems(json.optJSONArray("stash")) else null,
                 modelOptions = if (json.has("model_options")) JsonMappers.parseModelOptions(json.optJSONArray("model_options")) else null,
@@ -480,6 +484,139 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun saveTask(
+        existingId: String?,
+        name: String,
+        type: String,
+        botId: String,
+        cronExpr: String,
+        runAt: String,
+        description: String,
+        model: String,
+        allowPaidFallback: Boolean,
+        maxPaidCallsPerDay: Int,
+        enabled: Boolean,
+        params: String = "{}"
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val id = existingId?.trim().takeUnless { it.isNullOrEmpty() }
+                ?: "task_${System.currentTimeMillis() % 100000000}"
+            val payload = JSONObject()
+                .put("id", id)
+                .put("name", name.trim())
+                .put("type", type.ifBlank { "bot_prompt" })
+                .put("bot_id", botId.trim())
+                .put("cron_expr", cronExpr.trim())
+                .put("run_at", runAt.trim())
+                .put("description", description.trim())
+                .put("model", model.trim())
+                .put("allow_paid_fallback", allowPaidFallback)
+                .put("max_paid_calls_per_day", maxPaidCallsPerDay.coerceAtLeast(0))
+                .put("enabled", enabled)
+                .put("params", params.ifBlank { "{}" })
+                .toString()
+            val path = if (existingId.isNullOrBlank()) "/api/tasks" else "/api/tasks/${existingId.trim()}"
+            val req = requestBuilder(path)
+                .post(jsonBody(payload))
+                .build()
+            executeUnit(req, "保存定时任务失败")
+        }
+    }
+
+    suspend fun deleteTask(taskId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/tasks/${taskId.trim()}")
+                .delete()
+                .build()
+            executeUnit(req, "删除定时任务失败")
+        }
+    }
+
+    suspend fun createTodo(
+        title: String,
+        notes: String = "",
+        dueAt: String = "",
+        priority: String = "normal"
+    ): Result<TodoItemUi> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("title", title.trim())
+                .put("notes", notes.trim())
+                .put("due_at", dueAt.trim())
+                .put("priority", priority.ifBlank { "normal" })
+                .toString()
+            val req = requestBuilder("/api/v2/todos")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "创建待办失败")
+            JsonMappers.parseTodo(json.optJSONObject("todo") ?: JSONObject())
+        }
+    }
+
+    suspend fun updateTodo(
+        id: String,
+        title: String? = null,
+        notes: String? = null,
+        status: String? = null,
+        dueAt: String? = null,
+        priority: String? = null
+    ): Result<TodoItemUi> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+            if (title != null) payload.put("title", title.trim())
+            if (notes != null) payload.put("notes", notes.trim())
+            if (status != null) payload.put("status", status.trim())
+            if (dueAt != null) payload.put("due_at", dueAt.trim())
+            if (priority != null) payload.put("priority", priority.trim())
+            val req = requestBuilder("/api/v2/todos/${id.trim()}")
+                .post(jsonBody(payload.toString()))
+                .build()
+            val json = executeJson(req, "更新待办失败")
+            JsonMappers.parseTodo(json.optJSONObject("todo") ?: JSONObject())
+        }
+    }
+
+    suspend fun deleteTodo(id: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/todos/${id.trim()}")
+                .delete()
+                .build()
+            executeUnit(req, "删除待办失败")
+        }
+    }
+
+    suspend fun saveNote(
+        existingId: String?,
+        title: String,
+        content: String,
+        category: String = "deliverable",
+        pinned: Boolean = false
+    ): Result<WorkNoteItemUi> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("title", title.trim())
+                .put("content", content.trim())
+                .put("category", category.ifBlank { "deliverable" })
+                .put("pinned", pinned)
+                .toString()
+            val path = if (existingId.isNullOrBlank()) "/api/v2/notes" else "/api/v2/notes/${existingId.trim()}"
+            val req = requestBuilder(path)
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "保存笔记失败")
+            JsonMappers.parseNote(json.optJSONObject("note") ?: JSONObject())
+        }
+    }
+
+    suspend fun deleteNote(id: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/notes/${id.trim()}")
+                .delete()
+                .build()
+            executeUnit(req, "删除笔记失败")
+        }
+    }
+
     suspend fun syncAssetWatcher(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val req = requestBuilder("/api/modules/asset_watcher/run")
@@ -574,17 +711,63 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
-    suspend fun fetchBotMessages(botId: String): Result<List<AgentHistoryMessage>> = withContext(Dispatchers.IO) {
+    suspend fun fetchBotMessagesPayload(
+        botId: String,
+        threadId: String? = null
+    ): Result<BotMessagesPayload> = withContext(Dispatchers.IO) {
         runCatching {
-            val req = requestBuilder("/api/v2/bots/$botId/messages?compact=1&limit=60").get().build()
+            val threadParam = if (threadId != null) {
+                "&thread_id=${URLEncoder.encode(threadId, "UTF-8")}"
+            } else {
+                ""
+            }
+            val req = requestBuilder("/api/v2/bots/$botId/messages?compact=1&include_threads=1&limit=60$threadParam").get().build()
             val json = executeJson(req, "加载 Bot 对话流失败")
-            JsonMappers.parseHistoryMessages(json.optJSONArray("messages"))
+            BotMessagesPayload(
+                messages = JsonMappers.parseHistoryMessages(json.optJSONArray("messages")),
+                threads = JsonMappers.parseBotThreads(json.optJSONArray("threads")),
+                activeThreadId = json.optString("thread_id", "")
+            )
         }
     }
 
-    suspend fun clearBotMessages(botId: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun fetchBotMessages(botId: String): Result<List<AgentHistoryMessage>> =
+        fetchBotMessagesPayload(botId, null).map { it.messages }
+
+    suspend fun createBotThread(
+        botId: String,
+        title: String = ""
+    ): Result<Pair<BotThreadItem, List<BotThreadItem>>> = withContext(Dispatchers.IO) {
         runCatching {
-            val req = requestBuilder("/api/v2/bots/$botId/messages")
+            val payload = JSONObject().put("title", title.trim()).toString()
+            val req = requestBuilder("/api/v2/bots/$botId/threads")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "创建话题失败")
+            val created = JsonMappers.parseBotThread(json.optJSONObject("thread") ?: JSONObject())
+            val list = JsonMappers.parseBotThreads(json.optJSONArray("threads"))
+            created to list
+        }
+    }
+
+    suspend fun deleteBotThread(
+        botId: String,
+        threadId: String
+    ): Result<List<BotThreadItem>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encTid = URLEncoder.encode(threadId.trim(), "UTF-8")
+            val req = requestBuilder("/api/v2/bots/$botId/threads/$encTid")
+                .delete()
+                .build()
+            val json = executeJson(req, "删除话题失败")
+            JsonMappers.parseBotThreads(json.optJSONArray("threads"))
+        }
+    }
+
+    suspend fun clearBotMessages(botId: String, threadId: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val qs = if (threadId != null) "?thread_id=${URLEncoder.encode(threadId, "UTF-8")}" else ""
+            val req = requestBuilder("/api/v2/bots/$botId/messages$qs")
                 .delete()
                 .build()
             executeUnit(req, "清空聊天记录失败")
@@ -894,6 +1077,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
     suspend fun streamChat(
         sessionId: String,
         botId: String = "",
+        threadId: String = "",
         message: String,
         persona: String,
         model: String,
@@ -904,12 +1088,14 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         onReasoningDelta: (String) -> Unit,
         onToolCall: (String, String) -> Unit,
         onContentDelta: (String) -> Unit,
+        onDoneModel: (String) -> Unit = {},
         onError: (String) -> Unit
     ) = withContext(Dispatchers.IO) {
         runCatching {
             val payloadObj = JSONObject()
                 .put("session_id", sessionId)
                 .put("bot_id", botId)
+                .put("thread_id", threadId)
                 .put("message", message)
                 .put("persona", persona)
                 .put("model", model)
@@ -953,6 +1139,10 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                         "content" -> {
                             val delta = dataObj.optString("delta")
                             if (delta.isNotEmpty()) onContentDelta(delta)
+                        }
+                        "done" -> {
+                            val usedModel = dataObj.optString("model", "").trim()
+                            if (usedModel.isNotEmpty()) onDoneModel(usedModel)
                         }
                         "error" -> {
                             onError(dataObj.optString("error", "流式响应异常"))

@@ -48,13 +48,19 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.json.JSONObject
 import uk.starryheavens.vesper.bothub.data.AssetCategoryItem
 import uk.starryheavens.vesper.bothub.data.AssetItem
+import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
+import uk.starryheavens.vesper.bothub.data.ModelOptionItem
 import uk.starryheavens.vesper.bothub.data.TaskItem
+import uk.starryheavens.vesper.bothub.data.TodoItemUi
+import uk.starryheavens.vesper.bothub.data.WorkNoteItemUi
 import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
@@ -65,9 +71,13 @@ import uk.starryheavens.vesper.bothub.ui.components.TactileSegmentedControl
 import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
 import uk.starryheavens.vesper.bothub.ui.components.ThemeCalendarDialog
 import uk.starryheavens.vesper.bothub.ui.components.assetCategoryIconVector
+import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.sheets.ModelPickerSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.resolveModelOptionDisplayName
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 import java.time.LocalDate
 import java.util.Locale
+import kotlin.math.roundToInt
 
 private val LEGACY_CATEGORY_META = mapOf(
     "general" to ("通用资产" to "tag"),
@@ -103,6 +113,38 @@ private val CATEGORY_ICON_CHOICES = listOf(
     "package" to "硬件",
     "wallet" to "账单"
 )
+
+private val ASSET_PRICE_REGEX = Regex("""([¥$€£])?\s*([0-9]+(?:\.[0-9]+)?)""")
+
+private fun summarizeAssetsCost(assets: List<AssetItem>, yearly: Boolean): String {
+    val buckets = linkedMapOf<String, Double>()
+    assets.forEach { a ->
+        if (a.status == "已停用" || a.status == "已归档") return@forEach
+        val raw = a.price.trim()
+        if (raw.isEmpty()) return@forEach
+        val match = ASSET_PRICE_REGEX.find(raw) ?: return@forEach
+        val symbol = match.groupValues[1].ifEmpty { "¥" }
+        val amount = match.groupValues[2].toDoubleOrNull() ?: return@forEach
+        if (amount <= 0.0) return@forEach
+        val lower = raw.lowercase(Locale.ROOT)
+        val normalized = when {
+            lower.contains("年") || lower.contains("yr") || lower.contains("year") ->
+                if (yearly) amount else amount / 12.0
+            lower.contains("季") || lower.contains("quarter") ->
+                if (yearly) amount * 4.0 else amount / 3.0
+            else ->
+                if (yearly) amount * 12.0 else amount
+        }
+        buckets[symbol] = (buckets[symbol] ?: 0.0) + normalized
+    }
+    if (buckets.isEmpty()) return "--"
+    val suffix = if (yearly) "/年" else "/月"
+    return buckets.entries.joinToString(" + ") { (sym, value) ->
+        val rounded = (value * 10.0).roundToInt() / 10.0
+        val numStr = if (rounded % 1.0 == 0.0) rounded.toInt().toString() else rounded.toString()
+        "$sym$numStr$suffix"
+    }
+}
 
 private fun resolveAssetCategory(
     catId: String,
@@ -145,9 +187,12 @@ private fun mergeExtensibleAssetCategories(
     return result
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HubTabScreen(
     snapshot: DashboardSnapshot?,
+    bots: List<BotItem> = emptyList(),
+    modelOptions: List<ModelOptionItem> = emptyList(),
     onRunTask: (TaskItem) -> Unit,
     onToggleTask: (TaskItem, Boolean) -> Unit,
     onSyncAssets: () -> Unit,
@@ -160,8 +205,30 @@ fun HubTabScreen(
         dueDate: String,
         autoRenew: Boolean
     ) -> Unit,
+    onQuickRenewAsset: (AssetItem, Int) -> Unit = { _, _ -> },
     onDeleteAsset: (String) -> Unit,
     onSaveAssetCategories: (List<AssetCategoryItem>) -> Unit = {},
+    onSaveTask: (
+        existingId: String?,
+        name: String,
+        type: String,
+        botId: String,
+        cronExpr: String,
+        runAt: String,
+        description: String,
+        model: String,
+        allowPaidFallback: Boolean,
+        maxPaidCallsPerDay: Int,
+        enabled: Boolean,
+        params: String
+    ) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _ -> },
+    onDeleteTask: (String) -> Unit = {},
+    onCreateTodo: (title: String, notes: String, dueAt: String, priority: String) -> Unit = { _, _, _, _ -> },
+    onToggleTodoDone: (TodoItemUi) -> Unit = {},
+    onUpdateTodo: (id: String, title: String, notes: String, dueAt: String, priority: String) -> Unit = { _, _, _, _, _ -> },
+    onDeleteTodo: (String) -> Unit = {},
+    onSaveNote: (existingId: String?, title: String, content: String, category: String, pinned: Boolean) -> Unit = { _, _, _, _, _ -> },
+    onDeleteNote: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val theme = BotHubThemeTokens
@@ -171,13 +238,26 @@ fun HubTabScreen(
         mergeExtensibleAssetCategories(savedCategories, assets)
     }
     val tasks = snapshot?.tasks ?: emptyList()
+    val todos = snapshot?.todos ?: emptyList()
+    val notes = snapshot?.notes ?: emptyList()
     val expiringCount = snapshot?.expiringCount ?: 0
     val activeTasksCount = snapshot?.activeTasks ?: tasks.count { it.enabled }
+    val pendingTodosCount = todos.count { !it.isDone }
 
     var selectedSegment by remember { mutableStateOf(0) }
     var selectedCategoryFilter by remember { mutableStateOf("all") }
+
     var showAssetSheet by remember { mutableStateOf(false) }
     var editingAsset by remember { mutableStateOf<AssetItem?>(null) }
+
+    var showTaskSheet by remember { mutableStateOf(false) }
+    var editingTask by remember { mutableStateOf<TaskItem?>(null) }
+
+    var showTodoSheet by remember { mutableStateOf(false) }
+    var editingTodo by remember { mutableStateOf<TodoItemUi?>(null) }
+
+    var showNoteSheet by remember { mutableStateOf(false) }
+    var editingNote by remember { mutableStateOf<WorkNoteItemUi?>(null) }
 
     val filteredAssets = remember(assets, selectedCategoryFilter) {
         if (selectedCategoryFilter == "all") {
@@ -187,11 +267,24 @@ fun HubTabScreen(
         }
     }
 
+    val totalMonthlyCost = remember(filteredAssets) { summarizeAssetsCost(filteredAssets, yearly = false) }
+    val totalYearlyCost = remember(filteredAssets) { summarizeAssetsCost(filteredAssets, yearly = true) }
+    val categoryCostPills = remember(assets, mergedCategories) {
+        mergedCategories.mapNotNull { cat ->
+            val catAssets = assets.filter { it.category.equals(cat.id, ignoreCase = true) }
+            val mo = summarizeAssetsCost(catAssets, yearly = false)
+            val yr = summarizeAssetsCost(catAssets, yearly = true)
+            if (mo == "--") null else Triple(cat, mo, yr)
+        }
+    }
+
     Column(modifier = modifier) {
         TactileSegmentedControl(
             options = listOf(
                 "资产 (${assets.size})",
-                "定时任务 ($activeTasksCount/${tasks.size})"
+                "任务 ($activeTasksCount/${tasks.size})",
+                "待办 ($pendingTodosCount)",
+                "笔记 (${notes.size})"
             ),
             selectedIndex = selectedSegment,
             onSelect = { selectedSegment = it },
@@ -203,139 +296,10 @@ fun HubTabScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (selectedSegment == 0) {
-                item(key = "__hub_assets_hdr__") {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = "共 ${filteredAssets.size} 项",
-                                    fontSize = 12.5.sp,
-                                    color = theme.textMuted,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                                CrispTagPill(
-                                    text = if (expiringCount > 0) "${expiringCount}项临期" else "状态正常",
-                                    bgColor = if (expiringCount > 0) Color(0x26F59E0B) else Color(0x2210B981),
-                                    borderColor = if (expiringCount > 0) Color(0x52F59E0B) else Color(0x4710B981),
-                                    textColor = if (expiringCount > 0) Color(0xFFD97706) else Color(0xFF10B981)
-                                )
-                            }
-
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                TactileSecondaryButton(
-                                    text = "添加",
-                                    leadingIcon = Icons.Default.Add,
-                                    cornerRadius = 999.dp,
-                                    minHeight = 32.dp,
-                                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
-                                    onClick = {
-                                        editingAsset = null
-                                        showAssetSheet = true
-                                    }
-                                )
-                                TactileSecondaryButton(
-                                    text = "同步",
-                                    leadingIcon = Icons.Default.Refresh,
-                                    accent = true,
-                                    cornerRadius = 999.dp,
-                                    minHeight = 32.dp,
-                                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
-                                    onClick = onSyncAssets
-                                )
-                            }
-                        }
-
-                        if (mergedCategories.isNotEmpty()) {
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                item(key = "__cat_all__") {
-                                    TactileSecondaryButton(
-                                        text = "全部",
-                                        accent = selectedCategoryFilter == "all",
-                                        cornerRadius = 999.dp,
-                                        minHeight = 30.dp,
-                                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
-                                        onClick = { selectedCategoryFilter = "all" }
-                                    )
-                                }
-                                items(mergedCategories, key = { it.id }) { cat ->
-                                    TactileSecondaryButton(
-                                        text = cat.label,
-                                        leadingIcon = assetCategoryIconVector(cat.icon),
-                                        accent = selectedCategoryFilter.equals(cat.id, ignoreCase = true),
-                                        cornerRadius = 999.dp,
-                                        minHeight = 30.dp,
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                        onClick = { selectedCategoryFilter = cat.id }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (filteredAssets.isEmpty()) {
-                    item(key = "__hub_assets_empty__") {
-                        SpecularGlassCard(
-                            cornerRadius = 16.dp,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = if (assets.isEmpty()) {
-                                    "暂无资产记录，点击右上角「添加」即可自由录入与扩展分类"
-                                } else {
-                                    "当前分类下暂无资产记录"
-                                },
-                                fontSize = 13.sp,
-                                color = theme.textMuted,
-                                modifier = Modifier.padding(16.dp)
-                            )
-                        }
-                    }
-                }
-
-                items(filteredAssets, key = { it.id }) { asset ->
-                    val catMeta = remember(asset.category, savedCategories) {
-                        resolveAssetCategory(asset.category, savedCategories)
-                    }
-                    val isPermanent = asset.dueDate.startsWith("2099") || asset.daysLeft > 3650
-                    val isMultiYear = !isPermanent && asset.daysLeft > 365
-                    val barColor = when {
-                        isPermanent || isMultiYear -> Color(0xFF10B981)
-                        asset.daysLeft <= 7 -> Color(0xFFF43F5E)
-                        asset.daysLeft <= 30 -> Color(0xFFF59E0B)
-                        else -> theme.accent
-                    }
-                    val progressFraction = when {
-                        isPermanent -> 1f
-                        asset.daysLeft <= 0 -> 0.04f
-                        else -> (asset.daysLeft.toFloat() / 365f).coerceIn(0.06f, 1f)
-                    }
-
-                    SpecularGlassCard(
-                        cornerRadius = 17.dp,
-                        accentTint = if (asset.isExpiringSoon && !isPermanent) barColor else null,
-                        onClick = {
-                            editingAsset = asset
-                            showAssetSheet = true
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-                            verticalArrangement = Arrangement.spacedBy(7.dp)
-                        ) {
+            when (selectedSegment) {
+                0 -> {
+                    item(key = "__hub_assets_hdr__") {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -344,175 +308,677 @@ fun HubTabScreen(
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.weight(1f).padding(end = 10.dp)
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .clip(RoundedCornerShape(9.dp))
-                                            .background(theme.accent.copy(alpha = 0.14f))
-                                            .border(1.dp, theme.accent.copy(alpha = 0.3f), RoundedCornerShape(9.dp)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = assetCategoryIconVector(catMeta.icon),
-                                            contentDescription = null,
-                                            tint = theme.accent,
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = asset.name,
-                                            fontSize = 14.5.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = theme.textPrimary,
-                                            maxLines = 1,
-                                            softWrap = false,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = catMeta.label,
-                                            fontSize = 10.5.sp,
-                                            color = theme.textMuted,
-                                            maxLines = 1
-                                        )
-                                    }
-                                }
-                                CrispTagPill(
-                                    text = if (isPermanent) "长期" else asset.dueBadgeLabel,
-                                    bgColor = barColor.copy(alpha = 0.14f),
-                                    borderColor = barColor.copy(alpha = 0.42f),
-                                    textColor = barColor
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = listOf(asset.spec, asset.price)
-                                        .filter { it.isNotBlank() }
-                                        .joinToString(" · ")
-                                        .ifEmpty { "点击编辑详情" },
-                                    fontSize = 12.sp,
-                                    color = theme.textMuted,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(end = 12.dp)
-                                )
-                                if (!isPermanent && asset.dueDate.isNotEmpty()) {
                                     Text(
-                                        text = asset.dueDate.take(10),
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 11.sp,
+                                        text = "共 ${filteredAssets.size} 项",
+                                        fontSize = 12.5.sp,
                                         color = theme.textMuted,
                                         maxLines = 1,
                                         softWrap = false
                                     )
+                                    CrispTagPill(
+                                        text = if (expiringCount > 0) "${expiringCount}项临期" else "状态正常",
+                                        bgColor = if (expiringCount > 0) Color(0x26F59E0B) else Color(0x2210B981),
+                                        borderColor = if (expiringCount > 0) Color(0x52F59E0B) else Color(0x4710B981),
+                                        textColor = if (expiringCount > 0) Color(0xFFD97706) else Color(0xFF10B981)
+                                    )
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    TactileSecondaryButton(
+                                        text = "添加",
+                                        leadingIcon = Icons.Default.Add,
+                                        cornerRadius = 999.dp,
+                                        minHeight = 32.dp,
+                                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
+                                        onClick = {
+                                            editingAsset = null
+                                            showAssetSheet = true
+                                        }
+                                    )
+                                    TactileSecondaryButton(
+                                        text = "同步",
+                                        leadingIcon = Icons.Default.Refresh,
+                                        accent = true,
+                                        cornerRadius = 999.dp,
+                                        minHeight = 32.dp,
+                                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
+                                        onClick = onSyncAssets
+                                    )
                                 }
                             }
 
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(3.dp)
-                                    .clip(RoundedCornerShape(999.dp))
-                                    .background(theme.inputTop)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth(progressFraction)
-                                        .height(3.dp)
-                                        .clip(RoundedCornerShape(999.dp))
-                                        .background(
-                                            Brush.horizontalGradient(
-                                                listOf(barColor.copy(alpha = 0.72f), barColor)
+                            if (totalMonthlyCost != "--") {
+                                SpecularGlassCard(
+                                    cornerRadius = 14.dp,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "折算月均 $totalMonthlyCost",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = theme.textPrimary
                                             )
+                                            Text(
+                                                text = "年均 $totalYearlyCost",
+                                                fontSize = 11.5.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = theme.textSecondary
+                                            )
+                                        }
+                                        if (categoryCostPills.isNotEmpty()) {
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                categoryCostPills.forEach { (cat, mo, yr) ->
+                                                    CrispTagPill(
+                                                        text = "${cat.label} $mo · $yr",
+                                                        bgColor = theme.inputTop,
+                                                        borderColor = theme.rimSubtle,
+                                                        textColor = theme.textSecondary
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (mergedCategories.isNotEmpty()) {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    item(key = "__cat_all__") {
+                                        TactileSecondaryButton(
+                                            text = "全部",
+                                            accent = selectedCategoryFilter == "all",
+                                            cornerRadius = 999.dp,
+                                            minHeight = 30.dp,
+                                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
+                                            onClick = { selectedCategoryFilter = "all" }
                                         )
+                                    }
+                                    items(mergedCategories, key = { it.id }) { cat ->
+                                        TactileSecondaryButton(
+                                            text = cat.label,
+                                            leadingIcon = assetCategoryIconVector(cat.icon),
+                                            accent = selectedCategoryFilter.equals(cat.id, ignoreCase = true),
+                                            cornerRadius = 999.dp,
+                                            minHeight = 30.dp,
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            onClick = { selectedCategoryFilter = cat.id }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (filteredAssets.isEmpty()) {
+                        item(key = "__hub_assets_empty__") {
+                            SpecularGlassCard(
+                                cornerRadius = 16.dp,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (assets.isEmpty()) {
+                                        "暂无资产记录，点击右上角「添加」即可自由录入与扩展分类"
+                                    } else {
+                                        "当前分类下暂无资产记录"
+                                    },
+                                    fontSize = 13.sp,
+                                    color = theme.textMuted,
+                                    modifier = Modifier.padding(16.dp)
                                 )
                             }
                         }
                     }
-                }
-            } else {
-                if (tasks.isEmpty()) {
-                    item(key = "__hub_tasks_empty__") {
+
+                    items(filteredAssets, key = { it.id }) { asset ->
+                        val catMeta = remember(asset.category, savedCategories) {
+                            resolveAssetCategory(asset.category, savedCategories)
+                        }
+                        val isPermanent = asset.dueDate.startsWith("2099") || asset.daysLeft > 3650
+                        val isMultiYear = !isPermanent && asset.daysLeft > 365
+                        val barColor = when {
+                            isPermanent || isMultiYear -> Color(0xFF10B981)
+                            asset.daysLeft <= 7 -> Color(0xFFF43F5E)
+                            asset.daysLeft <= 30 -> Color(0xFFF59E0B)
+                            else -> theme.accent
+                        }
+                        val progressFraction = when {
+                            isPermanent -> 1f
+                            asset.daysLeft <= 0 -> 0.04f
+                            else -> (asset.daysLeft.toFloat() / 365f).coerceIn(0.06f, 1f)
+                        }
+                        val recMonths = remember(asset.price) { asset.inferRecommendedRenewMonths() }
+
                         SpecularGlassCard(
-                            cornerRadius = 16.dp,
+                            cornerRadius = 17.dp,
+                            accentTint = if (asset.isExpiringSoon && !isPermanent) barColor else null,
+                            onClick = {
+                                editingAsset = asset
+                                showAssetSheet = true
+                            },
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                verticalArrangement = Arrangement.spacedBy(7.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.weight(1f).padding(end = 10.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(RoundedCornerShape(9.dp))
+                                                .background(theme.accent.copy(alpha = 0.14f))
+                                                .border(1.dp, theme.accent.copy(alpha = 0.3f), RoundedCornerShape(9.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = assetCategoryIconVector(catMeta.icon),
+                                                contentDescription = null,
+                                                tint = theme.accent,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = asset.name,
+                                                fontSize = 14.5.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = theme.textPrimary,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = catMeta.label,
+                                                fontSize = 10.5.sp,
+                                                color = theme.textMuted,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                    CrispTagPill(
+                                        text = if (isPermanent) "长期" else asset.dueBadgeLabel,
+                                        bgColor = barColor.copy(alpha = 0.14f),
+                                        borderColor = barColor.copy(alpha = 0.42f),
+                                        textColor = barColor
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = listOf(asset.spec, asset.price)
+                                            .filter { it.isNotBlank() }
+                                            .joinToString(" · ")
+                                            .ifEmpty { "点击编辑详情" },
+                                        fontSize = 12.sp,
+                                        color = theme.textMuted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(end = 12.dp)
+                                    )
+                                    if (!isPermanent && asset.dueDate.isNotEmpty()) {
+                                        Text(
+                                            text = asset.dueDate.take(10),
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 11.sp,
+                                            color = theme.textMuted,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                }
+
+                                if (!isPermanent) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "一键续期顺延",
+                                            fontSize = 10.5.sp,
+                                            color = theme.textMuted
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            listOf(1 to "+1月", 3 to "+1季", 12 to "+1年").forEach { (m, label) ->
+                                                val isRec = recMonths == m
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(
+                                                            if (isRec) theme.accent.copy(alpha = 0.16f) else theme.inputTop
+                                                        )
+                                                        .border(
+                                                            0.8.dp,
+                                                            if (isRec) theme.accent.copy(alpha = 0.48f) else theme.rimSubtle,
+                                                            RoundedCornerShape(8.dp)
+                                                        )
+                                                        .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                                            onQuickRenewAsset(asset, m)
+                                                        }
+                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                                ) {
+                                                    Text(
+                                                        text = label,
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = if (isRec) FontWeight.SemiBold else FontWeight.Normal,
+                                                        color = if (isRec) {
+                                                            if (theme.isLight) theme.accentDeep else theme.accentLight
+                                                        } else {
+                                                            theme.textSecondary
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(3.dp)
+                                        .clip(RoundedCornerShape(999.dp))
+                                        .background(theme.inputTop)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(progressFraction)
+                                            .height(3.dp)
+                                            .clip(RoundedCornerShape(999.dp))
+                                            .background(
+                                                Brush.horizontalGradient(
+                                                    listOf(barColor.copy(alpha = 0.72f), barColor)
+                                                )
+                                            )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                1 -> {
+                    item(key = "__hub_tasks_hdr__") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                text = "暂无定时任务",
-                                fontSize = 13.sp,
-                                color = theme.textMuted,
-                                modifier = Modifier.padding(16.dp)
+                                text = "共 ${tasks.size} 项例程 · 已启用 $activeTasksCount 项",
+                                fontSize = 12.5.sp,
+                                color = theme.textMuted
+                            )
+                            TactileSecondaryButton(
+                                text = "新建任务",
+                                leadingIcon = Icons.Default.Add,
+                                accent = true,
+                                cornerRadius = 999.dp,
+                                minHeight = 32.dp,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                                onClick = {
+                                    editingTask = null
+                                    showTaskSheet = true
+                                }
                             )
                         }
                     }
-                }
 
-                items(tasks, key = { it.id }) { task ->
-                    SpecularGlassCard(
-                        cornerRadius = 17.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-                            verticalArrangement = Arrangement.spacedBy(7.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                    if (tasks.isEmpty()) {
+                        item(key = "__hub_tasks_empty__") {
+                            SpecularGlassCard(
+                                cornerRadius = 16.dp,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = task.name,
-                                    fontSize = 14.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (task.enabled) theme.textPrimary else theme.textMuted,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(end = 10.dp)
-                                )
-                                TactileToggle(
-                                    checked = task.enabled,
-                                    onCheckedChange = { checked -> onToggleTask(task, checked) }
+                                    text = "暂无定时任务，点击右上角「新建任务」即可在手机端直接创建定时巡检或提醒",
+                                    fontSize = 13.sp,
+                                    color = theme.textMuted,
+                                    modifier = Modifier.padding(16.dp)
                                 )
                             }
+                        }
+                    }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                    items(tasks, key = { it.id }) { task ->
+                        SpecularGlassCard(
+                            cornerRadius = 17.dp,
+                            onClick = {
+                                editingTask = task
+                                showTaskSheet = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                verticalArrangement = Arrangement.spacedBy(7.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.weight(1f).padding(end = 10.dp)
+                                    ) {
+                                        Text(
+                                            text = task.name,
+                                            fontSize = 14.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (task.enabled) theme.textPrimary else theme.textMuted,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        CrispTagPill(
+                                            text = if (task.allowPaidFallback) {
+                                                if (task.maxPaidCallsPerDay > 0) "付费<=${task.maxPaidCallsPerDay}/日" else "允许付费"
+                                            } else {
+                                                "仅免费池"
+                                            },
+                                            bgColor = if (task.allowPaidFallback) Color(0x24F59E0B) else Color(0x2210B981),
+                                            borderColor = if (task.allowPaidFallback) Color(0x4DF59E0B) else Color(0x4510B981),
+                                            textColor = if (task.allowPaidFallback) Color(0xFFD97706) else Color(0xFF10B981)
+                                        )
+                                    }
+                                    TactileToggle(
+                                        checked = task.enabled,
+                                        onCheckedChange = { checked -> onToggleTask(task, checked) }
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = task.formattedSchedule(),
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.5.sp,
+                                        color = theme.textMuted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(end = 10.dp)
+                                    )
+
+                                    TactileSecondaryButton(
+                                        text = "运行",
+                                        leadingIcon = Icons.Default.PlayArrow,
+                                        accent = true,
+                                        cornerRadius = 999.dp,
+                                        minHeight = 31.dp,
+                                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
+                                        onClick = { onRunTask(task) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                2 -> {
+                    item(key = "__hub_todos_hdr__") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "待完成 $pendingTodosCount 项 · 已完成 ${todos.size - pendingTodosCount} 项",
+                                fontSize = 12.5.sp,
+                                color = theme.textMuted
+                            )
+                            TactileSecondaryButton(
+                                text = "新建待办",
+                                leadingIcon = Icons.Default.Add,
+                                accent = true,
+                                cornerRadius = 999.dp,
+                                minHeight = 32.dp,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                                onClick = {
+                                    editingTodo = null
+                                    showTodoSheet = true
+                                }
+                            )
+                        }
+                    }
+
+                    if (todos.isEmpty()) {
+                        item(key = "__hub_todos_empty__") {
+                            SpecularGlassCard(
+                                cornerRadius = 16.dp,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = task.formattedSchedule(),
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.5.sp,
+                                    text = "暂无待办事项，点击右上角「新建待办」或让大管家帮你登记待办，双端实时同步",
+                                    fontSize = 13.sp,
                                     color = theme.textMuted,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(end = 10.dp)
+                                    modifier = Modifier.padding(16.dp)
                                 )
+                            }
+                        }
+                    }
 
-                                TactileSecondaryButton(
-                                    text = "运行",
-                                    leadingIcon = Icons.Default.PlayArrow,
-                                    accent = true,
-                                    cornerRadius = 999.dp,
-                                    minHeight = 31.dp,
-                                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
-                                    onClick = { onRunTask(task) }
+                    items(todos, key = { it.id }) { todo ->
+                        val isHigh = todo.priority.equals("high", ignoreCase = true)
+                        SpecularGlassCard(
+                            cornerRadius = 16.dp,
+                            onClick = {
+                                editingTodo = todo
+                                showTodoSheet = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(RoundedCornerShape(7.dp))
+                                        .background(
+                                            if (todo.isDone) Color(0xFF10B981).copy(alpha = 0.22f) else theme.inputTop
+                                        )
+                                        .border(
+                                            1.2.dp,
+                                            if (todo.isDone) Color(0xFF10B981) else theme.accent.copy(alpha = 0.45f),
+                                            RoundedCornerShape(7.dp)
+                                        )
+                                        .tactileClickable(pressedScale = 0.9f, hapticOnTap = true) {
+                                            onToggleTodoDone(todo)
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (todo.isDone) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(Color(0xFF10B981))
+                                        )
+                                    }
+                                }
+
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Text(
+                                        text = todo.title,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (todo.isDone) theme.textMuted else theme.textPrimary,
+                                        textDecoration = if (todo.isDone) TextDecoration.LineThrough else TextDecoration.None,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (todo.notes.isNotBlank() || todo.dueAt.isNotBlank()) {
+                                        Text(
+                                            text = listOfNotNull(
+                                                todo.dueAt.takeIf { it.isNotBlank() }?.let { "截止 ${it.take(16)}" },
+                                                todo.notes.takeIf { it.isNotBlank() }
+                                            ).joinToString(" · "),
+                                            fontSize = 11.5.sp,
+                                            color = theme.textMuted,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+
+                                if (isHigh && !todo.isDone) {
+                                    CrispTagPill(
+                                        text = "高优",
+                                        bgColor = Color(0x26F43F5E),
+                                        borderColor = Color(0x52F43F5E),
+                                        textColor = Color(0xFFF43F5E)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    item(key = "__hub_notes_hdr__") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "共 ${notes.size} 篇工作交付与备忘笔记",
+                                fontSize = 12.5.sp,
+                                color = theme.textMuted
+                            )
+                            TactileSecondaryButton(
+                                text = "新建笔记",
+                                leadingIcon = Icons.Default.Add,
+                                accent = true,
+                                cornerRadius = 999.dp,
+                                minHeight = 32.dp,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                                onClick = {
+                                    editingNote = null
+                                    showNoteSheet = true
+                                }
+                            )
+                        }
+                    }
+
+                    if (notes.isEmpty()) {
+                        item(key = "__hub_notes_empty__") {
+                            SpecularGlassCard(
+                                cornerRadius = 16.dp,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "暂无工作笔记，点击右上角「新建笔记」或让 Bot 整理产出文档，与网页端工作台实时同步",
+                                    fontSize = 13.sp,
+                                    color = theme.textMuted,
+                                    modifier = Modifier.padding(16.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    items(notes, key = { it.id }) { note ->
+                        val catLabel = when (note.category.lowercase(Locale.ROOT)) {
+                            "sop" -> "运维手册"
+                            "memo" -> "随手备忘"
+                            else -> "工作产出"
+                        }
+                        SpecularGlassCard(
+                            cornerRadius = 16.dp,
+                            onClick = {
+                                editingNote = note
+                                showNoteSheet = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = note.title,
+                                        fontSize = 14.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = theme.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        if (note.pinned) {
+                                            CrispTagPill(
+                                                text = "置顶",
+                                                bgColor = theme.accent.copy(alpha = 0.16f),
+                                                borderColor = theme.accent.copy(alpha = 0.42f),
+                                                textColor = if (theme.isLight) theme.accentDeep else theme.accentLight
+                                            )
+                                        }
+                                        CrispTagPill(
+                                            text = catLabel,
+                                            bgColor = theme.inputTop,
+                                            borderColor = theme.rimSubtle,
+                                            textColor = theme.textSecondary
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = note.previewText(110).ifEmpty { "点击查看或编辑正文" },
+                                    fontSize = 12.sp,
+                                    color = theme.textSecondary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -540,6 +1006,784 @@ fun HubTabScreen(
             },
             onDismiss = { showAssetSheet = false }
         )
+    }
+
+    if (showTaskSheet) {
+        TaskEditorSheet(
+            task = editingTask,
+            bots = bots,
+            modelOptions = modelOptions,
+            onSave = { name, type, botId, cronExpr, runAt, description, model, allowPaid, maxPaid, enabled, params ->
+                onSaveTask(
+                    editingTask?.id,
+                    name,
+                    type,
+                    botId,
+                    cronExpr,
+                    runAt,
+                    description,
+                    model,
+                    allowPaid,
+                    maxPaid,
+                    enabled,
+                    params
+                )
+                showTaskSheet = false
+            },
+            onDelete = editingTask?.let { target ->
+                {
+                    onDeleteTask(target.id)
+                    showTaskSheet = false
+                }
+            },
+            onDismiss = { showTaskSheet = false }
+        )
+    }
+
+    if (showTodoSheet) {
+        TodoEditorSheet(
+            todo = editingTodo,
+            onSave = { title, notesText, dueAt, priority ->
+                val cur = editingTodo
+                if (cur == null) {
+                    onCreateTodo(title, notesText, dueAt, priority)
+                } else {
+                    onUpdateTodo(cur.id, title, notesText, dueAt, priority)
+                }
+                showTodoSheet = false
+            },
+            onDelete = editingTodo?.let { target ->
+                {
+                    onDeleteTodo(target.id)
+                    showTodoSheet = false
+                }
+            },
+            onDismiss = { showTodoSheet = false }
+        )
+    }
+
+    if (showNoteSheet) {
+        NoteEditorSheet(
+            note = editingNote,
+            onSave = { title, content, category, pinned ->
+                onSaveNote(editingNote?.id, title, content, category, pinned)
+                showNoteSheet = false
+            },
+            onDelete = editingNote?.let { target ->
+                {
+                    onDeleteNote(target.id)
+                    showNoteSheet = false
+                }
+            },
+            onDismiss = { showNoteSheet = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun TaskEditorSheet(
+    task: TaskItem?,
+    bots: List<BotItem>,
+    modelOptions: List<ModelOptionItem>,
+    onSave: (
+        name: String,
+        type: String,
+        botId: String,
+        cronExpr: String,
+        runAt: String,
+        description: String,
+        model: String,
+        allowPaidFallback: Boolean,
+        maxPaidCallsPerDay: Int,
+        enabled: Boolean,
+        params: String
+    ) -> Unit,
+    onDelete: (() -> Unit)?,
+    onDismiss: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val workerBots = remember(bots) { bots.filter { !it.isGroup } }
+    val defaultBotId = workerBots.firstOrNull { it.id == "concierge" }?.id
+        ?: workerBots.firstOrNull()?.id.orEmpty()
+
+    var name by remember(task) { mutableStateOf(task?.name.orEmpty()) }
+    var type by remember(task) { mutableStateOf(task?.type?.ifBlank { "bot_prompt" } ?: "bot_prompt") }
+    var botId by remember(task) { mutableStateOf(task?.botId?.ifBlank { defaultBotId } ?: defaultBotId) }
+    var isOneShot by remember(task) {
+        mutableStateOf(task != null && task.cronExpr.isBlank() && task.runAt.isNotBlank())
+    }
+    var cronExpr by remember(task) { mutableStateOf(task?.cronExpr?.ifBlank { "0 9 * * *" } ?: "0 9 * * *") }
+    var oneShotDate by remember(task) {
+        val raw = task?.runAt?.take(10).orEmpty()
+        mutableStateOf(raw.ifBlank { LocalDate.now().plusDays(1).toString() })
+    }
+    var oneShotTime by remember(task) {
+        val raw = task?.runAt?.trim().orEmpty()
+        val timePart = if (raw.length >= 16 && raw.contains(" ")) raw.substring(11, 16) else "09:00"
+        mutableStateOf(timePart)
+    }
+    var promptText by remember(task) {
+        val fromParams = runCatching {
+            JSONObject(task?.params.orEmpty()).optString("prompt", "")
+        }.getOrDefault("")
+        mutableStateOf(fromParams.ifBlank { task?.description.orEmpty() })
+    }
+    var model by remember(task) { mutableStateOf(task?.model.orEmpty()) }
+    var allowPaidFallback by remember(task) { mutableStateOf(task?.allowPaidFallback ?: false) }
+    var maxPaidCallsText by remember(task) {
+        val v = task?.maxPaidCallsPerDay ?: 0
+        mutableStateOf(if (v > 0) v.toString() else "0")
+    }
+    var enabled by remember(task) { mutableStateOf(task?.enabled ?: true) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showModelPicker by remember { mutableStateOf(false) }
+
+    val templateChoices = listOf(
+        "bot_prompt" to "Bot 定时指令",
+        "asset_watcher" to "资产到期巡检",
+        "morning" to "早间工作简报",
+        "radar" to "GitHub 开源雷达"
+    )
+    val cronPresets = listOf(
+        "0 9 * * *" to "每天 09:00",
+        "0 21 * * *" to "每天 21:00",
+        "0 */6 * * *" to "每 6 小时",
+        "0 9 * * 1" to "每周一 09:00"
+    )
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = theme.sheetBg,
+        scrimColor = theme.scrim,
+        tonalElevation = 0.dp,
+        dragHandle = { ObsidianSheetDragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = if (task == null) "新建定时任务" else "编辑定时任务",
+                fontSize = 17.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = theme.textPrimary
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("任务模板类型", fontSize = 12.sp, color = theme.textMuted)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    templateChoices.forEach { (tid, label) ->
+                        TactileSecondaryButton(
+                            text = label,
+                            accent = type == tid,
+                            cornerRadius = 10.dp,
+                            minHeight = 32.dp,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            onClick = {
+                                type = tid
+                                if (name.isBlank()) name = label
+                            }
+                        )
+                    }
+                }
+            }
+
+            ObsidianGlassInput(
+                value = name,
+                onValueChange = { name = it },
+                label = "任务名称",
+                placeholder = "例如：每日服务器与资产巡检",
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (workerBots.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("负责执行与汇报的 Bot", fontSize = 12.sp, color = theme.textMuted)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(workerBots, key = { it.id }) { b ->
+                            TactileSecondaryButton(
+                                text = b.name,
+                                accent = botId == b.id,
+                                cornerRadius = 10.dp,
+                                minHeight = 32.dp,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                onClick = { botId = b.id }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TactileSegmentedControl(
+                    options = listOf("周期 Cron 例程", "单次定时提醒"),
+                    selectedIndex = if (isOneShot) 1 else 0,
+                    onSelect = { isOneShot = (it == 1) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (!isOneShot) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        cronPresets.forEach { (expr, label) ->
+                            TactileSecondaryButton(
+                                text = label,
+                                accent = cronExpr.trim() == expr,
+                                cornerRadius = 999.dp,
+                                minHeight = 28.dp,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp),
+                                onClick = { cronExpr = expr }
+                            )
+                        }
+                    }
+                    ObsidianGlassInput(
+                        value = cronExpr,
+                        onValueChange = { cronExpr = it },
+                        label = "5 段式 Cron 表达式 (分 时 日 月 周)",
+                        placeholder = "0 9 * * *",
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1.1f)
+                        ) {
+                            Text("触发日期", fontSize = 12.sp, color = theme.textMuted)
+                            Surface(
+                                onClick = { showDatePicker = true },
+                                shape = RoundedCornerShape(14.dp),
+                                color = theme.inputTop,
+                                border = BorderStroke(1.dp, theme.rimSubtle),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 13.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = oneShotDate,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 13.5.sp,
+                                        color = theme.textPrimary
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.CalendarMonth,
+                                        contentDescription = "选择日期",
+                                        tint = theme.accent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                        ObsidianGlassInput(
+                            value = oneShotTime,
+                            onValueChange = { oneShotTime = it },
+                            label = "触发时间 (HH:mm)",
+                            placeholder = "09:00",
+                            singleLine = true,
+                            modifier = Modifier.weight(0.9f)
+                        )
+                    }
+                }
+            }
+
+            if (type == "bot_prompt") {
+                ObsidianGlassInput(
+                    value = promptText,
+                    onValueChange = { promptText = it },
+                    label = "定时执行的指令内容 (Prompt)",
+                    placeholder = "例如：请巡检所有数字资产与探针节点状态，并汇总今日待办提醒...",
+                    singleLine = false,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("指定执行模型", fontSize = 12.sp, color = theme.textMuted)
+                    TactileSecondaryButton(
+                        text = if (model.isBlank()) "跟随负责 Bot" else resolveModelOptionDisplayName(model, modelOptions),
+                        accent = model.isNotBlank(),
+                        cornerRadius = 999.dp,
+                        minHeight = 30.dp,
+                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
+                        onClick = { showModelPicker = true }
+                    )
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        "" to "跟随负责 Bot",
+                        "auto:free" to "免费模型池 (auto:free)",
+                        "auto:paid" to "付费模型池 (auto:paid)"
+                    ).forEach { (mid, label) ->
+                        TactileSecondaryButton(
+                            text = label,
+                            accent = model == mid,
+                            cornerRadius = 999.dp,
+                            minHeight = 28.dp,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp),
+                            onClick = {
+                                model = mid
+                                if (mid == "auto:paid") allowPaidFallback = true
+                            }
+                        )
+                    }
+                }
+            }
+
+            SpecularGlassCard(
+                cornerRadius = 15.dp,
+                onClick = { allowPaidFallback = !allowPaidFallback },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+                            Text(
+                                text = "允许本任务调用付费模型池",
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = theme.textPrimary
+                            )
+                            Text(
+                                text = if (allowPaidFallback) "已开启：免费池不可用或指定付费模型时允许付费调用" else "默认关闭：严格锁定零成本免费池，防止后台静默扣费",
+                                fontSize = 11.sp,
+                                color = theme.textMuted
+                            )
+                        }
+                        TactileToggle(
+                            checked = allowPaidFallback,
+                            onCheckedChange = { allowPaidFallback = it }
+                        )
+                    }
+
+                    if (allowPaidFallback) {
+                        ObsidianGlassInput(
+                            value = maxPaidCallsText,
+                            onValueChange = { maxPaidCallsText = it.filter { ch -> ch.isDigit() } },
+                            label = "单日最大付费调用次数上限 (0 表示不限)",
+                            placeholder = "0",
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            SpecularGlassCard(
+                cornerRadius = 15.dp,
+                onClick = { enabled = !enabled },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("启用此定时任务", fontSize = 14.sp, color = theme.textPrimary)
+                    TactileToggle(
+                        checked = enabled,
+                        onCheckedChange = { enabled = it }
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (onDelete != null) {
+                    TactileSecondaryButton(
+                        text = "删除",
+                        danger = true,
+                        minHeight = 46.dp,
+                        onClick = onDelete,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                TactilePrimaryButton(
+                    text = "保存任务",
+                    enabled = name.isNotBlank() && (type != "bot_prompt" || promptText.isNotBlank()),
+                    minHeight = 46.dp,
+                    onClick = {
+                        val finalCron = if (isOneShot) "" else cronExpr.trim().ifEmpty { "0 9 * * *" }
+                        val finalRunAt = if (isOneShot) "${oneShotDate.trim()} ${oneShotTime.trim().ifEmpty { "09:00" }}" else ""
+                        val paramsJson = if (type == "bot_prompt") {
+                            JSONObject().put("prompt", promptText.trim()).toString()
+                        } else {
+                            task?.params?.ifBlank { "{}" } ?: "{}"
+                        }
+                        onSave(
+                            name.trim(),
+                            type,
+                            botId,
+                            finalCron,
+                            finalRunAt,
+                            promptText.trim(),
+                            model.trim(),
+                            allowPaidFallback,
+                            maxPaidCallsText.toIntOrNull()?.coerceAtLeast(0) ?: 0,
+                            enabled,
+                            paramsJson
+                        )
+                    },
+                    modifier = Modifier.weight(if (onDelete != null) 1.5f else 1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+
+    if (showDatePicker) {
+        ThemeCalendarDialog(
+            initialDate = oneShotDate,
+            allowPerpetual = false,
+            onSelectDate = { picked ->
+                oneShotDate = picked
+                showDatePicker = false
+            },
+            onSelectPerpetual = {},
+            onDismiss = { showDatePicker = false }
+        )
+    }
+
+    if (showModelPicker) {
+        ModelPickerSheet(
+            activeModel = model.ifBlank { "auto:free" },
+            modelOptions = modelOptions,
+            onSelect = { chosen ->
+                model = chosen
+                if (chosen == "auto:paid" || modelOptions.find { it.id == chosen }?.tier == "paid") {
+                    allowPaidFallback = true
+                }
+                showModelPicker = false
+            },
+            onDismiss = { showModelPicker = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TodoEditorSheet(
+    todo: TodoItemUi?,
+    onSave: (title: String, notes: String, dueAt: String, priority: String) -> Unit,
+    onDelete: (() -> Unit)?,
+    onDismiss: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var title by remember(todo) { mutableStateOf(todo?.title.orEmpty()) }
+    var notes by remember(todo) { mutableStateOf(todo?.notes.orEmpty()) }
+    var dueAt by remember(todo) { mutableStateOf(todo?.dueAt?.take(10).orEmpty()) }
+    var priority by remember(todo) { mutableStateOf(todo?.priority?.ifBlank { "normal" } ?: "normal") }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = theme.sheetBg,
+        scrimColor = theme.scrim,
+        tonalElevation = 0.dp,
+        dragHandle = { ObsidianSheetDragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = if (todo == null) "新建待办事项" else "编辑待办事项",
+                fontSize = 17.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = theme.textPrimary
+            )
+
+            ObsidianGlassInput(
+                value = title,
+                onValueChange = { title = it },
+                label = "待办标题",
+                placeholder = "例如：续费香港服务器并核对备份",
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("优先级", fontSize = 12.sp, color = theme.textMuted)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("normal" to "普通", "high" to "高优紧急", "low" to "低优").forEach { (pid, label) ->
+                        TactileSecondaryButton(
+                            text = label,
+                            accent = priority == pid,
+                            cornerRadius = 10.dp,
+                            minHeight = 32.dp,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            onClick = { priority = pid }
+                        )
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("截止日期 (可选)", fontSize = 12.sp, color = theme.textMuted)
+                    if (dueAt.isNotBlank()) {
+                        Text(
+                            text = "清除日期",
+                            fontSize = 11.5.sp,
+                            color = theme.accent,
+                            modifier = Modifier.clickable { dueAt = "" }
+                        )
+                    }
+                }
+                Surface(
+                    onClick = { showDatePicker = true },
+                    shape = RoundedCornerShape(14.dp),
+                    color = theme.inputTop,
+                    border = BorderStroke(1.dp, theme.rimSubtle),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 13.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = dueAt.ifBlank { "点击选择截止日期" },
+                            fontFamily = if (dueAt.isNotBlank()) FontFamily.Monospace else FontFamily.Default,
+                            fontSize = 13.5.sp,
+                            color = if (dueAt.isBlank()) theme.textMuted else theme.textPrimary
+                        )
+                        Icon(
+                            imageVector = Icons.Default.CalendarMonth,
+                            contentDescription = "选择截止日期",
+                            tint = theme.accent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            ObsidianGlassInput(
+                value = notes,
+                onValueChange = { notes = it },
+                label = "补充备注 (可选)",
+                placeholder = "补充说明或上下文细节",
+                singleLine = false,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (onDelete != null) {
+                    TactileSecondaryButton(
+                        text = "删除",
+                        danger = true,
+                        minHeight = 46.dp,
+                        onClick = onDelete,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                TactilePrimaryButton(
+                    text = "保存待办",
+                    enabled = title.isNotBlank(),
+                    minHeight = 46.dp,
+                    onClick = {
+                        onSave(title.trim(), notes.trim(), dueAt.trim(), priority)
+                    },
+                    modifier = Modifier.weight(if (onDelete != null) 1.5f else 1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+
+    if (showDatePicker) {
+        ThemeCalendarDialog(
+            initialDate = dueAt.ifBlank { LocalDate.now().toString() },
+            allowPerpetual = false,
+            onSelectDate = { picked ->
+                dueAt = picked
+                showDatePicker = false
+            },
+            onSelectPerpetual = {},
+            onDismiss = { showDatePicker = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NoteEditorSheet(
+    note: WorkNoteItemUi?,
+    onSave: (title: String, content: String, category: String, pinned: Boolean) -> Unit,
+    onDelete: (() -> Unit)?,
+    onDismiss: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var title by remember(note) { mutableStateOf(note?.title.orEmpty()) }
+    var content by remember(note) { mutableStateOf(note?.content.orEmpty()) }
+    var category by remember(note) { mutableStateOf(note?.category?.ifBlank { "deliverable" } ?: "deliverable") }
+    var pinned by remember(note) { mutableStateOf(note?.pinned ?: false) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = theme.sheetBg,
+        scrimColor = theme.scrim,
+        tonalElevation = 0.dp,
+        dragHandle = { ObsidianSheetDragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = if (note == null) "新建工作笔记" else "编辑工作笔记",
+                fontSize = 17.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = theme.textPrimary
+            )
+
+            ObsidianGlassInput(
+                value = title,
+                onValueChange = { title = it },
+                label = "笔记标题",
+                placeholder = "例如：2026 Q4 服务器架构与续期复盘",
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("文档分类", fontSize = 12.sp, color = theme.textMuted)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        "deliverable" to "工作产出",
+                        "sop" to "运维手册",
+                        "memo" to "随手备忘"
+                    ).forEach { (cid, label) ->
+                        TactileSecondaryButton(
+                            text = label,
+                            accent = category == cid,
+                            cornerRadius = 10.dp,
+                            minHeight = 32.dp,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            onClick = { category = cid }
+                        )
+                    }
+                }
+            }
+
+            ObsidianGlassInput(
+                value = content,
+                onValueChange = { content = it },
+                label = "Markdown 正文内容",
+                placeholder = "支持 Markdown 格式排版，双端实时同步...",
+                singleLine = false,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            SpecularGlassCard(
+                cornerRadius = 15.dp,
+                onClick = { pinned = !pinned },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("置顶此篇工作笔记", fontSize = 14.sp, color = theme.textPrimary)
+                    TactileToggle(
+                        checked = pinned,
+                        onCheckedChange = { pinned = it }
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (onDelete != null) {
+                    TactileSecondaryButton(
+                        text = "删除",
+                        danger = true,
+                        minHeight = 46.dp,
+                        onClick = onDelete,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                TactilePrimaryButton(
+                    text = "保存笔记",
+                    enabled = title.isNotBlank(),
+                    minHeight = 46.dp,
+                    onClick = {
+                        onSave(title.trim(), content.trim(), category, pinned)
+                    },
+                    modifier = Modifier.weight(if (onDelete != null) 1.5f else 1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+        }
     }
 }
 
@@ -832,7 +2076,7 @@ private fun AssetEditorSheet(
                         onClick = { showCalendarDialog = true },
                         shape = RoundedCornerShape(14.dp),
                         color = theme.inputTop,
-                        border = BorderStroke(1.dp, theme.rimMid),
+                        border = BorderStroke(1.dp, theme.rimSubtle),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -860,6 +2104,40 @@ private fun AssetEditorSheet(
                                 contentDescription = "打开日历选择日期",
                                 tint = theme.accent,
                                 modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!isPermanent) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "基于当前到期日顺延：",
+                        fontSize = 11.5.sp,
+                        color = theme.textMuted
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(1 to "+1月", 3 to "+1季", 12 to "+1年").forEach { (months, label) ->
+                            TactileSecondaryButton(
+                                text = label,
+                                cornerRadius = 999.dp,
+                                minHeight = 28.dp,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp),
+                                onClick = {
+                                    val today = LocalDate.now()
+                                    val parsed = runCatching { LocalDate.parse(dueDate.take(10)) }.getOrNull()
+                                    val base = if (parsed != null && !dueDate.startsWith("2099") && !parsed.isBefore(today.minusDays(30))) {
+                                        parsed
+                                    } else {
+                                        today
+                                    }
+                                    dueDate = base.plusMonths(months.toLong()).toString()
+                                }
                             )
                         }
                     }

@@ -95,6 +95,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.data.BotItem
+import uk.starryheavens.vesper.bothub.data.BotThreadItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
@@ -133,6 +134,8 @@ fun ChatRoomScreen(
     modelOptions: List<ModelOptionItem> = emptyList(),
     enableThinking: Boolean,
     messages: List<ChatTurnUi>,
+    botThreads: List<BotThreadItem> = emptyList(),
+    activeThreadId: String = "",
     inputText: String,
     isStreaming: Boolean,
     onBack: () -> Unit,
@@ -141,6 +144,10 @@ fun ChatRoomScreen(
     onStop: () -> Unit,
     onModelChange: (String) -> Unit,
     onThinkingChange: (Boolean) -> Unit,
+    onSelectThread: (String) -> Unit = {},
+    onCreateThread: (String) -> Unit = {},
+    onDeleteThread: (String) -> Unit = {},
+    onRetryTurnWithModel: (ChatTurnUi, String, Boolean) -> Unit = { _, _, _ -> },
     onCopyText: (String) -> Unit,
     onDeleteTurn: (ChatTurnUi) -> Unit = {},
     onForwardMessage: (BotItem, String, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
@@ -157,6 +164,7 @@ fun ChatRoomScreen(
     val listState = rememberLazyListState()
     var showPlusDrawer by remember { mutableStateOf(false) }
     var showModelPickerSheet by remember { mutableStateOf(false) }
+    var retryingTurn by remember { mutableStateOf<ChatTurnUi?>(null) }
     var composerFocused by remember { mutableStateOf(false) }
     var quoteTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     var forwardPayload by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -580,6 +588,125 @@ fun ChatRoomScreen(
             SpecularHairline()
         }
 
+        // 1b. Multi-Topic Thread Bar (synced with Web BotThreads)
+        if (activeBot != null) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(theme.cardTop)
+            ) {
+                item(key = "__thread_main__") {
+                    val isMainActive = activeThreadId.isBlank()
+                    val pillShape = RoundedCornerShape(999.dp)
+                    Row(
+                        modifier = Modifier
+                            .clip(pillShape)
+                            .background(
+                                if (isMainActive) theme.accent.copy(alpha = 0.18f) else theme.inputTop
+                            )
+                            .border(
+                                0.85.dp,
+                                if (isMainActive) theme.accent.copy(alpha = 0.48f) else theme.rimSubtle,
+                                pillShape
+                            )
+                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                if (!isStreaming && !isMainActive) onSelectThread("")
+                            }
+                            .padding(horizontal = 11.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "主对话",
+                            fontSize = 11.5.sp,
+                            fontWeight = if (isMainActive) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isMainActive) {
+                                if (theme.isLight) theme.accentDeep else theme.accentLight
+                            } else {
+                                theme.textSecondary
+                            }
+                        )
+                    }
+                }
+
+                items(botThreads, key = { "th_${it.id}" }) { th ->
+                    val isActive = activeThreadId == th.id
+                    val pillShape = RoundedCornerShape(999.dp)
+                    Row(
+                        modifier = Modifier
+                            .clip(pillShape)
+                            .background(
+                                if (isActive) theme.accent.copy(alpha = 0.18f) else theme.inputTop
+                            )
+                            .border(
+                                0.85.dp,
+                                if (isActive) theme.accent.copy(alpha = 0.48f) else theme.rimSubtle,
+                                pillShape
+                            )
+                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                if (!isStreaming && !isActive) onSelectThread(th.id)
+                            }
+                            .padding(start = 11.dp, end = if (isActive) 7.dp else 11.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(
+                            text = th.title.ifBlank { "新话题" },
+                            fontSize = 11.5.sp,
+                            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isActive) {
+                                if (theme.isLight) theme.accentDeep else theme.accentLight
+                            } else {
+                                theme.textSecondary
+                            },
+                            maxLines = 1
+                        )
+                        if (isActive && !isStreaming) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "删除话题",
+                                tint = theme.textMuted,
+                                modifier = Modifier
+                                    .size(13.dp)
+                                    .clickable { onDeleteThread(th.id) }
+                            )
+                        }
+                    }
+                }
+
+                item(key = "__thread_new__") {
+                    val pillShape = RoundedCornerShape(999.dp)
+                    Row(
+                        modifier = Modifier
+                            .clip(pillShape)
+                            .background(theme.inputTop)
+                            .border(0.85.dp, theme.rimSubtle, pillShape)
+                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                if (!isStreaming) onCreateThread("")
+                            }
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "新话题",
+                            tint = theme.accent,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "新话题",
+                            fontSize = 11.5.sp,
+                            color = theme.textSecondary
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
+        }
+
         // 2. Pinned Group Announcement Banner
         if (isGroup && !dismissAnnouncement && !activeBot?.announcement.isNullOrBlank()) {
             Row(
@@ -672,6 +799,66 @@ fun ChatRoomScreen(
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
+                        }
+
+                        if (activeBot?.id == "concierge" || activeBot?.name == "大管家") {
+                            val conciergeCards = remember {
+                                listOf(
+                                    Triple(
+                                        "模型池与额度体检",
+                                        "巡检免费池/付费池健康度、解除冷却、7 天调用分布",
+                                        "请帮我全面巡检当前的免费模型池与付费模型池状态、冷却情况以及近 7 天调用统计，并给出优化建议。"
+                                    ),
+                                    Triple(
+                                        "创建专属 Bot 或拉群",
+                                        "一句话新建专属 AI 助手或组建多 Bot 协同群聊",
+                                        "请帮我盘点当前所有 Bot 与群聊；我想了解如何用一句话让你帮我新建专属 Bot 或组建多 Bot 协同群聊。"
+                                    ),
+                                    Triple(
+                                        "资产与定时例程总览",
+                                        "查看数字资产到期日、月均成本与定时任务防付费设置",
+                                        "请帮我汇总当前所有数字资产的到期状态、折算月均成本，以及所有定时任务与付费防线设置。"
+                                    ),
+                                    Triple(
+                                        "装配自定义技能卡",
+                                        "查看、新建并挂载 Prompt / Webhook 技能卡给 Bot",
+                                        "请列出当前已有的自定义技能卡（Prompt/Webhook），并告诉我如何让你帮我新建技能并挂载给指定 Bot。"
+                                    )
+                                )
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                conciergeCards.forEach { (title, sub, prompt) ->
+                                    SpecularGlassCard(
+                                        cornerRadius = 15.dp,
+                                        onClick = {
+                                            if (!isStreaming) onSendPrompt(prompt)
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Text(
+                                                text = title,
+                                                fontSize = 13.5.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = theme.textPrimary
+                                            )
+                                            Text(
+                                                text = sub,
+                                                fontSize = 11.5.sp,
+                                                color = theme.textMuted
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1029,68 +1216,33 @@ fun ChatRoomScreen(
                                             msg.content.contains("\n[中断:")
                                         )
 
-                                    if ((isLatestReply || hasTurnError) && msg.content.isNotEmpty()) {
+                                    val matchedModelOpt = remember(msg.model, modelOptions) {
+                                        val clean = msg.model.trim()
+                                        if (clean.isEmpty()) null
+                                        else modelOptions.firstOrNull {
+                                            it.id == clean || it.model == clean || it.id.endsWith("::$clean")
+                                        }
+                                    }
+                                    val isPaidModelUsed = remember(msg.model, matchedModelOpt) {
+                                        msg.model == "auto:paid" || matchedModelOpt?.tier == "paid"
+                                    }
+                                    val shortModelUsed = remember(msg.model, matchedModelOpt) {
+                                        val raw = matchedModelOpt?.model?.ifBlank { matchedModelOpt.label } ?: msg.model
+                                        raw.removePrefix("pool:").substringAfter("::").substringAfterLast("/").take(22)
+                                    }
+
+                                    if (!isLiveTurn && msg.content.isNotEmpty()) {
                                         Row(
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.padding(start = 4.dp, top = 1.dp)
+                                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
                                         ) {
-                                            if (hasTurnError) {
-                                                val prevUserPrompt = remember(messages, msg.id) {
-                                                    val idx = messages.indexOfFirst { it.id == msg.id }
-                                                    if (idx > 0) {
-                                                        messages.subList(0, idx).lastOrNull { it.role == "user" }?.content.orEmpty()
-                                                    } else {
-                                                        ""
-                                                    }
-                                                }
-                                                if (prevUserPrompt.isNotBlank()) {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                        modifier = Modifier
-                                                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                                                onSendPrompt(prevUserPrompt)
-                                                            }
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Refresh,
-                                                            contentDescription = "重试",
-                                                            tint = theme.accent,
-                                                            modifier = Modifier.size(12.dp)
-                                                        )
-                                                        Text(
-                                                            text = "重试",
-                                                            fontSize = 10.5.sp,
-                                                            fontWeight = FontWeight.Medium,
-                                                            color = theme.accent,
-                                                            maxLines = 1,
-                                                            softWrap = false
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                modifier = Modifier
-                                                    .tactileClickable(pressedScale = 0.94f) {
-                                                        onCopyText(msg.content)
-                                                    }
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.ContentCopy,
-                                                    contentDescription = "复制",
-                                                    tint = theme.textMuted,
-                                                    modifier = Modifier.size(11.dp)
-                                                )
-                                                Text(
-                                                    text = "复制",
-                                                    fontSize = 10.5.sp,
-                                                    color = theme.textMuted,
-                                                    maxLines = 1,
-                                                    softWrap = false
+                                            if (shortModelUsed.isNotBlank()) {
+                                                CrispTagPill(
+                                                    text = if (isPaidModelUsed) "付费池 · $shortModelUsed" else "免费池 · $shortModelUsed",
+                                                    bgColor = if (isPaidModelUsed) Color(0x22F59E0B) else Color(0x1F10B981),
+                                                    borderColor = if (isPaidModelUsed) Color(0x4AF59E0B) else Color(0x4210B981),
+                                                    textColor = if (isPaidModelUsed) Color(0xFFD97706) else Color(0xFF10B981)
                                                 )
                                             }
 
@@ -1098,24 +1250,73 @@ fun ChatRoomScreen(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(3.dp),
                                                 modifier = Modifier
-                                                    .tactileClickable(pressedScale = 0.94f) {
-                                                        val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
-                                                        quoteTarget = sender to msg.content
+                                                    .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                                        if (!isStreaming) retryingTurn = msg
                                                     }
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Default.FormatQuote,
-                                                    contentDescription = "引用",
-                                                    tint = theme.textMuted,
+                                                    imageVector = Icons.Default.Refresh,
+                                                    contentDescription = "换模型重试",
+                                                    tint = theme.accent,
                                                     modifier = Modifier.size(12.dp)
                                                 )
                                                 Text(
-                                                    text = "引用",
+                                                    text = "换模型重试",
                                                     fontSize = 10.5.sp,
-                                                    color = theme.textMuted,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = theme.accent,
                                                     maxLines = 1,
                                                     softWrap = false
                                                 )
+                                            }
+
+                                            if (isLatestReply || hasTurnError) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                    modifier = Modifier
+                                                        .tactileClickable(pressedScale = 0.94f) {
+                                                            onCopyText(msg.content)
+                                                        }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.ContentCopy,
+                                                        contentDescription = "复制",
+                                                        tint = theme.textMuted,
+                                                        modifier = Modifier.size(11.dp)
+                                                    )
+                                                    Text(
+                                                        text = "复制",
+                                                        fontSize = 10.5.sp,
+                                                        color = theme.textMuted,
+                                                        maxLines = 1,
+                                                        softWrap = false
+                                                    )
+                                                }
+
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                    modifier = Modifier
+                                                        .tactileClickable(pressedScale = 0.94f) {
+                                                            val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
+                                                            quoteTarget = sender to msg.content
+                                                        }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.FormatQuote,
+                                                        contentDescription = "引用",
+                                                        tint = theme.textMuted,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                    Text(
+                                                        text = "引用",
+                                                        fontSize = 10.5.sp,
+                                                        color = theme.textMuted,
+                                                        maxLines = 1,
+                                                        softWrap = false
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1128,6 +1329,14 @@ fun ChatRoomScreen(
                                     offsetX = 6.dp,
                                     offsetY = 28.dp,
                                     items = listOf(
+                                        GlassMenuAction(
+                                            label = "换模型重试",
+                                            icon = Icons.Default.Refresh,
+                                            iconTint = theme.accent,
+                                            onClick = {
+                                                if (!isStreaming) retryingTurn = msg
+                                            }
+                                        ),
                                         GlassMenuAction(
                                             label = "复制",
                                             icon = Icons.Default.ContentCopy,
@@ -1520,6 +1729,21 @@ fun ChatRoomScreen(
                 onModelChange(chosen)
             },
             onDismiss = { showModelPickerSheet = false }
+        )
+    }
+
+    retryingTurn?.let { targetTurn ->
+        ModelPickerSheet(
+            activeModel = targetTurn.model.ifBlank { activeModel },
+            modelOptions = modelOptions,
+            onSelect = { chosen ->
+                retryingTurn = null
+                val isPaid = chosen == "auto:paid" || modelOptions.any {
+                    (it.id == chosen || it.model == chosen) && it.tier == "paid"
+                }
+                onRetryTurnWithModel(targetTurn, chosen, isPaid)
+            },
+            onDismiss = { retryingTurn = null }
         )
     }
 

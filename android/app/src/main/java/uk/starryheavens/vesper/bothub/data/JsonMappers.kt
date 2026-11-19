@@ -237,7 +237,8 @@ object JsonMappers {
                             content = m.optString("content", ""),
                             reasoningContent = m.optString("reasoning_content", ""),
                             msgKind = msgKind,
-                            senderBotId = m.optString("sender_bot_id", "")
+                            senderBotId = m.optString("sender_bot_id", ""),
+                            modelUsed = m.optString("model_used", "")
                         )
                     )
                 }
@@ -429,6 +430,82 @@ object JsonMappers {
         }
     }
 
+    fun parseBotThread(t: JSONObject): BotThreadItem {
+        return BotThreadItem(
+            id = t.optString("id", "").trim(),
+            botId = t.optString("bot_id", "").trim(),
+            title = t.optString("title", "新话题").ifBlank { "新话题" },
+            summary = t.optString("summary", ""),
+            msgCount = t.optInt("msg_count", 0),
+            archived = t.optBoolean("archived", false),
+            updatedAt = t.optString("updated_at", "")
+        )
+    }
+
+    fun parseBotThreads(arr: JSONArray?): List<BotThreadItem> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val t = arr.optJSONObject(i) ?: continue
+                val id = t.optString("id", "").trim()
+                if (id.isNotEmpty()) {
+                    add(parseBotThread(t))
+                }
+            }
+        }
+    }
+
+    fun parseTodo(t: JSONObject): TodoItemUi {
+        return TodoItemUi(
+            id = t.optString("id", "").trim(),
+            title = t.optString("title", "").trim(),
+            notes = t.optString("notes", ""),
+            status = t.optString("status", "todo").ifBlank { "todo" },
+            priority = t.optString("priority", "normal").ifBlank { "normal" },
+            dueAt = t.optString("due_at", ""),
+            botId = t.optString("bot_id", ""),
+            updatedAt = t.optString("updated_at", "")
+        )
+    }
+
+    fun parseTodos(arr: JSONArray?): List<TodoItemUi> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val t = arr.optJSONObject(i) ?: continue
+                val id = t.optString("id", "").trim()
+                if (id.isNotEmpty()) {
+                    add(parseTodo(t))
+                }
+            }
+        }
+    }
+
+    fun parseNote(n: JSONObject): WorkNoteItemUi {
+        return WorkNoteItemUi(
+            id = n.optString("id", "").trim(),
+            title = n.optString("title", "未命名笔记").ifBlank { "未命名笔记" },
+            content = n.optString("content", ""),
+            category = n.optString("category", "deliverable").ifBlank { "deliverable" },
+            pinned = n.optBoolean("pinned", false),
+            botId = n.optString("bot_id", ""),
+            updatedAt = n.optString("updated_at", "")
+        )
+    }
+
+    fun parseNotes(arr: JSONArray?): List<WorkNoteItemUi> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val n = arr.optJSONObject(i) ?: continue
+                val id = n.optString("id", "").trim()
+                if (id.isNotEmpty()) {
+                    add(parseNote(n))
+                }
+            }
+        }
+    }
+
     fun parseTasks(tasksArr: JSONArray?): List<TaskItem> {
         if (tasksArr == null) return emptyList()
         return buildList {
@@ -446,7 +523,11 @@ object JsonMappers {
                         lastSummary = lastRun?.optString("summary")?.ifEmpty { "等待执行" } ?: "等待执行",
                         model = t.optString("model", ""),
                         allowPaidFallback = t.optBoolean("allow_paid_fallback", false),
-                        maxPaidCallsPerDay = t.optInt("max_paid_calls_per_day", 0)
+                        maxPaidCallsPerDay = t.optInt("max_paid_calls_per_day", 0),
+                        botId = t.optString("bot_id", ""),
+                        description = t.optString("description", ""),
+                        runAt = t.optString("run_at", ""),
+                        params = t.optString("params", "{}")
                     )
                 )
             }
@@ -480,6 +561,8 @@ object JsonMappers {
         val assetCategories = parseAssetCategories(obj.optJSONArray("asset_categories"))
         val assets = parseAssets(obj.optJSONArray("assets"))
         val tasks = parseTasks(obj.optJSONArray("tasks"))
+        val todos = parseTodos(obj.optJSONArray("todos"))
+        val notes = parseNotes(obj.optJSONArray("notes"))
         val modelOptions = parseModelOptions(obj.optJSONArray("model_options"))
         val revisions = parseRevisions(obj.optJSONObject("revisions"))
 
@@ -491,6 +574,8 @@ object JsonMappers {
             unreadNotifications = stats.optInt("unread_notifications", 0),
             assets = assets,
             tasks = tasks,
+            todos = todos,
+            notes = notes,
             assetCategories = assetCategories,
             modelOptions = modelOptions,
             revisions = revisions
@@ -525,7 +610,39 @@ object JsonMappers {
                     .put("next_run_at", t.nextRunAt)
                     .put("model", t.model)
                     .put("allow_paid_fallback", t.allowPaidFallback)
+                    .put("max_paid_calls_per_day", t.maxPaidCallsPerDay)
+                    .put("bot_id", t.botId)
+                    .put("description", t.description)
+                    .put("run_at", t.runAt)
+                    .put("params", t.params)
                     .put("last_run", JSONObject().put("summary", t.lastSummary))
+            )
+        }
+        val todosArr = JSONArray()
+        snap.todos.forEach { td ->
+            todosArr.put(
+                JSONObject()
+                    .put("id", td.id)
+                    .put("title", td.title)
+                    .put("notes", td.notes)
+                    .put("status", td.status)
+                    .put("priority", td.priority)
+                    .put("due_at", td.dueAt)
+                    .put("bot_id", td.botId)
+                    .put("updated_at", td.updatedAt)
+            )
+        }
+        val notesArr = JSONArray()
+        snap.notes.forEach { nt ->
+            notesArr.put(
+                JSONObject()
+                    .put("id", nt.id)
+                    .put("title", nt.title)
+                    .put("content", nt.content)
+                    .put("category", nt.category)
+                    .put("pinned", nt.pinned)
+                    .put("bot_id", nt.botId)
+                    .put("updated_at", nt.updatedAt)
             )
         }
         val catArr = JSONArray()
@@ -555,6 +672,8 @@ object JsonMappers {
             .put("asset_categories", catArr)
             .put("model_options", modelOptArr)
             .put("tasks", tasksArr)
+            .put("todos", todosArr)
+            .put("notes", notesArr)
             .put(
                 "stats",
                 JSONObject()

@@ -23,6 +23,8 @@ const TOOL_META: Record<string, { group: string; shortLabel: string }> = {
   recall_memory: { group: 'memory', shortLabel: '检索长期记忆' },
   manage_memory: { group: 'memory', shortLabel: '整理与遗忘记忆' },
   manage_bots: { group: 'memory', shortLabel: '创建 Bot 与拉群' },
+  manage_models: { group: 'ops', shortLabel: 'AI 模型池巡检调优' },
+  manage_skills: { group: 'assistant', shortLabel: '自定义技能工坊' },
   consult_bot: { group: 'memory', shortLabel: '协同队友委派' },
 
   manage_assets: { group: 'ops', shortLabel: '数字资产台账' },
@@ -133,6 +135,14 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
   update_group: '更新群聊',
   add_group_members: '拉人进群',
   remove_group_members: '移出成员',
+  status: '状态巡检',
+  clear_cooldown: '解除冷却',
+  set_strategy: '切换调度策略',
+  toggle_model: '启停模型',
+  move_tier: '调整模型池',
+  reorder: '调整优先级',
+  upsert: '保存配置',
+  bind_bot: '挂载到 Bot',
 }
 
 export function summarizeToolStep(

@@ -228,6 +228,53 @@ export function summarizeAssetsMonthlyCost(
   )
 }
 
+export function summarizeAssetsYearlyCost(
+  assets: Array<{ status?: string; price?: string }>
+): string {
+  const totals = new Map<string, number>()
+  for (const a of assets) {
+    if (a.status === '已停用') continue
+    const raw = String(a.price || '').trim()
+    if (!raw || raw.includes('免费')) continue
+    const m = raw.match(/(\d+(?:\.\d+)?)/)
+    if (!m) continue
+    const num = Number(m[1])
+    if (!Number.isFinite(num) || num <= 0) continue
+    const upper = raw.toUpperCase()
+    const sym =
+      upper.includes('HK$') || upper.includes('HKD')
+        ? 'HK$'
+        : upper.includes('$') || upper.includes('USD')
+        ? '$'
+        : upper.includes('€') || upper.includes('EUR')
+        ? '€'
+        : upper.includes('£') || upper.includes('GBP')
+        ? '£'
+        : '¥'
+    let yearly = num * 12
+    const lower = raw.toLowerCase()
+    if (raw.includes('年') || lower.includes('/yr') || lower.includes('year') || lower.includes('/y')) {
+      yearly = num
+    } else if (raw.includes('季') || lower.includes('/qtr') || lower.includes('quarter')) {
+      yearly = num * 4
+    } else if (raw.includes('一次') || raw.includes('永久')) {
+      continue
+    }
+    totals.set(sym, (totals.get(sym) || 0) + yearly)
+  }
+  if (totals.size === 0) return ''
+  return Array.from(totals.entries())
+    .map(([sym, val]) => `${sym}${val.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}/年`)
+    .join(' + ')
+}
+
+export function inferRecommendedRenewMonths(price?: string): 1 | 3 | 12 {
+  const raw = String(price || '').toLowerCase()
+  if (raw.includes('月') || raw.includes('/mo') || raw.includes('month')) return 1
+  if (raw.includes('季') || raw.includes('/qtr') || raw.includes('quarter')) return 3
+  return 12
+}
+
 export function groupModeLabel(mode?: string): string {
   if (mode === 'sequential') return '全员接力'
   if (mode === 'parallel') return '全员并发'

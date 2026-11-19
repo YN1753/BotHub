@@ -521,6 +521,8 @@ func (s *Server) handleV2AppBootstrap(w http.ResponseWriter, r *http.Request) {
 	notifications, _ := s.store.ListNotifications(0, 40, false)
 	assets, _ := s.store.ListAssets()
 	stash, _ := s.store.SearchStashItemsWithKind("", "all", "", "", 60)
+	todos, _ := s.store.ListTodos("all", "", 100)
+	notes, _ := s.store.ListNotes("", "", 60)
 	providers, pooledModels, poolStrategies := s.store.GetModelConfig()
 	usageSummary, _ := s.store.SummarizeModelUsage(7)
 	var modelOptions any
@@ -541,6 +543,8 @@ func (s *Server) handleV2AppBootstrap(w http.ResponseWriter, r *http.Request) {
 		"assets":              assets,
 		"asset_categories":    s.store.ListAssetCategories(),
 		"tasks":               tasks,
+		"todos":               todos,
+		"notes":               notes,
 		"model_pool":          store.MaskModelPool(s.store.GetModelPool()),
 		"model_providers":     store.MaskModelProviders(providers),
 		"pooled_models":       pooledModels,

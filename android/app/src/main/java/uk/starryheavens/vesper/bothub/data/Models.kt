@@ -68,6 +68,15 @@ data class AssetItem(
 
     val dueBadgeLabel: String
         get() = if (isPerpetual) "长期" else "${daysLeft}天"
+
+    fun inferRecommendedRenewMonths(): Int {
+        val raw = price.trim().lowercase()
+        return when {
+            raw.contains("月") || raw.contains("mo") -> 1
+            raw.contains("季") || raw.contains("quarter") -> 3
+            else -> 12
+        }
+    }
 }
 
 @Immutable
@@ -81,10 +90,18 @@ data class TaskItem(
     val lastSummary: String,
     val model: String = "",
     val allowPaidFallback: Boolean = false,
-    val maxPaidCallsPerDay: Int = 0
+    val maxPaidCallsPerDay: Int = 0,
+    val botId: String = "",
+    val description: String = "",
+    val runAt: String = "",
+    val params: String = "{}"
 ) {
     fun formattedSchedule(): String {
+        val shortRunAt = formatShortNextRun(runAt)
         val shortNext = formatShortNextRun(nextRunAt)
+        if (cronExpr.isBlank() && shortRunAt.isNotEmpty()) {
+            return "单次 · $shortRunAt"
+        }
         return buildString {
             if (cronExpr.isNotBlank()) append(cronExpr.trim())
             if (shortNext.isNotEmpty()) {
@@ -94,6 +111,52 @@ data class TaskItem(
         }
     }
 }
+
+@Immutable
+data class TodoItemUi(
+    val id: String,
+    val title: String,
+    val notes: String = "",
+    val status: String = "todo",
+    val priority: String = "normal",
+    val dueAt: String = "",
+    val botId: String = "",
+    val updatedAt: String = ""
+) {
+    val isDone: Boolean
+        get() = status.equals("done", ignoreCase = true)
+}
+
+@Immutable
+data class WorkNoteItemUi(
+    val id: String,
+    val title: String,
+    val content: String = "",
+    val category: String = "deliverable",
+    val pinned: Boolean = false,
+    val botId: String = "",
+    val updatedAt: String = ""
+) {
+    fun previewText(maxChars: Int = 96): String =
+        cleanMarkdownPreview(content).take(maxChars)
+}
+
+@Immutable
+data class BotThreadItem(
+    val id: String,
+    val botId: String,
+    val title: String,
+    val summary: String = "",
+    val msgCount: Int = 0,
+    val archived: Boolean = false,
+    val updatedAt: String = ""
+)
+
+data class BotMessagesPayload(
+    val messages: List<AgentHistoryMessage>,
+    val threads: List<BotThreadItem> = emptyList(),
+    val activeThreadId: String = ""
+)
 
 private fun formatShortNextRun(raw: String): String {
     val clean = raw.trim()
@@ -208,6 +271,8 @@ data class BootstrapPayload(
     val notifications: List<NotificationItem>,
     val dashboard: DashboardSnapshot,
     val stashItems: List<StashItemUi> = emptyList(),
+    val todos: List<TodoItemUi> = emptyList(),
+    val notes: List<WorkNoteItemUi> = emptyList(),
     val modelOptions: List<ModelOptionItem> = emptyList(),
     val modelProviders: List<ModelProviderItem> = emptyList(),
     val pooledModels: List<PooledModelItem> = emptyList(),
@@ -222,6 +287,8 @@ data class DashboardSlicePayload(
     val assets: List<AssetItem>? = null,
     val assetCategories: List<AssetCategoryItem>? = null,
     val tasks: List<TaskItem>? = null,
+    val todos: List<TodoItemUi>? = null,
+    val notes: List<WorkNoteItemUi>? = null,
     val notifications: List<NotificationItem>? = null,
     val stashItems: List<StashItemUi>? = null,
     val modelOptions: List<ModelOptionItem>? = null,
@@ -339,7 +406,8 @@ data class AgentHistoryMessage(
     val content: String,
     val reasoningContent: String,
     val msgKind: String = "chat",
-    val senderBotId: String = ""
+    val senderBotId: String = "",
+    val modelUsed: String = ""
 ) {
     fun toChatTurnUi(
         idPrefix: String,
@@ -362,7 +430,7 @@ data class AgentHistoryMessage(
             id = "${idPrefix}_$id",
             role = role,
             persona = senderBot?.name ?: defaultPersona,
-            model = senderBot?.model ?: defaultModel,
+            model = modelUsed.ifBlank { senderBot?.model ?: defaultModel },
             reasoning = reasoningContent,
             content = content,
             msgKind = msgKind,
@@ -381,6 +449,8 @@ data class DashboardSnapshot(
     val unreadNotifications: Int,
     val assets: List<AssetItem>,
     val tasks: List<TaskItem>,
+    val todos: List<TodoItemUi> = emptyList(),
+    val notes: List<WorkNoteItemUi> = emptyList(),
     val assetCategories: List<AssetCategoryItem> = emptyList(),
     val modelOptions: List<ModelOptionItem> = emptyList(),
     val revisions: Map<String, Long> = emptyMap()

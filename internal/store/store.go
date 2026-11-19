@@ -653,31 +653,31 @@ func (s *Store) seedDefaults() error {
 		_ = s.SetConfig(KeyAdminPassHash, HashPassword(envPass))
 	}
 
-	if seeded, _ := s.GetConfig(KeyDefaultConciergeSeeded); seeded != "true" {
-		existingConcierge, _ := s.GetBot(DefaultConciergeBotID)
-		if existingConcierge == nil {
-			if err := s.SaveBot(DefaultConciergeBot()); err != nil {
-				return err
-			}
-		} else {
-			curTools := existingConcierge.AllowedToolList()
-			hasManageBots := false
-			for _, t := range curTools {
-				if t == "manage_bots" {
-					hasManageBots = true
-					break
-				}
-			}
-			if !hasManageBots {
-				nextTools := append([]string{"manage_bots"}, curTools...)
-				if raw, mErr := json.Marshal(nextTools); mErr == nil {
-					existingConcierge.AllowedTools = string(raw)
-					_ = s.SaveBot(*existingConcierge)
-				}
+	if existingConcierge, _ := s.GetBot(DefaultConciergeBotID); existingConcierge != nil {
+		curTools := existingConcierge.AllowedToolList()
+		toolSet := make(map[string]bool, len(curTools))
+		for _, t := range curTools {
+			toolSet[t] = true
+		}
+		var missing []string
+		for _, reqTool := range []string{"manage_bots", "manage_models", "manage_skills"} {
+			if !toolSet[reqTool] {
+				missing = append(missing, reqTool)
 			}
 		}
-		_ = s.SetConfig(KeyDefaultConciergeSeeded, "true")
+		if len(missing) > 0 {
+			nextTools := append(missing, curTools...)
+			if raw, mErr := json.Marshal(nextTools); mErr == nil {
+				existingConcierge.AllowedTools = string(raw)
+				_ = s.SaveBot(*existingConcierge)
+			}
+		}
+	} else if seeded, _ := s.GetConfig(KeyDefaultConciergeSeeded); seeded != "true" {
+		if err := s.SaveBot(DefaultConciergeBot()); err != nil {
+			return err
+		}
 	}
+	_ = s.SetConfig(KeyDefaultConciergeSeeded, "true")
 
 	return nil
 }

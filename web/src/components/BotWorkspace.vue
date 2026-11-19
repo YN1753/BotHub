@@ -223,6 +223,13 @@ function runQuickToolStarter(toolId: string) {
       inputPrompt.value = '请帮我创建一个专属 Bot，或把几位 Bot 拉进一个协同群聊：'
       nextTick(() => composerRef.value?.focus())
       break
+    case 'manage_models':
+      void sendPrompt('请调用 manage_models(action="status") 巡检当前免费模型池与付费模型池的健康度及近 7 日调用量。')
+      break
+    case 'manage_skills':
+      inputPrompt.value = '请调用 manage_skills(action="upsert") 帮我创建一个自定义技能：'
+      nextTick(() => composerRef.value?.focus())
+      break
     case 'consult_bot':
       inputPrompt.value = '请帮我协同其他专员一起完成：'
       nextTick(() => composerRef.value?.focus())
@@ -685,6 +692,7 @@ async function clearTimeline() {
                 :bot="bot"
                 :is-group-bot="isGroupBot"
                 :group-members="groupMembers"
+                @pick-prompt="(p, prefill) => { if (prefill) { inputPrompt = p; nextTick(() => composerRef?.focus()) } else { sendPrompt(p) } }"
               />
 
               <BotMessageItem
@@ -707,7 +715,8 @@ async function clearTimeline() {
                 @mention="appendMention"
                 @jump-bot="store.jumpToBot($event)"
                 @continue="continueFromMessage"
-                @retry="sendPrompt(findPrecedingUserPrompt(idx))"
+                @retry="sendPrompt(findPrecedingUserPrompt(idx), { replaceAssistantMsg: m })"
+                @retry-model="(mid, paidOnce) => sendPrompt(findPrecedingUserPrompt(idx), { overrideModel: mid, allowPaidOnce: paidOnce, replaceAssistantMsg: m })"
                 @save-memory="saveMessageAsMemory"
                 @convert-todo="convertMessageToTodo"
                 @save-note="saveMessageAsNote"

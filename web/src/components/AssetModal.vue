@@ -192,7 +192,8 @@ watch(
     extraRows.value = Object.entries(parseJsonRecord(item.extra_config))
       .filter(([k]) => k.trim() !== '')
       .map(([k, v]) => ({ key: k, value: v }))
-  }
+  },
+  { immediate: true }
 )
 
 function closeModal() {

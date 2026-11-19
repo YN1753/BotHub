@@ -233,6 +233,16 @@ func (e *Engine) runSingleBotTurn(
 	e.emitBotState(actingBot.ID, store.BotStateThinking, statusHint)
 	defer func() {
 		_ = e.store.ClearBotUnread(timelineBotID)
+		if e.hub != nil {
+			if tb, err := e.store.GetBot(timelineBotID); err == nil && tb != nil {
+				e.hub.PublishEvent("bot_state", map[string]any{
+					"bot_id":       timelineBotID,
+					"state":        tb.State,
+					"last_summary": tb.LastSummary,
+					"unread_count": 0,
+				})
+			}
+		}
 	}()
 
 	// Load strictly scoped memories ranked by pin + importance + query relevance, and record recall stats

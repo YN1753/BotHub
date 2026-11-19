@@ -2,7 +2,16 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
-import { describeCron, formatDateOnly, summarizeAssetsMonthlyCost, triggerBlobDownload, csvEscapeCell } from '../utils/format'
+import {
+  describeCron,
+  formatDateOnly,
+  inferRecommendedRenewMonths,
+  summarizeAssetsMonthlyCost,
+  summarizeAssetsYearlyCost,
+  triggerBlobDownload,
+  csvEscapeCell,
+} from '../utils/format'
+import { addMonthsPlain, diffPlainDaysFromToday, todayPlainDate } from '../utils/calendar'
 import { mergeExtensibleCategories, resolveCategoryMeta } from '../utils/assetCategories'
 import { pickDefaultWorkerBot } from '../utils/botLook'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
@@ -75,6 +84,58 @@ const filteredAssets = computed(() => {
 })
 
 const activeCostSummary = computed(() => summarizeAssetsMonthlyCost(filteredAssets.value))
+const activeYearlyCostSummary = computed(() => summarizeAssetsYearlyCost(filteredAssets.value))
+
+const categoryCostBreakdowns = computed(() => {
+  const cats = mergeExtensibleCategories(store.state.assetCategories, store.state.assets)
+  return cats
+    .map((c) => {
+      const subset = store.state.assets.filter((a) => a.category === c.id && a.status !== '已停用')
+      const monthly = summarizeAssetsMonthlyCost(subset)
+      const yearly = summarizeAssetsYearlyCost(subset)
+      return {
+        id: c.id,
+        label: c.label,
+        count: subset.length,
+        monthly,
+        yearly,
+      }
+    })
+    .filter((x) => x.count > 0 && (x.monthly || x.yearly))
+})
+
+const renewingAssetId = ref('')
+
+async function quickRenewAsset(a: Asset, months: 1 | 3 | 12) {
+  if (renewingAssetId.value) return
+  const curDate = (a.due_date || '').slice(0, 10)
+  const curDiff = diffPlainDaysFromToday(curDate)
+  const baseDate =
+    /^\d{4}-\d{2}-\d{2}$/.test(curDate) &&
+    !curDate.startsWith('2099') &&
+    curDiff !== null &&
+    curDiff >= -30
+      ? curDate
+      : todayPlainDate()
+  const nextDue = addMonthsPlain(baseDate, months)
+  const nextDays = diffPlainDaysFromToday(nextDue) ?? a.days_left
+  renewingAssetId.value = a.id
+  try {
+    await BotHubApi.updateAsset(a.id, {
+      ...a,
+      due_date: nextDue,
+      days_left: nextDays,
+      status: '生效中',
+    })
+    const stepLabel = months === 12 ? '1 年' : months === 3 ? '1 季度' : '1 个月'
+    store.notify(`已将「${a.name}」顺延 ${stepLabel} 至 ${nextDue}`)
+    await store.refreshWorkspaceSlices(['assets'])
+  } catch (err: any) {
+    store.notify(err.message || '顺延到期日失败')
+  } finally {
+    renewingAssetId.value = ''
+  }
+}
 
 const healthMetrics = computed(() => {
   const total = store.state.assets.length
@@ -312,9 +373,14 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                 <span class="font-mono text-xs font-bold text-white tabular-nums">{{ healthMetrics.healthyPct }}%</span>
               </div>
               <div class="min-w-0">
-                <div class="text-[11px] text-slate-400">全局追踪 {{ store.state.assets.length }} 项 · 月均预估折算</div>
+                <div class="text-[11px] text-slate-400">
+                  全局追踪 {{ store.state.assets.length }} 项 · 月均 / 年化折算
+                </div>
                 <div class="font-mono tabular-nums text-lg sm:text-xl font-bold text-[#ffe2be] truncate mt-0.5">
                   {{ activeCostSummary || '¥0 / 月' }}
+                </div>
+                <div v-if="activeYearlyCostSummary" class="font-mono text-[11px] text-slate-400 truncate">
+                  年化: {{ activeYearlyCostSummary }}
                 </div>
               </div>
             </div>
@@ -398,6 +464,28 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
 
         <!-- Asset Watcher Section (Streamlined Single-Row Control Bar) -->
         <div class="flex flex-col gap-3.5">
+          <!-- Per-Category Original-Currency Cost Breakdown Pills -->
+          <div
+            v-if="categoryCostBreakdowns.length > 0"
+            class="flex items-center gap-2 flex-wrap"
+          >
+            <button
+              v-for="cb in categoryCostBreakdowns"
+              :key="cb.id"
+              type="button"
+              @click="activeCat = activeCat === cb.id ? 'all' : cb.id"
+              :class="[
+                'rounded-xl border px-3 py-1.5 text-left transition cursor-pointer flex items-center gap-2',
+                activeCat === cb.id
+                  ? 'border-[#f2b880]/55 bg-[#f2b880]/14 text-white'
+                  : 'border-[#fff8ee]/10 bg-[#070b15]/65 text-slate-300 hover:border-[#f2b880]/35',
+              ]"
+            >
+              <span class="text-xs font-medium">{{ cb.label }} ({{ cb.count }})</span>
+              <span class="font-mono text-[11px] text-[#f2b880]">{{ cb.monthly }}</span>
+              <span v-if="cb.yearly" class="font-mono text-[10px] text-slate-400">· {{ cb.yearly }}</span>
+            </button>
+          </div>
           <div class="flex flex-wrap items-center justify-between gap-2.5">
             <div class="flex items-center gap-2 flex-wrap flex-1 min-w-0">
               <input
@@ -496,11 +584,31 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                     :class="['h-full rounded-full bg-gradient-to-r transition-[width] duration-300', assetRunwayBarClass(a)]"
                   />
                 </div>
-                <div class="flex items-center justify-between text-[11px] w-full">
+                <div class="flex items-center justify-between text-[11px] w-full gap-2 flex-wrap">
                   <span class="font-mono tabular-nums text-slate-400">
                     {{ formatDateOnly(a.due_date) }} · {{ a.auto_renew ? '自动续费' : '手动续费' }}
                   </span>
-                  <span :class="['font-mono tabular-nums shrink-0', daysBadgeClass(a)]">{{ daysText(a) }}</span>
+                  <div class="flex items-center gap-1.5 ml-auto">
+                    <template v-if="a.status !== '长期有效' && !String(a.due_date || '').startsWith('2099')">
+                      <button
+                        v-for="step in ([1, 3, 12] as const)"
+                        :key="step"
+                        type="button"
+                        :disabled="renewingAssetId === a.id"
+                        :title="`按原到期日顺延 +${step === 12 ? '1年' : step === 3 ? '1季' : '1月'}`"
+                        @click.stop="quickRenewAsset(a, step)"
+                        :class="[
+                          'font-mono text-[10px] px-1.5 py-0.5 rounded border transition cursor-pointer',
+                          inferRecommendedRenewMonths(a.price) === step
+                            ? 'border-[#f2b880]/45 bg-[#f2b880]/14 text-[#ffe2be] hover:bg-[#f2b880]/25'
+                            : 'border-[#fff8ee]/12 text-slate-400 hover:border-[#f2b880]/35 hover:text-[#f2b880]',
+                        ]"
+                      >
+                        +{{ step === 12 ? '1年' : step === 3 ? '1季' : '1月' }}
+                      </button>
+                    </template>
+                    <span :class="['font-mono tabular-nums shrink-0', daysBadgeClass(a)]">{{ daysText(a) }}</span>
+                  </div>
                 </div>
               </div>
             </button>

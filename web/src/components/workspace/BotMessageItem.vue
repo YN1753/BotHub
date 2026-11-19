@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useAppStore } from '../../stores/useAppStore'
 import { formatTime, formatTimelineDivider } from '../../utils/format'
 import { renderSafeMarkdown } from '../../utils/markdown'
 import type { ChatMessageUI } from '../../utils/chatMapper'
@@ -28,14 +29,46 @@ const emit = defineEmits<{
   jumpBot: [botId: string]
   continue: []
   retry: []
+  retryModel: [modelId: string, allowPaidOnce: boolean]
   saveMemory: [msg: ChatMessageUI]
   convertTodo: [msg: ChatMessageUI]
   saveNote: [msg: ChatMessageUI]
   forward: [msg: ChatMessageUI]
 }>()
 
+const store = useAppStore()
 const expandedUser = ref(false)
 const touchActionsOpen = ref(false)
+
+const modelTierTag = computed<'' | 'free' | 'paid'>(() => {
+  const m = (props.message.model || '').trim()
+  if (!m) return ''
+  if (m === 'auto:paid' || m === 'paid-pool' || m === 'primary') return 'paid'
+  if (m === 'auto:free' || m === 'free-pool') return 'free'
+  const opt = (store.state.modelOptions || []).find((o) => o.id === m || o.model === m)
+  if (opt && (opt.tier === 'paid' || opt.tier === 'free')) return opt.tier as 'free' | 'paid'
+  const pooled = (store.state.pooledModels || []).find(
+    (p) => p.model_id === m || `pool:${p.provider_id}::${p.model_id}` === m
+  )
+  if (pooled) return pooled.tier === 'paid' ? 'paid' : 'free'
+  if (m.toLowerCase().includes(':free')) return 'free'
+  return ''
+})
+
+const retryModelChoices = computed(() => {
+  const opts = store.state.modelOptions || []
+  if (opts.length > 0) {
+    return opts.filter((o) => o.available).map((o) => ({
+      id: o.id,
+      label: o.label,
+      isPaid: o.tier === 'paid' || o.id === 'auto:paid',
+    }))
+  }
+  return [
+    { id: 'auto:free', label: '自动 · 免费模型池', isPaid: false },
+    { id: 'auto:paid', label: '自动 · 付费模型池 (仅本次放行)', isPaid: true },
+  ]
+})
 
 function handleTouchMessageTap(e: MouseEvent) {
   const target = e.target as HTMLElement | null
@@ -222,7 +255,18 @@ function closeDetailsMenu(e: Event) {
             自动汇报
           </span>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
+        <div class="flex items-center gap-1.5 shrink-0">
+          <span
+            v-if="modelTierTag && !message.streaming"
+            :class="[
+              'font-mono text-[9.5px] px-1.5 py-0.5 rounded border leading-none',
+              modelTierTag === 'paid'
+                ? 'border-[#f2b880]/35 bg-[#f2b880]/10 text-[#f2b880]'
+                : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
+            ]"
+          >
+            {{ modelTierTag === 'paid' ? '付费池' : '免费池' }}
+          </span>
           <span
             v-if="message.model && !message.streaming"
             class="hidden sm:inline-flex font-mono text-[10px] text-slate-500"
@@ -329,6 +373,32 @@ function closeDetailsMenu(e: Event) {
           >
             重试
           </button>
+
+          <details v-if="canRetry" class="msg-more-menu relative">
+            <summary class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-300 hover:text-[#ffe2be] hover:bg-white/[0.08] cursor-pointer select-none inline-flex items-center gap-1">
+              <span>换模型重试</span>
+              <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
+            </summary>
+            <div class="aero-glass absolute right-0 sm:left-0 sm:right-auto bottom-full mb-1.5 z-30 min-w-[14rem] max-w-[19rem] max-h-60 overflow-y-auto rounded-xl border border-[#fff8ee]/16 p-1 flex flex-col gap-0.5 shadow-2xl">
+              <div class="px-2 py-1 text-[10px] text-slate-400 border-b border-[#fff8ee]/10">
+                原位重答（选付费模型仅对本轮临时放行）
+              </div>
+              <button
+                v-for="choice in retryModelChoices"
+                :key="choice.id"
+                type="button"
+                @click="emit('retryModel', choice.id, choice.isPaid); closeDetailsMenu($event)"
+                :class="[
+                  'px-2.5 py-1.5 rounded-lg text-[11px] text-left truncate cursor-pointer',
+                  choice.isPaid
+                    ? 'text-[#ffe2be] hover:bg-[#f2b880]/18'
+                    : 'text-slate-200 hover:bg-emerald-500/15 hover:text-emerald-200',
+                ]"
+              >
+                {{ choice.label }}
+              </button>
+            </div>
+          </details>
 
           <details class="msg-more-menu relative">
             <summary class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-400 hover:text-white hover:bg-white/[0.08] cursor-pointer select-none inline-flex items-center gap-1">
