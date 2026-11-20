@@ -353,6 +353,7 @@ data class DashboardSlicePayload(
     val skills: List<SkillItemUi>? = null,
     val assets: List<AssetItem>? = null,
     val assetCategories: List<AssetCategoryItem>? = null,
+    val fxRates: Map<String, Double>? = null,
     val tasks: List<TaskItem>? = null,
     val todos: List<TodoItemUi>? = null,
     val notes: List<WorkNoteItemUi>? = null,
@@ -565,6 +566,7 @@ data class DashboardSnapshot(
     val todos: List<TodoItemUi> = emptyList(),
     val notes: List<WorkNoteItemUi> = emptyList(),
     val assetCategories: List<AssetCategoryItem> = emptyList(),
+    val fxRates: Map<String, Double> = emptyMap(),
     val modelOptions: List<ModelOptionItem> = emptyList(),
     val revisions: Map<String, Long> = emptyMap()
 )

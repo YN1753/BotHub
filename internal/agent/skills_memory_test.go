@@ -509,11 +509,11 @@ func TestAssistantToolsTodosNotesNotificationConsultAndDatetime(t *testing.T) {
 		t.Fatalf("expected divide-by-zero error")
 	}
 
-	// 9. manage_assets summary multi-currency annualized calculation
+	// 9. manage_assets summary unified CNY calculation (with live/cached FX conversion)
 	_ = st.SaveAsset(store.Asset{ID: "vps1", Name: "HK Node", Category: "compute", Price: "$12 / 年", Status: "生效中", DueDate: "2027-01-01"})
 	_ = st.SaveAsset(store.Asset{ID: "sub1", Name: "Cloud Drive", Category: "life", Price: "¥30 / 月", Status: "生效中", DueDate: "2027-01-01"})
 	sumOut, sErr := eng.ExecuteTool(ctx, "manage_assets", `{"action":"summary"}`)
-	if sErr != nil || !strings.Contains(sumOut, `"currency":"USD"`) || !strings.Contains(sumOut, `"currency":"CNY"`) {
+	if sErr != nil || !strings.Contains(sumOut, `"currency":"CNY"`) || !strings.Contains(sumOut, `"monthly_cny":`) || !strings.Contains(sumOut, `"priced_items":2`) {
 		t.Fatalf("manage_assets summary failed: err=%v out=%s", sErr, sumOut)
 	}
 

@@ -56,10 +56,15 @@ async function askBotAnalyze(n: { id: number; source: string; title: string; sum
   }
   const s = n.source.toLowerCase()
   const boundTask = store.state.tasks.find((t) => t.id === n.source && t.bot_id)
+  const titlePrefixMatch = n.title.match(/^\[([^\]]+)\]/)
+  const botFromTitle = titlePrefixMatch
+    ? store.state.bots.find((b) => b.name === titlePrefixMatch[1].trim() || b.id === titlePrefixMatch[1].trim())
+    : undefined
   const findByTool = (toolId: string) =>
     store.state.bots.find((b) => !b.is_group && (b.allowed_tools || '').includes(toolId))
 
   let picked =
+    botFromTitle ||
     (boundTask?.bot_id && store.state.bots.find((b) => b.id === boundTask.bot_id)) ||
     store.state.bots.find((b) => !b.is_group && (b.bot_mode === 'worker' || b.bot_mode === 'hybrid')) ||
     store.state.bots[0]

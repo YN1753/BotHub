@@ -731,9 +731,25 @@ object JsonMappers {
         }
     }
 
+    fun parseFXRates(fxObj: JSONObject?): Map<String, Double> {
+        if (fxObj == null) return emptyMap()
+        val ratesObj = fxObj.optJSONObject("rates") ?: fxObj
+        return buildMap {
+            val keys = ratesObj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next().trim().uppercase()
+                val v = ratesObj.optDouble(k, -1.0)
+                if (k.isNotEmpty() && v > 0.0 && !v.isNaN()) {
+                    put(k, v)
+                }
+            }
+        }
+    }
+
     fun parseDashboard(obj: JSONObject): DashboardSnapshot {
         val stats = obj.optJSONObject("stats") ?: JSONObject()
         val assetCategories = parseAssetCategories(obj.optJSONArray("asset_categories"))
+        val fxRates = parseFXRates(obj.optJSONObject("fx_rates"))
         val assets = parseAssets(obj.optJSONArray("assets"))
         val tasks = parseTasks(obj.optJSONArray("tasks"))
         val todos = parseTodos(obj.optJSONArray("todos"))
@@ -752,6 +768,7 @@ object JsonMappers {
             todos = todos,
             notes = notes,
             assetCategories = assetCategories,
+            fxRates = fxRates,
             modelOptions = modelOptions,
             revisions = revisions
         )
@@ -841,10 +858,17 @@ object JsonMappers {
                     .put("available", m.available)
             )
         }
+        val fxRatesObj = JSONObject()
+        snap.fxRates.forEach { (k, v) ->
+            if (k.isNotBlank() && v > 0.0) {
+                fxRatesObj.put(k, v)
+            }
+        }
         return JSONObject()
             .put("version", snap.version)
             .put("assets", assetsArr)
             .put("asset_categories", catArr)
+            .put("fx_rates", JSONObject().put("rates", fxRatesObj))
             .put("model_options", modelOptArr)
             .put("tasks", tasksArr)
             .put("todos", todosArr)

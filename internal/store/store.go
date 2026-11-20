@@ -32,6 +32,7 @@ const (
 	KeyBiliSessdata      = "bili_sessdata"
 	KeyTavilyAPIKey      = "tavily_api_key"
 	KeySearXNGURL        = "searxng_url"
+	KeyFXRatesCNY        = "fx_rates_cny"
 	KeyDeepSeekAPIKey    = "deepseek_api_key"
 	KeyDeepSeekBaseURL   = "deepseek_base_url"
 	KeyAIModel           = "ai_model"
@@ -500,10 +501,9 @@ CREATE INDEX IF NOT EXISTS idx_model_usage_task_day ON model_usage_logs(task_id,
 }
 
 func (s *Store) cleanupNoisyRoutineLogs() {
-	_, _ = s.db.Exec(`DELETE FROM agent_messages
-		WHERE msg_kind = 'routine'
-		  AND content LIKE '### 例程主动汇报:%'
-		  AND content LIKE '%- **执行状态**: success%'`)
+	// All automated/scheduled routine messages now belong exclusively in 服务通知 (notifications).
+	// Purge any historical msg_kind = 'routine' rows from bot chat timelines so chat threads remain pure dialogue.
+	_, _ = s.db.Exec(`DELETE FROM agent_messages WHERE msg_kind = 'routine'`)
 
 	_, _ = s.db.Exec(`UPDATE bots SET
 		unread_count = 0,
@@ -516,10 +516,13 @@ func (s *Store) cleanupNoisyRoutineLogs() {
 			  AND COALESCE(m.thread_id, '') = COALESCE(bots.active_thread_id, '')
 			ORDER BY m.id DESC LIMIT 1
 		), '')
-		WHERE last_summary LIKE '巡检 %发送 0 项临期强提醒%'
+		WHERE state != 'idle'
+		   OR unread_count > 0
+		   OR last_summary LIKE '巡检 %'
 		   OR last_summary = '抓取完成，暂无新增条目'
 		   OR last_summary LIKE '正在执行例程:%'
-		   OR last_summary LIKE '已推送 %（城市:%'`)
+		   OR last_summary LIKE '已推送 %'
+		   OR last_summary LIKE '### %'`)
 }
 
 func (s *Store) migrateScopedMemoriesTable() error {

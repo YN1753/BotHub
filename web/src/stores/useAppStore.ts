@@ -86,6 +86,7 @@ interface FastBootSnapshot {
   notifications?: NotificationItem[]
   assets?: Asset[]
   assetCategories?: AssetCategoryOption[]
+  fxRates?: Record<string, number>
   tasks?: Task[]
   stash?: StashItem[]
   activeBotId?: string
@@ -152,6 +153,7 @@ const state = reactive({
   modelHealth: {} as Record<string, ModelHealthStats>,
   assets: (initialSnap?.assets || []) as Asset[],
   assetCategories: (initialSnap?.assetCategories || []) as AssetCategoryOption[],
+  fxRates: (initialSnap?.fxRates || {}) as Record<string, number>,
   tasks: (initialSnap?.tasks || []) as Task[],
   templates: [] as TaskTemplate[],
   memories: [] as AgentMemory[],
@@ -329,6 +331,7 @@ function saveFastBootSnapshot() {
       notifications: state.notifications.slice(0, 30),
       assets: state.assets.slice(0, 30),
       assetCategories: state.assetCategories.slice(0, 40),
+      fxRates: state.fxRates,
       tasks: state.tasks.slice(0, 30),
       stash: state.stash.slice(0, 40),
       activeBotId: state.activeBotId,
@@ -540,6 +543,7 @@ export function useAppStore() {
           if (data.agent_memories !== undefined) state.memories = data.agent_memories || []
           if (data.assets !== undefined) state.assets = data.assets || []
           if (data.asset_categories !== undefined) state.assetCategories = data.asset_categories || []
+          if (data.fx_rates?.rates) state.fxRates = data.fx_rates.rates
           if (data.tasks !== undefined) state.tasks = data.tasks || []
           if (data.bots !== undefined) {
             state.bots = data.bots || []
@@ -641,6 +645,7 @@ export function useAppStore() {
         state.modelHealth = data.model_health || {}
         state.assets = data.assets || []
         state.assetCategories = data.asset_categories || []
+        if (data.fx_rates?.rates) state.fxRates = data.fx_rates.rates
         state.tasks = data.tasks || []
         state.templates = data.templates || []
         state.memories = data.agent_memories || []

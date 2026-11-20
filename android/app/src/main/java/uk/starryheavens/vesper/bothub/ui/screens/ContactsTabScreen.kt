@@ -114,18 +114,6 @@ fun ContactsTabScreen(
                             title = "发起群聊",
                             onClick = onCreateGroup
                         )
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = theme.divider,
-                            modifier = Modifier.padding(start = 64.dp, end = 14.dp)
-                        )
-                        ContactActionEntryRow(
-                            icon = Icons.Default.NotificationsNone,
-                            accent = Color(0xFF10B981),
-                            title = "服务通知",
-                            badgeCount = unreadInboxCount,
-                            onClick = onOpenServiceFeed
-                        )
                     }
                 }
             }

@@ -28,6 +28,7 @@ var ConfigRegistry = map[string]ConfigSpec{
 	KeyBiliSessdata:      {Editable: true, Sensitive: true},
 	KeyTavilyAPIKey:      {Editable: true, Sensitive: true, EnvFallback: "BOTHUB_TAVILY_API_KEY"},
 	KeySearXNGURL:        {Editable: true, IsURL: true, EnvFallback: "BOTHUB_SEARXNG_URL"},
+	KeyFXRatesCNY:        {Editable: false},
 	KeyDeepSeekAPIKey:    {Editable: true, Sensitive: true},
 	KeyDeepSeekBaseURL:   {Editable: true, IsURL: true},
 	KeyAIModel:           {Editable: true},

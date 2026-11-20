@@ -327,6 +327,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 skills = if (json.has("skills")) JsonMappers.parseSkills(json.optJSONArray("skills")) else null,
                 assets = if (json.has("assets")) JsonMappers.parseAssets(json.optJSONArray("assets")) else null,
                 assetCategories = if (json.has("asset_categories")) JsonMappers.parseAssetCategories(json.optJSONArray("asset_categories")) else null,
+                fxRates = if (json.has("fx_rates")) JsonMappers.parseFXRates(json.optJSONObject("fx_rates")) else null,
                 tasks = if (json.has("tasks")) JsonMappers.parseTasks(json.optJSONArray("tasks")) else null,
                 todos = if (json.has("todos")) JsonMappers.parseTodos(json.optJSONArray("todos")) else null,
                 notes = if (json.has("notes")) JsonMappers.parseNotes(json.optJSONArray("notes")) else null,

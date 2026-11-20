@@ -421,13 +421,14 @@ class BotHubViewModel(
                 slice.modelHealth?.let { modelHealth = it }
                 slice.modelUsageSummary?.let { modelUsageSummary = it }
                 val curDash = dashboard
-                if (curDash != null && (slice.assets != null || slice.tasks != null || slice.todos != null || slice.notes != null || slice.assetCategories != null || slice.modelOptions != null)) {
+                if (curDash != null && (slice.assets != null || slice.tasks != null || slice.todos != null || slice.notes != null || slice.assetCategories != null || slice.fxRates != null || slice.modelOptions != null)) {
                     val nextDash = curDash.copy(
                         assets = slice.assets ?: curDash.assets,
                         tasks = slice.tasks ?: curDash.tasks,
                         todos = slice.todos ?: curDash.todos,
                         notes = slice.notes ?: curDash.notes,
                         assetCategories = slice.assetCategories ?: curDash.assetCategories,
+                        fxRates = if (!slice.fxRates.isNullOrEmpty()) slice.fxRates else curDash.fxRates,
                         modelOptions = slice.modelOptions ?: curDash.modelOptions,
                         totalAssets = slice.assets?.size ?: curDash.totalAssets,
                         expiringCount = (slice.assets ?: curDash.assets).count { it.isExpiringSoon },
@@ -1803,13 +1804,29 @@ class BotHubViewModel(
         selectedNotification = null
         showServiceFeed = false
         selectedTab = BotHubTab.AGENT
-        val butler = bots.firstOrNull { !it.isGroup } ?: bots.firstOrNull()
-        if (butler != null) {
-            openChatRoom(butler.id)
+        val prefixBotName = item.title.trim()
+            .takeIf { it.startsWith("[") && it.contains("]") }
+            ?.substringAfter("[")
+            ?.substringBefore("]")
+            ?.trim()
+            .orEmpty()
+        val matchedByPrefix = if (prefixBotName.isNotEmpty()) {
+            bots.firstOrNull { !it.isGroup && it.name.equals(prefixBotName, ignoreCase = true) }
+        } else null
+        val matchedByTask = dashboard?.tasks
+            ?.firstOrNull { it.id == item.moduleId && it.botId.isNotBlank() }
+            ?.let { task -> bots.firstOrNull { !it.isGroup && it.id == task.botId } }
+        val targetBot = matchedByPrefix
+            ?: matchedByTask
+            ?: bots.firstOrNull { !it.isGroup && it.botMode != "companion" }
+            ?: bots.firstOrNull { !it.isGroup }
+            ?: bots.firstOrNull()
+        if (targetBot != null) {
+            openChatRoom(targetBot.id)
         } else {
             inChatRoom = true
         }
-        sendAgentPrompt("请帮我分析这条通知并给出排查或处置建议：\n\n标题：${item.title}\n\n${item.markdownBody}")
+        sendAgentPrompt("关于刚才收到的服务通知「${item.title}」：\n${item.previewText(320)}\n\n请帮我进一步分析或处理。")
     }
 
     fun markAllNotificationsRead() {

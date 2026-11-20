@@ -5,10 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -307,15 +305,16 @@ func (e *Engine) summarizeAssetsPayload(categoryFilter string) (string, error) {
 		Annualized float64 `json:"annualized_estimated"`
 		Count      int     `json:"priced_items"`
 	}
-	currMap := make(map[string]*currTotal)
 	byCategory := make(map[string]int)
 	var activeCount, expiring30Count, inactiveCount int
 	cat := strings.TrimSpace(categoryFilter)
+	filtered := make([]store.Asset, 0, len(assets))
 
 	for _, a := range assets {
 		if cat != "" && a.Category != cat {
 			continue
 		}
+		filtered = append(filtered, a)
 		if store.NormalizeAssetStatus(a.Status) == "已停用" {
 			inactiveCount++
 			continue
@@ -329,60 +328,28 @@ func (e *Engine) summarizeAssetsPayload(categoryFilter string) (string, error) {
 		if a.DueDate != "" && !strings.HasPrefix(a.DueDate, "2099") && a.DaysLeft <= 30 {
 			expiring30Count++
 		}
-		pStr := strings.TrimSpace(a.Price)
-		if pStr == "" {
-			continue
-		}
-		m := reAssetNumber.FindStringSubmatch(pStr)
-		if len(m) < 2 {
-			continue
-		}
-		amt, pErr := strconv.ParseFloat(m[1], 64)
-		if pErr != nil || amt <= 0 {
-			continue
-		}
-		currency := "USD"
-		lowerP := strings.ToLower(pStr)
-		switch {
-		case strings.Contains(pStr, "¥") || strings.Contains(lowerP, "cny") || strings.Contains(lowerP, "rmb") || strings.Contains(pStr, "元"):
-			currency = "CNY"
-		case strings.Contains(pStr, "€") || strings.Contains(lowerP, "eur"):
-			currency = "EUR"
-		case strings.Contains(lowerP, "hkd"):
-			currency = "HKD"
-		}
-		monthly := amt
-		annual := amt * 12
-		switch {
-		case strings.Contains(pStr, "年") || strings.Contains(lowerP, "/yr") || strings.Contains(lowerP, "year") || strings.Contains(lowerP, "/y"):
-			monthly = amt / 12
-			annual = amt
-		case strings.Contains(pStr, "季") || strings.Contains(lowerP, "quarter"):
-			monthly = amt / 3
-			annual = amt * 4
-		case strings.Contains(pStr, "次") || strings.Contains(lowerP, "one"):
-			monthly = 0
-			annual = 0
-		}
-		entry, ok := currMap[currency]
-		if !ok {
-			entry = &currTotal{Currency: currency}
-			currMap[currency] = entry
-		}
-		entry.Monthly = math.Round((entry.Monthly+monthly)*100) / 100
-		entry.Annualized = math.Round((entry.Annualized+annual)*100) / 100
-		entry.Count++
 	}
 
-	breakdown := make([]currTotal, 0, len(currMap))
-	for _, v := range currMap {
-		breakdown = append(breakdown, *v)
+	fxSnap := e.store.GetFXRatesCNY()
+	monthlyCNY, yearlyCNY, pricedCount := store.SummarizeAssetsCNY(filtered, fxSnap.Rates)
+	breakdown := make([]currTotal, 0, 1)
+	if pricedCount > 0 {
+		breakdown = append(breakdown, currTotal{
+			Currency:   "CNY",
+			Monthly:    monthlyCNY,
+			Annualized: yearlyCNY,
+			Count:      pricedCount,
+		})
 	}
 	out, _ := json.Marshal(map[string]any{
 		"active_count":       activeCount,
 		"inactive_count":     inactiveCount,
 		"expiring_30d_count": expiring30Count,
 		"by_category":        byCategory,
+		"monthly_cny":        monthlyCNY,
+		"annualized_cny":     yearlyCNY,
+		"fx_source":          fxSnap.Source,
+		"fx_updated_at":      fxSnap.UpdatedAt,
 		"cost_by_currency":   breakdown,
 	})
 	return string(out), nil

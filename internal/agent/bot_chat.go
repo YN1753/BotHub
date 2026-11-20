@@ -513,7 +513,8 @@ func (e *Engine) runSingleBotTurn(
 		if msgKind == "" {
 			msgKind = "chat"
 		}
-		persistTimeline := msgKind != "delegate"
+		// Never write background routine runs into the Bot's chat timeline; routines push to 服务通知.
+		persistTimeline := msgKind != "delegate" && msgKind != "routine"
 		if len(toolCalls) == 0 {
 			endedWithTools = false
 			// Harness 4: Empty-content rescue when a reasoning model puts all text into reasoning_content
@@ -828,7 +829,7 @@ func (e *Engine) runSingleBotTurn(
 			if msgKind == "" {
 				msgKind = "chat"
 			}
-			if msgKind != "delegate" {
+			if msgKind != "delegate" && msgKind != "routine" {
 				finalEntry := store.AgentMessage{
 					SessionID:        "bot:" + timelineBotID,
 					BotID:            timelineBotID,
@@ -1003,38 +1004,20 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 		return "", err
 	}
 
-	if isSilentRoutineReply(resp.Content) {
-		_ = e.store.DeleteBotMessagesAfterID(bot.ID, threadID, prevMaxID)
-		_ = e.store.SetBotState(bot.ID, store.BotStateIdle, prevSummary)
-		if e.hub != nil {
-			e.hub.PublishEvent("bot_state", map[string]any{
-				"bot_id":       bot.ID,
-				"state":        store.BotStateIdle,
-				"unread_count": prevUnread,
-				"last_summary": prevSummary,
-			})
-		}
-		return "", nil
-	}
-
-	summary := truncateTitle(resp.Content)
-	_ = e.store.IncrementBotUnread(bot.ID, summary)
+	// Always restore the Bot's chat state & summary cleanly without polluting chat history or unread badge;
+	// BotPromptModule delivers the routine result directly to 服务通知 (notifications).
+	_ = e.store.DeleteBotMessagesAfterID(bot.ID, threadID, prevMaxID)
+	_ = e.store.SetBotState(bot.ID, store.BotStateIdle, prevSummary)
 	if e.hub != nil {
-		msgs, _ := e.store.ListBotMessagesByThread(bot.ID, threadID, 1)
-		if len(msgs) > 0 {
-			e.hub.PublishEvent("bot_message", msgs[len(msgs)-1])
-		}
-		updatedBot, _ := e.store.GetBot(bot.ID)
-		unread := 0
-		if updatedBot != nil {
-			unread = updatedBot.UnreadCount
-		}
 		e.hub.PublishEvent("bot_state", map[string]any{
 			"bot_id":       bot.ID,
-			"state":        store.BotStateDone,
-			"unread_count": unread,
-			"last_summary": summary,
+			"state":        store.BotStateIdle,
+			"unread_count": prevUnread,
+			"last_summary": prevSummary,
 		})
+	}
+	if isSilentRoutineReply(resp.Content) {
+		return "", nil
 	}
 	return resp.Content, nil
 }

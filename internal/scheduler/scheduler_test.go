@@ -215,28 +215,35 @@ func TestSchedulerSilentWhenZeroItemsPushedAndLegacyCleanup(t *testing.T) {
 		t.Fatalf("expected routine execution log recorded even when silent, got %+v", execLogs)
 	}
 
-	// 2. Real expiring-asset alert (ItemsPushed > 0) MUST surface a clean human-friendly reminder
+	// 2. Expiring-asset alert (ItemsPushed > 0) pushes to 服务通知 (notifications) without polluting IM chat timeline
 	runner.pushed = 2
 	runner.summary = "巡检 6 项资产（同步 1 项，发送 2 项临期强提醒）"
 	if _, err := sched.RunNow(context.Background(), "asset_watcher"); err != nil {
 		t.Fatalf("alert run failed: %v", err)
 	}
 	msgsAfterAlert, _ := st.ListBotMessages("butler", 20)
-	if len(msgsAfterAlert) != 1 {
-		t.Fatalf("expected 1 IM alert message when ItemsPushed > 0, got %d", len(msgsAfterAlert))
+	if len(msgsAfterAlert) != 0 {
+		t.Fatalf("expected 0 IM chat messages when routine pushes to 服务通知, got %d", len(msgsAfterAlert))
 	}
 	botAfterAlert, _ := st.GetBot("butler")
-	if botAfterAlert == nil || botAfterAlert.UnreadCount != 1 {
-		t.Fatalf("expected UnreadCount == 1 after real alert, got %+v", botAfterAlert)
+	if botAfterAlert == nil || botAfterAlert.UnreadCount != 0 || botAfterAlert.State != store.BotStateIdle {
+		t.Fatalf("expected bot chat unread/state untouched when alert goes to 服务通知, got %+v", botAfterAlert)
 	}
 
-	// 3. Seed legacy noisy routine log + real chat, reopen DB, verify legacy spam is cleaned up
+	// 3. Seed legacy routine message + real chat message, reopen DB, verify ALL routine messages are purged while real chat remains
 	_, _ = st.AppendAgentMessage(store.AgentMessage{
 		SessionID: "bot:butler",
 		BotID:     "butler",
 		MsgKind:   "routine",
 		Role:      "assistant",
-		Content:   "### 例程主动汇报: 数字资产与会员守望\n\n- **执行状态**: success (6ms)\n- **结果摘要**: 巡检 6 项资产（同步 0 项，发送 0 项临期强提醒）",
+		Content:   "### 例程主动汇报: 数字资产与会员守望\n\n- **执行状态**: success (6ms)",
+	})
+	_, _ = st.AppendAgentMessage(store.AgentMessage{
+		SessionID: "bot:butler",
+		BotID:     "butler",
+		MsgKind:   "chat",
+		Role:      "assistant",
+		Content:   "真实聊天回复保留",
 	})
 	_ = st.Close()
 
@@ -246,7 +253,7 @@ func TestSchedulerSilentWhenZeroItemsPushedAndLegacyCleanup(t *testing.T) {
 	}
 	defer stReopened.Close()
 	cleanedMsgs, _ := stReopened.ListBotMessages("butler", 20)
-	if len(cleanedMsgs) != 1 {
-		t.Fatalf("expected legacy noisy routine message purged while keeping real alert, got %d: %+v", len(cleanedMsgs), cleanedMsgs)
+	if len(cleanedMsgs) != 1 || cleanedMsgs[0].MsgKind != "chat" {
+		t.Fatalf("expected all legacy routine messages purged while keeping real chat, got %d: %+v", len(cleanedMsgs), cleanedMsgs)
 	}
 }

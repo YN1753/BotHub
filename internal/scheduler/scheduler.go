@@ -333,65 +333,30 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 			DurationMs:    durationMs,
 		})
 
-		shouldAlertInChat := runErr != nil || (task.Type == "asset_watcher" && res.ItemsPushed > 0)
-		if shouldAlertInChat {
-			finalState := store.BotStateDone
-			report := fmt.Sprintf("### 临期资产提醒 · %s\n\n%s\n\n详细续费清单已同步至「服务通知」。", task.Name, cleanSummary)
-			if runErr != nil {
-				finalState = store.BotStateBlocked
-				report = fmt.Sprintf("### 例程异常告警 · %s\n\n%s", task.Name, cleanSummary)
+		// All routine reports & error alerts are unified into 服务通知 (notifications),
+		// never inserted into the Bot's 1v1 chat dialog timeline.
+		if runErr != nil && !strings.Contains(runErr.Error(), "付费调用已达上限") && !strings.Contains(runErr.Error(), "已拦截付费") {
+			botLabel := botID
+			if b, bErr := s.store.GetBot(botID); bErr == nil && b != nil && strings.TrimSpace(b.Name) != "" {
+				botLabel = b.Name
 			}
-
-			targetThread := ""
-			if b, bErr := s.store.GetBot(botID); bErr == nil && b != nil {
-				targetThread = strings.TrimSpace(b.ActiveThreadID)
-			}
-			msg := store.AgentMessage{
-				SessionID:   "bot:" + botID,
-				BotID:       botID,
-				ThreadID:    targetThread,
-				SenderBotID: botID,
-				MsgKind:     "routine",
-				Role:        "assistant",
-				Content:     report,
-			}
-			if msgID, aErr := s.store.AppendAgentMessage(msg); aErr == nil {
-				msg.ID = msgID
-				msg.CreatedAt = store.NowShanghai()
-			}
-			_ = s.store.SetBotState(botID, finalState, cleanSummary)
-			_ = s.store.IncrementBotUnread(botID, cleanSummary)
-			updatedBot, _ := s.store.GetBot(botID)
-			unread := 0
-			if updatedBot != nil {
-				unread = updatedBot.UnreadCount
-			}
-			if s.hub != nil {
-				s.hub.PublishEvent("bot_message", msg)
-				s.hub.PublishEvent("bot_state", map[string]any{
-					"bot_id":       botID,
-					"state":        finalState,
-					"unread_count": unread,
-					"last_summary": cleanSummary,
-				})
-			}
-		} else if task.Type != "bot_prompt" {
-			// Silent-on-OK: when monitoring finds 0 alerts (or content digests already pushed to 服务通知),
-			// restore the Bot cleanly to idle without polluting chat history or unread badges.
-			_ = s.store.SetBotState(botID, store.BotStateIdle, prevSummary)
-			updatedBot, _ := s.store.GetBot(botID)
-			unread := prevUnread
-			if updatedBot != nil {
-				unread = updatedBot.UnreadCount
-			}
-			if s.hub != nil {
-				s.hub.PublishEvent("bot_state", map[string]any{
-					"bot_id":       botID,
-					"state":        store.BotStateIdle,
-					"unread_count": unread,
-					"last_summary": prevSummary,
-				})
-			}
+			alertTitle := fmt.Sprintf("[%s] 例程异常 · %s", botLabel, task.Name)
+			alertMD := fmt.Sprintf("### %s\n\n%s", alertTitle, cleanSummary)
+			_ = notifier.NewClientWithHub(s.store, s.hub).SendWithPriority(context.Background(), task.ID, alertTitle, alertMD, "high")
+		}
+		_ = s.store.SetBotState(botID, store.BotStateIdle, prevSummary)
+		updatedBot, _ := s.store.GetBot(botID)
+		unread := prevUnread
+		if updatedBot != nil {
+			unread = updatedBot.UnreadCount
+		}
+		if s.hub != nil {
+			s.hub.PublishEvent("bot_state", map[string]any{
+				"bot_id":       botID,
+				"state":        store.BotStateIdle,
+				"unread_count": unread,
+				"last_summary": prevSummary,
+			})
 		}
 	}
 

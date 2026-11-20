@@ -324,7 +324,6 @@ func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	targetBotID := s.resolveAlertTargetBotID()
-	s.appendAlertToBot(targetBotID, title, store.BotStateBlocked, markdown)
 
 	if shouldTriggerNezhaAITriage(title, content) && s.agent != nil {
 		go s.triageNezhaAlertAsync(targetBotID, title, content)
@@ -365,8 +364,6 @@ func (s *Server) triageNezhaAlertAsync(targetBotID, title, content string) {
 	} else {
 		_, _ = s.store.CreateNotification("nezha_ai_triage", triageTitle, analysis, triageMD, "normal")
 	}
-
-	s.appendAlertToBot(targetBotID, triageTitle, store.BotStateDone, triageMD)
 }
 
 func (s *Server) resolveAlertTargetBotID() string {

@@ -85,22 +85,28 @@ test('format utilities produce expected strings', () => {
   assert.equal(csvEscapeCell('@evil'), '"\'@evil"')
   assert.equal(csvEscapeCell('Tokyo "VPS"'), '"Tokyo ""VPS"""')
   assert.equal(
-    summarizeAssetsMonthlyCost([
-      { status: '生效中', price: '$12 / 年' },
-      { status: '生效中', price: '$5 / 月' },
-      { status: '生效中', price: '¥30 / 月' },
-      { status: '已停用', price: '¥999 / 月' },
-    ]),
-    '$6/月 + ¥30/月'
+    summarizeAssetsMonthlyCost(
+      [
+        { status: '生效中', price: '$12 / 年' },
+        { status: '生效中', price: '$5 / 月' },
+        { status: '生效中', price: '¥30 / 月' },
+        { status: '已停用', price: '¥999 / 月' },
+      ],
+      { USD: 7.2, CNY: 1 }
+    ),
+    '¥73.2/月'
   )
   assert.equal(
-    summarizeAssetsYearlyCost([
-      { status: '生效中', price: '$12 / 年' },
-      { status: '生效中', price: '$5 / 月' },
-      { status: '生效中', price: '¥30 / 月' },
-      { status: '已停用', price: '¥999 / 月' },
-    ]),
-    '$72/年 + ¥360/年'
+    summarizeAssetsYearlyCost(
+      [
+        { status: '生效中', price: '$12 / 年' },
+        { status: '生效中', price: '$5 / 月' },
+        { status: '生效中', price: '¥30 / 月' },
+        { status: '已停用', price: '¥999 / 月' },
+      ],
+      { USD: 7.2, CNY: 1 }
+    ),
+    '¥878/年'
   )
   assert.equal(inferRecommendedRenewMonths('$5 / 月'), 1)
   assert.equal(inferRecommendedRenewMonths('$15 / 季'), 3)

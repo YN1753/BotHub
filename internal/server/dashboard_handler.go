@@ -131,6 +131,7 @@ func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
 		assets, _ := s.store.ListAssets()
 		resp["assets"] = assets
 		resp["asset_categories"] = s.store.ListAssetCategories()
+		resp["fx_rates"] = s.store.GetFXRatesCNY()
 		if !want["stats"] {
 			want["stats"] = true
 		}
@@ -250,7 +251,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"configs":          cfgs,
 		"assets":           assets,
 		"asset_categories": s.store.ListAssetCategories(),
-		"push_logs":       logs,
+		"fx_rates":         s.store.GetFXRatesCNY(),
+		"push_logs":        logs,
 		"stats":           stats,
 		"revisions":       s.revisionsSnapshot(),
 		"uptime_sec":      int64(time.Since(s.startedAt).Seconds()),

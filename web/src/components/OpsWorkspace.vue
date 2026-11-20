@@ -86,8 +86,8 @@ const filteredAssets = computed(() => {
   })
 })
 
-const activeCostSummary = computed(() => summarizeAssetsMonthlyCost(filteredAssets.value))
-const activeYearlyCostSummary = computed(() => summarizeAssetsYearlyCost(filteredAssets.value))
+const activeCostSummary = computed(() => summarizeAssetsMonthlyCost(filteredAssets.value, store.state.fxRates))
+const activeYearlyCostSummary = computed(() => summarizeAssetsYearlyCost(filteredAssets.value, store.state.fxRates))
 
 const renewingAssetId = ref('')
 

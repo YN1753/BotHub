@@ -184,88 +184,105 @@ export function botStateDotClass(state?: string): string {
   return 'bg-fg-muted'
 }
 
+export const DEFAULT_FX_RATES_CNY: Record<string, number> = {
+  CNY: 1,
+  RMB: 1,
+  USD: 7.24,
+  EUR: 7.82,
+  HKD: 0.93,
+  GBP: 9.18,
+  JPY: 0.0475,
+  TWD: 0.224,
+  SGD: 5.38,
+  CAD: 5.16,
+  AUD: 4.7,
+  KRW: 0.0052,
+}
+
+export function detectPriceCurrencyCode(raw: string): string {
+  const s = String(raw || '').trim()
+  const upper = s.toUpperCase()
+  if (upper.includes('HK$') || upper.includes('HKD') || s.includes('港币') || s.includes('港元')) return 'HKD'
+  if (upper.includes('NT$') || upper.includes('TWD') || s.includes('台币')) return 'TWD'
+  if (upper.includes('S$') || upper.includes('SGD') || s.includes('新币')) return 'SGD'
+  if (upper.includes('C$') || upper.includes('CAD') || s.includes('加币')) return 'CAD'
+  if (upper.includes('A$') || upper.includes('AUD') || s.includes('澳币')) return 'AUD'
+  if (upper.includes('JPY') || s.includes('日元') || s.includes('円')) return 'JPY'
+  if (s.includes('€') || upper.includes('EUR') || s.includes('欧元')) return 'EUR'
+  if (s.includes('£') || upper.includes('GBP') || s.includes('英镑')) return 'GBP'
+  if (s.includes('$') || upper.includes('USD') || s.includes('美元') || s.includes('刀')) return 'USD'
+  return 'CNY'
+}
+
+function resolveCNYRate(code: string, fxRates?: Record<string, number>): number {
+  const upper = String(code || 'CNY').toUpperCase()
+  const custom = fxRates?.[upper]
+  if (typeof custom === 'number' && Number.isFinite(custom) && custom > 0) return custom
+  return DEFAULT_FX_RATES_CNY[upper] ?? 1
+}
+
 export function summarizeAssetsMonthlyCost(
-  assets: Array<{ status?: string; price?: string }>
+  assets: Array<{ status?: string; price?: string }>,
+  fxRates?: Record<string, number>
 ): string {
-  const totals = new Map<string, number>()
+  let totalCNY = 0
+  let count = 0
   for (const a of assets) {
-    if (a.status === '已停用') continue
+    if (a.status === '已停用' || a.status === '已归档') continue
     const raw = String(a.price || '').trim()
-    if (!raw || raw.includes('免费')) continue
+    if (!raw || raw.includes('免费') || raw.includes('一次') || raw.includes('永久')) continue
     const m = raw.match(/(\d+(?:\.\d+)?)/)
     if (!m) continue
     const num = Number(m[1])
     if (!Number.isFinite(num) || num <= 0) continue
-    const upper = raw.toUpperCase()
-    const sym =
-      upper.includes('HK$') || upper.includes('HKD')
-        ? 'HK$'
-        : upper.includes('$') || upper.includes('USD')
-        ? '$'
-        : upper.includes('€') || upper.includes('EUR')
-        ? '€'
-        : upper.includes('£') || upper.includes('GBP')
-        ? '£'
-        : '¥'
-    let monthly = num
+    const code = detectPriceCurrencyCode(raw)
+    const cnyAmt = num * resolveCNYRate(code, fxRates)
+    let monthly = cnyAmt
     const lower = raw.toLowerCase()
     if (raw.includes('年') || lower.includes('/yr') || lower.includes('year') || lower.includes('/y')) {
-      monthly = num / 12
+      monthly = cnyAmt / 12
     } else if (raw.includes('季') || lower.includes('/qtr') || lower.includes('quarter')) {
-      monthly = num / 3
+      monthly = cnyAmt / 3
     } else if (raw.includes('周') || lower.includes('/wk') || lower.includes('week')) {
-      monthly = num * 4.33
+      monthly = cnyAmt * 4.33
     } else if (raw.includes('天') || raw.includes('日') || lower.includes('/day') || lower.includes('/d')) {
-      monthly = num * 30
+      monthly = cnyAmt * 30
     }
-    totals.set(sym, (totals.get(sym) || 0) + monthly)
+    totalCNY += monthly
+    count++
   }
-  if (totals.size === 0) return ''
-  return (
-    Array.from(totals.entries())
-      .map(([sym, val]) => `${sym}${val.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}/月`)
-      .join(' + ')
-  )
+  if (count === 0 || totalCNY <= 0) return ''
+  return `¥${totalCNY.toFixed(1).replace(/\.0$/, '')}/月`
 }
 
 export function summarizeAssetsYearlyCost(
-  assets: Array<{ status?: string; price?: string }>
+  assets: Array<{ status?: string; price?: string }>,
+  fxRates?: Record<string, number>
 ): string {
-  const totals = new Map<string, number>()
+  let totalCNY = 0
+  let count = 0
   for (const a of assets) {
-    if (a.status === '已停用') continue
+    if (a.status === '已停用' || a.status === '已归档') continue
     const raw = String(a.price || '').trim()
-    if (!raw || raw.includes('免费')) continue
+    if (!raw || raw.includes('免费') || raw.includes('一次') || raw.includes('永久')) continue
     const m = raw.match(/(\d+(?:\.\d+)?)/)
     if (!m) continue
     const num = Number(m[1])
     if (!Number.isFinite(num) || num <= 0) continue
-    const upper = raw.toUpperCase()
-    const sym =
-      upper.includes('HK$') || upper.includes('HKD')
-        ? 'HK$'
-        : upper.includes('$') || upper.includes('USD')
-        ? '$'
-        : upper.includes('€') || upper.includes('EUR')
-        ? '€'
-        : upper.includes('£') || upper.includes('GBP')
-        ? '£'
-        : '¥'
-    let yearly = num * 12
+    const code = detectPriceCurrencyCode(raw)
+    const cnyAmt = num * resolveCNYRate(code, fxRates)
+    let yearly = cnyAmt * 12
     const lower = raw.toLowerCase()
     if (raw.includes('年') || lower.includes('/yr') || lower.includes('year') || lower.includes('/y')) {
-      yearly = num
+      yearly = cnyAmt
     } else if (raw.includes('季') || lower.includes('/qtr') || lower.includes('quarter')) {
-      yearly = num * 4
-    } else if (raw.includes('一次') || raw.includes('永久')) {
-      continue
+      yearly = cnyAmt * 4
     }
-    totals.set(sym, (totals.get(sym) || 0) + yearly)
+    totalCNY += yearly
+    count++
   }
-  if (totals.size === 0) return ''
-  return Array.from(totals.entries())
-    .map(([sym, val]) => `${sym}${val.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}/年`)
-    .join(' + ')
+  if (count === 0 || totalCNY <= 0) return ''
+  return `¥${Math.round(totalCNY)}/年`
 }
 
 export function inferRecommendedRenewMonths(price?: string): 1 | 3 | 12 {

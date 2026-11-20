@@ -396,6 +396,13 @@ export interface ModelHealthStats {
   cooldown_sec: number
 }
 
+export interface FXRateSnapshot {
+  base: string
+  rates: Record<string, number>
+  updated_at?: string
+  source?: string
+}
+
 export interface DashboardPayload {
   version: string
   commit: string
@@ -424,6 +431,7 @@ export interface DashboardPayload {
   configs: Record<string, string>
   assets: Asset[]
   asset_categories?: AssetCategoryOption[]
+  fx_rates?: FXRateSnapshot
   push_logs: PushLog[]
   stats: {
     sent_pushes: number

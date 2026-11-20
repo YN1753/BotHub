@@ -114,16 +114,58 @@ private val CATEGORY_ICON_CHOICES = listOf(
     "wallet" to "账单"
 )
 
-private val ASSET_PRICE_REGEX = Regex("""([¥$€£])?\s*([0-9]+(?:\.[0-9]+)?)""")
+private val ASSET_PRICE_REGEX = Regex("""(HK\$|NT\$|S\$|C\$|A\$|US\$|CN¥|RMB|USD|CNY|EUR|GBP|HKD|JPY|TWD|SGD|CAD|AUD|[¥$€£])?\s*([0-9]+(?:\.[0-9]+)?)""", RegexOption.IGNORE_CASE)
 
-private fun summarizeAssetsCost(assets: List<AssetItem>, yearly: Boolean): String {
-    val buckets = linkedMapOf<String, Double>()
+private val DEFAULT_FX_RATES_TO_CNY = mapOf(
+    "CNY" to 1.0,
+    "USD" to 7.24,
+    "EUR" to 7.82,
+    "HKD" to 0.93,
+    "GBP" to 9.18,
+    "JPY" to 0.0475,
+    "TWD" to 0.224,
+    "SGD" to 5.38,
+    "CAD" to 5.16,
+    "AUD" to 4.70
+)
+
+private fun detectPriceCurrencyCode(rawPrice: String, matchedSymbol: String): String {
+    val upper = "${matchedSymbol.trim()} ${rawPrice.trim()}".uppercase(Locale.ROOT)
+    return when {
+        upper.contains("HK$") || upper.contains("HKD") || upper.contains("港") -> "HKD"
+        upper.contains("NT$") || upper.contains("TWD") || upper.contains("台") -> "TWD"
+        upper.contains("S$") || upper.contains("SGD") -> "SGD"
+        upper.contains("C$") || upper.contains("CAD") -> "CAD"
+        upper.contains("A$") || upper.contains("AUD") -> "AUD"
+        upper.contains("JPY") || upper.contains("日元") || upper.contains("円") -> "JPY"
+        upper.contains("€") || upper.contains("EUR") || upper.contains("欧") -> "EUR"
+        upper.contains("£") || upper.contains("GBP") || upper.contains("英镑") -> "GBP"
+        upper.contains("$") || upper.contains("USD") || upper.contains("刀") || upper.contains("美元") -> "USD"
+        else -> "CNY"
+    }
+}
+
+private fun rateToCNY(currencyCode: String, fxRates: Map<String, Double>): Double {
+    val code = currencyCode.trim().uppercase(Locale.ROOT)
+    if (code.isEmpty() || code == "CNY" || code == "RMB") return 1.0
+    val live = fxRates[code]
+    if (live != null && live > 0.0 && !live.isNaN()) return live
+    return DEFAULT_FX_RATES_TO_CNY[code] ?: 1.0
+}
+
+private fun summarizeAssetsCost(
+    assets: List<AssetItem>,
+    yearly: Boolean,
+    fxRates: Map<String, Double> = emptyMap()
+): String {
+    var totalCNY = 0.0
+    var hasPaidAsset = false
     assets.forEach { a ->
         if (a.status == "已停用" || a.status == "已归档") return@forEach
         val raw = a.price.trim()
         if (raw.isEmpty()) return@forEach
         val match = ASSET_PRICE_REGEX.find(raw) ?: return@forEach
-        val symbol = match.groupValues[1].ifEmpty { "¥" }
+        val symbol = match.groupValues[1]
         val amount = match.groupValues[2].toDoubleOrNull() ?: return@forEach
         if (amount <= 0.0) return@forEach
         val lower = raw.lowercase(Locale.ROOT)
@@ -135,13 +177,17 @@ private fun summarizeAssetsCost(assets: List<AssetItem>, yearly: Boolean): Strin
             else ->
                 if (yearly) amount * 12.0 else amount
         }
-        buckets[symbol] = (buckets[symbol] ?: 0.0) + normalized
+        val code = detectPriceCurrencyCode(raw, symbol)
+        totalCNY += normalized * rateToCNY(code, fxRates)
+        hasPaidAsset = true
     }
-    if (buckets.isEmpty()) return "--"
-    return buckets.entries.joinToString(" + ") { (sym, value) ->
-        val rounded = (value * 10.0).roundToInt() / 10.0
+    if (!hasPaidAsset || totalCNY <= 0.0) return "--"
+    return if (yearly) {
+        "¥${totalCNY.roundToInt()}"
+    } else {
+        val rounded = (totalCNY * 10.0).roundToInt() / 10.0
         val numStr = if (rounded % 1.0 == 0.0) rounded.toInt().toString() else rounded.toString()
-        "$sym$numStr"
+        "¥$numStr"
     }
 }
 
@@ -266,8 +312,9 @@ fun HubTabScreen(
         }
     }
 
-    val totalMonthlyCost = remember(filteredAssets) { summarizeAssetsCost(filteredAssets, yearly = false) }
-    val totalYearlyCost = remember(filteredAssets) { summarizeAssetsCost(filteredAssets, yearly = true) }
+    val fxRates = snapshot?.fxRates ?: emptyMap()
+    val totalMonthlyCost = remember(filteredAssets, fxRates) { summarizeAssetsCost(filteredAssets, yearly = false, fxRates = fxRates) }
+    val totalYearlyCost = remember(filteredAssets, fxRates) { summarizeAssetsCost(filteredAssets, yearly = true, fxRates = fxRates) }
     val categoryCounts = remember(assets) {
         assets.groupingBy { it.category.trim().lowercase(Locale.ROOT) }.eachCount()
     }

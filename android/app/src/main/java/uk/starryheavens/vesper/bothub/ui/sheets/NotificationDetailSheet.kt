@@ -142,7 +142,7 @@ fun NotificationDetailSheet(
                 )
 
                 TactilePrimaryButton(
-                    text = "交给 AI 深度解读",
+                    text = "找 TA 追问 / 处理",
                     leadingIcon = Icons.Default.AutoAwesome,
                     minHeight = 46.dp,
                     onClick = { onDiagnoseWithAi(item) },
