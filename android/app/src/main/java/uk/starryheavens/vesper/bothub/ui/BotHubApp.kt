@@ -263,6 +263,7 @@ fun BotHubApp(
                         ChatRoomScreen(
                             activeBot = activeBot,
                             allBots = viewModel.bots,
+                            availableSkills = viewModel.skills,
                             otherUnreadCount = otherUnreadWhileInChat,
                             activeModel = viewModel.activeModel,
                             modelOptions = viewModel.modelOptions,

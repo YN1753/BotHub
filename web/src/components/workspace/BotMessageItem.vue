@@ -268,6 +268,7 @@ function closeDetailsMenu(e: Event) {
           <span
             v-if="modelTierTag && !message.streaming"
             :class="[
+              isLast ? '' : 'reveal-actions',
               'font-mono text-xs px-1.5 py-0.5 rounded-lg border leading-none',
               modelTierTag === 'paid'
                 ? 'border-accent-border bg-accent-soft text-accent-fg'
@@ -278,7 +279,7 @@ function closeDetailsMenu(e: Event) {
           </span>
           <span
             v-if="message.model && !message.streaming"
-            class="hidden sm:inline-flex font-mono text-xs text-fg-muted"
+            :class="[isLast ? 'hidden sm:inline-flex' : 'reveal-actions hidden sm:inline-flex', 'font-mono text-xs text-fg-muted']"
           >
             {{ message.model }}
           </span>

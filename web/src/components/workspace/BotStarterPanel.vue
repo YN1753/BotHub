@@ -10,40 +10,13 @@ const props = defineProps<{
   groupMembers: Bot[]
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   pickPrompt: [prompt: string, prefillOnly?: boolean]
 }>()
 
 const isConcierge = computed(
   () => props.bot?.id === 'concierge' || props.bot?.name === '大管家'
 )
-
-const conciergeCards = [
-  {
-    title: '创建专属 Bot',
-    desc: '自然语言描述定位，自动配好人设、工具与免费池模型',
-    prompt: '请调用 manage_bots(action="create_bot") 帮我创建一个专属 Bot：',
-    prefill: true,
-  },
-  {
-    title: '组建多 Bot 协同群',
-    desc: '把多位专员拉入讨论群，支持智能接力或全员并发',
-    prompt: '请调用 manage_bots(action="create_group") 帮我拉一个多 Bot 协同群聊：',
-    prefill: true,
-  },
-  {
-    title: '巡检模型池与 7 日用量',
-    desc: '查看免费/付费池各节点健康度、Token 消耗或解封冷却',
-    prompt: '请调用 manage_models(action="status") 为我巡检当前免费池与付费池各模型健康状态及近 7 日调用量。',
-    prefill: false,
-  },
-  {
-    title: '今日工作简报与临期资产',
-    desc: '汇总待办清单、日程例程与 30 天内即将到期资产',
-    prompt: '请调用 workspace_briefing 与 manage_assets(action="expiring", within_days=30) 为我梳理今日重点待办与近期到期资产。',
-    prefill: false,
-  },
-]
 
 const greetingLine = computed(() => {
   const hr = new Date().getHours()
@@ -62,7 +35,6 @@ const greetingLine = computed(() => {
 
 <template>
   <div class="w-full max-w-[760px] mx-auto text-center px-4 pt-2 pb-4 flex flex-col items-center gap-3">
-    <!-- Living Unboxed GrokBot Companion / Spirit Squad -->
     <div class="starter-stage-halo relative inline-flex items-center justify-center">
       <BotGroupAvatar
         v-if="isGroupBot"
@@ -89,30 +61,9 @@ const greetingLine = computed(() => {
         <template v-if="bot?.role_title"> · {{ bot.role_title }}</template>
         <template v-if="isGroupBot && groupMembers.length > 1"> · 点击任意糯团切至 C 位</template>
       </p>
-    </div>
-
-    <!-- Dedicated Zero-Friction Concierge Command Cards -->
-    <div
-      v-if="isConcierge"
-      class="w-full max-w-[680px] grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 text-left"
-    >
-      <button
-        v-for="card in conciergeCards"
-        :key="card.title"
-        type="button"
-        @click="emit('pickPrompt', card.prompt, card.prefill)"
-        class="group rounded-xl border border-line bg-canvas hover:border-accent-border hover:bg-accent-soft px-3.5 py-2.5 flex flex-col gap-1 transition cursor-pointer text-left"
-      >
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-xs font-semibold text-fg group-hover:text-accent-fg transition-colors">
-            {{ card.title }}
-          </span>
-          <span class="font-mono text-xs text-accent-fg opacity-75 group-hover:opacity-100">
-            {{ card.prefill ? '填入指令 ->' : '一键执行 ->' }}
-          </span>
-        </div>
-        <span class="text-xs text-fg-muted leading-snug">{{ card.desc }}</span>
-      </button>
+      <p class="text-xs text-fg-muted/80 mt-0.5">
+        在下方输入框输入 <code class="font-mono px-1.5 py-0.5 rounded bg-subtle border border-line">/</code> 可直接唤起专属快捷指令与挂载技能
+      </p>
     </div>
   </div>
 </template>

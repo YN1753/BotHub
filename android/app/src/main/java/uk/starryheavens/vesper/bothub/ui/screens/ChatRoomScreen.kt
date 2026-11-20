@@ -98,6 +98,7 @@ import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.BotThreadItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
+import uk.starryheavens.vesper.bothub.data.SkillItemUi
 import uk.starryheavens.vesper.bothub.data.TodoItemUi
 import uk.starryheavens.vesper.bothub.data.formatHumanToolName
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
@@ -126,11 +127,70 @@ private data class PlusActionTile(
     val onClick: () -> Unit
 )
 
+private data class SlashCommandItem(
+    val cmd: String,
+    val title: String,
+    val desc: String,
+    val prompt: String = "",
+    val action: String = "",
+    val anyOfTools: Set<String> = emptySet()
+)
+
+private val BUILTIN_SLASH_SPECS = listOf(
+    SlashCommandItem("/search", "全网检索", "联网搜索最新资讯与公开资料", prompt = "请帮我联网搜索：", anyOfTools = setOf("web_search")),
+    SlashCommandItem("/assets", "资产全面审计", "盘点 VPS、域名与订阅到期风险", prompt = "请调用工具盘点当前全部数字资产与临期风险并给出续费建议。", anyOfTools = setOf("manage_assets")),
+    SlashCommandItem("/nezha", "探针节点巡检", "查看哪吒节点在线率与负载情况", prompt = "请调用 query_nezha_nodes 检查哪吒监控面板节点的实时在线与健康状态。", anyOfTools = setOf("query_nezha_nodes")),
+    SlashCommandItem("/todo", "记录或核查待办", "添加行动项、查看未完成或勾选完结事项", prompt = "请帮我整理或记录以下待办事项：", anyOfTools = setOf("manage_todos")),
+    SlashCommandItem("/plan", "目标拆解排期", "把复杂目标拆解成多条带优先级的待办子任务", prompt = "请调用 manage_todos(action=\"batch_add\") 将以下目标拆解为可执行的分步行动清单并设定优先级：", anyOfTools = setOf("manage_todos")),
+    SlashCommandItem("/note", "整理产出工作手记", "将方案、总结或草稿沉淀到工作手记", prompt = "请将以下内容整理为结构化 Markdown 工作文档并保存：", anyOfTools = setOf("manage_notes")),
+    SlashCommandItem("/stash", "检索或收纳收藏", "全文搜索收藏条目或秒收新链接与灵感", prompt = "请调用 manage_stash 检索或收纳以下内容：", anyOfTools = setOf("manage_stash")),
+    SlashCommandItem("/tasks", "调度队列核查", "检查各自动化例程状态与下次触发时间", prompt = "请核查当前所有自动化调度任务的运行状态与上次执行摘要。", anyOfTools = setOf("manage_tasks")),
+    SlashCommandItem("/remind", "创建定时/单次提醒", "设定一次性定时提醒或周期性自动任务", prompt = "请帮我设定一个定时提醒：", anyOfTools = setOf("manage_tasks")),
+    SlashCommandItem("/briefing", "今日行动全景简报", "汇总逾期/今日待办、临期资产与未读预警", prompt = "请调用 workspace_briefing 为我梳理今日重点待办、日程与风险，并给出行动建议。", anyOfTools = setOf("workspace_briefing")),
+    SlashCommandItem("/models", "巡检模型池与用量", "查看免费池/付费池健康度及近 7 日统计", prompt = "请调用 manage_models(action=\"status\") 巡检当前免费池与付费池健康状态及近 7 日调用统计。", anyOfTools = setOf("manage_models")),
+    SlashCommandItem("/newbot", "创建专属 Bot", "用自然语言描述角色定位，自动配置并创建", prompt = "请调用 manage_bots(action=\"create_bot\") 帮我创建一个专属 Bot：", anyOfTools = setOf("manage_bots")),
+    SlashCommandItem("/group", "组建协同群聊", "指定成员与讨论主题，一键组建多 Bot 群聊", prompt = "请调用 manage_bots(action=\"create_group\") 帮我拉一个多 Bot 协同群聊：", anyOfTools = setOf("manage_bots")),
+    SlashCommandItem("/newskill", "创建自定义技能", "创建 Prompt 或 Webhook 技能并挂载给 Bot", prompt = "请调用 manage_skills(action=\"upsert\") 帮我创建一个自定义技能：", anyOfTools = setOf("manage_skills")),
+    SlashCommandItem("/consult", "协调成员协办", "调用其他专精 Bot 协助完成子任务并汇总", prompt = "请协调工作区里最合适的专业成员共同处理：", anyOfTools = setOf("consult_bot")),
+    SlashCommandItem("/calc", "精确表达式计算", "使用高精度计算引擎核算费用或比例", prompt = "请调用 calculate_eval 精确计算：", anyOfTools = setOf("calculate_eval")),
+    SlashCommandItem("/memories", "回忆关键信息", "检索与当前会话相关的历史重要记忆", prompt = "请先检索我们的历史记忆，梳理目前你记住的关键事实与约定。", anyOfTools = setOf("manage_memory", "recall_memory")),
+    SlashCommandItem("/thread", "新建独立话题", "在当前会话内开启一条干净的新话题线", action = "new_thread"),
+    SlashCommandItem("/summarize", "提炼话题存记忆", "提炼当前话题核心结论并沉淀到专属记忆库", action = "summarize_thread"),
+    SlashCommandItem("/clear", "清空当前对话", "清空当前话题聊天时间线", action = "clear_timeline")
+)
+
+private fun buildBotSlashCommands(bot: BotItem?, skills: List<SkillItemUi>): List<SlashCommandItem> {
+    val allowedTools = bot?.allowedTools?.toSet().orEmpty()
+    val boundSkillIds = bot?.skillIds?.toSet().orEmpty()
+    val out = mutableListOf<SlashCommandItem>()
+
+    skills.forEach { sk ->
+        if (sk.enabled && sk.id in boundSkillIds && sk.slug.isNotBlank()) {
+            out.add(
+                SlashCommandItem(
+                    cmd = "/${sk.slug}",
+                    title = "技能 · ${sk.name}",
+                    desc = sk.description.ifBlank { if (sk.kind == "webhook") "调用外部技能 skill_${sk.slug}" else "按专属技能规范响应" },
+                    prompt = if (sk.kind == "webhook") "请使用 skill_${sk.slug} 工具协助处理当前问题：" else "请遵循「${sk.name}」技能规范回答："
+                )
+            )
+        }
+    }
+
+    BUILTIN_SLASH_SPECS.forEach { spec ->
+        if (spec.anyOfTools.isEmpty() || allowedTools.isEmpty() || spec.anyOfTools.any { it in allowedTools }) {
+            out.add(spec)
+        }
+    }
+    return out
+}
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ChatRoomScreen(
     activeBot: BotItem?,
     allBots: List<BotItem>,
+    availableSkills: List<SkillItemUi> = emptyList(),
     otherUnreadCount: Int,
     activeModel: String,
     modelOptions: List<ModelOptionItem> = emptyList(),
@@ -568,8 +628,8 @@ fun ChatRoomScreen(
             SpecularHairline()
         }
 
-        // 1b. Multi-Topic Thread Bar (synced with Web BotThreads)
-        if (activeBot != null) {
+        // 1b. Multi-Topic Thread Bar (Auto-hidden when only Main Thread exists — matches Web BotThreadBar)
+        if (activeBot != null && botThreads.isNotEmpty()) {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -651,64 +711,6 @@ fun ChatRoomScreen(
                                 modifier = Modifier
                                     .size(13.dp)
                                     .clickable { onDeleteThread(th.id) }
-                            )
-                        }
-                    }
-                }
-
-                item(key = "__thread_new__") {
-                    val pillShape = RoundedCornerShape(999.dp)
-                    Row(
-                        modifier = Modifier
-                            .clip(pillShape)
-                            .background(theme.inputTop)
-                            .border(0.85.dp, theme.rimSubtle, pillShape)
-                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                if (!isStreaming) onCreateThread("")
-                            }
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "新话题",
-                            tint = theme.accent,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Text(
-                            text = "新话题",
-                            fontSize = 11.5.sp,
-                            color = theme.textSecondary
-                        )
-                    }
-                }
-
-                if (messages.size >= 2) {
-                    item(key = "__thread_summarize__") {
-                        val pillShape = RoundedCornerShape(999.dp)
-                        Row(
-                            modifier = Modifier
-                                .clip(pillShape)
-                                .background(theme.accent.copy(alpha = 0.12f))
-                                .border(0.85.dp, theme.accent.copy(alpha = 0.36f), pillShape)
-                                .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                    if (!isStreaming) onSummarizeThread()
-                                }
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = "提炼摘要存记忆",
-                                tint = theme.accent,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Text(
-                                text = "提炼记忆",
-                                fontSize = 11.5.sp,
-                                color = if (theme.isLight) theme.accentDeep else theme.accentLight
                             )
                         }
                     }
@@ -810,66 +812,12 @@ fun ChatRoomScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-
-                        if (activeBot?.id == "concierge" || activeBot?.name == "大管家") {
-                            val conciergeCards = remember {
-                                listOf(
-                                    Triple(
-                                        "模型池与额度体检",
-                                        "巡检免费池/付费池健康度、解除冷却、7 天调用分布",
-                                        "请帮我全面巡检当前的免费模型池与付费模型池状态、冷却情况以及近 7 天调用统计，并给出优化建议。"
-                                    ),
-                                    Triple(
-                                        "创建专属 Bot 或拉群",
-                                        "一句话新建专属 AI 助手或组建多 Bot 协同群聊",
-                                        "请帮我盘点当前所有 Bot 与群聊；我想了解如何用一句话让你帮我新建专属 Bot 或组建多 Bot 协同群聊。"
-                                    ),
-                                    Triple(
-                                        "资产与定时例程总览",
-                                        "查看数字资产到期日、月均成本与定时任务防付费设置",
-                                        "请帮我汇总当前所有数字资产的到期状态、折算月均成本，以及所有定时任务与付费防线设置。"
-                                    ),
-                                    Triple(
-                                        "装配自定义技能卡",
-                                        "查看、新建并挂载 Prompt / Webhook 技能卡给 Bot",
-                                        "请列出当前已有的自定义技能卡（Prompt/Webhook），并告诉我如何让你帮我新建技能并挂载给指定 Bot。"
-                                    )
-                                )
-                            }
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                conciergeCards.forEach { (title, sub, prompt) ->
-                                    SpecularGlassCard(
-                                        cornerRadius = 15.dp,
-                                        onClick = {
-                                            if (!isStreaming) onSendPrompt(prompt)
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                                        ) {
-                                            Text(
-                                                text = title,
-                                                fontSize = 13.5.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = theme.textPrimary
-                                            )
-                                            Text(
-                                                text = sub,
-                                                fontSize = 11.5.sp,
-                                                color = theme.textMuted
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        Text(
+                            text = "输入 / 可快速调用当前助手的专属指令与技能",
+                            fontSize = 11.5.sp,
+                            color = theme.textMuted,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
@@ -1316,7 +1264,7 @@ fun ChatRoomScreen(
                                         raw.removePrefix("pool:").substringAfter("::").substringAfterLast("/").take(22)
                                     }
 
-                                    if (!isLiveTurn && msg.content.isNotEmpty()) {
+                                    if (!isLiveTurn && msg.content.isNotEmpty() && (isLatestReply || hasTurnError)) {
                                         Row(
                                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                                             verticalAlignment = Alignment.CenterVertically,
@@ -1337,79 +1285,75 @@ fun ChatRoomScreen(
                                                 }
                                             }
 
-                                            if (isLatestReply || hasTurnError) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                    modifier = Modifier
-                                                        .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                                            if (!isStreaming) retryingTurn = msg
-                                                        }
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Refresh,
-                                                        contentDescription = "换模型重试",
-                                                        tint = theme.accent,
-                                                        modifier = Modifier.size(12.dp)
-                                                    )
-                                                    Text(
-                                                        text = "换模型重试",
-                                                        fontSize = 11.5.sp,
-                                                        fontWeight = FontWeight.Medium,
-                                                        color = theme.accent,
-                                                        maxLines = 1,
-                                                        softWrap = false
-                                                    )
-                                                }
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                modifier = Modifier
+                                                    .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                                        if (!isStreaming) retryingTurn = msg
+                                                    }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Refresh,
+                                                    contentDescription = "换模型重试",
+                                                    tint = theme.accent,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "换模型重试",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = theme.accent,
+                                                    maxLines = 1,
+                                                    softWrap = false
+                                                )
                                             }
 
-                                            if (isLatestReply || hasTurnError) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                    modifier = Modifier
-                                                        .tactileClickable(pressedScale = 0.94f) {
-                                                            onCopyText(msg.content)
-                                                        }
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.ContentCopy,
-                                                        contentDescription = "复制",
-                                                        tint = theme.textMuted,
-                                                        modifier = Modifier.size(12.dp)
-                                                    )
-                                                    Text(
-                                                        text = "复制",
-                                                        fontSize = 11.5.sp,
-                                                        color = theme.textMuted,
-                                                        maxLines = 1,
-                                                        softWrap = false
-                                                    )
-                                                }
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                modifier = Modifier
+                                                    .tactileClickable(pressedScale = 0.94f) {
+                                                        onCopyText(msg.content)
+                                                    }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.ContentCopy,
+                                                    contentDescription = "复制",
+                                                    tint = theme.textMuted,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "复制",
+                                                    fontSize = 11.5.sp,
+                                                    color = theme.textMuted,
+                                                    maxLines = 1,
+                                                    softWrap = false
+                                                )
+                                            }
 
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                    modifier = Modifier
-                                                        .tactileClickable(pressedScale = 0.94f) {
-                                                            val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
-                                                            quoteTarget = sender to msg.content
-                                                        }
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.FormatQuote,
-                                                        contentDescription = "引用",
-                                                        tint = theme.textMuted,
-                                                        modifier = Modifier.size(12.dp)
-                                                    )
-                                                    Text(
-                                                        text = "引用",
-                                                        fontSize = 11.5.sp,
-                                                        color = theme.textMuted,
-                                                        maxLines = 1,
-                                                        softWrap = false
-                                                    )
-                                                }
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                modifier = Modifier
+                                                    .tactileClickable(pressedScale = 0.94f) {
+                                                        val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
+                                                        quoteTarget = sender to msg.content
+                                                    }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.FormatQuote,
+                                                    contentDescription = "引用",
+                                                    tint = theme.textMuted,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "引用",
+                                                    fontSize = 11.5.sp,
+                                                    color = theme.textMuted,
+                                                    maxLines = 1,
+                                                    softWrap = false
+                                                )
                                             }
                                         }
                                     }
@@ -1585,6 +1529,112 @@ fun ChatRoomScreen(
             }
         }
 
+        // 4b. Dynamic "/" Slash Command Popover (filtered by activeBot.allowedTools & bound skills)
+        val allSlashCommands = remember(activeBot?.id, activeBot?.allowedTools, activeBot?.skillIds, availableSkills) {
+            buildBotSlashCommands(activeBot, availableSkills)
+        }
+        val trimmedInput = inputText.trim()
+        val matchingSlashCommands = remember(allSlashCommands, trimmedInput) {
+            if (!trimmedInput.startsWith("/") || trimmedInput.contains('\n') || trimmedInput.contains(' ')) {
+                emptyList()
+            } else {
+                val q = trimmedInput.lowercase()
+                val qBare = q.removePrefix("/")
+                allSlashCommands.filter {
+                    it.cmd.lowercase().contains(q) || (qBare.isNotEmpty() && it.title.lowercase().contains(qBare))
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = matchingSlashCommands.isNotEmpty() && !isStreaming,
+            enter = fadeIn(tween(130)) + expandVertically(tween(150)),
+            exit = fadeOut(tween(110)) + shrinkVertically(tween(130))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(theme.sheetBg)
+            ) {
+                HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .sizeIn(maxHeight = 220.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(matchingSlashCommands, key = { it.cmd }) { item ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(theme.inputTop.copy(alpha = 0.72f))
+                                .clickable {
+                                    when (item.action) {
+                                        "new_thread" -> {
+                                            onInputChange("")
+                                            onCreateThread("")
+                                        }
+                                        "summarize_thread" -> {
+                                            onInputChange("")
+                                            onSummarizeThread()
+                                        }
+                                        "clear_timeline" -> {
+                                            onInputChange("")
+                                            onClearHistory()
+                                        }
+                                        else -> {
+                                            if (item.prompt.endsWith("：")) {
+                                                onInputChange(item.prompt)
+                                            } else if (item.prompt.isNotBlank()) {
+                                                onInputChange("")
+                                                onSendPrompt(item.prompt)
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(horizontal = 11.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = item.cmd,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (theme.isLight) theme.accentDeep else theme.accentLight,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                                Text(
+                                    text = item.title,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = theme.textPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Text(
+                                text = item.desc,
+                                fontSize = 11.sp,
+                                color = theme.textMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // 5. Quoted Reply Preview Strip
         quoteTarget?.let { (sender, snippet) ->
             Row(
@@ -1665,8 +1715,8 @@ fun ChatRoomScreen(
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (inputText.isEmpty()) {
                                     Text(
-                                        text = "发消息...",
-                                        fontSize = 14.sp,
+                                        text = "发消息或输入 / 调出快捷指令...",
+                                        fontSize = 13.5.sp,
                                         color = theme.textMuted,
                                         maxLines = 1,
                                         softWrap = false
@@ -1733,7 +1783,7 @@ fun ChatRoomScreen(
                 }
             }
 
-            // Pure 1-Row 4-Tile Native Chat Controls (Zero hardcoded personal prompts!)
+            // Pure 2x3 Native Chat Controls (Model, Thinking, New Thread, Summarize Memory, Group, Clear)
             AnimatedVisibility(
                 visible = showPlusDrawer,
                 enter = fadeIn() + expandVertically(),
@@ -1742,6 +1792,13 @@ fun ChatRoomScreen(
                 val modelShortLabel = resolveModelOptionDisplayName(activeModel, modelOptions)
                 val tools = listOf(
                     PlusActionTile(
+                        label = modelShortLabel,
+                        icon = Icons.Default.AutoAwesome,
+                        accent = if (theme.isLight) Color(0xFF9333EA) else Color(0xFFC084FC)
+                    ) {
+                        showModelPickerSheet = true
+                    },
+                    PlusActionTile(
                         label = if (enableThinking) "思考:开" else "思考:关",
                         icon = Icons.Default.Psychology,
                         accent = if (enableThinking) theme.accent else theme.textSecondary
@@ -1749,11 +1806,20 @@ fun ChatRoomScreen(
                         onThinkingChange(!enableThinking)
                     },
                     PlusActionTile(
-                        label = modelShortLabel,
-                        icon = Icons.Default.AutoAwesome,
-                        accent = if (theme.isLight) Color(0xFF9333EA) else Color(0xFFC084FC)
+                        label = "新开话题",
+                        icon = Icons.Default.Add,
+                        accent = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
                     ) {
-                        showModelPickerSheet = true
+                        showPlusDrawer = false
+                        if (!isStreaming) onCreateThread("")
+                    },
+                    PlusActionTile(
+                        label = "提炼记忆",
+                        icon = Icons.Default.Description,
+                        accent = theme.accent
+                    ) {
+                        showPlusDrawer = false
+                        if (!isStreaming) onSummarizeThread()
                     },
                     PlusActionTile(
                         label = if (isGroup) "群成员" else "拉人建群",
@@ -1780,15 +1846,17 @@ fun ChatRoomScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        tools.forEach { tile ->
-                            PlusTrayItem(
-                                tile = tile,
-                                modifier = Modifier.weight(1f)
-                            )
+                    tools.chunked(3).forEach { rowTiles ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            rowTiles.forEach { tile ->
+                                PlusTrayItem(
+                                    tile = tile,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
