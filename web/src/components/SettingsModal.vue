@@ -51,6 +51,8 @@ const nezhaUrl = ref('')
 const nezhaDbPath = ref('')
 const cfApiToken = ref('')
 const biliSessdata = ref('')
+const tavilyApiKey = ref('')
+const searxngUrl = ref('')
 
 const saving = ref(false)
 const testingPush = ref(false)
@@ -81,6 +83,8 @@ function currentConfigSnapshot(): string {
     nezhaDbPath: nezhaDbPath.value.trim(),
     cfApiToken: cfApiToken.value.trim(),
     biliSessdata: biliSessdata.value.trim(),
+    tavilyApiKey: tavilyApiKey.value.trim(),
+    searxngUrl: searxngUrl.value.trim(),
   })
 }
 
@@ -99,6 +103,8 @@ watch(
     nezhaDbPath.value = c['nezha_db_path'] || ''
     cfApiToken.value = c['cf_api_token'] || ''
     biliSessdata.value = c['bili_sessdata'] || ''
+    tavilyApiKey.value = c['tavily_api_key'] || ''
+    searxngUrl.value = c['searxng_url'] || ''
     savedSnapshot.value = currentConfigSnapshot()
 
     // Refresh latest model telemetry & 7d usage asynchronously without blocking modal open
@@ -140,6 +146,8 @@ async function saveAllConfig() {
       nezha_db_path: nezhaDbPath.value.trim(),
       cf_api_token: cfApiToken.value.trim(),
       bili_sessdata: biliSessdata.value.trim(),
+      tavily_api_key: tavilyApiKey.value.trim(),
+      searxng_url: searxngUrl.value.trim(),
     }
     const hasPaidModel = draftModels.value.some((m) => m.tier === 'paid')
     if (!hasPaidModel && (store.state.configs?.['deepseek_api_key'] || '').trim()) {
@@ -391,6 +399,21 @@ async function handleQuickCreatePasskey() {
             <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>哔哩哔哩 SESSDATA</span>
               <SecretInput v-model="biliSessdata" toggle-label="哔哩哔哩 SESSDATA" />
+            </label>
+          </div>
+
+          <div class="modal-section flex flex-col gap-3">
+            <div class="text-xs font-semibold text-accent-fg">联网搜索增强（可选）</div>
+            <p class="text-[11px] leading-relaxed text-fg-muted">
+              内置免 Key 多源并发搜索（Bing / DuckDuckGo / Google News RSS + 首页正文自动精读）默认可用；填写以下任意一项可进一步提升复杂查询精度。
+            </p>
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
+              <span>Tavily Search API Key（可选，每月 1000 次免费额度）</span>
+              <SecretInput v-model="tavilyApiKey" toggle-label="Tavily API Key" />
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
+              <span>自建 SearXNG 实例地址（可选）</span>
+              <input v-model="searxngUrl" type="text" placeholder="例如 https://search.example.com 或 http://127.0.0.1:8080" class="min-h-[44px] sm:min-h-[40px] rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg placeholder:text-fg-muted focus:border-accent" />
             </label>
           </div>
 

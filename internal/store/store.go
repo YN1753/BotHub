@@ -30,6 +30,8 @@ const (
 	KeyRadarLimit        = "radar_limit"
 	KeyCFAPIToken        = "cf_api_token"
 	KeyBiliSessdata      = "bili_sessdata"
+	KeyTavilyAPIKey      = "tavily_api_key"
+	KeySearXNGURL        = "searxng_url"
 	KeyDeepSeekAPIKey    = "deepseek_api_key"
 	KeyDeepSeekBaseURL   = "deepseek_base_url"
 	KeyAIModel           = "ai_model"
@@ -623,6 +625,8 @@ func (s *Store) seedDefaults() error {
 		KeyRadarLimit:        "8",
 		KeyCFAPIToken:        "",
 		KeyBiliSessdata:      "",
+		KeyTavilyAPIKey:      "",
+		KeySearXNGURL:        "",
 		KeyDeepSeekAPIKey:    deepseekKey,
 		KeyDeepSeekBaseURL:   deepseekBaseURL,
 		KeyAIModel:           aiModel,

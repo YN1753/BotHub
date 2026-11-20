@@ -1,8 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"html"
 	"io"
@@ -14,8 +17,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
+	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
 const (
@@ -39,6 +44,11 @@ var (
 	reHTMLTitle    = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 	reDDGResult    = regexp.MustCompile(`(?is)<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>`)
 	reDDGSnippet   = regexp.MustCompile(`(?is)<a[^>]+class="result__snippet"[^>]*>(.*?)</a>`)
+	reBingAlgoLi   = regexp.MustCompile(`(?is)<li[^>]+class="[^"]*\bb_algo\b[^"]*"[^>]*>(.*?)</li>`)
+	reBingTitleA   = regexp.MustCompile(`(?is)<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>`)
+	reBingSnippetP = regexp.MustCompile(`(?is)<p[^>]*>(.*?)</p>`)
+
+	tavilySearchEndpoint = "https://api.tavily.com/search"
 
 	htmlBlockBreakReplacer = strings.NewReplacer(
 		"</p>", "\n",
@@ -430,11 +440,361 @@ func unwrapDDGRedirectURL(raw string) string {
 	return raw
 }
 
-func (e *Engine) searchDuckDuckGoHTML(ctx context.Context, query string, limit int) []struct {
-	Title   string
-	URL     string
-	Snippet string
-} {
+type webSearchItem struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet,omitempty"`
+	Excerpt string `json:"excerpt,omitempty"`
+	Source  string `json:"source"`
+}
+
+func unwrapBingRedirectURL(raw string) string {
+	raw = html.UnescapeString(strings.TrimSpace(raw))
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if strings.Contains(host, "bing.com") && strings.HasPrefix(parsed.Path, "/ck/a") {
+		if encoded := strings.TrimSpace(parsed.Query().Get("u")); encoded != "" {
+			payload := strings.TrimPrefix(encoded, "a1")
+			if decoded, dErr := base64.RawURLEncoding.DecodeString(payload); dErr == nil {
+				s := strings.TrimSpace(string(decoded))
+				if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+					return s
+				}
+			}
+			if decoded, dErr := base64.URLEncoding.DecodeString(payload); dErr == nil {
+				s := strings.TrimSpace(string(decoded))
+				if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+					return s
+				}
+			}
+		}
+	}
+	return raw
+}
+
+func parseBingHTML(rawHTML string, limit int) []webSearchItem {
+	if limit <= 0 || strings.TrimSpace(rawHTML) == "" {
+		return nil
+	}
+	blocks := reBingAlgoLi.FindAllStringSubmatch(rawHTML, limit*2)
+	out := make([]webSearchItem, 0, min(limit, len(blocks)))
+	for _, blk := range blocks {
+		if len(out) >= limit {
+			break
+		}
+		if len(blk) < 2 {
+			continue
+		}
+		m := reBingTitleA.FindStringSubmatch(blk[1])
+		if len(m) < 3 {
+			continue
+		}
+		targetURL := unwrapBingRedirectURL(m[1])
+		if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
+			continue
+		}
+		title := notifier.StripEmoji(strings.TrimSpace(stripHTMLToText(m[2])))
+		if title == "" {
+			continue
+		}
+		snippet := ""
+		if pm := reBingSnippetP.FindStringSubmatch(blk[1]); len(pm) >= 2 {
+			snippet = notifier.StripEmoji(strings.TrimSpace(stripHTMLToText(pm[1])))
+		}
+		if len([]rune(snippet)) > 260 {
+			snippet = string([]rune(snippet)[:260]) + "..."
+		}
+		out = append(out, webSearchItem{
+			Title:   title,
+			URL:     targetURL,
+			Snippet: snippet,
+			Source:  "Bing",
+		})
+	}
+	return out
+}
+
+func (e *Engine) searchBingHTML(ctx context.Context, query string, limit int) []webSearchItem {
+	if e.allowLocalhostForTest || limit <= 0 {
+		return nil
+	}
+	bingURL := fmt.Sprintf("https://www.bing.com/search?q=%s&setlang=zh-Hans&cc=CN&count=%d", url.QueryEscape(query), limit+2)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bingURL, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("User-Agent", desktopBrowserUA)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+
+	resp, err := e.safeFetchClient().Do(req)
+	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		return nil
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	if err != nil {
+		return nil
+	}
+	return parseBingHTML(string(bodyBytes), limit)
+}
+
+type googleNewsRSSDoc struct {
+	Channel struct {
+		Items []struct {
+			Title       string `xml:"title"`
+			Link        string `xml:"link"`
+			PubDate     string `xml:"pubDate"`
+			Description string `xml:"description"`
+			Source      string `xml:"source"`
+		} `xml:"item"`
+	} `xml:"channel"`
+}
+
+func parseGoogleNewsRSS(rawXML string, limit int) []webSearchItem {
+	if limit <= 0 || strings.TrimSpace(rawXML) == "" {
+		return nil
+	}
+	var doc googleNewsRSSDoc
+	if err := xml.Unmarshal([]byte(rawXML), &doc); err != nil {
+		return nil
+	}
+	out := make([]webSearchItem, 0, min(limit, len(doc.Channel.Items)))
+	for _, it := range doc.Channel.Items {
+		if len(out) >= limit {
+			break
+		}
+		title := notifier.StripEmoji(strings.TrimSpace(it.Title))
+		link := strings.TrimSpace(it.Link)
+		if title == "" || link == "" {
+			continue
+		}
+		var parts []string
+		if src := notifier.StripEmoji(strings.TrimSpace(it.Source)); src != "" {
+			parts = append(parts, "来源: "+src)
+		}
+		if pub := strings.TrimSpace(it.PubDate); pub != "" {
+			if parsedTime, err := time.Parse(time.RFC1123, pub); err == nil {
+				parts = append(parts, parsedTime.In(store.ShanghaiLocation()).Format("2006-01-02 15:04"))
+			} else if parsedTime, err := time.Parse(time.RFC1123Z, pub); err == nil {
+				parts = append(parts, parsedTime.In(store.ShanghaiLocation()).Format("2006-01-02 15:04"))
+			} else {
+				parts = append(parts, pub)
+			}
+		}
+		desc := notifier.StripEmoji(strings.TrimSpace(stripHTMLToText(it.Description)))
+		if desc != "" && !strings.EqualFold(desc, title) {
+			if len([]rune(desc)) > 200 {
+				desc = string([]rune(desc)[:200]) + "..."
+			}
+			parts = append(parts, desc)
+		}
+		out = append(out, webSearchItem{
+			Title:   title,
+			URL:     link,
+			Snippet: strings.Join(parts, " | "),
+			Source:  "GoogleNews",
+		})
+	}
+	return out
+}
+
+func (e *Engine) searchGoogleNewsRSS(ctx context.Context, query string, limit int) []webSearchItem {
+	if e.allowLocalhostForTest || limit <= 0 {
+		return nil
+	}
+	rssURL := fmt.Sprintf("https://news.google.com/rss/search?q=%s&hl=zh-CN&gl=CN&ceid=CN:zh-Hans", url.QueryEscape(query))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rssURL, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("User-Agent", desktopBrowserUA)
+	req.Header.Set("Accept", "application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.8")
+
+	resp, err := e.safeFetchClient().Do(req)
+	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		return nil
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	if err != nil {
+		return nil
+	}
+	return parseGoogleNewsRSS(string(bodyBytes), limit)
+}
+
+func (e *Engine) searchTavilyAPI(ctx context.Context, apiKey, query string, limit int) []webSearchItem {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" || limit <= 0 {
+		return nil
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"api_key":        apiKey,
+		"query":          query,
+		"search_depth":   "basic",
+		"max_results":    limit,
+		"include_answer": false,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tavilySearchEndpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	client := e.safeFetchClient()
+	if e.allowLocalhostForTest {
+		client = e.httpClient
+	}
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var parsed struct {
+		Results []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"results"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&parsed) != nil {
+		return nil
+	}
+	out := make([]webSearchItem, 0, min(limit, len(parsed.Results)))
+	for _, r := range parsed.Results {
+		if len(out) >= limit {
+			break
+		}
+		title := notifier.StripEmoji(strings.TrimSpace(r.Title))
+		targetURL := strings.TrimSpace(r.URL)
+		if title == "" || targetURL == "" {
+			continue
+		}
+		content := notifier.StripEmoji(strings.TrimSpace(r.Content))
+		snippet := content
+		excerpt := ""
+		if runes := []rune(content); len(runes) > 260 {
+			snippet = string(runes[:260]) + "..."
+			if len(runes) > 900 {
+				excerpt = string(runes[:900]) + "..."
+			} else {
+				excerpt = content
+			}
+		}
+		out = append(out, webSearchItem{
+			Title:   title,
+			URL:     targetURL,
+			Snippet: snippet,
+			Excerpt: excerpt,
+			Source:  "Tavily",
+		})
+	}
+	return out
+}
+
+func (e *Engine) searchSearXNG(ctx context.Context, baseURL, query string, limit int) []webSearchItem {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" || limit <= 0 {
+		return nil
+	}
+	parsedBase, err := url.Parse(baseURL)
+	if err != nil || (parsedBase.Scheme != "http" && parsedBase.Scheme != "https") {
+		return nil
+	}
+	searchURL := fmt.Sprintf("%s/search?q=%s&format=json&language=zh-CN", baseURL, url.QueryEscape(query))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("User-Agent", desktopBrowserUA)
+	req.Header.Set("Accept", "application/json")
+
+	// searxng_url is an admin-configured endpoint, so allow local/Docker self-hosted instances via e.httpClient.
+	resp, err := e.httpClient.Do(req)
+	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var parsed struct {
+		Results []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"results"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&parsed) != nil {
+		return nil
+	}
+	out := make([]webSearchItem, 0, min(limit, len(parsed.Results)))
+	for _, r := range parsed.Results {
+		if len(out) >= limit {
+			break
+		}
+		title := notifier.StripEmoji(strings.TrimSpace(r.Title))
+		targetURL := strings.TrimSpace(r.URL)
+		if title == "" || targetURL == "" {
+			continue
+		}
+		snippet := notifier.StripEmoji(strings.TrimSpace(r.Content))
+		if len([]rune(snippet)) > 280 {
+			snippet = string([]rune(snippet)[:280]) + "..."
+		}
+		out = append(out, webSearchItem{
+			Title:   title,
+			URL:     targetURL,
+			Snippet: snippet,
+			Source:  "SearXNG",
+		})
+	}
+	return out
+}
+
+func isLikelyTechOrASCIIQuery(query string) bool {
+	var asciiLetters, cjkCount int
+	for _, r := range query {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+			asciiLetters++
+		case unicode.Is(unicode.Han, r):
+			cjkCount++
+		}
+	}
+	if cjkCount == 0 && asciiLetters >= 3 {
+		return true
+	}
+	lower := strings.ToLower(query)
+	for _, kw := range []string{"github", "golang", "rust", "python", "docker", "k8s", "kubernetes", "llm", "openai", "claude", "gemini", "api", "sdk", "开源"} {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Engine) searchDuckDuckGoHTML(ctx context.Context, query string, limit int) []webSearchItem {
 	if e.allowLocalhostForTest || limit <= 0 {
 		return nil
 	}
@@ -443,7 +803,8 @@ func (e *Engine) searchDuckDuckGoHTML(ctx context.Context, query string, limit i
 	if err != nil {
 		return nil
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; VesperBotHub/2.16)")
+	req.Header.Set("User-Agent", desktopBrowserUA)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 
 	resp, err := e.safeFetchClient().Do(req)
@@ -463,11 +824,7 @@ func (e *Engine) searchDuckDuckGoHTML(ctx context.Context, query string, limit i
 	titleMatches := reDDGResult.FindAllStringSubmatch(raw, limit)
 	snippetMatches := reDDGSnippet.FindAllStringSubmatch(raw, limit)
 
-	out := make([]struct {
-		Title   string
-		URL     string
-		Snippet string
-	}, 0, len(titleMatches))
+	out := make([]webSearchItem, 0, len(titleMatches))
 	for i, m := range titleMatches {
 		targetURL := unwrapDDGRedirectURL(m[1])
 		title := notifier.StripEmoji(strings.TrimSpace(stripHTMLToText(m[2])))
@@ -478,17 +835,71 @@ func (e *Engine) searchDuckDuckGoHTML(ctx context.Context, query string, limit i
 		if i < len(snippetMatches) {
 			snippet = notifier.StripEmoji(strings.TrimSpace(stripHTMLToText(snippetMatches[i][1])))
 		}
-		out = append(out, struct {
-			Title   string
-			URL     string
-			Snippet string
-		}{
+		out = append(out, webSearchItem{
 			Title:   title,
 			URL:     targetURL,
 			Snippet: snippet,
+			Source:  "DuckDuckGo",
 		})
 	}
 	return out
+}
+
+func shouldAutoDeepReadResult(item webSearchItem) bool {
+	if len([]rune(strings.TrimSpace(item.Excerpt))) >= 240 {
+		return false
+	}
+	u, err := url.Parse(strings.TrimSpace(item.URL))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	// Google News RSS article links are JS-redirect stubs; skip direct HTML fetch.
+	if host == "news.google.com" {
+		return false
+	}
+	return true
+}
+
+func (e *Engine) enrichTopSearchResults(ctx context.Context, results []webSearchItem, maxReads int) {
+	if e.allowLocalhostForTest || len(results) == 0 || maxReads <= 0 {
+		return
+	}
+	var candidateIdxs []int
+	for i, item := range results {
+		if shouldAutoDeepReadResult(item) {
+			candidateIdxs = append(candidateIdxs, i)
+			if len(candidateIdxs) >= maxReads {
+				break
+			}
+		}
+	}
+	if len(candidateIdxs) == 0 {
+		return
+	}
+	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	for _, idx := range candidateIdxs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			src, err := e.extractGenericWebSource(readCtx, results[i].URL)
+			if err != nil || src == nil {
+				return
+			}
+			body := notifier.StripEmoji(strings.TrimSpace(src.Excerpt))
+			if len([]rune(body)) < 80 {
+				return
+			}
+			if runes := []rune(body); len(runes) > 900 {
+				body = string(runes[:900]) + "..."
+			}
+			results[i].Excerpt = body
+		}(idx)
+	}
+	wg.Wait()
 }
 
 func canonicalSearchURL(raw string) string {
@@ -521,210 +932,264 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 		limit = 5
 	}
 
+	var tavilyKey, searxngURL string
+	if e.store != nil {
+		tavilyKey, _ = e.store.GetConfig(store.KeyTavilyAPIKey)
+		searxngURL, _ = e.store.GetConfig(store.KeySearXNGURL)
+	}
+	tavilyKey = strings.TrimSpace(tavilyKey)
+	searxngURL = strings.TrimSpace(searxngURL)
+
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	type searchItem struct {
-		Title   string `json:"title"`
-		URL     string `json:"url"`
-		Snippet string `json:"snippet,omitempty"`
-		Source  string `json:"source"`
-	}
-
-	client := e.safeFetchClient()
-
-	// Fan out across 4 independent public search providers concurrently (slots preserve priority rank)
-	buckets := make([][]searchItem, 4)
+	// Priority buckets:
+	// 0: Tavily API (if configured)
+	// 1: SearXNG (if configured)
+	// 2: Bing Web Search HTML
+	// 3: DuckDuckGo HTML (with desktop browser UA)
+	// 4: Google News RSS (fresh news/events)
+	// 5: Hacker News Algolia (boosted before news for English/tech queries)
+	// 6: DuckDuckGo Instant Answer JSON
+	// 7: Chinese Wikipedia OpenSearch (demoted fallback)
+	buckets := make([][]webSearchItem, 8)
 	var wg sync.WaitGroup
 
-	// Provider 0: DuckDuckGo Instant Answer JSON API
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
-		defer pCancel()
-		ddgAPI := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", url.QueryEscape(query))
-		req, err := http.NewRequestWithContext(pCtx, http.MethodGet, ddgAPI, nil)
-		if err != nil {
-			return
-		}
-		req.Header.Set("User-Agent", "VesperBotHub/2.26")
-		resp, err := client.Do(req)
-		if err != nil {
-			return
-		}
-		defer resp.Body.Close()
-		var ddg struct {
-			Heading       string `json:"Heading"`
-			AbstractText  string `json:"AbstractText"`
-			AbstractURL   string `json:"AbstractURL"`
-			RelatedTopics []struct {
-				Text     string `json:"Text"`
-				FirstURL string `json:"FirstURL"`
-				Topics   []struct {
+	if tavilyKey != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
+			defer pCancel()
+			buckets[0] = e.searchTavilyAPI(pCtx, tavilyKey, query, limit)
+		}()
+	}
+
+	if searxngURL != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
+			defer pCancel()
+			buckets[1] = e.searchSearXNG(pCtx, searxngURL, query, limit)
+		}()
+	}
+
+	if !e.allowLocalhostForTest {
+		client := e.safeFetchClient()
+
+		// Provider 2: Bing Web Search HTML
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
+			defer pCancel()
+			buckets[2] = e.searchBingHTML(pCtx, query, limit)
+		}()
+
+		// Provider 3: DuckDuckGo HTML
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
+			defer pCancel()
+			buckets[3] = e.searchDuckDuckGoHTML(pCtx, query, limit)
+		}()
+
+		// Provider 4: Google News RSS
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
+			defer pCancel()
+			buckets[4] = e.searchGoogleNewsRSS(pCtx, query, limit)
+		}()
+
+		// Provider 5: Hacker News Algolia Search
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
+			defer pCancel()
+			hnURL := fmt.Sprintf("https://hn.algolia.com/api/v1/search?query=%s&hitsPerPage=%d", url.QueryEscape(query), limit)
+			req, err := http.NewRequestWithContext(pCtx, http.MethodGet, hnURL, nil)
+			if err != nil {
+				return
+			}
+			req.Header.Set("User-Agent", desktopBrowserUA)
+			resp, err := client.Do(req)
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
+			var hnResp struct {
+				Hits []struct {
+					Title     string `json:"title"`
+					URL       string `json:"url"`
+					StoryText string `json:"story_text"`
+					ObjectID  string `json:"objectID"`
+				} `json:"hits"`
+			}
+			if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&hnResp) != nil {
+				return
+			}
+			for _, h := range hnResp.Hits {
+				if h.Title == "" {
+					continue
+				}
+				itemURL := h.URL
+				if itemURL == "" {
+					itemURL = "https://news.ycombinator.com/item?id=" + h.ObjectID
+				}
+				snippet := stripHTMLToText(h.StoryText)
+				if len([]rune(snippet)) > 200 {
+					snippet = string([]rune(snippet)[:200]) + "..."
+				}
+				buckets[5] = append(buckets[5], webSearchItem{
+					Title:   notifier.StripEmoji(h.Title),
+					URL:     itemURL,
+					Snippet: snippet,
+					Source:  "HackerNews",
+				})
+			}
+		}()
+
+		// Provider 6: DuckDuckGo Instant Answer JSON API
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
+			defer pCancel()
+			ddgAPI := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", url.QueryEscape(query))
+			req, err := http.NewRequestWithContext(pCtx, http.MethodGet, ddgAPI, nil)
+			if err != nil {
+				return
+			}
+			req.Header.Set("User-Agent", desktopBrowserUA)
+			resp, err := client.Do(req)
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
+			var ddg struct {
+				Heading       string `json:"Heading"`
+				AbstractText  string `json:"AbstractText"`
+				AbstractURL   string `json:"AbstractURL"`
+				RelatedTopics []struct {
 					Text     string `json:"Text"`
 					FirstURL string `json:"FirstURL"`
-				} `json:"Topics"`
-			} `json:"RelatedTopics"`
-		}
-		if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&ddg) != nil {
-			return
-		}
-		if ddg.AbstractText != "" && ddg.AbstractURL != "" {
-			buckets[0] = append(buckets[0], searchItem{
-				Title:   notifier.StripEmoji(ddg.Heading),
-				URL:     ddg.AbstractURL,
-				Snippet: notifier.StripEmoji(ddg.AbstractText),
-				Source:  "DuckDuckGo",
-			})
-		}
-		for _, rt := range ddg.RelatedTopics {
-			if len(buckets[0]) >= limit {
-				break
+					Topics   []struct {
+						Text     string `json:"Text"`
+						FirstURL string `json:"FirstURL"`
+					} `json:"Topics"`
+				} `json:"RelatedTopics"`
 			}
-			if rt.Text != "" && rt.FirstURL != "" {
-				title := rt.Text
-				if idx := strings.Index(title, " - "); idx > 0 {
-					title = title[:idx]
-				}
-				buckets[0] = append(buckets[0], searchItem{
-					Title:   notifier.StripEmoji(truncateTitle(title)),
-					URL:     rt.FirstURL,
-					Snippet: notifier.StripEmoji(rt.Text),
+			if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&ddg) != nil {
+				return
+			}
+			if ddg.AbstractText != "" && ddg.AbstractURL != "" {
+				buckets[6] = append(buckets[6], webSearchItem{
+					Title:   notifier.StripEmoji(ddg.Heading),
+					URL:     ddg.AbstractURL,
+					Snippet: notifier.StripEmoji(ddg.AbstractText),
 					Source:  "DuckDuckGo",
 				})
 			}
-			for _, sub := range rt.Topics {
-				if len(buckets[0]) >= limit {
+			for _, rt := range ddg.RelatedTopics {
+				if len(buckets[6]) >= limit {
 					break
 				}
-				if sub.Text != "" && sub.FirstURL != "" {
-					buckets[0] = append(buckets[0], searchItem{
-						Title:   notifier.StripEmoji(truncateTitle(sub.Text)),
-						URL:     sub.FirstURL,
-						Snippet: notifier.StripEmoji(sub.Text),
+				if rt.Text != "" && rt.FirstURL != "" {
+					title := rt.Text
+					if idx := strings.Index(title, " - "); idx > 0 {
+						title = title[:idx]
+					}
+					buckets[6] = append(buckets[6], webSearchItem{
+						Title:   notifier.StripEmoji(truncateTitle(title)),
+						URL:     rt.FirstURL,
+						Snippet: notifier.StripEmoji(rt.Text),
 						Source:  "DuckDuckGo",
 					})
 				}
+				for _, sub := range rt.Topics {
+					if len(buckets[6]) >= limit {
+						break
+					}
+					if sub.Text != "" && sub.FirstURL != "" {
+						buckets[6] = append(buckets[6], webSearchItem{
+							Title:   notifier.StripEmoji(truncateTitle(sub.Text)),
+							URL:     sub.FirstURL,
+							Snippet: notifier.StripEmoji(sub.Text),
+							Source:  "DuckDuckGo",
+						})
+					}
+				}
 			}
-		}
-	}()
+		}()
 
-	// Provider 1: DuckDuckGo Lite HTML (broad web results)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
-		defer pCancel()
-		for _, item := range e.searchDuckDuckGoHTML(pCtx, query, limit) {
-			buckets[1] = append(buckets[1], searchItem{
-				Title:   item.Title,
-				URL:     item.URL,
-				Snippet: item.Snippet,
-				Source:  "Web",
-			})
-		}
-	}()
-
-	// Provider 2: Hacker News Algolia Search
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
-		defer pCancel()
-		hnURL := fmt.Sprintf("https://hn.algolia.com/api/v1/search?query=%s&hitsPerPage=%d", url.QueryEscape(query), limit)
-		req, err := http.NewRequestWithContext(pCtx, http.MethodGet, hnURL, nil)
-		if err != nil {
-			return
-		}
-		req.Header.Set("User-Agent", "VesperBotHub/2.26")
-		resp, err := client.Do(req)
-		if err != nil {
-			return
-		}
-		defer resp.Body.Close()
-		var hnResp struct {
-			Hits []struct {
-				Title     string `json:"title"`
-				URL       string `json:"url"`
-				StoryText string `json:"story_text"`
-				ObjectID  string `json:"objectID"`
-			} `json:"hits"`
-		}
-		if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&hnResp) != nil {
-			return
-		}
-		for _, h := range hnResp.Hits {
-			if h.Title == "" {
-				continue
+		// Provider 7: Chinese Wikipedia OpenSearch (demoted fallback)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
+			defer pCancel()
+			wikiURL := fmt.Sprintf("https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=%s&utf8=1&format=json&srlimit=%d", url.QueryEscape(query), limit)
+			req, err := http.NewRequestWithContext(pCtx, http.MethodGet, wikiURL, nil)
+			if err != nil {
+				return
 			}
-			itemURL := h.URL
-			if itemURL == "" {
-				itemURL = "https://news.ycombinator.com/item?id=" + h.ObjectID
+			req.Header.Set("User-Agent", desktopBrowserUA)
+			resp, err := client.Do(req)
+			if err != nil {
+				return
 			}
-			snippet := stripHTMLToText(h.StoryText)
-			if len([]rune(snippet)) > 200 {
-				snippet = string([]rune(snippet)[:200]) + "..."
+			defer resp.Body.Close()
+			var wikiResp struct {
+				Query struct {
+					Search []struct {
+						Title   string `json:"title"`
+						Snippet string `json:"snippet"`
+					} `json:"search"`
+				} `json:"query"`
 			}
-			buckets[2] = append(buckets[2], searchItem{
-				Title:   notifier.StripEmoji(h.Title),
-				URL:     itemURL,
-				Snippet: snippet,
-				Source:  "HackerNews",
-			})
-		}
-	}()
-
-	// Provider 3: Chinese Wikipedia OpenSearch
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
-		defer pCancel()
-		wikiURL := fmt.Sprintf("https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=%s&utf8=1&format=json&srlimit=%d", url.QueryEscape(query), limit)
-		req, err := http.NewRequestWithContext(pCtx, http.MethodGet, wikiURL, nil)
-		if err != nil {
-			return
-		}
-		req.Header.Set("User-Agent", "VesperBotHub/2.26")
-		resp, err := client.Do(req)
-		if err != nil {
-			return
-		}
-		defer resp.Body.Close()
-		var wikiResp struct {
-			Query struct {
-				Search []struct {
-					Title   string `json:"title"`
-					Snippet string `json:"snippet"`
-				} `json:"search"`
-			} `json:"query"`
-		}
-		if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&wikiResp) != nil {
-			return
-		}
-		for _, s := range wikiResp.Query.Search {
-			buckets[3] = append(buckets[3], searchItem{
-				Title:   notifier.StripEmoji(s.Title),
-				URL:     "https://zh.wikipedia.org/wiki/" + url.PathEscape(s.Title),
-				Snippet: stripHTMLToText(s.Snippet),
-				Source:  "Wikipedia",
-			})
-		}
-	}()
+			if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&wikiResp) != nil {
+				return
+			}
+			for _, s := range wikiResp.Query.Search {
+				buckets[7] = append(buckets[7], webSearchItem{
+					Title:   notifier.StripEmoji(s.Title),
+					URL:     "https://zh.wikipedia.org/wiki/" + url.PathEscape(s.Title),
+					Snippet: stripHTMLToText(s.Snippet),
+					Source:  "Wikipedia",
+				})
+			}
+		}()
+	}
 
 	wg.Wait()
 
-	results := make([]searchItem, 0, limit)
+	order := []int{0, 1, 2, 3, 4, 5, 6, 7}
+	if isLikelyTechOrASCIIQuery(query) {
+		order = []int{0, 1, 2, 3, 5, 4, 6, 7}
+	}
+
+	results := make([]webSearchItem, 0, limit)
 	seenCanonical := make(map[string]bool)
-	for _, bkt := range buckets {
-		for _, item := range bkt {
+	providersSeen := make(map[string]bool)
+	providersUsed := make([]string, 0, 4)
+
+	for _, bIdx := range order {
+		for _, item := range buckets[bIdx] {
 			u := strings.TrimSpace(item.URL)
 			canon := canonicalSearchURL(u)
 			if u == "" || strings.TrimSpace(item.Title) == "" || seenCanonical[canon] {
 				continue
 			}
 			seenCanonical[canon] = true
+			if item.Source != "" && !providersSeen[item.Source] {
+				providersSeen[item.Source] = true
+				providersUsed = append(providersUsed, item.Source)
+			}
 			results = append(results, item)
 			if len(results) >= limit {
 				break
@@ -735,10 +1200,14 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 		}
 	}
 
+	// Automatically deep-read top 2 web hits concurrently so weaker models receive real page content in one call.
+	e.enrichTopSearchResults(ctx, results, 2)
+
 	payload, _ := json.Marshal(map[string]any{
-		"query":   query,
-		"count":   len(results),
-		"results": results,
+		"query":          query,
+		"count":          len(results),
+		"providers_used": providersUsed,
+		"results":        results,
 	})
 	return string(payload), nil
 }

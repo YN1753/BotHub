@@ -221,6 +221,7 @@ export function useBotChatStream(options: {
       const decoder = new TextDecoder('utf-8')
       let buffer = ''
       let currentEvent = 'message'
+      let modelSwitchedInTurn = false
 
       while (true) {
         const { value, done } = await reader.read()
@@ -320,7 +321,16 @@ export function useBotChatStream(options: {
               pendingContentDelta += payload.delta || ''
               scheduleDeltaFlush()
             } else if (currentEvent === 'model_switch') {
-              streamStatus.value = `${payload.from_label || '当前节点'} 限流或异常，已自动切换至 ${payload.to_label || payload.to_model}`
+              modelSwitchedInTurn = true
+              const fromLabel = payload.from_label || '原选模型'
+              const toLabel = payload.to_label || payload.to_model || '备用模型'
+              const reason = String(payload.reason || '').trim().slice(0, 60)
+              const notice = reason
+                ? `${fromLabel} 不可用（${reason}），已自动切换至 ${toLabel}`
+                : `${fromLabel} 限流或异常，已自动切换至 ${toLabel}`
+              streamStatus.value = notice
+              if (payload.to_model) activeTurn.model = `${payload.to_model} (已回退)`
+              store.notify(notice)
             } else if (currentEvent === 'error') {
               flushPendingDeltas()
               activeTurn.statusText = '异常中断'
@@ -329,9 +339,13 @@ export function useBotChatStream(options: {
             } else if (currentEvent === 'done') {
               flushPendingDeltas()
               activeTurn.streaming = false
-              if (payload.model) activeTurn.model = payload.model
+              if (payload.model) {
+                activeTurn.model = modelSwitchedInTurn && !String(payload.model).includes('已回退')
+                  ? `${payload.model} (已回退)`
+                  : payload.model
+              }
               const elapsedSec = ((Date.now() - turnStartedAt) / 1000).toFixed(1)
-              activeTurn.statusText = `用时 ${elapsedSec}s`
+              activeTurn.statusText = modelSwitchedInTurn ? `已回退模型 · 用时 ${elapsedSec}s` : `用时 ${elapsedSec}s`
             }
           }
         }

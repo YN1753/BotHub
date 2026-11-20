@@ -548,9 +548,7 @@ class BotHubViewModel(
             activeBotId = botId
             prefs.lastActiveBotId = botId
             bots.find { it.id == botId }?.let { cachedBot ->
-                if (cachedBot.model.isNotBlank()) {
-                    activeModel = cachedBot.model
-                }
+                activeModel = cachedBot.model.ifBlank { "auto:free" }
                 enableThinking = cachedBot.enableThinking
             }
             val nextBots = bots.map { if (it.id == botId && it.unreadCount != 0) it.copy(unreadCount = 0) else it }
@@ -1293,7 +1291,7 @@ class BotHubViewModel(
                     botThreads = payload.threads
                     activeThreadId = resolvedThreadId
                     if (target != null) {
-                        activeModel = target.model
+                        activeModel = target.model.ifBlank { "auto:free" }
                         enableThinking = target.enableThinking
                     }
                     if (chatMessages.toList() != mapped) {
@@ -1420,6 +1418,8 @@ class BotHubViewModel(
                         val synced = bots.map { if (it.id == targetId) updated else it }
                         bots = synced
                         prefs.saveCachedBots(synced)
+                    }.onFailure { err ->
+                        showMessage("模型切换同步失败：${err.message ?: "网络异常"}")
                     }
                 }
             }
@@ -1574,6 +1574,7 @@ class BotHubViewModel(
         activeChatJob = viewModelScope.launch {
             val streamedContent = StringBuilder()
             var streamHadError = false
+            var modelSwitchedInTurn = false
             try {
                 api.streamChat(
                     sessionId = sessionId,
@@ -1653,10 +1654,32 @@ class BotHubViewModel(
                             }
                         }
                     },
+                    onModelSwitch = { fromLabel, toLabel, toModel, reason ->
+                        modelSwitchedInTurn = true
+                        val targetDisplay = toLabel.ifBlank { toModel }.ifBlank { "备用模型" }
+                        val fromDisplay = fromLabel.ifBlank { "原选模型" }
+                        val shortReason = reason.take(48).trim()
+                        val notice = if (shortReason.isNotEmpty()) {
+                            "$fromDisplay 不可用（$shortReason），已切换至 $targetDisplay"
+                        } else {
+                            "$fromDisplay 限流或报错，已自动切换至 $targetDisplay"
+                        }
+                        viewModelScope.launch {
+                            showMessage(notice)
+                            updateTurnById(assistantId) { cur ->
+                                cur.copy(model = "${toModel.ifBlank { targetDisplay }} (已回退)")
+                            }
+                        }
+                    },
                     onDoneModel = { usedModel ->
                         viewModelScope.launch {
                             updateTurnById(assistantId) { cur ->
-                                cur.copy(model = usedModel)
+                                val displayModel = if (modelSwitchedInTurn && !usedModel.contains("已回退")) {
+                                    "$usedModel (已回退)"
+                                } else {
+                                    usedModel
+                                }
+                                cur.copy(model = displayModel)
                             }
                         }
                     },

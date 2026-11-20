@@ -801,23 +801,27 @@ func (e *Engine) ResolveChatTargetsWithOptions(ctx context.Context, requestedMod
 		}
 		out := []ModelTarget{pinned}
 		if tier == store.ModelTierPaid {
+			var fallbacks []ModelTarget
 			for _, pt := range paidTargets {
 				if pt.ID != pinned.ID {
-					out = append(out, pt)
+					fallbacks = append(fallbacks, pt)
 				}
 			}
-			return e.health.prioritizeHealthy(out), nil
+			// Always keep the user-pinned model strictly at index 0; only sort fallback candidates by health.
+			return append(out, e.health.prioritizeHealthy(fallbacks)...), nil
 		}
 		if legacyAllowFallback || allowPaid {
+			var fallbacks []ModelTarget
 			for _, ft := range freeTargets {
 				if ft.ID != pinned.ID {
-					out = append(out, ft)
+					fallbacks = append(fallbacks, ft)
 				}
 			}
 			if (allowPaid || (!ctxExplicit && legacyAllowFallback)) && e.checkTaskPaidQuota(ctx) == nil {
-				out = append(out, paidTargets...)
+				fallbacks = append(fallbacks, paidTargets...)
 			}
-			out = e.health.prioritizeHealthy(out)
+			// Always try the user-pinned model first even if it had a prior cooldown; fallback only on actual failure.
+			out = append(out, e.health.prioritizeHealthy(fallbacks)...)
 		}
 		return out, nil
 	}
@@ -858,8 +862,12 @@ func (e *Engine) ResolveChatTargetsWithOptions(ctx context.Context, requestedMod
 		}
 		out := []ModelTarget{primary}
 		if legacyAllowFallback && len(freeTargets) > 0 {
-			out = append(out, freeTargets...)
-			out = e.health.prioritizeHealthy(out)
+			if normModel != "" && normModel != "primary" && normModel != "deepseek-flash" {
+				out = append(out, e.health.prioritizeHealthy(freeTargets)...)
+			} else {
+				out = append(out, freeTargets...)
+				out = e.health.prioritizeHealthy(out)
+			}
 		}
 		return out, nil
 	}

@@ -656,3 +656,80 @@ func TestDecoupledProvidersMigrationCapabilitiesStrategiesAndTaskQuota(t *testin
 		t.Fatalf("expected daily paid call quota limit to block task_daily_guard after 1/1 call, got err=%v", qErr)
 	}
 }
+
+func TestPinnedModelNeverSilentlyDemotedByCooldown(t *testing.T) {
+	tmpDir := t.TempDir()
+	st, err := store.Open(filepath.Join(tmpDir, "pinned_model_test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "")
+	_ = st.SetConfig(store.KeyPoolFallback, "true")
+	if err := st.SaveModelConfig(
+		[]store.ModelProvider{
+			{
+				ID:       "prov_free",
+				Name:     "免费渠道",
+				Protocol: "openai",
+				BaseURL:  "https://free.example.com/v1",
+				APIKey:   "sk-free",
+				Enabled:  true,
+			},
+			{
+				ID:       "prov_paid",
+				Name:     "付费渠道",
+				Protocol: "openai",
+				BaseURL:  "https://paid.example.com/v1",
+				APIKey:   "sk-paid",
+				Enabled:  true,
+			},
+		},
+		[]store.PooledModel{
+			{ProviderID: "prov_free", ModelID: "model-alpha", Tier: store.ModelTierFree, Enabled: true, Priority: 10},
+			{ProviderID: "prov_free", ModelID: "model-beta", Tier: store.ModelTierFree, Enabled: true, Priority: 20},
+			{ProviderID: "prov_free", ModelID: "model-gamma", Tier: store.ModelTierFree, Enabled: true, Priority: 30},
+			{ProviderID: "prov_paid", ModelID: "paid-one", Tier: store.ModelTierPaid, Enabled: true, Priority: 10},
+			{ProviderID: "prov_paid", ModelID: "paid-two", Tier: store.ModelTierPaid, Enabled: true, Priority: 20},
+		},
+		store.PoolStrategyConfig{Free: store.PoolStrategyPriority, Paid: store.PoolStrategyPriority},
+	); err != nil {
+		t.Fatalf("SaveModelConfig: %v", err)
+	}
+
+	eng := NewEngine(st, &fakeTaskController{st: st})
+
+	// Put both pinned targets and one fallback in cooldown
+	eng.health.recordFailure("pool:prov_free::model-alpha", "HTTP 429", true)
+	eng.health.recordFailure("pool:prov_free::model-beta", "HTTP 429", true)
+	eng.health.recordFailure("pool:prov_paid::paid-one", "HTTP 503", false)
+
+	// Free pinned model MUST remain index 0 even when cooling down, while healthy fallback (gamma) is sorted before cooling fallback (beta)
+	freeResolved, err := eng.ResolveChatTargetsWithOptions(context.Background(), "pool:prov_free::model-alpha", ModelResolveOptions{
+		AllowPaidFallback: true,
+	})
+	if err != nil {
+		t.Fatalf("resolve pinned free model: %v", err)
+	}
+	if len(freeResolved) < 3 {
+		t.Fatalf("expected pinned + fallbacks, got %d", len(freeResolved))
+	}
+	if freeResolved[0].ID != "pool:prov_free::model-alpha" {
+		t.Fatalf("expected pinned free model at index 0, got %s", freeResolved[0].ID)
+	}
+	if freeResolved[1].ID != "pool:prov_free::model-gamma" {
+		t.Fatalf("expected healthy fallback gamma at index 1, got %s", freeResolved[1].ID)
+	}
+
+	// Paid pinned model MUST also remain index 0 even when cooling down
+	paidResolved, err := eng.ResolveChatTargetsWithOptions(context.Background(), "pool:prov_paid::paid-one", ModelResolveOptions{
+		AllowPaidFallback: true,
+	})
+	if err != nil {
+		t.Fatalf("resolve pinned paid model: %v", err)
+	}
+	if len(paidResolved) < 2 || paidResolved[0].ID != "pool:prov_paid::paid-one" {
+		t.Fatalf("expected pinned paid model at index 0, got %+v", paidResolved)
+	}
+}

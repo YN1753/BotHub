@@ -227,7 +227,8 @@ func (e *Engine) runSingleBotTurn(
 	}
 
 	attachedSkills, _ := e.store.GetSkillsByIDs(actingBot.SkillIDList())
-	tools := filterToolsForBot(actingBot, attachedSkills)
+	allBotTools := filterToolsForBot(actingBot, attachedSkills)
+	tools := pruneToolsForTurn(allBotTools, userMsg, history)
 
 	targets, err := e.ResolveChatTargetsWithOptions(ctx, rawModel, ModelResolveOptions{
 		AllowPaidFallback: allowPaid,
@@ -389,6 +390,74 @@ func (e *Engine) runSingleBotTurn(
 	endedWithTools := false
 	var turnCacheMu sync.Mutex
 	turnReadCache := make(map[string]string)
+
+	// Harness 1: Correction boost & anti-repetition guardrail when the user explicitly corrects a prior reply.
+	if detectCorrectionTurn(userMsg, history) {
+		messages = applyCorrectionGuardrail(messages)
+	}
+
+	// Harness 2: Deterministic preflight web grounding for explicit search intents or inline URLs.
+	if (req.MsgKind == "" || req.MsgKind == "chat") && len(tools) > 0 {
+		if pfTool, pfArgs, ok := detectPreflightGrounding(userMsg, tools); ok {
+			e.emitBotState(actingBot.ID, store.BotStateWorking, humanToolStatus(pfTool, pfArgs))
+			pfID := "preflight_1"
+			if emit != nil {
+				emit("tool_start", map[string]any{
+					"id":            pfID,
+					"name":          pfTool,
+					"arguments":     pfArgs,
+					"sender_bot_id": actingBot.ID,
+				})
+			}
+			pfStart := time.Now()
+			pfOut, pfErr := e.ExecuteTool(toolCtx, pfTool, pfArgs)
+			pfDurMs := time.Since(pfStart).Milliseconds()
+			pfStatus := "ok"
+			if pfErr != nil {
+				pfStatus = "error"
+				pfOut = toolErrorPayload(pfTool, pfErr)
+			}
+			cleanPFOut := notifier.StripEmoji(pfOut)
+			if emit != nil {
+				emit("tool_result", map[string]any{
+					"id":            pfID,
+					"name":          pfTool,
+					"result":        cleanPFOut,
+					"status":        pfStatus,
+					"duration_ms":   pfDurMs,
+					"sender_bot_id": actingBot.ID,
+				})
+			}
+			traces = append(traces, ToolTrace{
+				ID:        pfID,
+				Name:      pfTool,
+				Arguments: pfArgs,
+				Result:    cleanPFOut,
+			})
+			e.store.RecordBotExecution(store.BotExecutionLog{
+				BotID:         timelineBotID,
+				ThreadID:      threadID,
+				ExecType:      "tool",
+				Name:          pfTool,
+				InputSummary:  store.TruncateRunes(pfArgs, 160),
+				OutputSummary: store.TruncateRunes(cleanPFOut, 200),
+				Status:        pfStatus,
+				DurationMs:    pfDurMs,
+			})
+			if pfErr == nil && preflightResultHasUsefulData(pfTool, cleanPFOut) {
+				cacheKey := pfTool + "\x00" + normalizeToolArgsJSON(pfArgs)
+				turnReadCache[cacheKey] = cleanPFOut
+				messages = append(messages, apiMessage{
+					Role: "system",
+					Content: fmt.Sprintf(
+						"[系统已自动执行联网预检索（工具: %s，参数: %s）]\n%s\n\n请优先严格基于上述实时检索/抓取结果回答用户本轮问题，并附上关键来源链接；若信息不足或需要不同角度，可继续调用 web_search（更换新关键词）或 read_url 精读原文，严禁忽略已查到的事实或自行编造。",
+						pfTool, pfArgs, cleanPFOut,
+					),
+				})
+			}
+			e.emitBotState(actingBot.ID, store.BotStateThinking, "正在整合检索结果...")
+		}
+	}
 
 	for round := 0; round < maxRounds; round++ {
 		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(toolCtx, targets, messages, tools, thinkFlag, emit, func(deltaReasoning, deltaContent string) {

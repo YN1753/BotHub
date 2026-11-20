@@ -1288,6 +1288,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         onToolCall: (String, String) -> Unit,
         onToolDetail: (id: String, name: String, arguments: String, result: String, status: String) -> Unit = { _, _, _, _, _ -> },
         onContentDelta: (String) -> Unit,
+        onModelSwitch: (fromLabel: String, toLabel: String, toModel: String, reason: String) -> Unit = { _, _, _, _ -> },
         onDoneModel: (String) -> Unit = {},
         onError: (String) -> Unit
     ) = withContext(Dispatchers.IO) {
@@ -1348,6 +1349,13 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                         "content" -> {
                             val delta = dataObj.optString("delta")
                             if (delta.isNotEmpty()) onContentDelta(delta)
+                        }
+                        "model_switch" -> {
+                            val fromLabel = dataObj.optString("from_label", "").trim()
+                            val toLabel = dataObj.optString("to_label", "").trim()
+                            val toModel = dataObj.optString("to_model", "").trim()
+                            val reason = dataObj.optString("reason", "").trim()
+                            onModelSwitch(fromLabel, toLabel, toModel, reason)
                         }
                         "done" -> {
                             val usedModel = dataObj.optString("model", "").trim()
