@@ -215,6 +215,31 @@ func TestSmartStashPipelineBackupAndMorningReview(t *testing.T) {
 		t.Fatalf("expected pinned=true read_count=1, got pinned=%v read_count=%d", afterRead.Pinned, afterRead.ReadCount)
 	}
 
+	// Verify mark_unread and bulk mark-all-read endpoints
+	reqUnread := httptest.NewRequest(http.MethodPost, "/api/v2/stash/"+stashID, bytes.NewBufferString(`{"mark_unread":true}`))
+	reqUnread.Header.Set("Authorization", authHeader)
+	recUnread := httptest.NewRecorder()
+	h.ServeHTTP(recUnread, reqUnread)
+	if recUnread.Code != http.StatusOK {
+		t.Fatalf("POST /api/v2/stash/{id} mark_unread failed: %d %s", recUnread.Code, recUnread.Body.String())
+	}
+	afterUnread, _ := st.GetStashItem(stashID)
+	if afterUnread.ReadCount != 0 {
+		t.Fatalf("expected read_count=0 after mark_unread, got %d", afterUnread.ReadCount)
+	}
+
+	reqAllRead := httptest.NewRequest(http.MethodPost, "/api/v2/stash/mark-all-read", bytes.NewBufferString(`{}`))
+	reqAllRead.Header.Set("Authorization", authHeader)
+	recAllRead := httptest.NewRecorder()
+	h.ServeHTTP(recAllRead, reqAllRead)
+	if recAllRead.Code != http.StatusOK || !strings.Contains(recAllRead.Body.String(), `"updated":1`) {
+		t.Fatalf("POST /api/v2/stash/mark-all-read failed: %d %s", recAllRead.Code, recAllRead.Body.String())
+	}
+	afterAllRead, _ := st.GetStashItem(stashID)
+	if afterAllRead.ReadCount < 1 {
+		t.Fatalf("expected read_count>=1 after mark-all-read, got %d", afterAllRead.ReadCount)
+	}
+
 	// 3. Test Agent Tool manage_stash (capture plain-text flash note + search)
 	toolOut, err := srv.agent.ExecuteTool(context.Background(), "manage_stash", `{"action":"capture","raw_input":"灵感：给家里软路由加上双栈连通性巡检","tags":"网络,灵感"}`)
 	if err != nil || !strings.Contains(toolOut, `"ok":true`) {

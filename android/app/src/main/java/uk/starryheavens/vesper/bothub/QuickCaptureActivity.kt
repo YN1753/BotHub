@@ -144,6 +144,17 @@ class QuickCaptureActivity : ComponentActivity() {
                 val clipPreview = ShareTextParser.parse(clipText)
                 if (clipPreview.extractedUrl.isBlank()) return@post
                 val key = AppIntents.clipboardDedupKey(clipPreview.extractedUrl, clipText)
+                if (snap.autoCopiedLink) {
+                    // Auto-clicked "Share -> Copy Link": trust the newly copied URL directly
+                    prefs.lastPromptedClipboardHash = key
+                    val mergedSnap = snap.copy(
+                        extractedUrl = clipPreview.extractedUrl,
+                        candidateTitle = clipPreview.candidateTitle.ifBlank { snap.candidateTitle }
+                    )
+                    screenSnapshotState = mergedSnap
+                    rawSharedState = clipText
+                    return@post
+                }
                 // Only merge a brand-new URL matching the foreground platform so stale clipboard URLs don't pollute screen capture
                 if (key == prefs.lastPromptedClipboardHash) return@post
                 if (isClipboardMatchingApp(snap.sourceAppLabel, clipPreview.extractedUrl)) {

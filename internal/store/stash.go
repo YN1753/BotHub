@@ -614,6 +614,20 @@ func (s *Store) UpsertStashItemFull(item StashItem) (StashItem, error) {
 	return item, err
 }
 
+// MarkAllStashItemsRead marks all unarchived unread stash items as read and returns the affected row count.
+func (s *Store) MarkAllStashItemsRead() (int64, error) {
+	now := NowShanghai()
+	res, err := s.db.Exec(
+		`UPDATE stash_items SET read_count = 1, last_reviewed_at = ?, updated_at = ? WHERE status != 'archived' AND read_count = 0`,
+		now, now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // DeleteStashItem deletes a stash item by ID.
 func (s *Store) DeleteStashItem(id string) (bool, error) {
 	res, err := s.db.Exec(`DELETE FROM stash_items WHERE id = ?`, strings.TrimSpace(id))

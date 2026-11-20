@@ -215,8 +215,37 @@ function parseTagList(tags?: string): string[] {
     .filter(Boolean)
 }
 
+const unreadCount = computed(() =>
+  (store.state.stash || []).filter((it) => it.status !== 'archived' && it.read_count === 0).length
+)
+
+async function markAllRead() {
+  try {
+    const res = await BotHubApi.markAllStashRead()
+    await store.refreshWorkspaceSlices(['stash'])
+    if (needsRemoteQuery.value) await fetchFilteredStash()
+    store.notify(res.updated > 0 ? `已将 ${res.updated} 条收藏标为已读` : '暂无未读收藏')
+  } catch (err: any) {
+    store.notify(err.message || '批量标为已读失败')
+  }
+}
+
 function toggleExpand(id: string) {
-  expandedIds.value[id] = !expandedIds.value[id]
+  const next = !expandedIds.value[id]
+  expandedIds.value[id] = next
+  if (next) {
+    const target = displayedItems.value.find((it) => it.id === id)
+    if (target && target.read_count === 0) {
+      void BotHubApi.updateStash(id, { mark_read: true })
+        .then(() => {
+          if (activeFilter.value !== 'unread') {
+            target.read_count = 1
+          }
+          void store.refreshWorkspaceSlices(['stash'])
+        })
+        .catch(() => {})
+    }
+  }
 }
 
 function toggleTagFilter(tag: string) {
@@ -526,6 +555,14 @@ async function saveEdit(item: StashItem) {
       <div class="flex items-center justify-between gap-2 flex-wrap">
         <SegmentedTabs v-model="activeFilter" :items="STASH_FILTERS" variant="subtle" aria-label="收藏匣视图切换" />
         <div class="flex items-center gap-2 flex-1 sm:flex-initial justify-end">
+          <button
+            v-if="unreadCount > 0"
+            type="button"
+            @click="markAllRead"
+            class="px-2.5 min-h-[32px] rounded-xl border border-line bg-canvas text-xs text-fg-sub hover:border-accent-border hover:text-accent-fg cursor-pointer whitespace-nowrap transition-colors"
+          >
+            全部已读 ({{ unreadCount }})
+          </button>
           <input
             v-model="searchQuery"
             type="search"

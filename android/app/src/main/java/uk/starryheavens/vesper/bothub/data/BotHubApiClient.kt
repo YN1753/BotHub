@@ -1191,14 +1191,22 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
 
     suspend fun updateStashItem(
         id: String,
+        title: String? = null,
+        userNote: String? = null,
+        tags: String? = null,
         pinned: Boolean? = null,
         markRead: Boolean? = null,
+        markUnread: Boolean? = null,
         status: String? = null
     ): Result<StashItemUi> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = JSONObject()
+            if (title != null) payload.put("title", title.trim())
+            if (userNote != null) payload.put("user_note", userNote.trim())
+            if (tags != null) payload.put("tags", tags.trim())
             if (pinned != null) payload.put("pinned", pinned)
             if (markRead != null) payload.put("mark_read", markRead)
+            if (markUnread != null) payload.put("mark_unread", markUnread)
             if (status != null) payload.put("status", status)
             val req = requestBuilder("/api/v2/stash/$id")
                 .post(jsonBody(payload.toString()))
@@ -1206,6 +1214,16 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
             val json = executeJson(req, "更新收藏失败")
             val itemObj = json.optJSONObject("item") ?: JSONObject()
             JsonMappers.parseStashItem(itemObj)
+        }
+    }
+
+    suspend fun markAllStashRead(): Result<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/stash/mark-all-read")
+                .post(emptyJsonBody)
+                .build()
+            val json = executeJson(req, "全部标为已读失败")
+            json.optInt("updated", 0)
         }
     }
 

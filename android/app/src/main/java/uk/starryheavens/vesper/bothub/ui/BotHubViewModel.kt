@@ -177,6 +177,12 @@ class BotHubViewModel(
     var stashFilter by mutableStateOf("all")
         private set
 
+    var stashKindFilter by mutableStateOf("")
+        private set
+
+    var selectedStashId by mutableStateOf<String?>(null)
+        private set
+
     var stashLoading by mutableStateOf(false)
         private set
 
@@ -1828,6 +1834,21 @@ class BotHubViewModel(
         refreshStash(stashQuery, filter, silent = stashItems.isNotEmpty())
     }
 
+    fun updateStashKindFilter(kind: String) {
+        stashKindFilter = if (stashKindFilter == kind) "" else kind
+    }
+
+    fun openStashDetail(item: StashItemUi) {
+        selectedStashId = item.id
+        if (item.isUnread) {
+            markStashItemRead(item)
+        }
+    }
+
+    fun closeStashDetail() {
+        selectedStashId = null
+    }
+
     fun captureStashItem(rawInput: String, userNote: String) {
         viewModelScope.launch {
             val preview = ShareTextParser.parse(rawInput)
@@ -1851,12 +1872,81 @@ class BotHubViewModel(
     }
 
     fun markStashItemRead(item: StashItemUi) {
-        val next = stashItems.map { if (it.id == item.id) it.copy(readCount = it.readCount + 1) else it }
+        val next = stashItems.map {
+            if (it.id == item.id) it.copy(readCount = maxOf(1, it.readCount + 1)) else it
+        }
         stashItems = next
         if (stashQuery.isBlank() && stashFilter == "all") prefs.saveCachedStash(next)
         viewModelScope.launch {
             api.updateStashItem(item.id, markRead = true)
-            refreshStash(silent = true)
+            if (stashFilter != "unread") {
+                refreshStash(silent = true)
+            }
+        }
+    }
+
+    fun toggleStashRead(item: StashItemUi) {
+        val markingRead = item.isUnread
+        val prev = stashItems
+        val next = stashItems.map {
+            if (it.id == item.id) it.copy(readCount = if (markingRead) 1 else 0) else it
+        }
+        stashItems = next
+        if (stashQuery.isBlank() && stashFilter == "all") prefs.saveCachedStash(next)
+        showMessage(if (markingRead) "已标为已读" else "已标为未读")
+        viewModelScope.launch {
+            api.updateStashItem(
+                id = item.id,
+                markRead = if (markingRead) true else null,
+                markUnread = if (!markingRead) true else null
+            ).onSuccess {
+                refreshStash(silent = true)
+            }.onFailure {
+                stashItems = prev
+            }
+        }
+    }
+
+    fun markAllStashRead() {
+        val prev = stashItems
+        val next = stashItems.map { if (it.isUnread) it.copy(readCount = 1) else it }
+        stashItems = next
+        if (stashQuery.isBlank() && stashFilter == "all") prefs.saveCachedStash(next)
+        viewModelScope.launch {
+            api.markAllStashRead().onSuccess { count ->
+                showMessage(if (count > 0) "已将 $count 条收藏标为已读" else "已全部标为已读")
+                refreshStash(silent = true)
+            }.onFailure { err ->
+                stashItems = prev
+                showMessage("操作失败: ${err.message}")
+            }
+        }
+    }
+
+    fun editStashItem(item: StashItemUi, title: String, userNote: String, tags: String) {
+        val cleanTitle = title.trim().ifBlank { item.title }
+        val cleanNote = userNote.trim()
+        val cleanTags = tags.trim()
+        val prev = stashItems
+        val optimistic = stashItems.map {
+            if (it.id == item.id) it.copy(title = cleanTitle, userNote = cleanNote, tags = cleanTags) else it
+        }
+        stashItems = optimistic
+        if (stashQuery.isBlank() && stashFilter == "all") prefs.saveCachedStash(optimistic)
+        viewModelScope.launch {
+            api.updateStashItem(
+                id = item.id,
+                title = cleanTitle,
+                userNote = cleanNote,
+                tags = cleanTags
+            ).onSuccess { updated ->
+                stashItems = stashItems.map { if (it.id == updated.id) updated else it }
+                if (stashQuery.isBlank() && stashFilter == "all") prefs.saveCachedStash(stashItems)
+                showMessage("已保存修改")
+            }.onFailure { err ->
+                stashItems = prev
+                showMessage("保存失败: ${err.message}")
+            }
         }
     }
 
@@ -1890,6 +1980,9 @@ class BotHubViewModel(
         val prev = stashItems
         val optimistic = stashItems.filterNot { it.id == item.id }
         stashItems = optimistic
+        if (selectedStashId == item.id) {
+            selectedStashId = null
+        }
         if (stashQuery.isBlank() && stashFilter == "all") prefs.saveCachedStash(optimistic)
         showMessage("已删除")
         viewModelScope.launch {

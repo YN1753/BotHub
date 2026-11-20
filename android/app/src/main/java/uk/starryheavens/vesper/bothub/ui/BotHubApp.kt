@@ -71,6 +71,7 @@ import uk.starryheavens.vesper.bothub.ui.screens.ContactsTabScreen
 import uk.starryheavens.vesper.bothub.ui.screens.HubTabScreen
 import uk.starryheavens.vesper.bothub.ui.screens.ImChatsTabScreen
 import uk.starryheavens.vesper.bothub.ui.screens.ServiceFeedScreen
+import uk.starryheavens.vesper.bothub.ui.screens.StashDetailScreen
 import uk.starryheavens.vesper.bothub.ui.screens.StashTabScreen
 import uk.starryheavens.vesper.bothub.ui.sheets.AgentSessionsSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.BotMemoriesSheet
@@ -89,7 +90,8 @@ import uk.starryheavens.vesper.bothub.ui.theme.VesperBotHubTheme
 private enum class ImPageLevel {
     ROOT_TABS,
     CHAT_ROOM,
-    SERVICE_FEED
+    SERVICE_FEED,
+    STASH_DETAIL
 }
 
 @Composable
@@ -222,9 +224,15 @@ fun BotHubApp(
         .filter { it.id != viewModel.activeBotId }
         .sumOf { it.unreadCount }
 
+    val selectedStashItem = remember(viewModel.selectedStashId, viewModel.stashItems) {
+        val sid = viewModel.selectedStashId
+        if (sid == null) null else viewModel.stashItems.find { it.id == sid }
+    }
+
     val pageLevel = when {
         viewModel.inChatRoom -> ImPageLevel.CHAT_ROOM
         viewModel.showServiceFeed -> ImPageLevel.SERVICE_FEED
+        selectedStashItem != null -> ImPageLevel.STASH_DETAIL
         else -> ImPageLevel.ROOT_TABS
     }
 
@@ -318,6 +326,44 @@ fun BotHubApp(
                     }
                 }
 
+                ImPageLevel.STASH_DETAIL -> {
+                    val detailItem = selectedStashItem
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        containerColor = Color.Transparent,
+                        snackbarHost = { BotHubSnackbarHost(snackbarHostState) }
+                    ) { _ ->
+                        if (detailItem != null) {
+                            StashDetailScreen(
+                                item = detailItem,
+                                onBack = viewModel::closeStashDetail,
+                                onOpenUrl = { item ->
+                                    if (item.url.isNotBlank()) {
+                                        runCatching {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.url)))
+                                        }
+                                    }
+                                },
+                                onCopyText = { txt ->
+                                    clipboard.setText(AnnotatedString(txt))
+                                    viewModel.showMessage("已复制")
+                                },
+                                onTogglePin = viewModel::toggleStashPin,
+                                onToggleRead = viewModel::toggleStashRead,
+                                onReprocess = viewModel::reprocessStashItem,
+                                onSaveEdit = viewModel::editStashItem,
+                                onAskAi = { item ->
+                                    viewModel.closeStashDetail()
+                                    viewModel.askAiAboutStashItem(item)
+                                },
+                                onConvertToTodo = viewModel::convertStashToTodo,
+                                onConvertToNote = viewModel::convertStashToNote,
+                                onDelete = viewModel::deleteStashItem
+                            )
+                        }
+                    }
+                }
+
                 ImPageLevel.ROOT_TABS -> {
                     Scaffold(
                         modifier = Modifier
@@ -403,26 +449,18 @@ fun BotHubApp(
                                     items = viewModel.stashItems,
                                     query = viewModel.stashQuery,
                                     activeFilter = viewModel.stashFilter,
+                                    activeKindFilter = viewModel.stashKindFilter,
                                     loading = viewModel.stashLoading,
                                     showCaptureBar = showStashCaptureInline,
                                     onDismissCaptureBar = { showStashCaptureInline = false },
                                     onQueryChange = viewModel::updateStashQuery,
                                     onFilterChange = viewModel::updateStashFilter,
+                                    onKindFilterChange = viewModel::updateStashKindFilter,
+                                    onMarkAllRead = viewModel::markAllStashRead,
                                     onCapture = viewModel::captureStashItem,
-                                    onOpenUrl = { item ->
-                                        if (item.url.isNotBlank()) {
-                                            runCatching {
-                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.url)))
-                                            }
-                                        }
-                                        viewModel.markStashItemRead(item)
-                                    },
-                                    onTogglePin = viewModel::toggleStashPin,
-                                    onReprocess = viewModel::reprocessStashItem,
-                                    onDelete = viewModel::deleteStashItem,
-                                    onAskAi = viewModel::askAiAboutStashItem,
-                                    onConvertToTodo = viewModel::convertStashToTodo,
-                                    onConvertToNote = viewModel::convertStashToNote
+                                    onOpenDetail = viewModel::openStashDetail,
+                                    onToggleRead = viewModel::toggleStashRead,
+                                    onDelete = viewModel::deleteStashItem
                                 )
 
                                 BotHubTab.HUB -> HubTabScreen(

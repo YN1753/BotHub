@@ -22,7 +22,7 @@ import (
 
 // Injected during build via -ldflags
 var (
-	Version   = "v2.68.1"
+	Version   = "v2.69.0"
 	Commit    = "dev"
 	BuildTime = "local"
 )

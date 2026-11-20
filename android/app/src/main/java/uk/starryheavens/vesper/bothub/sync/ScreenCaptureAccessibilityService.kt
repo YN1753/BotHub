@@ -25,6 +25,7 @@ data class ScreenCaptureSnapshot(
     val visibleText: String = "",
     val screenshotFilePath: String = "",
     val imageDataUrl: String = "",
+    val autoCopiedLink: Boolean = false,
     val capturedAtMs: Long = System.currentTimeMillis()
 ) {
     fun buildRawInput(): String {
@@ -94,7 +95,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
-        // No-op: service only reads screen on explicit user tap on floating pill.
+        // Only reads screen when user explicitly taps the floating capture pill.
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -113,6 +114,244 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
 
     fun captureCurrentScreen(onComplete: (ScreenCaptureSnapshot) -> Unit) {
         val treeResult = runCatching { extractScreenTree() }.getOrElse { ScreenTreeData() }
+
+        // 1. If we already found a real URL on screen (e.g. browser address bar), return immediately with screenshot
+        if (treeResult.extractedUrl.isNotBlank()) {
+            finishWithOptionalScreenshot(treeResult, autoCopiedLink = false, onComplete = onComplete)
+            return
+        }
+
+        // 2. For native content apps (Douyin / Xiaohongshu / Bilibili / WeChat / Zhihu / Weibo),
+        //    auto-tap "Share -> Copy Link" to capture the real URL first; fall back to screen text + screenshot.
+        if (shouldAttemptAutoCopyLink(treeResult.appLabel)) {
+            attemptAutoCopyShareLink(treeResult.appLabel) { copied ->
+                if (copied) {
+                    val snapshot = ScreenCaptureSnapshot(
+                        sourcePackage = treeResult.packageName,
+                        sourceAppLabel = treeResult.appLabel,
+                        candidateTitle = treeResult.candidateTitle,
+                        visibleText = treeResult.visibleText,
+                        autoCopiedLink = true
+                    )
+                    mainHandler.post { onComplete(snapshot) }
+                } else {
+                    // Fallback: wait briefly in case a share drawer just closed, then capture screen text + screenshot
+                    mainHandler.postDelayed({
+                        finishWithOptionalScreenshot(treeResult, autoCopiedLink = false, onComplete = onComplete)
+                    }, 180L)
+                }
+            }
+            return
+        }
+
+        // 3. Other apps: capture screen text + silent screenshot directly
+        finishWithOptionalScreenshot(treeResult, autoCopiedLink = false, onComplete = onComplete)
+    }
+
+    private fun shouldAttemptAutoCopyLink(appLabel: String): Boolean {
+        return appLabel in AUTO_COPY_APPS
+    }
+
+    private fun attemptAutoCopyShareLink(appLabel: String, onDone: (Boolean) -> Unit) {
+        val clickedShare = runCatching { findAndClickShareTrigger(appLabel) }.getOrDefault(false)
+        if (!clickedShare) {
+            onDone(false)
+            return
+        }
+
+        var attempt = 0
+        var scrolledOnce = false
+        val maxAttempts = 7
+
+        fun pollForCopyLink() {
+            attempt++
+            val clickedCopy = runCatching { findAndClickCopyLinkNode() }.getOrDefault(false)
+            if (clickedCopy) {
+                mainHandler.postDelayed({
+                    // Close share drawer only if it remained visible after clicking copy link
+                    if (isShareDrawerStillVisible()) {
+                        runCatching { performGlobalAction(GLOBAL_ACTION_BACK) }
+                    }
+                    onDone(true)
+                }, 200L)
+                return
+            }
+
+            if (attempt == 3 && !scrolledOnce) {
+                scrolledOnce = true
+                runCatching { scrollHorizontalContainersForward() }
+            }
+
+            if (attempt < maxAttempts) {
+                mainHandler.postDelayed({ pollForCopyLink() }, 150L)
+            } else {
+                // Clean up opened share drawer before falling back to screenshot
+                if (isShareDrawerStillVisible()) {
+                    runCatching { performGlobalAction(GLOBAL_ACTION_BACK) }
+                }
+                onDone(false)
+            }
+        }
+
+        mainHandler.postDelayed({ pollForCopyLink() }, 220L)
+    }
+
+    private fun activeAppRoots(): List<AccessibilityNodeInfo> {
+        val roots = mutableListOf<AccessibilityNodeInfo>()
+        runCatching {
+            for (win in windows.orEmpty()) {
+                val r = win.root ?: continue
+                val pkg = r.packageName?.toString().orEmpty()
+                if (pkg.isNotEmpty() && pkg != packageName && pkg != "com.android.systemui") {
+                    roots.add(r)
+                }
+            }
+        }
+        val activeRoot = runCatching { rootInActiveWindow }.getOrNull()
+        if (activeRoot != null) {
+            val pkg = activeRoot.packageName?.toString().orEmpty()
+            if (pkg != packageName && pkg != "com.android.systemui") {
+                roots.add(0, activeRoot)
+            }
+        }
+        return roots
+    }
+
+    private fun clickNearestClickable(node: AccessibilityNodeInfo): Boolean {
+        var cur: AccessibilityNodeInfo? = node
+        var hops = 0
+        while (cur != null && hops <= 4) {
+            if (cur.isClickable && cur.isEnabled) {
+                if (cur.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    return true
+                }
+            }
+            cur = cur.parent
+            hops++
+        }
+        return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    private fun findAndClickShareTrigger(appLabel: String): Boolean {
+        val roots = activeAppRoots()
+        val matchers: List<(String, String, String) -> Boolean> = when (appLabel) {
+            "微信" -> listOf(
+                { txt, desc, vid ->
+                    desc == "更多" || desc == "更多功能按钮" || desc.contains("更多") && desc.length <= 8 ||
+                        vid.endsWith(":id/coz") || vid.contains("more")
+                },
+                { txt, desc, _ -> txt == "分享" || desc.contains("分享") }
+            )
+            else -> listOf(
+                { txt, desc, _ ->
+                    txt == "分享" || txt == "转发" ||
+                        desc == "分享" || desc == "转发" ||
+                        desc.startsWith("分享") || desc.startsWith("转发")
+                },
+                { txt, desc, vid ->
+                    (txt.contains("分享") && txt.length <= 8) ||
+                        (desc.contains("分享") && desc.length <= 14) ||
+                        vid.contains("share_btn") || vid.contains("share_icon") || vid.contains("iv_share")
+                }
+            )
+        }
+
+        for (matcher in matchers) {
+            for (root in roots) {
+                val hit = searchNode(root, maxNodes = 260) { node ->
+                    if (!node.isVisibleToUser) return@searchNode false
+                    val txt = node.text?.toString()?.trim().orEmpty()
+                    val desc = node.contentDescription?.toString()?.trim().orEmpty()
+                    val vid = node.viewIdResourceName?.lowercase().orEmpty()
+                    matcher(txt, desc, vid)
+                }
+                if (hit != null && clickNearestClickable(hit)) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun findAndClickCopyLinkNode(): Boolean {
+        val roots = activeAppRoots()
+        for (root in roots) {
+            val hit = searchNode(root, maxNodes = 320) { node ->
+                if (!node.isVisibleToUser) return@searchNode false
+                val txt = node.text?.toString()?.trim().orEmpty()
+                val desc = node.contentDescription?.toString()?.trim().orEmpty()
+                COPY_LINK_KEYWORDS.any { kw ->
+                    txt.equals(kw, ignoreCase = true) ||
+                        desc.equals(kw, ignoreCase = true) ||
+                        (txt.contains(kw) && txt.length <= 10) ||
+                        (desc.contains(kw) && desc.length <= 12)
+                }
+            }
+            if (hit != null && clickNearestClickable(hit)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun isShareDrawerStillVisible(): Boolean {
+        val roots = activeAppRoots()
+        for (root in roots) {
+            val hit = searchNode(root, maxNodes = 200) { node ->
+                if (!node.isVisibleToUser) return@searchNode false
+                val txt = node.text?.toString()?.trim().orEmpty()
+                val desc = node.contentDescription?.toString()?.trim().orEmpty()
+                txt == "复制链接" || desc == "复制链接" || txt == "生成长图" || txt == "保存图片" ||
+                    (txt == "取消" && node.isClickable)
+            }
+            if (hit != null) return true
+        }
+        return false
+    }
+
+    private fun scrollHorizontalContainersForward() {
+        val roots = activeAppRoots()
+        for (root in roots) {
+            val scroller = searchNode(root, maxNodes = 220) { node ->
+                if (!node.isVisibleToUser || !node.isScrollable) return@searchNode false
+                val cls = node.className?.toString()?.lowercase().orEmpty()
+                cls.contains("horizontal") || cls.contains("recyclerview")
+            }
+            if (scroller != null) {
+                scroller.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                return
+            }
+        }
+    }
+
+    private fun searchNode(
+        root: AccessibilityNodeInfo,
+        maxNodes: Int,
+        predicate: (AccessibilityNodeInfo) -> Boolean
+    ): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+        while (queue.isNotEmpty() && visited < maxNodes) {
+            val cur = queue.removeFirst()
+            visited++
+            if (predicate(cur)) {
+                return cur
+            }
+            val count = cur.childCount
+            for (i in 0 until count) {
+                val child = cur.getChild(i) ?: continue
+                queue.add(child)
+            }
+        }
+        return null
+    }
+
+    private fun finishWithOptionalScreenshot(
+        treeResult: ScreenTreeData,
+        autoCopiedLink: Boolean,
+        onComplete: (ScreenCaptureSnapshot) -> Unit
+    ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val invoked = runCatching {
                 takeScreenshot(
@@ -129,7 +368,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                                     candidateTitle = treeResult.candidateTitle,
                                     visibleText = treeResult.visibleText,
                                     screenshotFilePath = filePath,
-                                    imageDataUrl = dataUrl
+                                    imageDataUrl = dataUrl,
+                                    autoCopiedLink = autoCopiedLink
                                 )
                                 mainHandler.post { onComplete(snapshot) }
                             }.start()
@@ -141,7 +381,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
                                 sourceAppLabel = treeResult.appLabel,
                                 extractedUrl = treeResult.extractedUrl,
                                 candidateTitle = treeResult.candidateTitle,
-                                visibleText = treeResult.visibleText
+                                visibleText = treeResult.visibleText,
+                                autoCopiedLink = autoCopiedLink
                             )
                             mainHandler.post { onComplete(snapshot) }
                         }
@@ -157,7 +398,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
             sourceAppLabel = treeResult.appLabel,
             extractedUrl = treeResult.extractedUrl,
             candidateTitle = treeResult.candidateTitle,
-            visibleText = treeResult.visibleText
+            visibleText = treeResult.visibleText,
+            autoCopiedLink = autoCopiedLink
         )
         mainHandler.post { onComplete(snapshot) }
     }
@@ -214,24 +456,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
     )
 
     private fun extractScreenTree(): ScreenTreeData {
-        val roots = mutableListOf<AccessibilityNodeInfo>()
-        runCatching {
-            for (win in windows.orEmpty()) {
-                val r = win.root ?: continue
-                val pkg = r.packageName?.toString().orEmpty()
-                if (pkg.isNotEmpty() && pkg != packageName && pkg != "com.android.systemui") {
-                    roots.add(r)
-                }
-            }
-        }
-        val activeRoot = runCatching { rootInActiveWindow }.getOrNull()
-        if (activeRoot != null) {
-            val pkg = activeRoot.packageName?.toString().orEmpty()
-            if (pkg != packageName && pkg != "com.android.systemui") {
-                roots.add(0, activeRoot)
-            }
-        }
-
+        val roots = activeAppRoots()
         val detectedPkg = roots.firstOrNull()?.packageName?.toString()?.trim().orEmpty()
             .ifEmpty { lastForegroundPackage }
         val appLabel = resolveAppLabel(detectedPkg)
@@ -344,6 +569,8 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         private val HTTP_URL_REGEX = Regex("""https?://[^\s<>"'\]）】》]+""", RegexOption.IGNORE_CASE)
         private val BARE_DOMAIN_REGEX = Regex("""^[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:/[^\s]*)?$""")
         private val NUMERIC_COUNTER_REGEX = Regex("""^\d+(?:\.\d+)?[万千wWkK+]?$""")
+        private val AUTO_COPY_APPS = setOf("抖音", "小红书", "Bilibili", "微信", "知乎", "微博")
+        private val COPY_LINK_KEYWORDS = listOf("复制链接", "复制网址", "复制视频链接", "复制笔记链接", "复制口令")
         private val NOISE_LABELS = setOf(
             "首页", "朋友", "消息", "我的", "商城", "推荐", "关注", "同城", "发现",
             "点赞", "评论", "转发", "收藏", "分享", "搜索", "返回", "更多", "关闭",

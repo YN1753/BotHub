@@ -221,6 +221,7 @@ object JsonMappers {
             userNote = s.optString("user_note", ""),
             aiTldr = s.optString("ai_tldr", ""),
             points = optStringList(s, "points", fallbackKey = "ai_points"),
+            contentExcerpt = s.optString("content_excerpt", ""),
             tags = s.optString("tags", ""),
             status = s.optString("status", "ready"),
             errorMsg = s.optString("error_msg", ""),
@@ -256,6 +257,7 @@ object JsonMappers {
                     .put("user_note", s.userNote)
                     .put("ai_tldr", s.aiTldr)
                     .put("points", pts)
+                    .put("content_excerpt", s.contentExcerpt.take(2400))
                     .put("tags", s.tags)
                     .put("status", s.status)
                     .put("error_msg", s.errorMsg)

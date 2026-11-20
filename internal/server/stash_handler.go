@@ -111,19 +111,26 @@ func (s *Server) handleUpdateStash(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Title    *string `json:"title"`
-		UserNote *string `json:"user_note"`
-		Tags     *string `json:"tags"`
-		Pinned   *bool   `json:"pinned"`
-		Status   *string `json:"status"`
-		MarkRead *bool   `json:"mark_read"`
+		Title      *string `json:"title"`
+		UserNote   *string `json:"user_note"`
+		Tags       *string `json:"tags"`
+		Pinned     *bool   `json:"pinned"`
+		Status     *string `json:"status"`
+		MarkRead   *bool   `json:"mark_read"`
+		MarkUnread *bool   `json:"mark_unread"`
 	}
 	if !decodeJSON(w, r, 64*1024, &req) {
 		return
 	}
 
-	if req.MarkRead != nil && *req.MarkRead {
-		existing.ReadCount++
+	if req.MarkUnread != nil && *req.MarkUnread {
+		existing.ReadCount = 0
+	} else if req.MarkRead != nil && *req.MarkRead {
+		if existing.ReadCount < 1 {
+			existing.ReadCount = 1
+		} else {
+			existing.ReadCount++
+		}
 		existing.LastReviewedAt = store.NowShanghai()
 	}
 	if req.Title != nil {
@@ -178,6 +185,21 @@ func (s *Server) handleReprocessStash(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":   true,
 		"item": updated,
+	})
+}
+
+func (s *Server) handleMarkAllStashRead(w http.ResponseWriter, r *http.Request) {
+	updated, err := s.store.MarkAllStashItemsRead()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "批量标为已读失败: "+err.Error())
+		return
+	}
+	if updated > 0 {
+		s.publishAssistantEvent("stash")
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"updated": updated,
 	})
 }
 

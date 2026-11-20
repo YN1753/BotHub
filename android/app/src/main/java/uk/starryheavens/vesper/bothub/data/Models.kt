@@ -661,6 +661,7 @@ data class StashItemUi(
     val userNote: String,
     val aiTldr: String,
     val points: List<String>,
+    val contentExcerpt: String = "",
     val tags: String,
     val status: String,
     val errorMsg: String,

@@ -508,11 +508,16 @@ export const BotHubApi = {
       pinned?: boolean
       status?: string
       mark_read?: boolean
+      mark_unread?: boolean
     }
   ) =>
     apiRequest<{ ok: boolean; item: StashItem }>(`/api/v2/stash/${encodeURIComponent(id)}`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+  markAllStashRead: () =>
+    apiRequest<{ ok: boolean; updated: number }>('/api/v2/stash/mark-all-read', {
+      method: 'POST',
     }),
   reprocessStash: (id: string) =>
     apiRequest<{ ok: boolean; item: StashItem }>(`/api/v2/stash/${encodeURIComponent(id)}/reprocess`, {

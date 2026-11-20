@@ -223,6 +223,7 @@ func (s *Server) Handler() http.Handler {
 	// Smart Stash / Capture (Links, Bilibili, GitHub & Flash Notes)
 	mux.HandleFunc("GET /api/v2/stash", s.requireAuth(s.handleListStash))
 	mux.HandleFunc("POST /api/v2/stash", s.requireAuth(s.handleCreateStash))
+	mux.HandleFunc("POST /api/v2/stash/mark-all-read", s.requireAuth(s.handleMarkAllStashRead))
 	mux.HandleFunc("POST /api/v2/stash/{id}", s.requireAuth(s.handleUpdateStash))
 	mux.HandleFunc("POST /api/v2/stash/{id}/reprocess", s.requireAuth(s.handleReprocessStash))
 	mux.HandleFunc("DELETE /api/v2/stash/{id}", s.requireAuth(s.handleDeleteStash))
