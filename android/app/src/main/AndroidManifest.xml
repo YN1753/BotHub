@@ -100,14 +100,16 @@
             android:exported="false" />
 
         <service
-            android:name=".sync.QuickCaptureTileService"
+            android:name=".sync.ScreenCaptureAccessibilityService"
             android:exported="true"
-            android:icon="@drawable/ic_notification"
-            android:label="@string/tile_quick_capture_label"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
-                <action android:name="android.service.quicksettings.action.QS_TILE" />
+                <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_screen_capture" />
         </service>
 
         <receiver

@@ -9,6 +9,7 @@ import uk.starryheavens.vesper.bothub.QuickCaptureActivity
 
 object AppIntents {
     const val ACTION_CAPTURE_CLIPBOARD = "uk.starryheavens.vesper.bothub.ACTION_CAPTURE_CLIPBOARD"
+    const val ACTION_CAPTURE_SCREEN = "uk.starryheavens.vesper.bothub.ACTION_CAPTURE_SCREEN"
     const val EXTRA_FORCE_PREVIEW = "extra_force_preview"
     const val EXTRA_DEEP_CHAT_TEXT = "extra_deep_chat_text"
     const val EXTRA_DEEP_CHAT_AUTO_SEND = "extra_deep_chat_auto_send"
@@ -21,6 +22,18 @@ object AppIntents {
     fun createClipboardCaptureIntent(context: Context): Intent {
         return Intent(context, QuickCaptureActivity::class.java).apply {
             action = ACTION_CAPTURE_CLIPBOARD
+            putExtra(EXTRA_FORCE_PREVIEW, true)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+        }
+    }
+
+    fun createScreenCaptureIntent(context: Context): Intent {
+        return Intent(context, QuickCaptureActivity::class.java).apply {
+            action = ACTION_CAPTURE_SCREEN
             putExtra(EXTRA_FORCE_PREVIEW, true)
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or

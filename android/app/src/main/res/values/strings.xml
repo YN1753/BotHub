@@ -3,5 +3,6 @@
     <string name="app_name">BotHub</string>
     <string name="shortcut_capture_clipboard_short">收藏剪贴板</string>
     <string name="shortcut_capture_clipboard_long">读取剪贴板并收藏到 BotHub</string>
-    <string name="tile_quick_capture_label">BotHub 收藏</string>
+    <string name="accessibility_service_label">BotHub 悬浮球识屏收藏</string>
+    <string name="accessibility_service_desc">仅在您主动点击 BotHub 悬浮球时，读取当前页面链接与可见文字并静默截屏用于智能收藏，平时完全休眠不监听输入。</string>
 </resources>

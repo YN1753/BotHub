@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -169,5 +171,97 @@ func TestClientPrefetchHintAndGracefulShareFallback(t *testing.T) {
 	}
 	if !strings.Contains(got2.AITldr, "Grok Bot") {
 		t.Fatalf("expected fallback summary from share text, got %q", got2.AITldr)
+	}
+}
+
+func TestMultimodalScreenshotDistillationAndTextFallback(t *testing.T) {
+	var sawImageURL bool
+	var sawFallbackText bool
+	rejectImage := false
+
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawBody, _ := io.ReadAll(r.Body)
+		bodyStr := string(rawBody)
+		hasImg := strings.Contains(bodyStr, `"image_url"`)
+		if hasImg {
+			sawImageURL = true
+			if rejectImage {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"image_url not supported by text model"}`))
+				return
+			}
+		} else {
+			sawFallbackText = true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `{"title":"抖音实用架构拆解","tldr":"基于屏幕截图与文字整理的核心结论","points":["要点一","要点二"],"tags":["抖音","架构"]}`,
+					},
+				},
+			},
+		})
+	}))
+	defer llm.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "vision_stash.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	_ = st.SetConfig(store.KeyLightAPIKey, "sk-test-light")
+	_ = st.SetConfig(store.KeyLightBaseURL, llm.URL)
+	_ = st.SetConfig(store.KeyLightModel, "vision-test")
+
+	eng := NewEngine(st, nil)
+	eng.ConfigureTestEndpoints(true, llm.URL, llm.URL, llm.URL)
+
+	// 1. Vision model accepts image_url
+	item1, _, err := eng.CaptureAndDistillStashWithHint(
+		"[抖音识屏] 讲透微服务限流算法",
+		"",
+		"抖音",
+		false,
+		&ClientPrefetchHint{
+			Title:        "讲透微服务限流算法",
+			Excerpt:      "来源应用：抖音\n屏幕文字：讲透微服务限流算法与令牌桶实践",
+			ImageDataURL: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAA==",
+		},
+	)
+	if err != nil {
+		t.Fatalf("capture vision item: %v", err)
+	}
+	if err := eng.DistillStashNow(context.Background(), item1.ID); err != nil {
+		t.Fatalf("distill vision item: %v", err)
+	}
+	got1, _ := st.GetStashItem(item1.ID)
+	if !sawImageURL || got1.Status != store.StashStatusReady || got1.AITldr != "基于屏幕截图与文字整理的核心结论" {
+		t.Fatalf("expected multimodal vision distill, sawImg=%v got=%+v", sawImageURL, got1)
+	}
+
+	// 2. Text-only model rejects image_url with HTTP 400 -> automatic fallback to text-only completion succeeds
+	rejectImage = true
+	item2, _, err := eng.CaptureAndDistillStashWithHint(
+		"[小红书识屏] 本地知识库配置指南",
+		"",
+		"小红书",
+		false,
+		&ClientPrefetchHint{
+			Title:        "本地知识库配置指南",
+			Excerpt:      "来源应用：小红书\n屏幕文字：本地知识库配置指南与自动同步",
+			ImageDataURL: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAA==",
+		},
+	)
+	if err != nil {
+		t.Fatalf("capture fallback item: %v", err)
+	}
+	if err := eng.DistillStashNow(context.Background(), item2.ID); err != nil {
+		t.Fatalf("distill fallback item: %v", err)
+	}
+	got2, _ := st.GetStashItem(item2.ID)
+	if !sawFallbackText || got2.Status != store.StashStatusReady || got2.AITldr == "" {
+		t.Fatalf("expected automatic text fallback on HTTP 400, sawFallback=%v got=%+v", sawFallbackText, got2)
 	}
 }

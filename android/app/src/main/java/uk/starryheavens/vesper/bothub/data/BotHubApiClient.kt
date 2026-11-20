@@ -1160,6 +1160,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 if (prefetched.title.isNotBlank()) payloadObj.put("client_title", prefetched.title.trim())
                 if (prefetched.excerpt.isNotBlank()) payloadObj.put("client_excerpt", prefetched.excerpt.trim())
                 if (prefetched.tags.isNotBlank()) payloadObj.put("client_tags", prefetched.tags.trim())
+                if (prefetched.imageDataUrl.isNotBlank()) payloadObj.put("client_image_data_url", prefetched.imageDataUrl.trim())
             }
             val payload = payloadObj.toString()
             val req = requestBuilder("/api/v2/stash")

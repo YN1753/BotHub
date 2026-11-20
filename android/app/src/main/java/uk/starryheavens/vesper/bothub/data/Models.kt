@@ -639,10 +639,15 @@ data class PrefetchedShareMeta(
     val canonicalUrl: String = "",
     val title: String = "",
     val excerpt: String = "",
-    val tags: String = ""
+    val tags: String = "",
+    val imageDataUrl: String = ""
 ) {
     val isEmpty: Boolean
-        get() = canonicalUrl.isBlank() && title.isBlank() && excerpt.isBlank() && tags.isBlank()
+        get() = canonicalUrl.isBlank() &&
+            title.isBlank() &&
+            excerpt.isBlank() &&
+            tags.isBlank() &&
+            imageDataUrl.isBlank()
 }
 
 @Immutable

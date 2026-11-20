@@ -101,13 +101,28 @@ func (e *Engine) stashSemaphore() chan struct{} {
 	return make(chan struct{}, 3)
 }
 
-// ClientPrefetchHint carries optional public metadata pre-fetched on the user's client device (e.g. Android share sheet)
-// so overseas VPS datacenter IP restrictions on Bilibili/Douyin/Xiaohongshu cannot block distillation.
+// ClientPrefetchHint carries optional public metadata or compressed screen capture pre-fetched on the user's client device
+// so overseas VPS datacenter IP restrictions or app-only screens can still be distilled cleanly.
 type ClientPrefetchHint struct {
 	CanonicalURL string
 	Title        string
 	Excerpt      string
 	Tags         string
+	ImageDataURL string
+}
+
+func sanitizeClientImageDataURL(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" || len(s) > 1600*1024 {
+		return ""
+	}
+	lower := strings.ToLower(s)
+	if !strings.HasPrefix(lower, "data:image/jpeg;base64,") &&
+		!strings.HasPrefix(lower, "data:image/png;base64,") &&
+		!strings.HasPrefix(lower, "data:image/webp;base64,") {
+		return ""
+	}
+	return s
 }
 
 // CaptureAndDistillStash persists a newly captured link/share/thought immediately (<50ms) and schedules background distillation.
@@ -173,6 +188,12 @@ func (e *Engine) CaptureAndDistillStashWithHint(rawInput, userNote, tags string,
 			item.UpdatedAt = store.NowShanghai()
 			if updated, uErr := e.store.UpsertStashItemFull(item); uErr == nil {
 				item = updated
+			}
+		}
+		if imgURL := sanitizeClientImageDataURL(hint.ImageDataURL); imgURL != "" {
+			e.pendingStashImages.Store(item.ID, imgURL)
+			if item.Status == store.StashStatusFailed || item.AITldr == "" {
+				shouldDistill = true
 			}
 		}
 	}
@@ -329,6 +350,12 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 	}
 
 	preExistingExcerpt := strings.TrimSpace(item.ContentExcerpt)
+	pendingImageURL := ""
+	if rawImg, ok := e.pendingStashImages.LoadAndDelete(item.ID); ok {
+		if s, okStr := rawImg.(string); okStr {
+			pendingImageURL = sanitizeClientImageDataURL(s)
+		}
+	}
 	var src *extractedStashSource
 	var fetchErr error
 
@@ -407,7 +434,14 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 			fallbackMat.WriteString(strings.TrimSpace(item.UserNote))
 		}
 		candidateMat := strings.TrimSpace(fallbackMat.String())
-		if len([]rune(shareCopy)) >= 8 || len([]rune(strings.TrimSpace(item.UserNote))) >= 8 {
+		if pendingImageURL != "" {
+			if candidateMat != "" {
+				material = candidateMat
+				item.ContentExcerpt = store.TruncateRunes(candidateMat, store.MaxStashExcerptRunes)
+			} else {
+				material = "（已附带客户端当前页面截图，请结合图片画面内容进行提炼）"
+			}
+		} else if len([]rune(shareCopy)) >= 8 || len([]rune(strings.TrimSpace(item.UserNote))) >= 8 {
 			material = candidateMat
 			item.ContentExcerpt = store.TruncateRunes(candidateMat, store.MaxStashExcerptRunes)
 			degradedNotice = "原平台访问受限，已基于分享文案完成整理（可点击重提炼再试）"
@@ -429,7 +463,7 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 	}
 
 	if e.hasLightTarget() {
-		sysPrompt := `你是 BotHub 智能收藏与闪念蒸馏器。请阅读输入材料并输出严格合法的 JSON 对象（不要使用 Markdown 代码块包裹，不要输出任何额外说明），格式如下：
+		sysPrompt := `你是 BotHub 智能收藏与闪念蒸馏器。请阅读输入材料（如附带页面截图，请同时结合截图中的文字、图表与画面信息）并输出严格合法的 JSON 对象（不要使用 Markdown 代码块包裹，不要输出任何额外说明），格式如下：
 {"title":"简明准确的标题（不超过48字）","tldr":"一句话核心结论（不超过70字）","points":["核心干货要点1","核心干货要点2","核心干货要点3"],"tags":["标签1","标签2"]}
 严格规范：
 1. tldr 必须控制在 70 字以内，直击本质结论、核心方案或关键洞察，拒绝空话。
@@ -451,7 +485,17 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 		userPrompt.WriteString("\n正文材料：\n")
 		userPrompt.WriteString(store.TruncateRunes(material, 7500))
 
-		rawAI, aiErr := e.CallLightModel(ctx, sysPrompt, userPrompt.String())
+		var rawAI string
+		var aiErr error
+		if pendingImageURL != "" {
+			rawAI, aiErr = e.CallLightModelWithImage(ctx, sysPrompt, userPrompt.String(), pendingImageURL)
+			if aiErr != nil {
+				// Automatic fallback to text-only completion if the configured model does not support multimodal image_url
+				rawAI, aiErr = e.CallLightModel(ctx, sysPrompt, userPrompt.String())
+			}
+		} else {
+			rawAI, aiErr = e.CallLightModel(ctx, sysPrompt, userPrompt.String())
+		}
 		if aiErr == nil {
 			if parsed, pErr := parseAIDistillOutput(rawAI); pErr == nil {
 				if parsed.Title != "" && (item.Kind == store.StashKindNote || item.Title == "" || item.Title == item.Domain) {

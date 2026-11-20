@@ -33,7 +33,6 @@ import uk.starryheavens.vesper.bothub.R
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.JsonMappers
-import uk.starryheavens.vesper.bothub.navigation.AppIntents
 import uk.starryheavens.vesper.bothub.notify.NotificationHelper
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -69,23 +68,13 @@ class RealtimePushService : Service() {
     override fun onCreate() {
         super.onCreate()
         NotificationHelper.ensureChannels(this)
-        val openMainPending = PendingIntent.getActivity(
-            this,
-            9200,
-            AppIntents.createMainActivityIntent(this),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val captureClipboardPending = AppIntents.createClipboardCapturePendingIntent(this, 9201)
         val ongoing = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_SERVICE)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("BotHub")
-            .setContentText("点击下方按钮可随时收藏剪贴板内容")
-            .setContentIntent(openMainPending)
-            .addAction(R.drawable.ic_notification, "收藏剪贴板", captureClipboardPending)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setSilent(true)
             .setShowWhen(false)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setOngoing(true)
             .build()
 

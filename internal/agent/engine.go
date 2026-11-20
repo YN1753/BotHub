@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,6 +32,7 @@ type Engine struct {
 	paidRR                atomic.Uint64
 	allowLocalhostForTest bool
 	stashSem              chan struct{}
+	pendingStashImages    sync.Map
 	biliAPIBase           string
 	githubAPIBase         string
 	githubRawBase         string
@@ -185,6 +187,15 @@ func NormalizeModelID(model string) string {
 // only falling back to Paid Pool when PaidFallbackFromContext(ctx) is explicitly enabled (or when
 // legacy callers without a context guard have no Free Pool configured).
 func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+	return e.callLightModelInternal(ctx, systemPrompt, userPrompt, "")
+}
+
+// CallLightModelWithImage executes a non-streaming multimodal completion with an optional base64 data URL image.
+func (e *Engine) CallLightModelWithImage(ctx context.Context, systemPrompt, userPrompt, imageDataURL string) (string, error) {
+	return e.callLightModelInternal(ctx, systemPrompt, userPrompt, strings.TrimSpace(imageDataURL))
+}
+
+func (e *Engine) callLightModelInternal(ctx context.Context, systemPrompt, userPrompt, imageDataURL string) (string, error) {
 	var candidates []ModelTarget
 	allowPaid, explicitPaid := store.PaidFallbackFromContext(ctx)
 
@@ -249,13 +260,34 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 		}
 		turnStart := time.Now()
 		reqCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-		bodyMap := map[string]any{
-			"model":  target.Model,
-			"stream": false,
-			"messages": []map[string]string{
+		var messagesPayload any
+		if imageDataURL != "" {
+			messagesPayload = []map[string]any{
+				{"role": "system", "content": systemPrompt},
+				{
+					"role": "user",
+					"content": []map[string]any{
+						{"type": "text", "text": userPrompt},
+						{
+							"type": "image_url",
+							"image_url": map[string]string{
+								"url":    imageDataURL,
+								"detail": "low",
+							},
+						},
+					},
+				},
+			}
+		} else {
+			messagesPayload = []map[string]string{
 				{"role": "system", "content": systemPrompt},
 				{"role": "user", "content": userPrompt},
-			},
+			}
+		}
+		bodyMap := map[string]any{
+			"model":    target.Model,
+			"stream":   false,
+			"messages": messagesPayload,
 		}
 		if target.AllowThinking {
 			bodyMap["thinking"] = map[string]string{"type": "disabled"}
@@ -294,7 +326,10 @@ func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt st
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			errMsg := fmt.Sprintf("%s HTTP %d: %s", target.Label, resp.StatusCode, strings.TrimSpace(string(rawBytes)))
-			e.health.recordFailure(target.ID, errMsg, resp.StatusCode == http.StatusTooManyRequests)
+			// Do not poison node health if a text-only model simply rejects multimodal image_url payloads
+			if !(imageDataURL != "" && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnprocessableEntity)) {
+				e.health.recordFailure(target.ID, errMsg, resp.StatusCode == http.StatusTooManyRequests)
+			}
 			e.recordModelUsage(ctx, target, "light", nil, time.Since(turnStart).Milliseconds(), false)
 			lastErr = fmt.Errorf("%s", errMsg)
 			continue

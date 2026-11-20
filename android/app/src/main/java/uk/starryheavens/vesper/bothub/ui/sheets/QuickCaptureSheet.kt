@@ -1,6 +1,8 @@
 package uk.starryheavens.vesper.bothub.ui.sheets
 
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,8 +20,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +57,7 @@ import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.ClientSharePrefetcher
 import uk.starryheavens.vesper.bothub.data.PrefetchedShareMeta
 import uk.starryheavens.vesper.bothub.data.ShareTextParser
+import uk.starryheavens.vesper.bothub.sync.ScreenCaptureSnapshot
 import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
@@ -66,6 +73,9 @@ fun QuickCaptureSheet(
     prefs: BotHubPrefs,
     api: BotHubApiClient,
     forcePreview: Boolean = false,
+    screenSnapshot: ScreenCaptureSnapshot? = null,
+    accessibilityEnabled: Boolean = true,
+    onOpenAccessibilitySettings: () -> Unit = {},
     onSaved: (String) -> Unit,
     onForwardDeepChat: (String) -> Unit,
     onOpenSetup: () -> Unit,
@@ -77,6 +87,13 @@ fun QuickCaptureSheet(
     val preview = remember(rawShared) { ShareTextParser.parse(rawShared) }
     var noteInput by remember(rawShared) { mutableStateOf("") }
     var zeroClick by remember { mutableStateOf(prefs.zeroClickCaptureEnabled) }
+    var attachScreenshot by remember(screenSnapshot?.capturedAtMs) {
+        mutableStateOf(screenSnapshot?.imageDataUrl?.isNotBlank() == true)
+    }
+    val screenshotThumb = remember(screenSnapshot?.screenshotFilePath) {
+        val path = screenSnapshot?.screenshotFilePath.orEmpty()
+        if (path.isBlank()) null else runCatching { BitmapFactory.decodeFile(path)?.asImageBitmap() }.getOrNull()
+    }
     var saving by remember(rawShared) { mutableStateOf(false) }
     var savingTodo by remember(rawShared) { mutableStateOf(false) }
     var savedMsg by remember(rawShared) { mutableStateOf("") }
@@ -90,7 +107,7 @@ fun QuickCaptureSheet(
         saving = true
         errorMsg = ""
         scope.launch {
-            val prefetched = runCatching {
+            val urlPrefetched = runCatching {
                 val active = prefetchDeferred
                 if (active != null) {
                     withTimeoutOrNull(2800L) { active.await() }
@@ -100,10 +117,29 @@ fun QuickCaptureSheet(
                     null
                 }
             }.getOrNull()
+
+            val snap = screenSnapshot
+            val mergedPrefetch = if (snap != null) {
+                val snapExcerpt = snap.buildClientExcerpt()
+                val snapTag = snap.sourceAppLabel.takeIf { it.isNotBlank() && it != "浏览器" }.orEmpty()
+                val mergedTags = listOf(urlPrefetched?.tags.orEmpty(), snapTag)
+                    .filter { it.isNotBlank() }
+                    .joinToString(",")
+                PrefetchedShareMeta(
+                    canonicalUrl = urlPrefetched?.canonicalUrl.orEmpty().ifBlank { snap.extractedUrl },
+                    title = urlPrefetched?.title.orEmpty().ifBlank { snap.candidateTitle },
+                    excerpt = urlPrefetched?.excerpt.orEmpty().ifBlank { snapExcerpt },
+                    tags = mergedTags,
+                    imageDataUrl = if (attachScreenshot) snap.imageDataUrl else ""
+                ).takeUnless { it.isEmpty }
+            } else {
+                urlPrefetched
+            }
+
             api.createStashItem(
                 rawInput = rawShared,
                 userNote = noteInput,
-                prefetched = prefetched
+                prefetched = mergedPrefetch
             ).fold(
                 onSuccess = { (_, deduplicated) ->
                     val toastText = if (deduplicated) {
@@ -198,6 +234,7 @@ fun QuickCaptureSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .navigationBarsPadding()
                     .imePadding()
                     .padding(horizontal = 18.dp, vertical = 14.dp),
@@ -210,6 +247,15 @@ fun QuickCaptureSheet(
                         .background(theme.textMuted.copy(alpha = 0.36f), RoundedCornerShape(999.dp))
                         .align(Alignment.CenterHorizontally)
                 )
+
+                val headerBadgeLabel = remember(screenSnapshot, preview.kind) {
+                    when {
+                        screenSnapshot != null && screenSnapshot.sourceAppLabel.isNotBlank() ->
+                            "${screenSnapshot.sourceAppLabel}识屏"
+                        screenSnapshot != null -> "屏幕截取"
+                        else -> preview.kind.shareHeaderLabel
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -237,7 +283,7 @@ fun QuickCaptureSheet(
                             seedKey = "quick_capture"
                         )
                         Text(
-                            text = "快速收藏到 BotHub",
+                            text = if (screenSnapshot != null) "识屏收藏到 BotHub" else "快速收藏到 BotHub",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = theme.textPrimary,
@@ -255,7 +301,7 @@ fun QuickCaptureSheet(
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = preview.kind.shareHeaderLabel,
+                            text = headerBadgeLabel,
                             style = TextStyle(
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
@@ -300,26 +346,109 @@ fun QuickCaptureSheet(
                 ) {
                     Column(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        if (screenshotThumb != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(144.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(1.dp, theme.divider, RoundedCornerShape(10.dp))
+                            ) {
+                                Image(
+                                    bitmap = screenshotThumb,
+                                    contentDescription = "当前页面截图预览",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(8.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (attachScreenshot) theme.accent.copy(alpha = 0.90f)
+                                            else Color(0xCC181A20)
+                                        )
+                                        .clickable { attachScreenshot = !attachScreenshot }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = if (attachScreenshot) "已附带截图供 AI 识图" else "仅文字（点此附带截图）",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color.White,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+
+                        val displayTitle = screenSnapshot?.candidateTitle
+                            ?.takeIf { it.isNotBlank() }
+                            ?: preview.candidateTitle
                         Text(
-                            text = preview.candidateTitle,
+                            text = displayTitle,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             color = theme.textPrimary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (preview.extractedUrl.isNotEmpty()) {
+
+                        val displayUrl = screenSnapshot?.extractedUrl
+                            ?.takeIf { it.isNotBlank() }
+                            ?: preview.extractedUrl
+                        if (displayUrl.isNotEmpty()) {
                             Text(
-                                text = preview.extractedUrl,
+                                text = displayUrl,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.5.sp,
                                 color = theme.accent,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                        } else if (screenSnapshot != null && screenSnapshot.visibleText.isNotBlank()) {
+                            Text(
+                                text = screenSnapshot.visibleText.replace("\n", " · "),
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp,
+                                color = theme.textSecondary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
+                    }
+                }
+
+                if (forcePreview && screenSnapshot == null && !accessibilityEnabled) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(theme.inputTop)
+                            .border(1.dp, theme.divider, RoundedCornerShape(10.dp))
+                            .clickable { onOpenAccessibilitySettings() }
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "开启「悬浮球识屏」后，无需复制链接即可自动识别页面与截图",
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp,
+                            color = theme.textSecondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "去开启",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = theme.accent,
+                            maxLines = 1
+                        )
                     }
                 }
 

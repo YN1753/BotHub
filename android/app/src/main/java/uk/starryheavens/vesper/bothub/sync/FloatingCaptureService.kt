@@ -192,9 +192,7 @@ class FloatingCaptureService : Service() {
                     val elapsed = System.currentTimeMillis() - downTime
                     if (!dragging && event.actionMasked == MotionEvent.ACTION_UP && elapsed < 450L) {
                         view.performClick()
-                        runCatching {
-                            startActivity(AppIntents.createClipboardCaptureIntent(applicationContext))
-                        }
+                        triggerFloatingCapture()
                     } else {
                         val (curW, curH) = screenDimensions()
                         val centerX = lp.x + pillW / 2
@@ -224,6 +222,36 @@ class FloatingCaptureService : Service() {
         } else {
             stopSelf()
         }
+    }
+
+    @Volatile
+    private var captureInProgress: Boolean = false
+
+    private fun triggerFloatingCapture() {
+        if (captureInProgress) return
+        val accessibilitySvc = ScreenCaptureAccessibilityService.activeService
+        if (accessibilitySvc == null) {
+            runCatching {
+                startActivity(AppIntents.createClipboardCaptureIntent(applicationContext))
+            }
+            return
+        }
+
+        captureInProgress = true
+        rootView?.visibility = View.GONE
+        mainHandler.postDelayed({
+            accessibilitySvc.captureCurrentScreen { snapshot ->
+                captureInProgress = false
+                ScreenCaptureHolder.setPending(snapshot)
+                val launched = runCatching {
+                    startActivity(AppIntents.createScreenCaptureIntent(applicationContext))
+                    true
+                }.getOrDefault(false)
+                if (!launched && !temporarilyHidden) {
+                    rootView?.visibility = View.VISIBLE
+                }
+            }
+        }, 90L)
     }
 
     private fun detachOverlayView() {

@@ -48,37 +48,44 @@ func (s *Server) handleListStash(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateStash(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		RawInput       string `json:"raw_input"`
-		UserNote       string `json:"user_note"`
-		Tags           string `json:"tags"`
-		ForceReprocess bool   `json:"force_reprocess"`
-		ClientURL      string `json:"client_url"`
-		ClientTitle    string `json:"client_title"`
-		ClientExcerpt  string `json:"client_excerpt"`
-		ClientTags     string `json:"client_tags"`
+		RawInput           string `json:"raw_input"`
+		UserNote           string `json:"user_note"`
+		Tags               string `json:"tags"`
+		ForceReprocess     bool   `json:"force_reprocess"`
+		ClientURL          string `json:"client_url"`
+		ClientTitle        string `json:"client_title"`
+		ClientExcerpt      string `json:"client_excerpt"`
+		ClientTags         string `json:"client_tags"`
+		ClientImageDataURL string `json:"client_image_data_url"`
 	}
-	if !decodeJSON(w, r, 256*1024, &req) {
+	if !decodeJSON(w, r, 2*1024*1024, &req) {
 		return
 	}
-	if strings.TrimSpace(req.RawInput) == "" {
+	if strings.TrimSpace(req.RawInput) == "" && strings.TrimSpace(req.ClientImageDataURL) == "" {
 		writeError(w, http.StatusBadRequest, "请输入需要收藏的链接、分享文案或随手闪念")
 		return
+	}
+	rawInput := strings.TrimSpace(req.RawInput)
+	if rawInput == "" {
+		rawInput = "屏幕截图收藏"
 	}
 
 	var hint *agent.ClientPrefetchHint
 	if strings.TrimSpace(req.ClientURL) != "" ||
 		strings.TrimSpace(req.ClientTitle) != "" ||
 		strings.TrimSpace(req.ClientExcerpt) != "" ||
-		strings.TrimSpace(req.ClientTags) != "" {
+		strings.TrimSpace(req.ClientTags) != "" ||
+		strings.TrimSpace(req.ClientImageDataURL) != "" {
 		hint = &agent.ClientPrefetchHint{
 			CanonicalURL: req.ClientURL,
 			Title:        req.ClientTitle,
 			Excerpt:      req.ClientExcerpt,
 			Tags:         req.ClientTags,
+			ImageDataURL: req.ClientImageDataURL,
 		}
 	}
 
-	saved, dedup, err := s.agent.CaptureAndDistillStashWithHint(req.RawInput, req.UserNote, req.Tags, req.ForceReprocess, hint)
+	saved, dedup, err := s.agent.CaptureAndDistillStashWithHint(rawInput, req.UserNote, req.Tags, req.ForceReprocess, hint)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "保存收藏失败: "+err.Error())
 		return

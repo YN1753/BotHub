@@ -64,6 +64,7 @@ import uk.starryheavens.vesper.bothub.notify.NotificationHelper
 import uk.starryheavens.vesper.bothub.sync.FloatingCaptureService
 import uk.starryheavens.vesper.bothub.sync.PushConnectionStatus
 import uk.starryheavens.vesper.bothub.sync.RealtimePushService
+import uk.starryheavens.vesper.bothub.sync.ScreenCaptureAccessibilityService
 import uk.starryheavens.vesper.bothub.ui.ApkUpdater
 import uk.starryheavens.vesper.bothub.ui.BiometricAuthHelper
 import uk.starryheavens.vesper.bothub.ui.OtaUpdateState
@@ -133,12 +134,16 @@ fun SettingsPairingSheet(
     var overlayPermissionGranted by remember {
         mutableStateOf(FloatingCaptureService.canDrawOverlays(context))
     }
+    var accessibilityGranted by remember {
+        mutableStateOf(ScreenCaptureAccessibilityService.isServiceEnabled(context))
+    }
     var pendingFloatingBallEnable by remember { mutableStateOf(false) }
 
     DisposableEffect(context) {
         notifPermissionGranted = NotificationHelper.hasNotificationPermission(context)
         batteryOptIgnored = NotificationHelper.isIgnoringBatteryOptimizations(context)
         overlayPermissionGranted = FloatingCaptureService.canDrawOverlays(context)
+        accessibilityGranted = ScreenCaptureAccessibilityService.isServiceEnabled(context)
         val owner = context as? LifecycleOwner
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -146,6 +151,7 @@ fun SettingsPairingSheet(
                 batteryOptIgnored = NotificationHelper.isIgnoringBatteryOptimizations(context)
                 val canOverlay = FloatingCaptureService.canDrawOverlays(context)
                 overlayPermissionGranted = canOverlay
+                accessibilityGranted = ScreenCaptureAccessibilityService.isServiceEnabled(context)
                 if (pendingFloatingBallEnable && canOverlay) {
                     pendingFloatingBallEnable = false
                     onFloatingBallChanged(true)
@@ -617,7 +623,7 @@ fun SettingsPairingSheet(
                         SettingsToggleRow(
                             title = "边缘悬浮收藏球",
                             subtitle = if (overlayPermissionGranted) {
-                                "切出应用后贴边半透明吸附，随时点击读剪贴板"
+                                "切出应用后贴边半透明吸附，点击直接识别当前页面"
                             } else {
                                 "需先开启系统「悬浮窗 / 显示在其他应用上层」权限"
                             },
@@ -645,13 +651,57 @@ fun SettingsPairingSheet(
                             modifier = Modifier.padding(horizontal = 14.dp)
                         )
 
-                        Text(
-                            text = "快捷提示：刷抖音/小红书点「复制链接」后，还可下拉通知栏点「收藏剪贴板」、在控制中心添加「BotHub 收藏」磁贴、或长按桌面图标一键呼出。",
-                            fontSize = 11.5.sp,
-                            lineHeight = 16.5.sp,
-                            color = theme.textMuted,
-                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .tactileClickable {
+                                    ScreenCaptureAccessibilityService.openAccessibilitySettings(context)
+                                }
+                                .padding(horizontal = 15.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "悬浮球识屏与免弹窗截屏",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = theme.textPrimary
+                                )
+                                Text(
+                                    text = if (accessibilityGranted) {
+                                        "已就绪：点悬浮球自动读取当前页链接、文字并静默截图"
+                                    } else {
+                                        "开启无障碍服务后，点悬浮球无需复制即可自动识屏与截屏"
+                                    },
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 16.sp,
+                                    color = theme.textMuted
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (accessibilityGranted) Color(0xFF10B981).copy(alpha = 0.14f)
+                                        else theme.accent.copy(alpha = 0.14f)
+                                    )
+                                    .padding(horizontal = 9.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = if (accessibilityGranted) "已开启" else "去授权",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (accessibilityGranted) Color(0xFF10B981)
+                                    else if (theme.isLight) theme.accentDeep else theme.accentLight,
+                                    maxLines = 1
+                                )
+                            }
+                        }
                     }
                 }
 
