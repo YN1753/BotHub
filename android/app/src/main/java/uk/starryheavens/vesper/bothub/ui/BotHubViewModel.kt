@@ -711,12 +711,12 @@ class BotHubViewModel(
         zeroClickCaptureEnabled = enabled
     }
 
-    fun setClipboardBannerEnabled(enabled: Boolean) {
+    fun updateClipboardBanner(enabled: Boolean) {
         prefs.clipboardBannerEnabled = enabled
         clipboardBannerEnabled = enabled
     }
 
-    fun setFloatingBallEnabled(enabled: Boolean) {
+    fun updateFloatingBall(enabled: Boolean) {
         prefs.floatingBallEnabled = enabled
         floatingBallEnabled = enabled
         FloatingCaptureService.syncWithPrefs(
