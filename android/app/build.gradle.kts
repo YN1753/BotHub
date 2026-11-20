@@ -11,8 +11,8 @@ android {
         applicationId = "uk.starryheavens.vesper.bothub"
         minSdk = 26
         targetSdk = 34
-        versionCode = 276
-        versionName = "2.69.0"
+        versionCode = 277
+        versionName = "2.69.1"
 
         vectorDrawables {
             useSupportLibrary = true

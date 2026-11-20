@@ -101,7 +101,7 @@ fun StashDetailScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(theme.bgBottom)
+            .background(theme.bgBase)
             .imePadding()
     ) {
         // Top Navigation Bar
