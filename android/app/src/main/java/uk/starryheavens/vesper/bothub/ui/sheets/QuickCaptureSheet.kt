@@ -65,6 +65,7 @@ fun QuickCaptureSheet(
     rawShared: String,
     prefs: BotHubPrefs,
     api: BotHubApiClient,
+    forcePreview: Boolean = false,
     onSaved: (String) -> Unit,
     onForwardDeepChat: (String) -> Unit,
     onOpenSetup: () -> Unit,
@@ -154,7 +155,7 @@ fun QuickCaptureSheet(
         }
     }
 
-    LaunchedEffect(rawShared) {
+    LaunchedEffect(rawShared, forcePreview) {
         if (preview.extractedUrl.isNotBlank() && ClientSharePrefetcher.shouldPrefetch(preview.extractedUrl)) {
             prefetchDeferred = async(Dispatchers.IO) {
                 ClientSharePrefetcher.prefetch(preview.extractedUrl)
@@ -162,7 +163,7 @@ fun QuickCaptureSheet(
         }
         val warmToken = withContext(Dispatchers.IO) { prefs.warmUpCredentials() }
         hasToken = warmToken.isNotEmpty()
-        if (hasToken && prefs.zeroClickCaptureEnabled) {
+        if (hasToken && !forcePreview && prefs.zeroClickCaptureEnabled) {
             submitCapture()
         }
     }
@@ -344,16 +345,18 @@ fun QuickCaptureSheet(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    ZeroClickCaptureRow(
-                        checked = zeroClick,
-                        onCheckedChange = { checked ->
-                            zeroClick = checked
-                            prefs.zeroClickCaptureEnabled = checked
-                        },
-                        title = "开启零点击秒收",
-                        subtitle = "下次系统分享自动入库并弹 Toast 提示",
-                        compact = true
-                    )
+                    if (!forcePreview) {
+                        ZeroClickCaptureRow(
+                            checked = zeroClick,
+                            onCheckedChange = { checked ->
+                                zeroClick = checked
+                                prefs.zeroClickCaptureEnabled = checked
+                            },
+                            title = "开启零点击秒收",
+                            subtitle = "下次系统分享自动入库并弹 Toast 提示",
+                            compact = true
+                        )
+                    }
 
                     if (errorMsg.isNotEmpty()) {
                         Text(

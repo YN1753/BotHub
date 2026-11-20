@@ -3,18 +3,36 @@ package uk.starryheavens.vesper.bothub.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -22,11 +40,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -34,6 +58,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
 import uk.starryheavens.vesper.bothub.data.BotItem
+import uk.starryheavens.vesper.bothub.data.ShareTextParser
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 import uk.starryheavens.vesper.bothub.sync.RealtimePushService
 import uk.starryheavens.vesper.bothub.ui.components.BotHubBottomBar
@@ -58,6 +83,7 @@ import uk.starryheavens.vesper.bothub.ui.sheets.ManageGroupMembersSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.ModelConfigSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.NotificationDetailSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.SettingsPairingSheet
+import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 import uk.starryheavens.vesper.bothub.ui.theme.VesperBotHubTheme
 
 private enum class ImPageLevel {
@@ -80,7 +106,9 @@ fun BotHubApp(
     requestedBotId: String? = null,
     onRequestedBotIdConsumed: () -> Unit = {},
     pairPayload: Pair<String, String>? = null,
-    onPairPayloadConsumed: () -> Unit = {}
+    onPairPayloadConsumed: () -> Unit = {},
+    clipboardBannerText: String? = null,
+    onDismissClipboardBanner: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -424,6 +452,113 @@ fun BotHubApp(
                 }
             }
         }
+
+        val bannerRaw = clipboardBannerText
+        AnimatedVisibility(
+            visible = !bannerRaw.isNullOrBlank() && viewModel.clipboardBannerEnabled && viewModel.isPaired,
+            enter = slideInVertically(tween(220)) { -it } + fadeIn(tween(180)),
+            exit = slideOutVertically(tween(180)) { -it } + fadeOut(tween(150)),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            if (!bannerRaw.isNullOrBlank()) {
+                val preview = remember(bannerRaw) { ShareTextParser.parse(bannerRaw) }
+                val theme = BotHubThemeTokens
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = theme.sheetBg,
+                    border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.42f)),
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "检测到剪贴板 · ${preview.kind.badgeLabel}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (theme.isLight) theme.accentDeep else theme.accentLight,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = preview.candidateTitle.ifBlank { preview.extractedUrl },
+                                fontSize = 12.5.sp,
+                                color = theme.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(theme.accent)
+                                .clickable {
+                                    val captured = bannerRaw
+                                    onDismissClipboardBanner()
+                                    viewModel.captureStashItem(captured, "")
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "收藏",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                maxLines = 1
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(theme.inputTop)
+                                .clickable {
+                                    val captured = bannerRaw
+                                    onDismissClipboardBanner()
+                                    viewModel.handleSharedText(captured, autoSend = false)
+                                }
+                                .padding(horizontal = 9.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "问AI",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = theme.textPrimary,
+                                maxLines = 1
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onDismissClipboardBanner() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "关闭提示",
+                                tint = theme.textMuted,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 
     viewModel.inspectingBotProfile?.let { profileBot ->
@@ -581,6 +716,8 @@ fun BotHubApp(
             biometricAppLockEnabled = viewModel.biometricAppLockEnabled,
             realtimeServiceEnabled = viewModel.realtimeServiceEnabled,
             zeroClickCaptureEnabled = viewModel.zeroClickCaptureEnabled,
+            clipboardBannerEnabled = viewModel.clipboardBannerEnabled,
+            floatingBallEnabled = viewModel.floatingBallEnabled,
             appThemeId = viewModel.appThemeId,
             api = api,
             onConnected = viewModel::onConnectedSuccessfully,
@@ -588,6 +725,8 @@ fun BotHubApp(
             onBiometricLockChanged = viewModel::setBiometricAppLock,
             onRealtimeServiceChanged = viewModel::setRealtimeService,
             onZeroClickChanged = viewModel::setZeroClickCapture,
+            onClipboardBannerChanged = viewModel::setClipboardBannerEnabled,
+            onFloatingBallChanged = viewModel::setFloatingBallEnabled,
             onThemeSelected = viewModel::setAppTheme,
             onOpenModelConfig = viewModel::openModelConfig,
             onTestHealth = viewModel::testConnectivity,

@@ -48,6 +48,7 @@ import uk.starryheavens.vesper.bothub.data.TaskItem
 import uk.starryheavens.vesper.bothub.data.TodoItemUi
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 import uk.starryheavens.vesper.bothub.notify.NotificationHelper
+import uk.starryheavens.vesper.bothub.sync.FloatingCaptureService
 import uk.starryheavens.vesper.bothub.sync.RealtimePushService
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicLong
@@ -86,6 +87,12 @@ class BotHubViewModel(
         private set
 
     var zeroClickCaptureEnabled by mutableStateOf(prefs.zeroClickCaptureEnabled)
+        private set
+
+    var clipboardBannerEnabled by mutableStateOf(prefs.clipboardBannerEnabled)
+        private set
+
+    var floatingBallEnabled by mutableStateOf(prefs.floatingBallEnabled)
         private set
 
     var appThemeId by mutableStateOf(prefs.appThemeId)
@@ -702,6 +709,21 @@ class BotHubViewModel(
     fun setZeroClickCapture(enabled: Boolean) {
         prefs.zeroClickCaptureEnabled = enabled
         zeroClickCaptureEnabled = enabled
+    }
+
+    fun setClipboardBannerEnabled(enabled: Boolean) {
+        prefs.clipboardBannerEnabled = enabled
+        clipboardBannerEnabled = enabled
+    }
+
+    fun setFloatingBallEnabled(enabled: Boolean) {
+        prefs.floatingBallEnabled = enabled
+        floatingBallEnabled = enabled
+        FloatingCaptureService.syncWithPrefs(
+            appContext,
+            prefs,
+            appInForeground = RealtimePushService.isAppInForeground
+        )
     }
 
     fun setAppTheme(themeId: String) {

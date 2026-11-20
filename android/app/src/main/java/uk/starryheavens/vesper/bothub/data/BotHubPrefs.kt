@@ -120,6 +120,26 @@ class BotHubPrefs(context: Context) {
         get() = prefs.getBoolean("zero_click_capture_enabled", false)
         set(value) = prefs.edit().putBoolean("zero_click_capture_enabled", value).apply()
 
+    var clipboardBannerEnabled: Boolean
+        get() = prefs.getBoolean("clipboard_banner_enabled", true)
+        set(value) = prefs.edit().putBoolean("clipboard_banner_enabled", value).apply()
+
+    var floatingBallEnabled: Boolean
+        get() = prefs.getBoolean("floating_ball_enabled", false)
+        set(value) = prefs.edit().putBoolean("floating_ball_enabled", value).apply()
+
+    var floatingBallEdgeRight: Boolean
+        get() = prefs.getBoolean("floating_ball_edge_right", true)
+        set(value) = prefs.edit().putBoolean("floating_ball_edge_right", value).apply()
+
+    var floatingBallYFraction: Float
+        get() = prefs.getFloat("floating_ball_y_fraction", 0.42f).coerceIn(0.12f, 0.84f)
+        set(value) = prefs.edit().putFloat("floating_ball_y_fraction", value.coerceIn(0.12f, 0.84f)).apply()
+
+    var lastPromptedClipboardHash: String
+        get() = prefs.getString("last_prompted_clipboard_hash", "") ?: ""
+        set(value) = prefs.edit().putString("last_prompted_clipboard_hash", value).apply()
+
     var appThemeId: String
         get() = prefs.getString("app_theme_id", "obsidian") ?: "obsidian"
         set(value) = prefs.edit().putString("app_theme_id", value.trim().ifEmpty { "obsidian" }).apply()

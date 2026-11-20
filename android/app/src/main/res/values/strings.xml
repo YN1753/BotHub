@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">BotHub</string>
+    <string name="shortcut_capture_clipboard_short">收藏剪贴板</string>
+    <string name="shortcut_capture_clipboard_long">读取剪贴板并收藏到 BotHub</string>
+    <string name="tile_quick_capture_label">BotHub 收藏</string>
 </resources>

@@ -20,9 +20,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
+import uk.starryheavens.vesper.bothub.data.ShareTextParser
 import uk.starryheavens.vesper.bothub.navigation.AppIntents
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
+import uk.starryheavens.vesper.bothub.navigation.ShortcutHelper
 import uk.starryheavens.vesper.bothub.notify.NotificationHelper
+import uk.starryheavens.vesper.bothub.sync.FloatingCaptureService
 import uk.starryheavens.vesper.bothub.sync.PushSyncWorker
 import uk.starryheavens.vesper.bothub.sync.RealtimePushService
 import uk.starryheavens.vesper.bothub.ui.BotHubApp
@@ -30,12 +33,16 @@ import uk.starryheavens.vesper.bothub.ui.theme.VesperBotHubTheme
 
 class MainActivity : FragmentActivity() {
 
+    private lateinit var prefs: BotHubPrefs
+
     private var sharedTextState by mutableStateOf<String?>(null)
     private var sharedAutoSendState by mutableStateOf(false)
     private var requestedTabState by mutableStateOf<BotHubTab?>(null)
     private var requestedNotificationIdState by mutableStateOf<Long?>(null)
     private var requestedBotIdState by mutableStateOf<String?>(null)
     private var pairPayloadState by mutableStateOf<Pair<String, String>?>(null)
+    private var clipboardBannerTextState by mutableStateOf<String?>(null)
+    private var clipboardBannerKeyState by mutableStateOf("")
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -48,7 +55,7 @@ class MainActivity : FragmentActivity() {
             navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
         )
 
-        val prefs = BotHubPrefs(applicationContext)
+        prefs = BotHubPrefs(applicationContext)
         val api = BotHubApiClient(prefs)
 
         if (savedInstanceState == null) {
@@ -73,36 +80,73 @@ class MainActivity : FragmentActivity() {
                     requestedBotId = requestedBotIdState,
                     onRequestedBotIdConsumed = { requestedBotIdState = null },
                     pairPayload = pairPayloadState,
-                    onPairPayloadConsumed = { pairPayloadState = null }
+                    onPairPayloadConsumed = { pairPayloadState = null },
+                    clipboardBannerText = clipboardBannerTextState,
+                    onDismissClipboardBanner = {
+                        if (clipboardBannerKeyState.isNotBlank()) {
+                            prefs.lastPromptedClipboardHash = clipboardBannerKeyState
+                        }
+                        clipboardBannerTextState = null
+                    }
                 )
             }
         }
 
-        // Defer Keystore initialization, WorkManager DB setup, and Foreground Service sync off Frame 1
+        // Defer Keystore initialization, WorkManager DB setup, Shortcuts, and Services off Frame 1
         requestNotificationPermissionIfNeeded()
         lifecycleScope.launch(Dispatchers.IO) {
             NotificationHelper.ensureChannels(applicationContext)
+            ShortcutHelper.publishShortcuts(applicationContext)
             prefs.warmUpCredentials()
             PushSyncWorker.schedulePeriodicSync(applicationContext)
             RealtimePushService.syncWithPrefs(applicationContext, prefs)
+            FloatingCaptureService.syncWithPrefs(applicationContext, prefs, appInForeground = true)
         }
     }
 
     override fun onResume() {
         super.onResume()
         RealtimePushService.isAppInForeground = true
+        FloatingCaptureService.setTemporarilyHidden(this, true)
     }
 
     override fun onPause() {
         RealtimePushService.isAppInForeground = false
         RealtimePushService.activeViewingBotId = ""
+        FloatingCaptureService.setTemporarilyHidden(this, false)
         super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            window.decorView.post {
+                checkClipboardForBanner()
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         extractIncomingIntent(intent)
+    }
+
+    private fun checkClipboardForBanner() {
+        if (!::prefs.isInitialized) return
+        if (!prefs.clipboardBannerEnabled || !prefs.isLikelyPaired) return
+        if (sharedTextState != null) return
+
+        val clipText = AppIntents.readClipboardText(this)
+        if (clipText.isBlank()) return
+        val preview = ShareTextParser.parse(clipText)
+        if (preview.extractedUrl.isBlank()) return
+
+        val key = AppIntents.clipboardDedupKey(preview.extractedUrl, clipText)
+        if (key == prefs.lastPromptedClipboardHash) return
+
+        clipboardBannerKeyState = key
+        clipboardBannerTextState = clipText
     }
 
     private fun extractIncomingIntent(intent: Intent?) {

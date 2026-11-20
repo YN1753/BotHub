@@ -1,10 +1,15 @@
 package uk.starryheavens.vesper.bothub.navigation
 
+import android.app.PendingIntent
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import uk.starryheavens.vesper.bothub.MainActivity
+import uk.starryheavens.vesper.bothub.QuickCaptureActivity
 
 object AppIntents {
+    const val ACTION_CAPTURE_CLIPBOARD = "uk.starryheavens.vesper.bothub.ACTION_CAPTURE_CLIPBOARD"
+    const val EXTRA_FORCE_PREVIEW = "extra_force_preview"
     const val EXTRA_DEEP_CHAT_TEXT = "extra_deep_chat_text"
     const val EXTRA_DEEP_CHAT_AUTO_SEND = "extra_deep_chat_auto_send"
     const val EXTRA_OPEN_TAB = "open_tab"
@@ -12,6 +17,47 @@ object AppIntents {
     const val EXTRA_BOT_ID = "open_bot_id"
 
     private val htmlTagRegex = Regex("<[^>]+>")
+
+    fun createClipboardCaptureIntent(context: Context): Intent {
+        return Intent(context, QuickCaptureActivity::class.java).apply {
+            action = ACTION_CAPTURE_CLIPBOARD
+            putExtra(EXTRA_FORCE_PREVIEW, true)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+        }
+    }
+
+    fun createClipboardCapturePendingIntent(context: Context, requestCode: Int = 9201): PendingIntent {
+        return PendingIntent.getActivity(
+            context.applicationContext,
+            requestCode,
+            createClipboardCaptureIntent(context.applicationContext),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    fun readClipboardText(context: Context): String {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return ""
+        if (!cm.hasPrimaryClip()) return ""
+        val clip = runCatching { cm.primaryClip }.getOrNull() ?: return ""
+        if (clip.itemCount <= 0) return ""
+        val parts = mutableListOf<String>()
+        for (i in 0 until clip.itemCount) {
+            val item = clip.getItemAt(i) ?: continue
+            val text = runCatching { item.coerceToText(context)?.toString()?.trim().orEmpty() }.getOrDefault("")
+            if (text.isNotEmpty() && !text.startsWith("content://") && !text.startsWith("file://")) {
+                parts.add(text)
+            }
+        }
+        return parts.distinct().joinToString("\n").trim()
+    }
+
+    fun clipboardDedupKey(extractedUrl: String, fullText: String): String {
+        return "${extractedUrl.trim().lowercase()}|${fullText.trim().hashCode()}"
+    }
 
     fun createMainActivityIntent(
         context: Context,

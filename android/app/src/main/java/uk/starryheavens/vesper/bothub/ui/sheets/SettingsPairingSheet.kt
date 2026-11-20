@@ -61,6 +61,7 @@ import uk.starryheavens.vesper.bothub.BuildConfig
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.UrlUtils
 import uk.starryheavens.vesper.bothub.notify.NotificationHelper
+import uk.starryheavens.vesper.bothub.sync.FloatingCaptureService
 import uk.starryheavens.vesper.bothub.sync.PushConnectionStatus
 import uk.starryheavens.vesper.bothub.sync.RealtimePushService
 import uk.starryheavens.vesper.bothub.ui.ApkUpdater
@@ -96,6 +97,8 @@ fun SettingsPairingSheet(
     biometricAppLockEnabled: Boolean,
     realtimeServiceEnabled: Boolean,
     zeroClickCaptureEnabled: Boolean,
+    clipboardBannerEnabled: Boolean = true,
+    floatingBallEnabled: Boolean = false,
     appThemeId: String = "obsidian",
     api: BotHubApiClient,
     onConnected: (String) -> Unit,
@@ -103,6 +106,8 @@ fun SettingsPairingSheet(
     onBiometricLockChanged: (Boolean) -> Unit,
     onRealtimeServiceChanged: (Boolean) -> Unit,
     onZeroClickChanged: (Boolean) -> Unit,
+    onClipboardBannerChanged: (Boolean) -> Unit = {},
+    onFloatingBallChanged: (Boolean) -> Unit = {},
     onThemeSelected: (String) -> Unit = {},
     onOpenModelConfig: () -> Unit = {},
     onTestHealth: (String) -> Unit,
@@ -125,15 +130,29 @@ fun SettingsPairingSheet(
     var batteryOptIgnored by remember {
         mutableStateOf(NotificationHelper.isIgnoringBatteryOptimizations(context))
     }
+    var overlayPermissionGranted by remember {
+        mutableStateOf(FloatingCaptureService.canDrawOverlays(context))
+    }
+    var pendingFloatingBallEnable by remember { mutableStateOf(false) }
 
     DisposableEffect(context) {
         notifPermissionGranted = NotificationHelper.hasNotificationPermission(context)
         batteryOptIgnored = NotificationHelper.isIgnoringBatteryOptimizations(context)
+        overlayPermissionGranted = FloatingCaptureService.canDrawOverlays(context)
         val owner = context as? LifecycleOwner
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 notifPermissionGranted = NotificationHelper.hasNotificationPermission(context)
                 batteryOptIgnored = NotificationHelper.isIgnoringBatteryOptimizations(context)
+                val canOverlay = FloatingCaptureService.canDrawOverlays(context)
+                overlayPermissionGranted = canOverlay
+                if (pendingFloatingBallEnable && canOverlay) {
+                    pendingFloatingBallEnable = false
+                    onFloatingBallChanged(true)
+                    onShowMessage("边缘悬浮收藏球已开启，切出应用后自动贴边显示")
+                } else if (pendingFloatingBallEnable && !canOverlay) {
+                    pendingFloatingBallEnable = false
+                }
             }
         }
         owner?.lifecycle?.addObserver(observer)
@@ -571,9 +590,67 @@ fun SettingsPairingSheet(
 
                         SettingsToggleRow(
                             title = "系统分享直接收藏",
-                            subtitle = "分享内容自动存入收藏",
+                            subtitle = "从系统分享面板分享时自动存入收藏",
                             checked = zeroClickCaptureEnabled,
                             onCheckedChange = onZeroClickChanged
+                        )
+
+                        HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = theme.divider,
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        )
+
+                        SettingsToggleRow(
+                            title = "切回自动识别剪贴板网址",
+                            subtitle = "复制抖音/小红书/B站等链接后，切回 BotHub 顶部提示收藏",
+                            checked = clipboardBannerEnabled,
+                            onCheckedChange = onClipboardBannerChanged
+                        )
+
+                        HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = theme.divider,
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        )
+
+                        SettingsToggleRow(
+                            title = "边缘悬浮收藏球",
+                            subtitle = if (overlayPermissionGranted) {
+                                "切出应用后贴边半透明吸附，随时点击读剪贴板"
+                            } else {
+                                "需先开启系统「悬浮窗 / 显示在其他应用上层」权限"
+                            },
+                            checked = floatingBallEnabled && overlayPermissionGranted,
+                            onCheckedChange = { checked ->
+                                if (!checked) {
+                                    pendingFloatingBallEnable = false
+                                    onFloatingBallChanged(false)
+                                    onShowMessage("已关闭边缘悬浮收藏球")
+                                } else if (FloatingCaptureService.canDrawOverlays(context)) {
+                                    overlayPermissionGranted = true
+                                    onFloatingBallChanged(true)
+                                    onShowMessage("边缘悬浮收藏球已开启，切出应用后自动贴边显示")
+                                } else {
+                                    pendingFloatingBallEnable = true
+                                    sheetHint = "请在系统页面中允许 BotHub 显示悬浮窗，返回后自动开启"
+                                    FloatingCaptureService.openOverlayPermissionSettings(context)
+                                }
+                            }
+                        )
+
+                        HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = theme.divider,
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        )
+
+                        Text(
+                            text = "快捷提示：刷抖音/小红书点「复制链接」后，还可下拉通知栏点「收藏剪贴板」、在控制中心添加「BotHub 收藏」磁贴、或长按桌面图标一键呼出。",
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.5.sp,
+                            color = theme.textMuted,
+                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp)
                         )
                     }
                 }
