@@ -196,7 +196,7 @@ func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) 
 		}
 	}()
 
-	cleanArgs := normalizeToolArgsJSON(argsJSON)
+	cleanArgs := repairToolArguments(name, argsJSON)
 	if strings.HasPrefix(name, "skill_") {
 		slug := strings.TrimPrefix(name, "skill_")
 		sk, gErr := e.store.GetSkillBySlug(slug)

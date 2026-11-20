@@ -174,9 +174,9 @@ func TestDetectPreflightGrounding(t *testing.T) {
 		t.Fatalf("expected bookmarking request not to preflight %q", tool)
 	}
 
-	// Local workspace query -> should NOT hijack with web_search
-	if tool, _, ok := detectPreflightGrounding("查一下我的待办清单和最近到期资产", allTools); ok {
-		t.Fatalf("expected local workspace query not to preflight %q", tool)
+	// Local workspace query -> should NEVER hijack with web_search (may preflight local read tool manage_assets instead)
+	if tool, _, ok := detectPreflightGrounding("查一下我的待办清单和最近到期资产", allTools); ok && tool == "web_search" {
+		t.Fatalf("expected local workspace query not to preflight web_search, got %q", tool)
 	}
 }
 
@@ -285,5 +285,176 @@ func TestEndToEndBotChatPreflightAndCorrection(t *testing.T) {
 	}
 	if len(resp.ToolTraces) == 0 || resp.ToolTraces[0].Name != "web_search" {
 		t.Fatalf("expected preflight web_search trace in response, got %+v", resp.ToolTraces)
+	}
+}
+
+func TestSplitInlineThinkTagsAndRescueEmptyContent(t *testing.T) {
+	think, clean := splitInlineThinkTags("<think>先分析一下用户的真实需求</think>\n这是最终给用户的正式答复。")
+	if think != "先分析一下用户的真实需求" || clean != "这是最终给用户的正式答复。" {
+		t.Fatalf("unexpected inline think split: think=%q clean=%q", think, clean)
+	}
+
+	// Orphaned closing </think>
+	think2, clean2 := splitInlineThinkTags("推理步骤一\n推理步骤二</think>最终结论在这里")
+	if !strings.Contains(think2, "推理步骤一") || clean2 != "最终结论在这里" {
+		t.Fatalf("unexpected orphaned closing think split: think=%q clean=%q", think2, clean2)
+	}
+
+	rescued := rescueEmptyContentFromReasoning("第一步：核对条件。\n\n综上所述，推荐使用方案 A，可降低 40% 延迟。")
+	if !strings.Contains(rescued, "推荐使用方案 A") {
+		t.Fatalf("unexpected rescued content: %q", rescued)
+	}
+}
+
+func TestExtractTextEmbeddedToolCalls(t *testing.T) {
+	tools := BuiltinTools()
+
+	// 1. <tool_call> XML tag
+	cleaned, calls := extractTextEmbeddedToolCalls(
+		"我先帮你查一下。\n<tool_call>{\"name\":\"web_search\",\"arguments\":{\"q\":\"Rust 2026 路线图\"}}</tool_call>",
+		tools,
+	)
+	if len(calls) != 1 || calls[0].Function.Name != "web_search" || !strings.Contains(calls[0].Function.Arguments, `"query":"Rust 2026 路线图"`) {
+		t.Fatalf("expected rescued web_search call with repaired query arg, got calls=%+v cleaned=%q", calls, cleaned)
+	}
+	if strings.Contains(cleaned, "<tool_call>") {
+		t.Fatalf("expected <tool_call> stripped from cleaned content: %q", cleaned)
+	}
+
+	// 2. <function=...> tag
+	_, calls2 := extractTextEmbeddedToolCalls(`<function=read_url>{"link":"https://example.com/doc"}</function>`, tools)
+	if len(calls2) != 1 || calls2[0].Function.Name != "read_url" || !strings.Contains(calls2[0].Function.Arguments, `"url":"https://example.com/doc"`) {
+		t.Fatalf("expected rescued read_url call, got %+v", calls2)
+	}
+
+	// 3. ```json code fence with tool/parameters
+	_, calls3 := extractTextEmbeddedToolCalls("```json\n{\"tool\":\"manage_todos\",\"parameters\":{\"text\":\"下午三点开会\"}}\n```", tools)
+	if len(calls3) != 1 || calls3[0].Function.Name != "manage_todos" || !strings.Contains(calls3[0].Function.Arguments, `"action":"add"`) || !strings.Contains(calls3[0].Function.Arguments, `"title":"下午三点开会"`) {
+		t.Fatalf("expected rescued manage_todos call with auto-inferred action=add, got %+v", calls3)
+	}
+}
+
+func TestRepairToolArguments(t *testing.T) {
+	// web_search alias q + string limit
+	wsFixed := repairToolArguments("web_search", `Here is JSON: {"q":"Go 1.24","limit":"6",}`)
+	if !strings.Contains(wsFixed, `"query":"Go 1.24"`) || !strings.Contains(wsFixed, `"limit":6`) {
+		t.Fatalf("unexpected repaired web_search args: %s", wsFixed)
+	}
+
+	// manage_notes missing action with content -> upsert
+	notesFixed := repairToolArguments("manage_notes", `{"name":"会议纪要","body":"讨论了 Q4 目标"}`)
+	if !strings.Contains(notesFixed, `"action":"upsert"`) || !strings.Contains(notesFixed, `"title":"会议纪要"`) || !strings.Contains(notesFixed, `"content":"讨论了 Q4 目标"`) {
+		t.Fatalf("unexpected repaired manage_notes args: %s", notesFixed)
+	}
+
+	// manage_stash mark_read alias
+	stashFixed := repairToolArguments("manage_stash", `{"op":"mark_read","id":"st_1"}`)
+	if !strings.Contains(stashFixed, `"action":"update"`) || !strings.Contains(stashFixed, `"status":"read"`) {
+		t.Fatalf("unexpected repaired manage_stash args: %s", stashFixed)
+	}
+}
+
+func TestDistillSearchKeywordsAndImplicitPreflight(t *testing.T) {
+	primary, fallback := distillSearchKeywords("不对，请帮我联网搜一下关于 2026 年最新的 MacBook Air M4 价格是多少钱？，要求用表格列出")
+	if strings.Contains(primary, "要求用表格") || strings.Contains(primary, "请帮我联网") {
+		t.Fatalf("expected conversational prefix and formatting clause stripped, got primary=%q fallback=%q", primary, fallback)
+	}
+
+	allTools := BuiltinTools()
+	// Implicit factual query without "搜一下"
+	tool, args, ok := detectPreflightGrounding("请问 2026 年 iPhone 17 最新价格是多少钱？", allTools)
+	if !ok || tool != "web_search" {
+		t.Fatalf("expected implicit factual query to trigger web_search preflight, got ok=%v tool=%q args=%s", ok, tool, args)
+	}
+
+	// Local workspace read queries -> preflight corresponding read tool
+	tool, args, ok = detectPreflightGrounding("看看我的服务器和哪吒探针节点现在状态正常吗？", allTools)
+	if !ok || tool != "query_nezha_nodes" {
+		t.Fatalf("expected server status query to preflight query_nezha_nodes, got ok=%v tool=%q args=%s", ok, tool, args)
+	}
+
+	tool, args, ok = detectPreflightGrounding("我有哪些快到期的订阅和资产？", allTools)
+	if !ok || tool != "manage_assets" || !strings.Contains(args, "expiring") {
+		t.Fatalf("expected expiring asset query to preflight manage_assets(expiring), got ok=%v tool=%q args=%s", ok, tool, args)
+	}
+
+	// Workspace mutation command -> should NOT preflight a list read tool
+	if tool, _, ok := detectPreflightGrounding("帮我新增一个资产订阅：Netflix 月付 68 元", allTools); ok {
+		t.Fatalf("expected mutation command not to preflight read tool, got %q", tool)
+	}
+}
+
+func TestDuplicateToolLoopCircuitBreakerAndAntiRepetitionRewrite(t *testing.T) {
+	tmpDir := t.TempDir()
+	st, err := store.Open(filepath.Join(tmpDir, "loop_breaker.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	_ = st.SaveBot(store.Bot{
+		ID:           "loop_bot",
+		Name:         "防死循环助手",
+		RoleTitle:    "测试助手",
+		SystemPrompt: "简洁回答",
+		AllowedTools: `["manage_todos"]`,
+		Model:        "primary",
+	})
+
+	// Seed a prior assistant reply so the next turn is a correction turn
+	_, _ = st.AppendAgentMessage(store.AgentMessage{
+		SessionID: "bot:loop_bot",
+		BotID:     "loop_bot",
+		Role:      "user",
+		Content:   "介绍一下方案特点",
+	})
+	repeatedReply := "这个方案具有高性能、低延迟、易于部署和跨平台兼容四大核心特点，非常适合生产环境使用。"
+	_, _ = st.AppendAgentMessage(store.AgentMessage{
+		SessionID: "bot:loop_bot",
+		BotID:     "loop_bot",
+		Role:      "assistant",
+		Content:   repeatedReply,
+	})
+
+	callSeq := 0
+	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callSeq++
+		raw, _ := io.ReadAll(r.Body)
+		bodyStr := string(raw)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+
+		var chunk string
+		if strings.Contains(bodyStr, "系统强制重写指令") {
+			chunk = `data: {"choices":[{"delta":{"role":"assistant","content":"1. 内存占用仅 18MB；2. 支持 SQLite 单文件部署；3. 内置多源并发检索。"}}]}`
+		} else {
+			// Model stubbornly repeats the exact old reply on initial generation
+			chunk = fmt.Sprintf(`data: {"choices":[{"delta":{"role":"assistant","content":%q}}]}`, repeatedReply)
+		}
+		for _, line := range []string{chunk, `data: [DONE]`} {
+			fmt.Fprintln(w, line)
+			fmt.Fprintln(w)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer llmSrv.Close()
+
+	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "sk-test-key")
+	_ = st.SetConfig(store.KeyDeepSeekBaseURL, llmSrv.URL)
+
+	eng := NewEngine(st, &fakeTaskController{st: st})
+	eng.allowLocalhostForTest = true
+
+	resp, err := eng.ChatStream(context.Background(), ChatRequest{
+		BotID:   "loop_bot",
+		Message: "不对，你说了三次都是一样的答案，按要求列 3 条具体指标数据",
+	}, nil)
+	if err != nil {
+		t.Fatalf("ChatStream failed: %v", err)
+	}
+	if !strings.Contains(resp.Content, "18MB") || strings.Contains(resp.Content, "四大核心特点") {
+		t.Fatalf("expected anti-repetition rewrite to replace repeated reply, got: %q (callSeq=%d)", resp.Content, callSeq)
 	}
 }

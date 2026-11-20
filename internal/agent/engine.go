@@ -1249,5 +1249,16 @@ func (e *Engine) streamSingleRoundWithProvider(
 		}
 	}
 
-	return reasoningBuf.String(), contentBuf.String(), toolCalls, finalUsage, nil
+	finalReasoning := reasoningBuf.String()
+	finalContent := contentBuf.String()
+	if inlineThink, cleanedContent := splitInlineThinkTags(finalContent); inlineThink != "" {
+		if finalReasoning != "" {
+			finalReasoning += "\n" + inlineThink
+		} else {
+			finalReasoning = inlineThink
+		}
+		finalContent = cleanedContent
+	}
+
+	return finalReasoning, finalContent, toolCalls, finalUsage, nil
 }

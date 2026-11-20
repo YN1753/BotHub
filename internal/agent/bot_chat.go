@@ -390,15 +390,20 @@ func (e *Engine) runSingleBotTurn(
 	endedWithTools := false
 	var turnCacheMu sync.Mutex
 	turnReadCache := make(map[string]string)
+	executedCallCounts := make(map[string]int)
 
 	// Harness 1: Correction boost & anti-repetition guardrail when the user explicitly corrects a prior reply.
-	if detectCorrectionTurn(userMsg, history) {
+	isCorrection := detectCorrectionTurn(userMsg, history)
+	prevAssistantReply := ""
+	if isCorrection {
+		prevAssistantReply = lastAssistantReplyFromHistory(history)
 		messages = applyCorrectionGuardrail(messages)
 	}
 
-	// Harness 2: Deterministic preflight web grounding for explicit search intents or inline URLs.
+	// Harness 2: Deterministic preflight grounding for inline URLs, workspace read queries, or web search intents.
 	if (req.MsgKind == "" || req.MsgKind == "chat") && len(tools) > 0 {
 		if pfTool, pfArgs, ok := detectPreflightGrounding(userMsg, tools); ok {
+			pfArgs = repairToolArguments(pfTool, pfArgs)
 			e.emitBotState(actingBot.ID, store.BotStateWorking, humanToolStatus(pfTool, pfArgs))
 			pfID := "preflight_1"
 			if emit != nil {
@@ -445,12 +450,13 @@ func (e *Engine) runSingleBotTurn(
 				DurationMs:    pfDurMs,
 			})
 			if pfErr == nil && preflightResultHasUsefulData(pfTool, cleanPFOut) {
-				cacheKey := pfTool + "\x00" + normalizeToolArgsJSON(pfArgs)
+				cacheKey := pfTool + "\x00" + repairToolArguments(pfTool, pfArgs)
 				turnReadCache[cacheKey] = cleanPFOut
+				executedCallCounts[cacheKey] = 1
 				messages = append(messages, apiMessage{
 					Role: "system",
 					Content: fmt.Sprintf(
-						"[系统已自动执行联网预检索（工具: %s，参数: %s）]\n%s\n\n请优先严格基于上述实时检索/抓取结果回答用户本轮问题，并附上关键来源链接；若信息不足或需要不同角度，可继续调用 web_search（更换新关键词）或 read_url 精读原文，严禁忽略已查到的事实或自行编造。",
+						"[系统已自动执行预检索/状态查询（工具: %s，参数: %s）]\n%s\n\n请优先严格基于上述实时查询/抓取结果回答用户本轮问题（若为联网结果请附上关键来源链接）；如信息已足够请直接作答，请勿重复调用完全相同的查询参数；若信息不足或需不同角度，可调用 web_search（更换新关键词）或 read_url 精读原文，严禁忽略已查到的事实或自行编造。",
 						pfTool, pfArgs, cleanPFOut,
 					),
 				})
@@ -460,6 +466,7 @@ func (e *Engine) runSingleBotTurn(
 	}
 
 	for round := 0; round < maxRounds; round++ {
+		contentPrefixBeforeRound := finalContent.String()
 		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(toolCtx, targets, messages, tools, thinkFlag, emit, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
 				clean := notifier.StripEmoji(deltaReasoning)
@@ -488,6 +495,20 @@ func (e *Engine) runSingleBotTurn(
 			totalUsage.TotalTokens += roundUsage.TotalTokens
 		}
 
+		// Harness 3: Rescue text-embedded tool calls (<tool_call>, <function=...>, ```json {"name":...} ```)
+		// when a weaker model or relay outputs tool calls in plain text instead of OpenAI delta.ToolCalls.
+		if len(toolCalls) == 0 && len(tools) > 0 {
+			if cleanedText, rescuedCalls := extractTextEmbeddedToolCalls(roundContent, tools); len(rescuedCalls) > 0 {
+				roundContent = cleanedText
+				toolCalls = rescuedCalls
+			}
+		}
+		if finalContent.String() != contentPrefixBeforeRound+notifier.StripEmoji(roundContent) {
+			finalContent.Reset()
+			finalContent.WriteString(contentPrefixBeforeRound)
+			finalContent.WriteString(notifier.StripEmoji(roundContent))
+		}
+
 		msgKind := strings.TrimSpace(req.MsgKind)
 		if msgKind == "" {
 			msgKind = "chat"
@@ -495,6 +516,52 @@ func (e *Engine) runSingleBotTurn(
 		persistTimeline := msgKind != "delegate"
 		if len(toolCalls) == 0 {
 			endedWithTools = false
+			// Harness 4: Empty-content rescue when a reasoning model puts all text into reasoning_content
+			if strings.TrimSpace(roundContent) == "" && strings.TrimSpace(finalContent.String()) == "" && strings.TrimSpace(totalReasoning.String()) != "" {
+				if rescued := notifier.StripEmoji(rescueEmptyContentFromReasoning(totalReasoning.String())); rescued != "" {
+					roundContent = rescued
+					finalContent.WriteString(rescued)
+					if emit != nil {
+						emit("content", map[string]any{"delta": rescued, "sender_bot_id": actingBot.ID})
+					}
+				}
+			}
+			// Harness 5: Post-turn anti-repetition rewrite guard on correction turns
+			if isCorrection && prevAssistantReply != "" && textBigramSimilarity(prevAssistantReply, finalContent.String()) >= 0.70 && ctx.Err() == nil {
+				rewriteTargets := targets
+				if len(targets) > 1 {
+					rewriteTargets = append(append([]ModelTarget{}, targets[1:]...), targets[0])
+				}
+				rewriteMsgs := append(append([]apiMessage{}, messages...),
+					apiMessage{Role: "assistant", Content: finalContent.String()},
+					apiMessage{
+						Role:    "system",
+						Content: "[系统强制重写指令：你刚刚生成的回复与上一轮已被用户否定的旧回复相似度过高（几乎原样复读）。请立即彻底抛弃旧结构、旧开头与旧模板，严格对照用户本轮最新要求重新撰写完全不同的回答。]",
+					},
+				)
+				var rwContentBuf strings.Builder
+				rwReasoning, rwContent, _, rwUsage, rwTarget, rwErr := e.streamRoundWithFailover(toolCtx, rewriteTargets, rewriteMsgs, nil, thinkFlag, nil, func(dR, dC string) {
+					if dC != "" {
+						rwContentBuf.WriteString(notifier.StripEmoji(dC))
+					}
+				})
+				if rwErr == nil && strings.TrimSpace(rwContent) != "" && textBigramSimilarity(prevAssistantReply, rwContent) < textBigramSimilarity(prevAssistantReply, finalContent.String()) {
+					activeTarget = rwTarget
+					if rwUsage != nil {
+						hasUsage = true
+						totalUsage.PromptTokens += rwUsage.PromptTokens
+						totalUsage.CompletionTokens += rwUsage.CompletionTokens
+						totalUsage.TotalTokens += rwUsage.TotalTokens
+					}
+					cleanRW := notifier.StripEmoji(rwContent)
+					roundContent = cleanRW
+					finalContent.Reset()
+					finalContent.WriteString(cleanRW)
+					if rwReasoning != "" {
+						totalReasoning.WriteString("\n" + notifier.StripEmoji(rwReasoning))
+					}
+				}
+			}
 			if persistTimeline {
 				finalEntry := store.AgentMessage{
 					SessionID:        "bot:" + timelineBotID,
@@ -516,6 +583,21 @@ func (e *Engine) runSingleBotTurn(
 			break
 		}
 		endedWithTools = true
+
+		// Normalize/repair tool arguments and check duplicate read-only tool loop circuit breaker
+		allDuplicateReadOnly := true
+		for i := range toolCalls {
+			toolCalls[i].Function.Arguments = repairToolArguments(toolCalls[i].Function.Name, toolCalls[i].Function.Arguments)
+			ck := toolCalls[i].Function.Name + "\x00" + toolCalls[i].Function.Arguments
+			if !e.isReadOnlyTool(toolCalls[i].Function.Name) || executedCallCounts[ck] == 0 {
+				allDuplicateReadOnly = false
+			}
+		}
+		if allDuplicateReadOnly && len(traces) > 0 {
+			// Model is repeating identical read-only tool calls already executed in this turn;
+			// break immediately into final synthesis instead of looping up to maxRounds.
+			break
+		}
 
 		tcBytes, _ := json.Marshal(toolCalls)
 		if persistTimeline {
@@ -660,6 +742,10 @@ func (e *Engine) runSingleBotTurn(
 				DurationMs:    toolDurationMs,
 			})
 
+			ck := tc.Function.Name + "\x00" + tc.Function.Arguments
+			if e.isReadOnlyTool(tc.Function.Name) {
+				executedCallCounts[ck]++
+			}
 			traces = append(traces, ToolTrace{
 				ID:        tc.ID,
 				Name:      tc.Function.Name,
@@ -688,9 +774,13 @@ func (e *Engine) runSingleBotTurn(
 					ToolCallID:  tc.ID,
 				})
 			}
+			toolMsgContent := toolOutput
+			if round >= 1 && tc.Function.Name == "web_search" {
+				toolMsgContent += "\n[系统提示：已完成多轮联网搜索，请勿继续重复发起搜索，下一轮请直接基于以上全部检索结果综合回答用户问题]"
+			}
 			messages = append(messages, apiMessage{
 				Role:       "tool",
-				Content:    toolOutput,
+				Content:    toolMsgContent,
 				ToolCallID: tc.ID,
 			})
 		}

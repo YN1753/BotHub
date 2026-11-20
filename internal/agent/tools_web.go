@@ -44,9 +44,9 @@ var (
 	reHTMLTitle    = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 	reDDGResult    = regexp.MustCompile(`(?is)<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>`)
 	reDDGSnippet   = regexp.MustCompile(`(?is)<a[^>]+class="result__snippet"[^>]*>(.*?)</a>`)
-	reBingAlgoLi   = regexp.MustCompile(`(?is)<li[^>]+class="[^"]*\bb_algo\b[^"]*"[^>]*>(.*?)</li>`)
+	reBingAlgoLi   = regexp.MustCompile(`(?is)<(?:li|div)[^>]+class="[^"]*\bb_algo\b[^"]*"[^>]*>(.*?)</(?:li|div)>`)
 	reBingTitleA   = regexp.MustCompile(`(?is)<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>`)
-	reBingSnippetP = regexp.MustCompile(`(?is)<p[^>]*>(.*?)</p>`)
+	reBingSnippetP = regexp.MustCompile(`(?is)<(?:p|div)[^>]+class="[^"]*(?:b_lineclamp|b_algoSlug|b_caption)[^"]*"[^>]*>(.*?)</(?:p|div)>|<p[^>]*>(.*?)</p>`)
 
 	tavilySearchEndpoint = "https://api.tavily.com/search"
 
@@ -505,7 +505,11 @@ func parseBingHTML(rawHTML string, limit int) []webSearchItem {
 		}
 		snippet := ""
 		if pm := reBingSnippetP.FindStringSubmatch(blk[1]); len(pm) >= 2 {
-			snippet = notifier.StripEmoji(strings.TrimSpace(stripHTMLToText(pm[1])))
+			rawSnip := pm[1]
+			if rawSnip == "" && len(pm) >= 3 {
+				rawSnip = pm[2]
+			}
+			snippet = notifier.StripEmoji(strings.TrimSpace(stripHTMLToText(rawSnip)))
 		}
 		if len([]rune(snippet)) > 260 {
 			snippet = string([]rune(snippet)[:260]) + "..."
@@ -923,9 +927,13 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 web_search 参数失败: %w", err)
 	}
-	query := strings.TrimSpace(args.Query)
-	if query == "" {
+	rawQuery := strings.TrimSpace(args.Query)
+	if rawQuery == "" {
 		return "", fmt.Errorf("query 不能为空")
+	}
+	query, fallbackQuery := distillSearchKeywords(rawQuery)
+	if query == "" {
+		query = rawQuery
 	}
 	limit := args.Limit
 	if limit <= 0 || limit > 10 {
@@ -1197,6 +1205,32 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 		}
 		if len(results) >= limit {
 			break
+		}
+	}
+
+	// If conversational query returned <2 results and a broader keyword fallback exists, run a quick second pass.
+	if len(results) < 2 && fallbackQuery != "" && fallbackQuery != query && !e.allowLocalhostForTest {
+		fbCtx, fbCancel := context.WithTimeout(ctx, 5*time.Second)
+		fbItems := e.searchBingHTML(fbCtx, fallbackQuery, limit)
+		if len(fbItems) == 0 {
+			fbItems = e.searchGoogleNewsRSS(fbCtx, fallbackQuery, limit)
+		}
+		fbCancel()
+		for _, item := range fbItems {
+			u := strings.TrimSpace(item.URL)
+			canon := canonicalSearchURL(u)
+			if u == "" || strings.TrimSpace(item.Title) == "" || seenCanonical[canon] {
+				continue
+			}
+			seenCanonical[canon] = true
+			if item.Source != "" && !providersSeen[item.Source] {
+				providersSeen[item.Source] = true
+				providersUsed = append(providersUsed, item.Source)
+			}
+			results = append(results, item)
+			if len(results) >= limit {
+				break
+			}
 		}
 	}
 

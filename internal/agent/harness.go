@@ -5,13 +5,19 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
 var (
-	reInlineHTTPURL = regexp.MustCompile(`https?://[^\s<>"'` + "`" + `，。！？；：、（）()\[\]【】{}]+`)
+	reInlineHTTPURL   = regexp.MustCompile(`https?://[^\s<>"'` + "`" + `，。！？；：、（）()\[\]【】{}]+`)
+	reInlineThinkFull = regexp.MustCompile(`(?is)<think(?:ing)?>\s*(.*?)\s*</think(?:ing)?>`)
+	reXmlToolCall     = regexp.MustCompile(`(?is)<tool_call>\s*(\{.*?\})\s*</tool_call>`)
+	reFuncTagCall     = regexp.MustCompile(`(?is)<function=([a-zA-Z0-9_]+)>\s*(\{.*?\})\s*</function>`)
+	reCodeFenceJSON   = regexp.MustCompile("(?is)```(?:json|tool_call|tool_code)?\\s*(\\{.*?\\})\\s*```")
 
 	// Domain intent clusters for dynamic tool pruning when a bot has many (>7) tools enabled.
 	toolIntentGroups = []struct {
@@ -20,7 +26,7 @@ var (
 	}{
 		{
 			tools:    []string{"web_search", "read_url"},
-			keywords: []string{"搜索", "搜一下", "联网", "查一下", "最新", "新闻", "资讯", "官网", "文档", "教程", "网页", "链接", "文章", "http://", "https://", "github", "开源", "趋势", "热点", "search", "google", "bing"},
+			keywords: []string{"搜索", "搜一下", "联网", "查一下", "最新", "新闻", "资讯", "官网", "文档", "教程", "网页", "链接", "文章", "http://", "https://", "github", "开源", "趋势", "热点", "价格", "多少钱", "评测", "对比", "天气", "search", "google", "bing"},
 		},
 		{
 			tools:    []string{"manage_todos", "datetime_calc"},
@@ -75,11 +81,25 @@ var (
 		"最新价格", "最新版本", "发布了吗", "search ", "google ", "bing ",
 	}
 
+	// Implicit live/factual query signals that require fresh web grounding even if user didn't say "搜一下".
+	implicitWebFactSignals = []string{
+		"2025", "2026", "今年", "本月", "今天", "今日", "最近", "近期", "近日", "昨晚",
+		"现在多少钱", "多少钱", "最新价格", "股价", "汇率", "行情", "票房", "天气",
+		"比分", "排名", "榜单", "什么时候发布", "什么时候出", "出了吗", "更新了什么",
+		"哪个好用", "对比评测", "报错", "怎么解决", "官方文档", "官网地址",
+	}
+
 	localWorkspaceExclusions = []string{
 		"待办", "todo", "定时任务", "巡检任务", "资产", "订阅", "到期", "续费",
 		"服务器", "vps", "探针", "哪吒", "nezha", "我的笔记", "笔记里", "笔记中",
 		"我的收藏", "收藏里", "收藏夹", "稍后读", "stash", "我的记忆", "记忆库",
 		"模型池", "免费池", "付费池", "机器人列表", "我的bot", "我的待办", "工作台",
+	}
+
+	workspaceMutationVerbs = []string{
+		"添加", "新增", "创建", "新建", "加一个", "加一条", "记一条", "记一下", "写一篇",
+		"删除", "删掉", "移除", "清空", "修改", "更新", "改成", "改为", "标记", "完成",
+		"勾选", "置顶", "取消", "关闭", "开启", "禁用", "启用", "记住", "忘掉",
 	}
 
 	stashSaveIntentHints = []string{
@@ -103,12 +123,17 @@ var (
 		"请帮我查一下", "帮我查一下", "请查一下", "查一下", "帮我查",
 		"请帮我检索一下", "帮我检索一下", "检索一下", "联网查一下", "联网查", "联网搜", "联网搜索",
 		"重新搜一下", "重新查一下", "换个关键词搜一下", "换个关键词查一下",
+		"请问一下", "请问", "能不能告诉我", "能告诉我", "帮我看看", "我想知道", "告诉我",
+	}
+
+	searchTailNoise = []string{
+		"是怎么回事", "是什么情况", "有哪些内容", "详细说说", "详细介绍一下",
+		"是什么", "怎么样", "好不好", "可以吗", "吗？", "吗?", "呢？", "呢?", "啊？", "啊?",
 	}
 )
 
 // pruneToolsForTurn narrows a bot's tool schema list from up to 19 tools down to the
 // 4-7 tools most relevant to the current user message and recent 2 turns.
-// This dramatically reduces schema confusion for smaller/free models.
 func pruneToolsForTurn(allBotTools []ToolDefinition, userMsg string, recentHistory []store.AgentMessage) []ToolDefinition {
 	if len(allBotTools) <= 7 {
 		return allBotTools
@@ -135,7 +160,6 @@ func pruneToolsForTurn(allBotTools []ToolDefinition, userMsg string, recentHisto
 	scores := make(map[string]int, len(allBotTools))
 	for _, td := range allBotTools {
 		name := td.Function.Name
-		// Baseline core tools keep a small positive floor so web/memory capability is always reachable.
 		switch name {
 		case "web_search":
 			scores[name] = 3
@@ -159,7 +183,6 @@ func pruneToolsForTurn(allBotTools []ToolDefinition, userMsg string, recentHisto
 			}
 		}
 
-		// Custom skills: match by name or description fragments
 		if strings.HasPrefix(name, "skill_") {
 			skillKey := strings.TrimPrefix(name, "skill_")
 			if strings.Contains(userLower, skillKey) || strings.Contains(userLower, "技能") || strings.Contains(userLower, "skill") {
@@ -244,12 +267,23 @@ func hasToolNamed(tools []ToolDefinition, name string) bool {
 	return false
 }
 
-func cleanPreflightSearchQuery(userMsg string) string {
+// distillSearchKeywords cleans a conversational prompt into a high-hit primary search query
+// and an optional broader fallback query (used automatically when primary returns <2 hits).
+func distillSearchKeywords(userMsg string) (primary string, fallback string) {
 	q := strings.TrimSpace(userMsg)
-	// Remove leading correction interjections before stripping search verbs
-	for _, lead := range []string{"不对，", "不对,", "不对 ", "错了，", "错了,", "不是这个，", "不是这个,", "重新来，", "重新来,"} {
+	for _, lead := range []string{
+		"不对，", "不对,", "不对 ", "错了，", "错了,", "不是这个，", "不是这个,",
+		"重新来，", "重新来,", "没按要求，", "没按我要求，",
+	} {
 		if strings.HasPrefix(q, lead) {
 			q = strings.TrimSpace(strings.TrimPrefix(q, lead))
+		}
+	}
+	// If the user wrote a multi-clause instruction (e.g., "搜一下 xxx，要求列出3点并对比"),
+	// isolate the search topic clause before formatting instructions.
+	for _, sep := range []string{"，要求", ",要求", "。要求", "，请按", "，并按", "，不要", "，用表格", "，列个表"} {
+		if idx := strings.Index(q, sep); idx > 0 {
+			q = strings.TrimSpace(q[:idx])
 		}
 	}
 	for _, prefix := range searchPrefixStripper {
@@ -258,17 +292,86 @@ func cleanPreflightSearchQuery(userMsg string) string {
 			break
 		}
 	}
+	for _, tail := range searchTailNoise {
+		if strings.HasSuffix(q, tail) && len([]rune(q)) > len([]rune(tail))+2 {
+			q = strings.TrimSpace(strings.TrimSuffix(q, tail))
+		}
+	}
 	q = strings.Trim(q, "：:，,。！？?!\"'“” ")
 	runes := []rune(q)
-	if len(runes) > 120 {
-		q = string(runes[:120])
+	if len(runes) > 100 {
+		q = string(runes[:100])
 	}
-	return strings.TrimSpace(q)
+	primary = strings.TrimSpace(q)
+
+	// Build a compact keyword-only fallback by removing conversational filler particles
+	fb := primary
+	for _, filler := range []string{"关于", "请问", "最新的", "目前的", "现在的", "有什么", "有哪些", "怎么", "如何", "为什么", "的"} {
+		fb = strings.ReplaceAll(fb, filler, " ")
+	}
+	fb = strings.Join(strings.Fields(fb), " ")
+	if fb != "" && fb != primary && len([]rune(fb)) >= 2 {
+		fallback = fb
+	}
+	return primary, fallback
+}
+
+func cleanPreflightSearchQuery(userMsg string) string {
+	primary, _ := distillSearchKeywords(userMsg)
+	return primary
+}
+
+func detectLocalWorkspaceReadPreflight(lower string, tools []ToolDefinition) (toolName string, argsJSON string, ok bool) {
+	// Never preflight a read tool if the user is asking to create, update, or delete data.
+	for _, verb := range workspaceMutationVerbs {
+		if strings.Contains(lower, verb) {
+			return "", "", false
+		}
+	}
+	isQuestionOrCheck := strings.Contains(lower, "有哪些") || strings.Contains(lower, "有什么") ||
+		strings.Contains(lower, "看看") || strings.Contains(lower, "查看") ||
+		strings.Contains(lower, "查一下") || strings.Contains(lower, "查查") ||
+		strings.Contains(lower, "列表") || strings.Contains(lower, "状态") ||
+		strings.Contains(lower, "多少") || strings.Contains(lower, "几个") ||
+		strings.Contains(lower, "正常吗") || strings.Contains(lower, "到期") ||
+		strings.Contains(lower, "未读") || strings.Contains(lower, "简报") ||
+		strings.Contains(lower, "概览") || strings.HasSuffix(lower, "?") || strings.HasSuffix(lower, "？")
+	if !isQuestionOrCheck {
+		return "", "", false
+	}
+
+	if hasToolNamed(tools, "query_nezha_nodes") &&
+		(strings.Contains(lower, "服务器") || strings.Contains(lower, "探针") || strings.Contains(lower, "哪吒") || strings.Contains(lower, "vps状态") || strings.Contains(lower, "节点负载")) {
+		return "query_nezha_nodes", `{}`, true
+	}
+	if hasToolNamed(tools, "manage_assets") &&
+		(strings.Contains(lower, "资产") || strings.Contains(lower, "订阅") || strings.Contains(lower, "续费")) {
+		if strings.Contains(lower, "快到期") || strings.Contains(lower, "即将到期") {
+			return "manage_assets", `{"action":"expiring"}`, true
+		}
+		return "manage_assets", `{"action":"list"}`, true
+	}
+	if hasToolNamed(tools, "manage_stash") &&
+		(strings.Contains(lower, "收藏") || strings.Contains(lower, "稍后读") || strings.Contains(lower, "stash")) {
+		if strings.Contains(lower, "未读") {
+			return "manage_stash", `{"action":"list","status":"unread"}`, true
+		}
+		return "manage_stash", `{"action":"list"}`, true
+	}
+	if hasToolNamed(tools, "manage_notes") &&
+		(strings.Contains(lower, "我的笔记") || strings.Contains(lower, "笔记列表") || strings.Contains(lower, "有哪些笔记")) {
+		return "manage_notes", `{"action":"list"}`, true
+	}
+	if hasToolNamed(tools, "workspace_briefing") &&
+		(strings.Contains(lower, "工作简报") || strings.Contains(lower, "今日简报") || strings.Contains(lower, "工作台概览") || strings.Contains(lower, "全局概览")) {
+		return "workspace_briefing", `{}`, true
+	}
+	return "", "", false
 }
 
 // detectPreflightGrounding determines whether a turn should deterministically execute
-// read_url or web_search BEFORE Round 0 LLM inference so weak/free models always receive
-// real grounded web context instead of hallucinating or skipping tool calls.
+// read_url, a read-only workspace inspection tool, or web_search BEFORE Round 0 LLM inference
+// so weak/free models always receive real grounded facts instead of skipping tool calls.
 func detectPreflightGrounding(userMsg string, tools []ToolDefinition) (toolName string, argsJSON string, ok bool) {
 	trimmed := strings.TrimSpace(userMsg)
 	if len([]rune(trimmed)) < 3 {
@@ -293,7 +396,12 @@ func detectPreflightGrounding(userMsg string, tools []ToolDefinition) (toolName 
 		}
 	}
 
-	// 2. Explicit web-search intent -> web_search (never hijack local workspace queries)
+	// 2. Read-only local workspace inspection queries -> preflight workspace read tool
+	if wsTool, wsArgs, wsOK := detectLocalWorkspaceReadPreflight(lower, tools); wsOK {
+		return wsTool, wsArgs, true
+	}
+
+	// 3. Explicit OR implicit web-search intent -> web_search (never hijack local workspace queries)
 	if !hasToolNamed(tools, "web_search") {
 		return "", "", false
 	}
@@ -310,6 +418,14 @@ func detectPreflightGrounding(userMsg string, tools []ToolDefinition) (toolName 
 		}
 	}
 	if !triggered {
+		for _, sig := range implicitWebFactSignals {
+			if strings.Contains(lower, sig) {
+				triggered = true
+				break
+			}
+		}
+	}
+	if !triggered {
 		return "", "", false
 	}
 	query := cleanPreflightSearchQuery(trimmed)
@@ -320,8 +436,7 @@ func detectPreflightGrounding(userMsg string, tools []ToolDefinition) (toolName 
 	return "web_search", string(b), true
 }
 
-// preflightResultHasUsefulData checks whether a preflight web_search / read_url output
-// actually contains usable results before injecting it into model context.
+// preflightResultHasUsefulData checks whether a preflight tool output contains usable facts.
 func preflightResultHasUsefulData(toolName, rawOutput string) bool {
 	if strings.TrimSpace(rawOutput) == "" {
 		return false
@@ -338,8 +453,378 @@ func preflightResultHasUsefulData(toolName, rawOutput string) bool {
 		}
 		return json.Unmarshal([]byte(rawOutput), &parsed) == nil && parsed.CharCount >= 40
 	default:
+		var generic map[string]any
+		if json.Unmarshal([]byte(rawOutput), &generic) == nil {
+			if okVal, exists := generic["ok"].(bool); exists && !okVal {
+				return false
+			}
+		}
 		return true
 	}
+}
+
+// splitInlineThinkTags separates <think>...</think> blocks that some free/relay models emit
+// inside normal content delta from user-facing content.
+func splitInlineThinkTags(content string) (extractedReasoning string, cleanContent string) {
+	if !strings.Contains(strings.ToLower(content), "<think") && !strings.Contains(strings.ToLower(content), "</think") {
+		return "", content
+	}
+	var thinkParts []string
+	cleaned := reInlineThinkFull.ReplaceAllStringFunc(content, func(m string) string {
+		sub := reInlineThinkFull.FindStringSubmatch(m)
+		if len(sub) > 1 && strings.TrimSpace(sub[1]) != "" {
+			thinkParts = append(thinkParts, strings.TrimSpace(sub[1]))
+		}
+		return ""
+	})
+	// Handle orphaned closing </think> (when model omitted opening <think>)
+	lowerCleaned := strings.ToLower(cleaned)
+	if closeIdx := strings.Index(lowerCleaned, "</think>"); closeIdx >= 0 {
+		prefix := strings.TrimSpace(cleaned[:closeIdx])
+		if prefix != "" {
+			thinkParts = append(thinkParts, prefix)
+		}
+		cleaned = cleaned[closeIdx+len("</think>"):]
+	} else if openIdx := strings.Index(lowerCleaned, "<think>"); openIdx >= 0 {
+		// Unclosed <think> at end of stream
+		tail := strings.TrimSpace(cleaned[openIdx+len("<think>"):])
+		if tail != "" {
+			thinkParts = append(thinkParts, tail)
+		}
+		cleaned = cleaned[:openIdx]
+	}
+	return strings.Join(thinkParts, "\n"), strings.TrimSpace(cleaned)
+}
+
+// rescueEmptyContentFromReasoning extracts a concise final answer when a reasoning model
+// emits all text into reasoning_content and leaves content blank.
+func rescueEmptyContentFromReasoning(reasoning string) string {
+	trimmed := strings.TrimSpace(reasoning)
+	if trimmed == "" {
+		return ""
+	}
+	paragraphs := strings.Split(trimmed, "\n\n")
+	for i := len(paragraphs) - 1; i >= 0; i-- {
+		p := strings.TrimSpace(paragraphs[i])
+		if len([]rune(p)) >= 12 {
+			runes := []rune(p)
+			if len(runes) > 800 {
+				return string(runes[len(runes)-800:])
+			}
+			return p
+		}
+	}
+	runes := []rune(trimmed)
+	if len(runes) > 600 {
+		return string(runes[len(runes)-600:])
+	}
+	return trimmed
+}
+
+// extractTextEmbeddedToolCalls rescues tool invocations that weaker models or non-standard relays
+// emit as <tool_call>{...}</tool_call>, <function=name>{...}</function>, or ```json {"name":...} ```
+// in text content instead of structured OpenAI delta.ToolCalls.
+func extractTextEmbeddedToolCalls(content string, allowedTools []ToolDefinition) (cleanedContent string, calls []apiToolCall) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" || len(allowedTools) == 0 {
+		return content, nil
+	}
+	allowSet := make(map[string]bool, len(allowedTools))
+	for _, td := range allowedTools {
+		allowSet[td.Function.Name] = true
+	}
+
+	cleaned := content
+	addCall := func(name string, argsAny any) bool {
+		name = strings.TrimSpace(name)
+		if !allowSet[name] {
+			return false
+		}
+		var argsStr string
+		switch v := argsAny.(type) {
+		case string:
+			argsStr = strings.TrimSpace(v)
+		case map[string]any:
+			b, _ := json.Marshal(v)
+			argsStr = string(b)
+		default:
+			if v != nil {
+				b, _ := json.Marshal(v)
+				argsStr = string(b)
+			}
+		}
+		if argsStr == "" {
+			argsStr = "{}"
+		}
+		calls = append(calls, apiToolCall{
+			ID:   fmt.Sprintf("textcall_%d", len(calls)+1),
+			Type: "function",
+			Function: apiToolFunction{
+				Name:      name,
+				Arguments: repairToolArguments(name, argsStr),
+			},
+		})
+		return true
+	}
+
+	tryParseJSONCall := func(rawJSON string) bool {
+		var obj map[string]any
+		if json.Unmarshal([]byte(strings.TrimSpace(rawJSON)), &obj) != nil {
+			return false
+		}
+		name, _ := obj["name"].(string)
+		if name == "" {
+			name, _ = obj["tool"].(string)
+		}
+		if name == "" {
+			name, _ = obj["function"].(string)
+		}
+		if name == "" {
+			return false
+		}
+		args := obj["arguments"]
+		if args == nil {
+			args = obj["parameters"]
+		}
+		if args == nil {
+			args = obj["args"]
+		}
+		if args == nil {
+			// Flat object where parameters are top-level alongside "name"/"tool"
+			rest := make(map[string]any)
+			for k, v := range obj {
+				if k != "name" && k != "tool" && k != "function" && k != "type" {
+					rest[k] = v
+				}
+			}
+			args = rest
+		}
+		return addCall(name, args)
+	}
+
+	// 1. <tool_call>{...}</tool_call>
+	for _, m := range reXmlToolCall.FindAllStringSubmatch(cleaned, 4) {
+		if len(m) > 1 && tryParseJSONCall(m[1]) {
+			cleaned = strings.Replace(cleaned, m[0], "", 1)
+		}
+	}
+	// 2. <function=tool_name>{...}</function>
+	for _, m := range reFuncTagCall.FindAllStringSubmatch(cleaned, 4) {
+		if len(m) > 2 && addCall(m[1], m[2]) {
+			cleaned = strings.Replace(cleaned, m[0], "", 1)
+		}
+	}
+	if len(calls) > 0 {
+		return strings.TrimSpace(cleaned), calls
+	}
+
+	// 3. ```json {"name": "allowed_tool", "arguments": {...}} ```
+	for _, m := range reCodeFenceJSON.FindAllStringSubmatch(cleaned, 2) {
+		if len(m) > 1 && tryParseJSONCall(m[1]) {
+			cleaned = strings.Replace(cleaned, m[0], "", 1)
+		}
+	}
+	if len(calls) > 0 {
+		return strings.TrimSpace(cleaned), calls
+	}
+
+	// 4. Bare JSON object when entire response is a single tool call JSON
+	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
+		if tryParseJSONCall(trimmed) {
+			return "", calls
+		}
+	}
+	return content, nil
+}
+
+// repairToolArguments normalizes malformed JSON and common parameter alias mistakes
+// made by smaller/free models before tool execution.
+func repairToolArguments(toolName string, rawArgs string) string {
+	s := normalizeToolArgsJSON(rawArgs)
+	if s == "" || s == "{}" {
+		s = "{}"
+	} else if !strings.HasPrefix(s, "{") {
+		if start := strings.IndexByte(s, '{'); start >= 0 {
+			if end := strings.LastIndexByte(s, '}'); end > start {
+				s = s[start : end+1]
+			}
+		}
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(s), &m); err != nil || m == nil {
+		return s
+	}
+
+	promoteAlias := func(canonical string, aliases ...string) {
+		if val, ok := m[canonical]; ok && val != nil && fmt.Sprintf("%v", val) != "" {
+			return
+		}
+		for _, al := range aliases {
+			if val, ok := m[al]; ok && val != nil && fmt.Sprintf("%v", val) != "" {
+				m[canonical] = val
+				delete(m, al)
+				return
+			}
+		}
+	}
+
+	strVal := func(k string) string {
+		if v, ok := m[k]; ok && v != nil {
+			if sv, ok := v.(string); ok {
+				return strings.TrimSpace(sv)
+			}
+		}
+		return ""
+	}
+
+	switch strings.TrimSpace(toolName) {
+	case "web_search":
+		promoteAlias("query", "q", "keyword", "keywords", "search", "search_query", "text")
+		if limStr, ok := m["limit"].(string); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(limStr)); err == nil {
+				m["limit"] = n
+			} else {
+				delete(m, "limit")
+			}
+		}
+	case "read_url":
+		promoteAlias("url", "link", "href", "target", "target_url", "page_url", "uri")
+	case "remember_fact":
+		promoteAlias("fact_key", "key", "name", "topic", "id")
+		promoteAlias("content", "value", "fact", "text", "memory", "description")
+	case "recall_memory":
+		promoteAlias("query", "q", "keyword", "keywords", "fact_key", "key", "search")
+	case "manage_todos":
+		promoteAlias("action", "op", "type", "command", "method")
+		promoteAlias("title", "text", "content", "name", "task", "todo")
+		switch strings.ToLower(strVal("action")) {
+		case "create", "insert", "new", "upsert", "save":
+			m["action"] = "add"
+		case "done", "finish", "check", "mark_done":
+			m["action"] = "complete"
+		case "remove", "del":
+			m["action"] = "delete"
+		case "get", "query", "search", "show", "view":
+			m["action"] = "list"
+		case "":
+			if strVal("title") != "" && strVal("id") == "" {
+				m["action"] = "add"
+			} else if strVal("id") != "" && strings.EqualFold(strVal("status"), "done") {
+				m["action"] = "complete"
+			} else if strVal("id") != "" {
+				m["action"] = "update"
+			} else {
+				m["action"] = "list"
+			}
+		}
+	case "manage_notes":
+		promoteAlias("action", "op", "type", "command")
+		promoteAlias("title", "name", "heading", "subject")
+		promoteAlias("content", "text", "body", "markdown", "note")
+		promoteAlias("query", "q", "keyword")
+		switch strings.ToLower(strVal("action")) {
+		case "create", "add", "save", "update", "write", "edit", "new":
+			m["action"] = "upsert"
+		case "remove", "del":
+			m["action"] = "delete"
+		case "read", "view", "show":
+			if strVal("id") != "" || strVal("title") != "" {
+				m["action"] = "get"
+			} else {
+				m["action"] = "list"
+			}
+		case "":
+			if strVal("content") != "" {
+				m["action"] = "upsert"
+			} else if strVal("id") != "" {
+				m["action"] = "get"
+			} else if strVal("query") != "" {
+				m["action"] = "search"
+			} else {
+				m["action"] = "list"
+			}
+		}
+	case "manage_stash":
+		promoteAlias("action", "op", "type", "command")
+		promoteAlias("url", "link", "href")
+		promoteAlias("text", "content", "note")
+		promoteAlias("query", "q", "keyword")
+		switch strings.ToLower(strVal("action")) {
+		case "create", "save", "bookmark", "insert", "new":
+			m["action"] = "capture"
+		case "remove", "del":
+			m["action"] = "delete"
+		case "mark_read", "read":
+			m["action"] = "update"
+			m["status"] = "read"
+		case "mark_unread", "unread":
+			m["action"] = "update"
+			m["status"] = "unread"
+		case "":
+			if strVal("url") != "" || strVal("text") != "" {
+				m["action"] = "capture"
+			} else if strVal("id") != "" {
+				m["action"] = "get"
+			} else {
+				m["action"] = "list"
+			}
+		}
+	case "manage_assets":
+		promoteAlias("action", "op", "type", "command")
+		switch strings.ToLower(strVal("action")) {
+		case "create", "add", "save", "update", "new":
+			m["action"] = "upsert"
+		case "remove", "del":
+			m["action"] = "delete"
+		case "query", "get", "search", "show":
+			m["action"] = "list"
+		case "":
+			if strVal("name") != "" && strVal("id") == "" {
+				m["action"] = "upsert"
+			} else {
+				m["action"] = "list"
+			}
+		}
+	case "manage_tasks":
+		promoteAlias("action", "op", "type", "command")
+		switch strings.ToLower(strVal("action")) {
+		case "create", "add", "save", "update", "new":
+			m["action"] = "upsert"
+		case "trigger", "execute", "start":
+			m["action"] = "run"
+		case "enable", "disable":
+			m["action"] = "toggle"
+		case "remove", "del":
+			m["action"] = "delete"
+		case "":
+			m["action"] = "list"
+		}
+	case "manage_memory":
+		promoteAlias("action", "op", "type", "command")
+		promoteAlias("fact_key", "key", "name")
+		promoteAlias("content", "value", "fact", "text")
+		switch strings.ToLower(strVal("action")) {
+		case "create", "add", "save", "update":
+			m["action"] = "upsert"
+		case "delete", "remove", "del":
+			m["action"] = "forget"
+		case "query", "search", "get":
+			m["action"] = "list"
+		case "":
+			if strVal("content") != "" && strVal("fact_key") != "" {
+				m["action"] = "upsert"
+			} else {
+				m["action"] = "list"
+			}
+		}
+	}
+
+	b, err := json.Marshal(m)
+	if err != nil {
+		return s
+	}
+	return string(b)
 }
 
 // detectCorrectionTurn returns true when the user is explicitly correcting or expressing
@@ -367,6 +852,57 @@ func detectCorrectionTurn(userMsg string, history []store.AgentMessage) bool {
 	return false
 }
 
+// lastAssistantReplyFromHistory returns the most recent non-empty assistant reply in history.
+func lastAssistantReplyFromHistory(history []store.AgentMessage) string {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "assistant" && strings.TrimSpace(history[i].Content) != "" {
+			return strings.TrimSpace(history[i].Content)
+		}
+	}
+	return ""
+}
+
+// textBigramSimilarity computes character-bigram Jaccard similarity in [0.0, 1.0]
+// between two responses (ignoring whitespace and punctuation) to detect when a model
+// repeats essentially the same answer on a correction turn.
+func textBigramSimilarity(a, b string) float64 {
+	norm := func(s string) []rune {
+		var out []rune
+		for _, r := range strings.ToLower(s) {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) || isCJKRune(r) {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	ra, rb := norm(a), norm(b)
+	if len(ra) < 8 || len(rb) < 8 {
+		return 0
+	}
+	setA := make(map[string]bool, len(ra))
+	for i := 0; i < len(ra)-1; i++ {
+		setA[string(ra[i:i+2])] = true
+	}
+	setB := make(map[string]bool, len(rb))
+	for i := 0; i < len(rb)-1; i++ {
+		setB[string(rb[i:i+2])] = true
+	}
+	if len(setA) == 0 || len(setB) == 0 {
+		return 0
+	}
+	inter := 0
+	for k := range setA {
+		if setB[k] {
+			inter++
+		}
+	}
+	union := len(setA) + len(setB) - inter
+	if union <= 0 {
+		return 0
+	}
+	return float64(inter) / float64(union)
+}
+
 // applyCorrectionGuardrail breaks repetitive reply loops on weaker models by:
 // 1. Compacting older rejected assistant turns (earlier than the immediately preceding reply)
 //    so their text stops acting as a copy-paste attractor.
@@ -379,7 +915,6 @@ func applyCorrectionGuardrail(messages []apiMessage) []apiMessage {
 	out := make([]apiMessage, len(messages))
 	copy(out, messages)
 
-	// Locate the most recent assistant message with text content (keep it intact as negative reference)
 	lastAssistantIdx := -1
 	for i := len(out) - 1; i >= 0; i-- {
 		if out[i].Role == "assistant" && strings.TrimSpace(out[i].Content) != "" {
@@ -388,7 +923,6 @@ func applyCorrectionGuardrail(messages []apiMessage) []apiMessage {
 		}
 	}
 
-	// Compact earlier rejected assistant turns to reduce attention-sink repetition
 	for i := 0; i < lastAssistantIdx; i++ {
 		if out[i].Role == "assistant" && len(out[i].ToolCalls) == 0 {
 			runes := []rune(strings.TrimSpace(out[i].Content))
