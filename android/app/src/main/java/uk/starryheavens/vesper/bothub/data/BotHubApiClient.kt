@@ -266,6 +266,15 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun deleteNotification(id: Long): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/notifications/$id")
+                .delete()
+                .build()
+            executeUnit(req, "删除通知失败")
+        }
+    }
+
     suspend fun markAllNotificationsRead(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val req = requestBuilder("/api/v2/notifications/read-all")

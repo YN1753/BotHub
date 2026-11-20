@@ -428,6 +428,10 @@ export const BotHubApi = {
   // Notifications
   markNotificationRead: (id: number) =>
     apiRequest(`/api/v2/notifications/${encodeURIComponent(String(id))}/read`, { method: 'POST' }),
+  deleteNotification: (id: number) =>
+    apiRequest<{ ok: boolean; unread_count: number }>(`/api/v2/notifications/${encodeURIComponent(String(id))}`, {
+      method: 'DELETE',
+    }),
   markAllNotificationsRead: () =>
     apiRequest('/api/v2/notifications/read-all', { method: 'POST' }),
   clearReadNotifications: () =>

@@ -140,6 +140,15 @@ func (s *Store) ClearReadNotifications() (int64, error) {
 	return affected, nil
 }
 
+func (s *Store) DeleteNotification(id int64) (bool, error) {
+	res, err := s.db.Exec(`DELETE FROM notifications WHERE id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	affected, _ := res.RowsAffected()
+	return affected > 0, nil
+}
+
 func summarizeMarkdownPreview(markdownBody string, maxRunes int) string {
 	replacer := strings.NewReplacer("\r", " ", "\n", " ", "#", "", "*", "", "`", "")
 	clean := strings.Join(strings.Fields(replacer.Replace(markdownBody)), " ")

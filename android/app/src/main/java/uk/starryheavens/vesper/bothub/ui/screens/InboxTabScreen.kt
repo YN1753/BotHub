@@ -16,8 +16,16 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.MarkEmailRead
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,16 +54,20 @@ private fun formatShortTimestamp(raw: String): String {
     return if (clean.length >= 16) clean.substring(5, 16) else clean
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InboxTabScreen(
     notifications: List<NotificationItem>,
     onSelectNotification: (NotificationItem) -> Unit,
     onMarkAllRead: () -> Unit,
+    onMarkOneRead: (NotificationItem) -> Unit = {},
+    onDeleteNotification: (NotificationItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val theme = BotHubThemeTokens
     var filterMode by remember { mutableStateOf("all") }
 
+    val unreadCount = remember(notifications) { notifications.count { it.isUnread } }
     val filtered = remember(notifications, filterMode) {
         when (filterMode) {
             "unread" -> notifications.filter { it.isUnread }
@@ -68,8 +80,8 @@ fun InboxTabScreen(
     }
 
     val filterPills = listOf(
-        "all" to "全部 (${notifications.size})",
-        "unread" to "未读 (${notifications.count { it.isUnread }})",
+        "all" to if (notifications.isNotEmpty()) "全部 ${notifications.size}" else "全部",
+        "unread" to if (unreadCount > 0) "未读 $unreadCount" else "未读",
         "high" to "重要告警"
     )
 
@@ -90,19 +102,19 @@ fun InboxTabScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 20.dp)
         ) {
             if (filtered.isEmpty()) {
                 item {
                     SpecularGlassCard(
-                        cornerRadius = 20.dp,
+                        cornerRadius = 18.dp,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 24.dp)
+                            .padding(top = 20.dp)
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 32.dp),
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 28.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
@@ -123,91 +135,168 @@ fun InboxTabScreen(
                 val isHighPriority = item.priority.equals("high", ignoreCase = true) ||
                     item.priority.equals("critical", ignoreCase = true)
 
-                SpecularGlassCard(
-                    cornerRadius = 18.dp,
-                    topColor = if (unread) theme.cardUnreadTop else theme.cardTop,
-                    bottomColor = if (unread) theme.cardUnreadBottom else theme.cardBottom,
-                    accentTint = when {
-                        unread && isHighPriority -> Color(0xFFFB7185)
-                        unread -> badgeColor
-                        else -> null
-                    },
-                    onClick = { onSelectNotification(item) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                val dismissState = rememberSwipeToDismissBoxState(
+                    confirmValueChange = { value ->
+                        when (value) {
+                            SwipeToDismissBoxValue.StartToEnd -> {
+                                if (item.isUnread) onMarkOneRead(item)
+                                false
+                            }
+                            SwipeToDismissBoxValue.EndToStart -> {
+                                onDeleteNotification(item)
+                                true
+                            }
+                            SwipeToDismissBoxValue.Settled -> false
+                        }
+                    }
+                )
+
+                SwipeToDismissBox(
+                    state = dismissState,
+                    enableDismissFromStartToEnd = unread,
+                    backgroundContent = {
+                        val direction = dismissState.dismissDirection
+                        val isReadAction = direction == SwipeToDismissBoxValue.StartToEnd && unread
+                        val isDeleteAction = direction == SwipeToDismissBoxValue.EndToStart
+                        val bgColor = when {
+                            isReadAction -> Color(0xFF10B981)
+                            isDeleteAction -> Color(0xFFE11D48)
+                            else -> Color.Transparent
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(bgColor.copy(alpha = if (isReadAction || isDeleteAction) 0.16f else 0f))
+                                .padding(horizontal = 18.dp),
+                            contentAlignment = if (isReadAction) Alignment.CenterStart else Alignment.CenterEnd
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                if (unread) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.5.dp)
-                                            .background(
-                                                color = if (isHighPriority) Color(0xFFFB7185) else theme.accent,
-                                                shape = CircleShape
-                                            )
+                            if (isReadAction) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MarkEmailRead,
+                                        contentDescription = null,
+                                        tint = bgColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "标为已读",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = bgColor
                                     )
                                 }
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(badgeColor.copy(alpha = 0.14f))
-                                        .border(0.5.dp, badgeColor.copy(alpha = 0.38f), RoundedCornerShape(6.dp))
-                                        .padding(horizontal = 7.dp, vertical = 2.dp)
+                            } else if (isDeleteAction) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Text(
-                                        text = badgeLabel,
-                                        style = TextStyle(
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = badgeColor,
-                                            platformStyle = NoFontPaddingStyle
-                                        ),
-                                        maxLines = 1,
-                                        softWrap = false
+                                        text = "删除",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = bgColor
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteOutline,
+                                        contentDescription = null,
+                                        tint = bgColor,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
-
-                            Text(
-                                text = formatShortTimestamp(item.createdAt),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                color = theme.textMuted,
-                                maxLines = 1,
-                                softWrap = false
-                            )
                         }
+                    }
+                ) {
+                    SpecularGlassCard(
+                        cornerRadius = 16.dp,
+                        topColor = if (unread) theme.cardUnreadTop else theme.cardTop,
+                        bottomColor = if (unread) theme.cardUnreadBottom else theme.cardBottom,
+                        accentTint = when {
+                            unread && isHighPriority -> Color(0xFFFB7185)
+                            unread -> badgeColor
+                            else -> null
+                        },
+                        onClick = { onSelectNotification(item) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    if (unread) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.5.dp)
+                                                .background(
+                                                    color = if (isHighPriority) Color(0xFFFB7185) else theme.accent,
+                                                    shape = CircleShape
+                                                )
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(badgeColor.copy(alpha = 0.14f))
+                                            .border(0.5.dp, badgeColor.copy(alpha = 0.38f), RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = badgeLabel,
+                                            style = TextStyle(
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = badgeColor,
+                                                platformStyle = NoFontPaddingStyle
+                                            ),
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                }
 
-                        Text(
-                            text = item.title,
-                            fontSize = 15.sp,
-                            fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (unread) theme.textPrimary else theme.textSecondary,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                                Text(
+                                    text = formatShortTimestamp(item.createdAt),
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = theme.textMuted,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
 
-                        val preview = item.previewText(maxChars = 110)
-                        if (preview.isNotEmpty()) {
                             Text(
-                                text = preview,
-                                fontSize = 13.sp,
-                                lineHeight = 19.sp,
-                                color = theme.textMuted,
+                                text = item.title,
+                                fontSize = 14.5.sp,
+                                fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (unread) theme.textPrimary else theme.textSecondary,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
+
+                            val preview = item.previewText(maxChars = 110)
+                            if (preview.isNotEmpty()) {
+                                Text(
+                                    text = preview,
+                                    fontSize = 12.5.sp,
+                                    lineHeight = 18.sp,
+                                    color = theme.textMuted,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }

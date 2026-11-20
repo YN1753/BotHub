@@ -44,6 +44,9 @@ import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 fun NotificationDetailSheet(
     item: NotificationItem,
     onCopyBody: (String) -> Unit,
+    onConvertToTodo: (NotificationItem) -> Unit = {},
+    onSaveToNote: (NotificationItem) -> Unit = {},
+    onDelete: (NotificationItem) -> Unit = {},
     onDiagnoseWithAi: (NotificationItem) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -126,28 +129,65 @@ fun NotificationDetailSheet(
             }
 
             SpecularHairline()
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                TactileSecondaryButton(
-                    text = "复制原文",
-                    leadingIcon = Icons.Default.ContentCopy,
-                    minHeight = 46.dp,
-                    onClick = { onCopyBody(item.markdownBody) },
-                    modifier = Modifier.weight(1f)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TactileSecondaryButton(
+                        text = "转为待办",
+                        accent = true,
+                        cornerRadius = 10.dp,
+                        minHeight = 36.dp,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                        onClick = { onConvertToTodo(item) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    TactileSecondaryButton(
+                        text = "存为手记",
+                        cornerRadius = 10.dp,
+                        minHeight = 36.dp,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                        onClick = { onSaveToNote(item) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    TactileSecondaryButton(
+                        text = "删除",
+                        danger = true,
+                        cornerRadius = 10.dp,
+                        minHeight = 36.dp,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                        onClick = { onDelete(item) },
+                        modifier = Modifier.weight(0.78f)
+                    )
+                }
 
-                TactilePrimaryButton(
-                    text = "找 TA 追问 / 处理",
-                    leadingIcon = Icons.Default.AutoAwesome,
-                    minHeight = 46.dp,
-                    onClick = { onDiagnoseWithAi(item) },
-                    modifier = Modifier.weight(1.28f)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    TactileSecondaryButton(
+                        text = "复制原文",
+                        leadingIcon = Icons.Default.ContentCopy,
+                        minHeight = 44.dp,
+                        onClick = { onCopyBody(item.markdownBody) },
+                        modifier = Modifier.weight(0.95f)
+                    )
+
+                    TactilePrimaryButton(
+                        text = "找 TA 追问 / 处理",
+                        leadingIcon = Icons.Default.AutoAwesome,
+                        minHeight = 44.dp,
+                        onClick = { onDiagnoseWithAi(item) },
+                        modifier = Modifier.weight(1.3f)
+                    )
+                }
             }
         }
     }

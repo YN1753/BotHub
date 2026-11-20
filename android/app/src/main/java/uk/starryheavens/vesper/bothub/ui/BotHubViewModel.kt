@@ -1857,6 +1857,61 @@ class BotHubViewModel(
         }
     }
 
+    fun markNotificationReadOnly(item: NotificationItem) {
+        if (!item.isUnread) return
+        val optimistic = notifications.map {
+            if (it.id == item.id) it.copy(readAt = "read") else it
+        }
+        notifications = optimistic
+        prefs.saveCachedNotifications(optimistic)
+        showMessage("已标为已读")
+        viewModelScope.launch {
+            api.markNotificationRead(item.id)
+            refreshAll(silent = true)
+        }
+    }
+
+    fun deleteNotificationItem(item: NotificationItem) {
+        if (selectedNotification?.id == item.id) {
+            selectedNotification = null
+        }
+        val prev = notifications
+        val remaining = notifications.filterNot { it.id == item.id }
+        notifications = remaining
+        prefs.saveCachedNotifications(remaining)
+        showMessage("已删除通知")
+        viewModelScope.launch {
+            api.deleteNotification(item.id).onSuccess {
+                refreshAll(silent = true)
+            }.onFailure { err ->
+                notifications = prev
+                prefs.saveCachedNotifications(prev)
+                showMessage(err.message ?: "删除通知失败")
+            }
+        }
+    }
+
+    fun convertNotificationToTodo(item: NotificationItem) {
+        markNotificationReadOnly(item)
+        val priority = if (item.priority.equals("high", ignoreCase = true) || item.priority.equals("critical", ignoreCase = true)) "high" else "normal"
+        createTodoItem(
+            title = item.title.take(120),
+            notes = item.previewText(320),
+            priority = priority
+        )
+    }
+
+    fun saveNotificationToNote(item: NotificationItem) {
+        markNotificationReadOnly(item)
+        saveNoteItem(
+            existingId = null,
+            title = item.title.take(80),
+            content = item.markdownBody.ifBlank { item.summary.ifBlank { item.title } },
+            category = "deliverable",
+            pinned = false
+        )
+    }
+
     fun updateStashQuery(query: String) {
         stashQuery = query
         stashSearchJob?.cancel()

@@ -320,6 +320,8 @@ fun BotHubApp(
                             notifications = viewModel.notifications,
                             onBack = viewModel::closeServiceFeed,
                             onSelectNotification = viewModel::selectNotification,
+                            onMarkOneRead = viewModel::markNotificationReadOnly,
+                            onDeleteNotification = viewModel::deleteNotificationItem,
                             onMarkAllRead = viewModel::markAllNotificationsRead,
                             onClearRead = viewModel::clearReadNotifications,
                             onRefresh = { viewModel.refreshAll(silent = false) }
@@ -744,6 +746,9 @@ fun BotHubApp(
                 clipboard.setText(AnnotatedString(body))
                 viewModel.showMessage("已复制")
             },
+            onConvertToTodo = viewModel::convertNotificationToTodo,
+            onSaveToNote = viewModel::saveNotificationToNote,
+            onDelete = viewModel::deleteNotificationItem,
             onDiagnoseWithAi = viewModel::diagnoseNotificationWithAi,
             onDismiss = viewModel::dismissNotificationDetail
         )

@@ -16,10 +16,10 @@ const listRef = ref<HTMLElement | null>(null)
 
 const FILTER_TABS = [
   { id: 'all', label: '全部' },
-  { id: 'morning', label: 'AI 晨报' },
-  { id: 'radar', label: '前沿雷达' },
-  { id: 'asset', label: '资产守望' },
-  { id: 'alert', label: '探针告警' },
+  { id: 'morning', label: '晨报' },
+  { id: 'radar', label: '雷达' },
+  { id: 'asset', label: '资产' },
+  { id: 'alert', label: '告警' },
 ]
 const desktopNotify = ref(
   localStorage.getItem('bothub_desktop_notify') === '1' &&
@@ -134,6 +134,18 @@ async function markAllRead() {
   await BotHubApi.markAllNotificationsRead().catch(() => {})
 }
 
+async function deleteItem(id: number) {
+  const prev = [...store.state.notifications]
+  store.state.notifications = prev.filter((n) => n.id !== id)
+  try {
+    await BotHubApi.deleteNotification(id)
+    store.notify('已删除该条通知')
+  } catch {
+    store.state.notifications = prev
+    store.notify('删除通知失败')
+  }
+}
+
 async function clearReadItems() {
   const prev = [...store.state.notifications]
   const readCount = prev.filter((n) => !!n.read_at).length
@@ -181,8 +193,8 @@ watch(
 <template>
   <BaseModal
     :open="store.state.showInboxModal"
-    title="原生情报收件箱 (Inbox)"
-    subtitle="实时接收 AI 晨报、前沿雷达、资产到期提醒与哪吒探针告警"
+    title="服务通知"
+    subtitle="统一接收定时任务汇报、资产到期预警与探针告警"
     max-width="3xl"
     @close="closeModal"
   >
@@ -304,14 +316,21 @@ watch(
               @click="saveInboxToNote(n)"
               class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-line hover:border-accent-border text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
             >
-              存文档
+              存手记
             </button>
             <button
               type="button"
               @click="askBotAnalyze(n)"
               class="min-h-[32px] sm:min-h-[26px] px-2.5 py-0.5 rounded-lg border border-accent-border bg-accent-soft hover:bg-accent-soft text-xs text-accent-fg cursor-pointer"
             >
-              让 Bot 分析 ->
+              找 TA 追问
+            </button>
+            <button
+              type="button"
+              @click="deleteItem(n.id)"
+              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-line hover:border-danger-border text-xs text-fg-muted hover:text-danger cursor-pointer"
+            >
+              删除
             </button>
           </div>
         </div>

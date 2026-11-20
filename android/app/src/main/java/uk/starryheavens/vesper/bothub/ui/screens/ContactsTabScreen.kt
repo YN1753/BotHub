@@ -1,8 +1,5 @@
 package uk.starryheavens.vesper.bothub.ui.screens
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,13 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.GroupAdd
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PersonAddAlt1
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -33,21 +27,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.BotItem
-import uk.starryheavens.vesper.bothub.ui.components.CrispUnreadBadge
 import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
 import uk.starryheavens.vesper.bothub.ui.components.RecessedSearchBar
 import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
 import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
-import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
+import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
 import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
@@ -88,31 +78,33 @@ fun ContactsTabScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (query.isBlank()) {
                 item(key = "__top_entries__") {
-                    SpecularGlassCard(
-                        cornerRadius = 18.dp,
-                        modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        ContactActionEntryRow(
-                            icon = Icons.Default.PersonAddAlt1,
-                            accent = theme.accent,
-                            title = "添加 AI 好友",
-                            onClick = onCreateFriend
+                        TactileSecondaryButton(
+                            text = "添加 AI 好友",
+                            leadingIcon = Icons.Default.PersonAddAlt1,
+                            accent = true,
+                            cornerRadius = 12.dp,
+                            minHeight = 38.dp,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            onClick = onCreateFriend,
+                            modifier = Modifier.weight(1f)
                         )
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = theme.divider,
-                            modifier = Modifier.padding(start = 64.dp, end = 14.dp)
-                        )
-                        ContactActionEntryRow(
-                            icon = Icons.Default.GroupAdd,
-                            accent = Color(0xFF6366F1),
-                            title = "发起群聊",
-                            onClick = onCreateGroup
+                        TactileSecondaryButton(
+                            text = "发起群聊",
+                            leadingIcon = Icons.Default.GroupAdd,
+                            cornerRadius = 12.dp,
+                            minHeight = 38.dp,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            onClick = onCreateGroup,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -120,9 +112,9 @@ fun ContactsTabScreen(
 
             if (groups.isNotEmpty()) {
                 item(key = "__sec_groups__") {
-                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            text = "群聊 (${groups.size})",
+                            text = "群聊 ${groups.size}",
                             style = TextStyle(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -134,7 +126,7 @@ fun ContactsTabScreen(
                             modifier = Modifier.padding(start = 4.dp)
                         )
                         SpecularGlassCard(
-                            cornerRadius = 18.dp,
+                            cornerRadius = 16.dp,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             groups.forEachIndexed { index, group ->
@@ -142,16 +134,17 @@ fun ContactsTabScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { onOpenProfile(group) }
-                                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                                        .clickable { onOpenChat(group.id) }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     SpiritSquircleAvatar(
                                         bot = group,
                                         allBots = bots,
-                                        containerSize = 44.dp,
-                                        cornerRadius = 13.dp
+                                        containerSize = 42.dp,
+                                        cornerRadius = 12.dp,
+                                        onClick = { onOpenProfile(group) }
                                     )
 
                                     Column(
@@ -167,7 +160,7 @@ fun ContactsTabScreen(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = "${members.size}人",
+                                            text = "${members.size} 人协作群",
                                             fontSize = 12.sp,
                                             color = theme.textMuted,
                                             maxLines = 1,
@@ -175,17 +168,29 @@ fun ContactsTabScreen(
                                         )
                                     }
 
-                                    QuickChatCircleButton(
-                                        contentDescription = "进入群聊",
-                                        onClick = { onOpenChat(group.id) }
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .tactileClickable(pressedScale = 0.90f, hapticOnTap = true) {
+                                                onOpenProfile(group)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = "群资料",
+                                            tint = theme.textMuted,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                    }
                                 }
 
                                 if (index < groups.lastIndex) {
                                     HorizontalDivider(
                                         thickness = 0.5.dp,
                                         color = theme.divider,
-                                        modifier = Modifier.padding(start = 70.dp, end = 14.dp)
+                                        modifier = Modifier.padding(start = 68.dp, end = 14.dp)
                                     )
                                 }
                             }
@@ -196,9 +201,9 @@ fun ContactsTabScreen(
 
             if (friends.isNotEmpty()) {
                 item(key = "__sec_friends__") {
-                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            text = "好友 (${friends.size})",
+                            text = "好友 ${friends.size}",
                             style = TextStyle(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -210,24 +215,25 @@ fun ContactsTabScreen(
                             modifier = Modifier.padding(start = 4.dp)
                         )
                         SpecularGlassCard(
-                            cornerRadius = 18.dp,
+                            cornerRadius = 16.dp,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             friends.forEachIndexed { index, friend ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { onOpenProfile(friend) }
-                                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                                        .clickable { onOpenChat(friend.id) }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     SpiritSquircleAvatar(
                                         bot = friend,
                                         allBots = bots,
-                                        containerSize = 44.dp,
-                                        cornerRadius = 13.dp,
-                                        showPresenceDot = true
+                                        containerSize = 42.dp,
+                                        cornerRadius = 12.dp,
+                                        showPresenceDot = true,
+                                        onClick = { onOpenProfile(friend) }
                                     )
 
                                     Column(
@@ -254,17 +260,29 @@ fun ContactsTabScreen(
                                         }
                                     }
 
-                                    QuickChatCircleButton(
-                                        contentDescription = "发消息",
-                                        onClick = { onOpenChat(friend.id) }
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .tactileClickable(pressedScale = 0.90f, hapticOnTap = true) {
+                                                onOpenProfile(friend)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = "查看资料",
+                                            tint = theme.textMuted,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                    }
                                 }
 
                                 if (index < friends.lastIndex) {
                                     HorizontalDivider(
                                         thickness = 0.5.dp,
                                         color = theme.divider,
-                                        modifier = Modifier.padding(start = 70.dp, end = 14.dp)
+                                        modifier = Modifier.padding(start = 68.dp, end = 14.dp)
                                     )
                                 }
                             }
@@ -273,112 +291,5 @@ fun ContactsTabScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun QuickChatCircleButton(
-    contentDescription: String,
-    onClick: () -> Unit
-) {
-    val theme = BotHubThemeTokens
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .tactileClickable(pressedScale = 0.90f, hapticOnTap = true, onClick = onClick)
-            .clip(CircleShape)
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        theme.accent.copy(alpha = 0.18f),
-                        theme.accentDeep.copy(alpha = 0.08f)
-                    )
-                ),
-                CircleShape
-            )
-            .border(
-                BorderStroke(
-                    0.8.dp,
-                    specularRimBrush(theme.accent.copy(alpha = 0.45f), theme.accent.copy(alpha = 0.16f), Color.Transparent)
-                ),
-                CircleShape
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.ChatBubbleOutline,
-            contentDescription = contentDescription,
-            tint = if (theme.isLight) theme.accentDeep else theme.accentLight,
-            modifier = Modifier.size(15.dp)
-        )
-    }
-}
-
-@Composable
-private fun ContactActionEntryRow(
-    icon: ImageVector,
-    accent: Color,
-    title: String,
-    badgeCount: Int = 0,
-    onClick: () -> Unit
-) {
-    val theme = BotHubThemeTokens
-    val sq = RoundedCornerShape(11.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(sq)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(accent.copy(alpha = 0.20f), accent.copy(alpha = 0.08f))
-                    ),
-                    sq
-                )
-                .border(
-                    BorderStroke(
-                        0.75.dp,
-                        specularRimBrush(accent.copy(alpha = 0.50f), accent.copy(alpha = 0.16f), Color.Transparent)
-                    ),
-                    sq
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(19.dp)
-            )
-        }
-
-        Text(
-            text = title,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-            color = theme.textPrimary,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-
-        if (badgeCount > 0) {
-            CrispUnreadBadge(count = badgeCount)
-        }
-
-        Icon(
-            imageVector = Icons.Default.KeyboardArrowRight,
-            contentDescription = null,
-            tint = theme.textMuted,
-            modifier = Modifier.size(18.dp)
-        )
     }
 }

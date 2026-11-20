@@ -238,6 +238,29 @@ func (s *Server) handleV2ClearReadNotifications(w http.ResponseWriter, r *http.R
 	})
 }
 
+func (s *Server) handleV2DeleteNotification(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimSpace(r.PathValue("id"))
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "无效通知 ID")
+		return
+	}
+	deleted, err := s.store.DeleteNotification(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if deleted && s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("assistant_update", map[string]any{
+			"kind": "notifications_cleared",
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":           deleted,
+		"unread_count": s.store.CountUnreadNotifications(),
+	})
+}
+
 // handleNezhaWebhook receives alert callbacks from Nezha Monitoring Dashboard (/api/v1/webhook/nezha).
 func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 	// Verify webhook token or standard auth

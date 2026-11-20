@@ -49,6 +49,8 @@ fun ServiceFeedScreen(
     notifications: List<NotificationItem>,
     onBack: () -> Unit,
     onSelectNotification: (NotificationItem) -> Unit,
+    onMarkOneRead: (NotificationItem) -> Unit = {},
+    onDeleteNotification: (NotificationItem) -> Unit = {},
     onMarkAllRead: () -> Unit,
     onClearRead: () -> Unit = {},
     onRefresh: () -> Unit,
@@ -172,6 +174,8 @@ fun ServiceFeedScreen(
             modifier = Modifier.fillMaxSize(),
             notifications = notifications,
             onSelectNotification = onSelectNotification,
+            onMarkOneRead = onMarkOneRead,
+            onDeleteNotification = onDeleteNotification,
             onMarkAllRead = onMarkAllRead
         )
     }
