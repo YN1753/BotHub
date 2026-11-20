@@ -46,8 +46,11 @@ const taskSectionRef = ref<HTMLElement | null>(null)
 const categoryTabs = computed(() => {
   const merged = mergeExtensibleCategories(store.state.assetCategories, store.state.assets)
   return [
-    { id: 'all', label: '全部' },
-    ...merged.map((c) => ({ id: c.id, label: c.label })),
+    { id: 'all', label: `全部 (${store.state.assets.length})` },
+    ...merged.map((c) => {
+      const cnt = store.state.assets.filter((a) => a.category === c.id).length
+      return { id: c.id, label: cnt > 0 ? `${c.label} (${cnt})` : c.label }
+    }),
   ]
 })
 
@@ -85,24 +88,6 @@ const filteredAssets = computed(() => {
 
 const activeCostSummary = computed(() => summarizeAssetsMonthlyCost(filteredAssets.value))
 const activeYearlyCostSummary = computed(() => summarizeAssetsYearlyCost(filteredAssets.value))
-
-const categoryCostBreakdowns = computed(() => {
-  const cats = mergeExtensibleCategories(store.state.assetCategories, store.state.assets)
-  return cats
-    .map((c) => {
-      const subset = store.state.assets.filter((a) => a.category === c.id && a.status !== '已停用')
-      const monthly = summarizeAssetsMonthlyCost(subset)
-      const yearly = summarizeAssetsYearlyCost(subset)
-      return {
-        id: c.id,
-        label: c.label,
-        count: subset.length,
-        monthly,
-        yearly,
-      }
-    })
-    .filter((x) => x.count > 0 && (x.monthly || x.yearly))
-})
 
 const renewingAssetId = ref('')
 
@@ -463,28 +448,6 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
 
         <!-- Asset Watcher Section -->
         <div class="flex flex-col gap-3.5">
-          <!-- Per-Category Original-Currency Cost Breakdown Pills -->
-          <div
-            v-if="categoryCostBreakdowns.length > 0"
-            class="flex items-center gap-2 flex-wrap"
-          >
-            <button
-              v-for="cb in categoryCostBreakdowns"
-              :key="cb.id"
-              type="button"
-              @click="activeCat = activeCat === cb.id ? 'all' : cb.id"
-              :class="[
-                'rounded-lg border px-3 py-1.5 text-left transition cursor-pointer flex items-center gap-2',
-                activeCat === cb.id
-                  ? 'border-accent-border bg-accent-soft text-fg'
-                  : 'border-line bg-card text-fg-sub hover:border-line-strong',
-              ]"
-            >
-              <span class="text-xs font-medium">{{ cb.label }} ({{ cb.count }})</span>
-              <span class="font-mono text-xs text-accent-fg">{{ cb.monthly }}</span>
-              <span v-if="cb.yearly" class="font-mono text-xs text-fg-muted">· {{ cb.yearly }}</span>
-            </button>
-          </div>
           <div class="flex flex-wrap items-center justify-between gap-2.5">
             <div class="flex items-center gap-2 flex-wrap flex-1 min-w-0">
               <input
@@ -564,11 +527,14 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                   <div class="min-w-0">
                     <div class="flex items-center gap-1.5 min-w-0">
                       <strong class="block text-sm font-semibold text-fg group-hover:text-accent-fg transition-colors truncate">{{ a.name }}</strong>
-                      <span :class="['font-mono text-xs px-1.5 py-0.5 rounded-lg border leading-none shrink-0', assetStatusBadgeClass(a.status)]">
-                        {{ a.status || '生效中' }}
+                      <span
+                        v-if="a.status === '已到期' || a.status === '已停用'"
+                        :class="['font-mono text-xs px-1.5 py-0.5 rounded-lg border leading-none shrink-0', assetStatusBadgeClass(a.status)]"
+                      >
+                        {{ a.status }}
                       </span>
                     </div>
-                    <span class="block text-xs text-fg-muted truncate">{{ a.spec }}</span>
+                    <span class="block text-xs text-fg-muted truncate">{{ a.spec || assetCategoryMeta(a.category).label }}</span>
                   </div>
                 </div>
                 <span class="font-mono tabular-nums text-xs font-semibold px-2 py-0.5 rounded-lg border border-accent-border bg-accent-soft text-accent-fg shrink-0">
@@ -585,27 +551,18 @@ async function toggleTaskEnabled(id: string, enabled: boolean) {
                 </div>
                 <div class="flex items-center justify-between text-xs w-full gap-2 flex-wrap">
                   <span class="font-mono tabular-nums text-fg-muted">
-                    {{ formatDateOnly(a.due_date) }} · {{ a.auto_renew ? '自动续费' : '手动续费' }}
+                    {{ formatDateOnly(a.due_date) }}<template v-if="a.auto_renew"> · 自动续费</template>
                   </span>
                   <div class="flex items-center gap-1.5 ml-auto">
-                    <template v-if="a.status !== '长期有效' && !String(a.due_date || '').startsWith('2099')">
-                      <button
-                        v-for="step in ([1, 3, 12] as const)"
-                        :key="step"
-                        type="button"
-                        :disabled="renewingAssetId === a.id"
-                        :title="`按原到期日顺延 +${step === 12 ? '1年' : step === 3 ? '1季' : '1月'}`"
-                        @click.stop="quickRenewAsset(a, step)"
-                        :class="[
-                          'font-mono text-xs px-1.5 py-0.5 rounded-lg border transition cursor-pointer',
-                          inferRecommendedRenewMonths(a.price) === step
-                            ? 'border-accent-border bg-accent-soft text-accent-fg hover:border-accent'
-                            : 'border-line text-fg-muted hover:border-line-strong hover:text-fg',
-                        ]"
-                      >
-                        +{{ step === 12 ? '1年' : step === 3 ? '1季' : '1月' }}
-                      </button>
-                    </template>
+                    <button
+                      v-if="a.status !== '长期有效' && !String(a.due_date || '').startsWith('2099') && a.days_left <= 30"
+                      type="button"
+                      :disabled="renewingAssetId === a.id"
+                      @click.stop="quickRenewAsset(a, inferRecommendedRenewMonths(a.price))"
+                      class="font-mono text-xs px-1.5 py-0.5 rounded-lg border border-accent-border bg-accent-soft text-accent-fg hover:border-accent transition cursor-pointer"
+                    >
+                      续期+{{ inferRecommendedRenewMonths(a.price) === 12 ? '1年' : inferRecommendedRenewMonths(a.price) === 3 ? '1季' : '1月' }}
+                    </button>
                     <span :class="['font-mono tabular-nums shrink-0', daysBadgeClass(a)]">{{ daysText(a) }}</span>
                   </div>
                 </div>

@@ -159,7 +159,7 @@ private fun ManageAssetsStructuredCard(json: JSONObject) {
     val theme = BotHubThemeTokens
     val accentTint = if (theme.isLight) theme.accentDeep else theme.accentLight
 
-    // Summary action
+    // Summary action: compact single-card overview without repeating 3 KPI boxes + separate currency table rows
     if (json.has("cost_by_currency") || json.has("active_count")) {
         val activeCount = json.optInt("active_count", 0)
         val expiringCount = json.optInt("expiring_30d_count", 0)
@@ -167,94 +167,67 @@ private fun ManageAssetsStructuredCard(json: JSONObject) {
         val currencies = json.optJSONArray("cost_by_currency")
         val cardShape = RoundedCornerShape(12.dp)
 
+        val monthlyParts = mutableListOf<String>()
+        val annualParts = mutableListOf<String>()
+        if (currencies != null) {
+            for (i in 0 until currencies.length()) {
+                val c = currencies.optJSONObject(i) ?: continue
+                val curr = c.optString("currency", "USD").uppercase(Locale.ROOT)
+                val sym = when (curr) {
+                    "USD" -> "$"
+                    "CNY", "RMB" -> "¥"
+                    "EUR" -> "€"
+                    "GBP" -> "£"
+                    "HKD" -> "HK$"
+                    else -> "$curr "
+                }
+                val monthly = c.optDouble("monthly_estimated", 0.0)
+                val annual = c.optDouble("annualized_estimated", 0.0)
+                if (monthly > 0.0) monthlyParts.add(String.format(Locale.US, "%s%.1f", sym, monthly).removeSuffix(".0"))
+                if (annual > 0.0) annualParts.add(String.format(Locale.US, "%s%.0f", sym, annual))
+            }
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(cardShape)
                 .background(theme.codeBlockBg, cardShape)
                 .border(0.75.dp, theme.rimMid, cardShape)
-                .padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+                .padding(horizontal = 11.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
+            val badgeText = buildString {
+                append("在用 $activeCount")
+                if (expiringCount > 0) append(" · 临期 $expiringCount")
+                if (inactiveCount > 0) append(" · 停用 $inactiveCount")
+            }
             StructuredSectionHeader(
                 icon = Icons.Default.Inventory2,
-                title = "资产费用与台账概览",
-                badge = "${activeCount}项在用",
+                title = "资产费用概览",
+                badge = badgeText,
                 tint = accentTint
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                BriefingKpiChip(
-                    label = "在用资产",
-                    value = activeCount.toString(),
-                    accent = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399),
-                    modifier = Modifier.weight(1f)
-                )
-                BriefingKpiChip(
-                    label = "30天临期",
-                    value = expiringCount.toString(),
-                    accent = if (expiringCount > 0) {
-                        if (theme.isLight) Color(0xFFD97706) else Color(0xFFFBBF24)
-                    } else {
-                        theme.textMuted
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-                BriefingKpiChip(
-                    label = "已停用",
-                    value = inactiveCount.toString(),
-                    accent = theme.textMuted,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            if (currencies != null && currencies.length() > 0) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for (i in 0 until currencies.length()) {
-                        val c = currencies.optJSONObject(i) ?: continue
-                        val curr = c.optString("currency", "USD")
-                        val monthly = c.optDouble("monthly_estimated", 0.0)
-                        val annual = c.optDouble("annualized_estimated", 0.0)
-                        val itemsCount = c.optInt("priced_items", 0)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(theme.cardTop)
-                                .border(0.6.dp, theme.rimSubtle, RoundedCornerShape(8.dp))
-                                .padding(horizontal = 9.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                CrispTagPill(text = curr)
-                                Text(
-                                    text = "${itemsCount}项计费",
-                                    fontSize = 11.sp,
-                                    color = theme.textMuted,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                            }
-                            Text(
-                                text = String.format(
-                                    Locale.US,
-                                    "月 %.2f · 年 %.0f",
-                                    monthly,
-                                    annual
-                                ),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = theme.textPrimary,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
+            if (monthlyParts.isNotEmpty() || annualParts.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "月均 ${monthlyParts.joinToString(" + ").ifEmpty { "--" }}",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = theme.textPrimary
+                    )
+                    if (annualParts.isNotEmpty()) {
+                        Text(
+                            text = "年均 ${annualParts.joinToString(" + ")}",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = theme.textSecondary
+                        )
                     }
                 }
             }
@@ -358,18 +331,20 @@ private fun AssetMicroCard(a: JSONObject) {
                 )
                 if (price.isNotEmpty()) {
                     CrispTagPill(
-                        text = price,
+                        text = price.replace(" / ", "/"),
                         bgColor = theme.accent.copy(alpha = 0.14f),
                         borderColor = theme.accent.copy(alpha = 0.34f),
                         textColor = if (theme.isLight) theme.accentDeep else theme.accentLight
                     )
                 }
-                CrispTagPill(
-                    text = status,
-                    bgColor = indicatorColor.copy(alpha = 0.14f),
-                    borderColor = indicatorColor.copy(alpha = 0.34f),
-                    textColor = indicatorColor
-                )
+                if (isInactive || status == "已到期") {
+                    CrispTagPill(
+                        text = status,
+                        bgColor = indicatorColor.copy(alpha = 0.14f),
+                        borderColor = indicatorColor.copy(alpha = 0.34f),
+                        textColor = indicatorColor
+                    )
+                }
             }
 
             if (spec.isNotEmpty()) {

@@ -138,11 +138,10 @@ private fun summarizeAssetsCost(assets: List<AssetItem>, yearly: Boolean): Strin
         buckets[symbol] = (buckets[symbol] ?: 0.0) + normalized
     }
     if (buckets.isEmpty()) return "--"
-    val suffix = if (yearly) "/年" else "/月"
     return buckets.entries.joinToString(" + ") { (sym, value) ->
         val rounded = (value * 10.0).roundToInt() / 10.0
         val numStr = if (rounded % 1.0 == 0.0) rounded.toInt().toString() else rounded.toString()
-        "$sym$numStr$suffix"
+        "$sym$numStr"
     }
 }
 
@@ -269,20 +268,15 @@ fun HubTabScreen(
 
     val totalMonthlyCost = remember(filteredAssets) { summarizeAssetsCost(filteredAssets, yearly = false) }
     val totalYearlyCost = remember(filteredAssets) { summarizeAssetsCost(filteredAssets, yearly = true) }
-    val categoryCostPills = remember(assets, mergedCategories) {
-        mergedCategories.mapNotNull { cat ->
-            val catAssets = assets.filter { it.category.equals(cat.id, ignoreCase = true) }
-            val mo = summarizeAssetsCost(catAssets, yearly = false)
-            val yr = summarizeAssetsCost(catAssets, yearly = true)
-            if (mo == "--") null else Triple(cat, mo, yr)
-        }
+    val categoryCounts = remember(assets) {
+        assets.groupingBy { it.category.trim().lowercase(Locale.ROOT) }.eachCount()
     }
 
     Column(modifier = modifier) {
         TactileSegmentedControl(
             options = listOf(
                 "资产 (${assets.size})",
-                "任务 ($activeTasksCount/${tasks.size})",
+                "任务 (${tasks.size})",
                 "待办 ($pendingTodosCount)",
                 "笔记 (${notes.size})"
             ),
@@ -294,109 +288,90 @@ fun HubTabScreen(
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             when (selectedSegment) {
                 0 -> {
                     item(key = "__hub_assets_hdr__") {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Unified single-card summary header: merges cost total, status badge, and add/sync actions
+                            SpecularGlassCard(
+                                cornerRadius = 14.dp,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = "共 ${filteredAssets.size} 项",
-                                        fontSize = 12.5.sp,
-                                        color = theme.textMuted,
-                                        maxLines = 1,
-                                        softWrap = false
-                                    )
-                                    CrispTagPill(
-                                        text = if (expiringCount > 0) "${expiringCount}项临期" else "状态正常",
-                                        bgColor = if (expiringCount > 0) Color(0x26F59E0B) else Color(0x2210B981),
-                                        borderColor = if (expiringCount > 0) Color(0x52F59E0B) else Color(0x4710B981),
-                                        textColor = if (expiringCount > 0) Color(0xFFD97706) else Color(0xFF10B981)
-                                    )
-                                }
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    TactileSecondaryButton(
-                                        text = "添加",
-                                        leadingIcon = Icons.Default.Add,
-                                        cornerRadius = 999.dp,
-                                        minHeight = 32.dp,
-                                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
-                                        onClick = {
-                                            editingAsset = null
-                                            showAssetSheet = true
-                                        }
-                                    )
-                                    TactileSecondaryButton(
-                                        text = "同步",
-                                        leadingIcon = Icons.Default.Refresh,
-                                        accent = true,
-                                        cornerRadius = 999.dp,
-                                        minHeight = 32.dp,
-                                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
-                                        onClick = onSyncAssets
-                                    )
-                                }
-                            }
-
-                            if (totalMonthlyCost != "--") {
-                                SpecularGlassCard(
-                                    cornerRadius = 14.dp,
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(3.dp)
                                     ) {
                                         Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             Text(
-                                                text = "折算月均 $totalMonthlyCost",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontFamily = FontFamily.Monospace,
-                                                color = theme.textPrimary
+                                                text = if (totalMonthlyCost != "--") "月均 $totalMonthlyCost" else "共 ${filteredAssets.size} 项资产",
+                                                fontSize = 13.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = if (totalMonthlyCost != "--") FontFamily.Monospace else FontFamily.Default,
+                                                color = theme.textPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
-                                            Text(
-                                                text = "年均 $totalYearlyCost",
-                                                fontSize = 11.5.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                color = theme.textSecondary
-                                            )
-                                        }
-                                        if (categoryCostPills.isNotEmpty()) {
-                                            FlowRow(
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                categoryCostPills.forEach { (cat, mo, yr) ->
-                                                    CrispTagPill(
-                                                        text = "${cat.label} $mo · $yr",
-                                                        bgColor = theme.inputTop,
-                                                        borderColor = theme.rimSubtle,
-                                                        textColor = theme.textSecondary
-                                                    )
-                                                }
+                                            if (expiringCount > 0) {
+                                                CrispTagPill(
+                                                    text = "${expiringCount}项临期",
+                                                    bgColor = Color(0x26F59E0B),
+                                                    borderColor = Color(0x52F59E0B),
+                                                    textColor = Color(0xFFD97706)
+                                                )
                                             }
                                         }
+                                        Text(
+                                            text = if (totalYearlyCost != "--") {
+                                                "年化 $totalYearlyCost · 当前显示 ${filteredAssets.size} 项"
+                                            } else {
+                                                if (expiringCount > 0) "请留意近期到期项目" else "全部资产状态正常"
+                                            },
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = theme.textMuted,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        TactileSecondaryButton(
+                                            text = "添加",
+                                            leadingIcon = Icons.Default.Add,
+                                            cornerRadius = 999.dp,
+                                            minHeight = 31.dp,
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            onClick = {
+                                                editingAsset = null
+                                                showAssetSheet = true
+                                            }
+                                        )
+                                        TactileSecondaryButton(
+                                            text = "同步",
+                                            leadingIcon = Icons.Default.Refresh,
+                                            accent = true,
+                                            cornerRadius = 999.dp,
+                                            minHeight = 31.dp,
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            onClick = onSyncAssets
+                                        )
                                     }
                                 }
                             }
 
-                            if (mergedCategories.isNotEmpty()) {
+                            if (mergedCategories.size > 1) {
                                 LazyRow(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
@@ -405,20 +380,27 @@ fun HubTabScreen(
                                             text = "全部",
                                             accent = selectedCategoryFilter == "all",
                                             cornerRadius = 999.dp,
-                                            minHeight = 30.dp,
+                                            minHeight = 29.dp,
                                             contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
                                             onClick = { selectedCategoryFilter = "all" }
                                         )
                                     }
                                     items(mergedCategories, key = { it.id }) { cat ->
+                                        val cnt = categoryCounts[cat.id.lowercase(Locale.ROOT)] ?: 0
                                         TactileSecondaryButton(
-                                            text = cat.label,
+                                            text = if (cnt > 0) "${cat.label} $cnt" else cat.label,
                                             leadingIcon = assetCategoryIconVector(cat.icon),
                                             accent = selectedCategoryFilter.equals(cat.id, ignoreCase = true),
                                             cornerRadius = 999.dp,
-                                            minHeight = 30.dp,
+                                            minHeight = 29.dp,
                                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                            onClick = { selectedCategoryFilter = cat.id }
+                                            onClick = {
+                                                selectedCategoryFilter = if (selectedCategoryFilter.equals(cat.id, ignoreCase = true)) {
+                                                    "all"
+                                                } else {
+                                                    cat.id
+                                                }
+                                            }
                                         )
                                     }
                                 }
@@ -464,9 +446,15 @@ fun HubTabScreen(
                             else -> (asset.daysLeft.toFloat() / 365f).coerceIn(0.06f, 1f)
                         }
                         val recMonths = remember(asset.price) { asset.inferRecommendedRenewMonths() }
+                        val recLabel = when (recMonths) {
+                            12 -> "+1年"
+                            3 -> "+1季"
+                            else -> "+1月"
+                        }
+                        val showQuickRenew = !isPermanent && asset.daysLeft <= 30
 
                         SpecularGlassCard(
-                            cornerRadius = 17.dp,
+                            cornerRadius = 15.dp,
                             accentTint = if (asset.isExpiringSoon && !isPermanent) barColor else null,
                             onClick = {
                                 editingAsset = asset
@@ -475,9 +463,10 @@ fun HubTabScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-                                verticalArrangement = Arrangement.spacedBy(7.dp)
+                                modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
+                                // Row 1: Icon + Name + Price + Due Days Pill
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -486,120 +475,111 @@ fun HubTabScreen(
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        modifier = Modifier.weight(1f).padding(end = 10.dp)
+                                        modifier = Modifier.weight(1f).padding(end = 8.dp)
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .size(28.dp)
-                                                .clip(RoundedCornerShape(9.dp))
+                                                .size(26.dp)
+                                                .clip(RoundedCornerShape(8.dp))
                                                 .background(theme.accent.copy(alpha = 0.14f))
-                                                .border(1.dp, theme.accent.copy(alpha = 0.3f), RoundedCornerShape(9.dp)),
+                                                .border(0.8.dp, theme.accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = assetCategoryIconVector(catMeta.icon),
                                                 contentDescription = null,
                                                 tint = theme.accent,
-                                                modifier = Modifier.size(15.dp)
+                                                modifier = Modifier.size(14.dp)
                                             )
                                         }
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = asset.name,
-                                                fontSize = 14.5.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = theme.textPrimary,
-                                                maxLines = 1,
-                                                softWrap = false,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = catMeta.label,
-                                                fontSize = 10.5.sp,
-                                                color = theme.textMuted,
-                                                maxLines = 1
-                                            )
-                                        }
+                                        Text(
+                                            text = asset.name,
+                                            fontSize = 14.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = theme.textPrimary,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
                                     }
-                                    CrispTagPill(
-                                        text = if (isPermanent) "长期" else asset.dueBadgeLabel,
-                                        bgColor = barColor.copy(alpha = 0.14f),
-                                        borderColor = barColor.copy(alpha = 0.42f),
-                                        textColor = barColor
-                                    )
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        if (asset.price.isNotBlank()) {
+                                            Text(
+                                                text = asset.price.replace(" / ", "/"),
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = theme.textSecondary,
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
+                                        }
+                                        CrispTagPill(
+                                            text = if (isPermanent) "长期" else asset.dueBadgeLabel,
+                                            bgColor = barColor.copy(alpha = 0.14f),
+                                            borderColor = barColor.copy(alpha = 0.42f),
+                                            textColor = barColor
+                                        )
+                                    }
                                 }
 
+                                // Row 2: Spec (or category fallback) on left + Due Date & expiring quick-renew chip on right
+                                val subLeftText = when {
+                                    asset.spec.isNotBlank() && selectedCategoryFilter == "all" -> "${catMeta.label} · ${asset.spec}"
+                                    asset.spec.isNotBlank() -> asset.spec
+                                    else -> catMeta.label
+                                }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = listOf(asset.spec, asset.price)
-                                            .filter { it.isNotBlank() }
-                                            .joinToString(" · ")
-                                            .ifEmpty { "点击编辑详情" },
-                                        fontSize = 12.sp,
+                                        text = subLeftText,
+                                        fontSize = 11.5.sp,
                                         color = theme.textMuted,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier
                                             .weight(1f)
-                                            .padding(end = 12.dp)
+                                            .padding(end = 10.dp)
                                     )
-                                    if (!isPermanent && asset.dueDate.isNotEmpty()) {
-                                        Text(
-                                            text = asset.dueDate.take(10),
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 11.sp,
-                                            color = theme.textMuted,
-                                            maxLines = 1,
-                                            softWrap = false
-                                        )
-                                    }
-                                }
-
-                                if (!isPermanent) {
                                     Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Text(
-                                            text = "一键续期顺延",
-                                            fontSize = 10.5.sp,
-                                            color = theme.textMuted
-                                        )
-                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            listOf(1 to "+1月", 3 to "+1季", 12 to "+1年").forEach { (m, label) ->
-                                                val isRec = recMonths == m
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(
-                                                            if (isRec) theme.accent.copy(alpha = 0.16f) else theme.inputTop
-                                                        )
-                                                        .border(
-                                                            0.8.dp,
-                                                            if (isRec) theme.accent.copy(alpha = 0.48f) else theme.rimSubtle,
-                                                            RoundedCornerShape(8.dp)
-                                                        )
-                                                        .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                                            onQuickRenewAsset(asset, m)
-                                                        }
-                                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                                ) {
-                                                    Text(
-                                                        text = label,
-                                                        fontSize = 10.5.sp,
-                                                        fontWeight = if (isRec) FontWeight.SemiBold else FontWeight.Normal,
-                                                        color = if (isRec) {
-                                                            if (theme.isLight) theme.accentDeep else theme.accentLight
-                                                        } else {
-                                                            theme.textSecondary
-                                                        }
-                                                    )
-                                                }
+                                        if (!isPermanent && asset.dueDate.isNotEmpty()) {
+                                            Text(
+                                                text = asset.dueDate.take(10),
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 11.sp,
+                                                color = theme.textMuted,
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
+                                        }
+                                        if (showQuickRenew) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(7.dp))
+                                                    .background(theme.accent.copy(alpha = 0.16f))
+                                                    .border(0.8.dp, theme.accent.copy(alpha = 0.48f), RoundedCornerShape(7.dp))
+                                                    .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                                        onQuickRenewAsset(asset, recMonths)
+                                                    }
+                                                    .padding(horizontal = 7.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "续期$recLabel",
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = if (theme.isLight) theme.accentDeep else theme.accentLight
+                                                )
                                             }
                                         }
                                     }
@@ -608,14 +588,14 @@ fun HubTabScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(3.dp)
+                                        .height(2.5.dp)
                                         .clip(RoundedCornerShape(999.dp))
                                         .background(theme.inputTop)
                                 ) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth(progressFraction)
-                                            .height(3.dp)
+                                            .height(2.5.dp)
                                             .clip(RoundedCornerShape(999.dp))
                                             .background(
                                                 Brush.horizontalGradient(
@@ -637,8 +617,8 @@ fun HubTabScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "共 ${tasks.size} 项例程 · 已启用 $activeTasksCount 项",
-                                fontSize = 12.5.sp,
+                                text = "已启用 $activeTasksCount / ${tasks.size} 项例程",
+                                fontSize = 12.sp,
                                 color = theme.textMuted
                             )
                             TactileSecondaryButton(
@@ -646,8 +626,8 @@ fun HubTabScreen(
                                 leadingIcon = Icons.Default.Add,
                                 accent = true,
                                 cornerRadius = 999.dp,
-                                minHeight = 32.dp,
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                                minHeight = 31.dp,
+                                contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
                                 onClick = {
                                     editingTask = null
                                     showTaskSheet = true
@@ -674,26 +654,27 @@ fun HubTabScreen(
 
                     items(tasks, key = { it.id }) { task ->
                         SpecularGlassCard(
-                            cornerRadius = 17.dp,
+                            cornerRadius = 15.dp,
                             onClick = {
                                 editingTask = task
                                 showTaskSheet = true
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-                                verticalArrangement = Arrangement.spacedBy(7.dp)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 13.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Column(
+                                    modifier = Modifier.weight(1f).padding(end = 10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        modifier = Modifier.weight(1f).padding(end = 10.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         Text(
                                             text = task.name,
@@ -705,48 +686,50 @@ fun HubTabScreen(
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f, fill = false)
                                         )
-                                        CrispTagPill(
-                                            text = if (task.allowPaidFallback) {
-                                                if (task.maxPaidCallsPerDay > 0) "付费<=${task.maxPaidCallsPerDay}/日" else "允许付费"
-                                            } else {
-                                                "仅免费池"
-                                            },
-                                            bgColor = if (task.allowPaidFallback) Color(0x24F59E0B) else Color(0x2210B981),
-                                            borderColor = if (task.allowPaidFallback) Color(0x4DF59E0B) else Color(0x4510B981),
-                                            textColor = if (task.allowPaidFallback) Color(0xFFD97706) else Color(0xFF10B981)
-                                        )
+                                        if (task.allowPaidFallback) {
+                                            CrispTagPill(
+                                                text = if (task.maxPaidCallsPerDay > 0) "付费<=${task.maxPaidCallsPerDay}/日" else "允许付费",
+                                                bgColor = Color(0x24F59E0B),
+                                                borderColor = Color(0x4DF59E0B),
+                                                textColor = Color(0xFFD97706)
+                                            )
+                                        }
                                     }
-                                    TactileToggle(
-                                        checked = task.enabled,
-                                        onCheckedChange = { checked -> onToggleTask(task, checked) }
-                                    )
-                                }
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
                                     Text(
                                         text = task.formattedSchedule(),
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.5.sp,
                                         color = theme.textMuted,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .padding(end = 10.dp)
+                                        overflow = TextOverflow.Ellipsis
                                     )
+                                }
 
-                                    TactileSecondaryButton(
-                                        text = "运行",
-                                        leadingIcon = Icons.Default.PlayArrow,
-                                        accent = true,
-                                        cornerRadius = 999.dp,
-                                        minHeight = 31.dp,
-                                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp),
-                                        onClick = { onRunTask(task) }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(30.dp)
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .background(theme.accent.copy(alpha = 0.14f))
+                                            .border(0.8.dp, theme.accent.copy(alpha = 0.35f), RoundedCornerShape(9.dp))
+                                            .tactileClickable(pressedScale = 0.92f, hapticOnTap = true) {
+                                                onRunTask(task)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = "立即运行",
+                                            tint = if (theme.isLight) theme.accentDeep else theme.accentLight,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    TactileToggle(
+                                        checked = task.enabled,
+                                        onCheckedChange = { checked -> onToggleTask(task, checked) }
                                     )
                                 }
                             }

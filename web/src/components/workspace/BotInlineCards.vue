@@ -284,34 +284,23 @@ function openTaskEditor(card: TaskCardData) {
         >
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-1.5 mb-1">
-                <span class="inline-flex items-center gap-1 font-mono text-xs px-1.5 py-0.5 rounded-lg border border-line bg-subtle text-fg-sub">
-                  <AssetCategoryIcon :icon="assetCategoryMeta(card.category).icon" class="w-3 h-3 text-accent-fg" />
-                  <span>{{ assetCategoryMeta(card.category).label }}</span>
-                </span>
-                <span
-                  v-if="card.autoRenew"
-                  class="font-mono text-xs px-1.5 py-0.5 rounded-lg border border-info-border bg-info-soft text-info"
-                >
-                  自动续费
-                </span>
+              <div class="flex items-center gap-1.5 mb-0.5">
+                <AssetCategoryIcon :icon="assetCategoryMeta(card.category).icon" class="w-3.5 h-3.5 text-accent-fg shrink-0" />
+                <div class="text-xs font-semibold text-fg truncate">{{ card.name }}</div>
               </div>
-              <div class="text-xs font-semibold text-fg truncate">{{ card.name }}</div>
+              <div v-if="card.spec" class="text-xs text-fg-muted truncate">{{ card.spec }}</div>
             </div>
+            <span v-if="card.price" class="font-mono text-xs px-1.5 py-0.5 rounded bg-accent-soft text-accent-fg shrink-0">
+              {{ card.price }}
+            </span>
             <span
+              v-else-if="card.status === '已到期' || card.status === '已停用'"
               :class="[
                 'font-mono text-xs px-2 py-0.5 rounded-full border shrink-0',
                 assetStatusClass(card.status),
               ]"
             >
               {{ card.status }}
-            </span>
-          </div>
-
-          <div v-if="card.spec || card.price" class="flex items-center justify-between gap-2 text-xs">
-            <span class="text-fg-muted truncate">{{ card.spec || '无规格备注' }}</span>
-            <span v-if="card.price" class="font-mono text-xs px-1.5 py-0.5 rounded bg-accent-soft text-accent-fg shrink-0">
-              {{ card.price }}
             </span>
           </div>
 

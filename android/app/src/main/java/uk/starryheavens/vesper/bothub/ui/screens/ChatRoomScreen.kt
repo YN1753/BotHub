@@ -1147,7 +1147,23 @@ fun ChatRoomScreen(
                                                 }
 
                                                 if (msg.toolTraces.isNotEmpty()) {
-                                                    items(msg.toolTraces, key = { "tr_${it.id}_${it.name}" }) { trace ->
+                                                    val visibleTraces = remember(msg.toolTraces) {
+                                                        val structuredNames = setOf(
+                                                            "manage_assets",
+                                                            "query_nezha_nodes",
+                                                            "manage_todos",
+                                                            "manage_tasks",
+                                                            "workspace_briefing"
+                                                        )
+                                                        msg.toolTraces.filter { tr ->
+                                                            val pendingOrErr = tr.status == "进行中" ||
+                                                                tr.status == "执行中" ||
+                                                                tr.status.equals("error", ignoreCase = true) ||
+                                                                tr.status.contains("失败")
+                                                            pendingOrErr || tr.name !in structuredNames || tr.result.isBlank()
+                                                        }.distinctBy { it.name to it.status }
+                                                    }
+                                                    items(visibleTraces, key = { "tr_${it.id}_${it.name}" }) { trace ->
                                                         val isPending = trace.status == "进行中" || trace.status == "执行中"
                                                         val isError = trace.status.equals("error", ignoreCase = true) ||
                                                             trace.status.contains("失败")
@@ -1307,36 +1323,44 @@ fun ChatRoomScreen(
                                             modifier = Modifier.padding(start = 4.dp, top = 2.dp)
                                         ) {
                                             if (shortModelUsed.isNotBlank()) {
-                                                CrispTagPill(
-                                                    text = if (isPaidModelUsed) "付费池 · $shortModelUsed" else "免费池 · $shortModelUsed",
-                                                    bgColor = if (isPaidModelUsed) Color(0x22F59E0B) else Color(0x1F10B981),
-                                                    borderColor = if (isPaidModelUsed) Color(0x4AF59E0B) else Color(0x4210B981),
-                                                    textColor = if (isPaidModelUsed) Color(0xFFD97706) else Color(0xFF10B981)
-                                                )
-                                            }
-
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                modifier = Modifier
-                                                    .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                                Box(
+                                                    modifier = Modifier.tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
                                                         if (!isStreaming) retryingTurn = msg
                                                     }
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Refresh,
-                                                    contentDescription = "换模型重试",
-                                                    tint = theme.accent,
-                                                    modifier = Modifier.size(12.dp)
-                                                )
-                                                Text(
-                                                    text = "换模型重试",
-                                                    fontSize = 11.5.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = theme.accent,
-                                                    maxLines = 1,
-                                                    softWrap = false
-                                                )
+                                                ) {
+                                                    CrispTagPill(
+                                                        text = if (isPaidModelUsed) "付费 · $shortModelUsed" else shortModelUsed,
+                                                        bgColor = if (isPaidModelUsed) Color(0x22F59E0B) else Color(0x1F10B981),
+                                                        borderColor = if (isPaidModelUsed) Color(0x4AF59E0B) else Color(0x4210B981),
+                                                        textColor = if (isPaidModelUsed) Color(0xFFD97706) else Color(0xFF10B981)
+                                                    )
+                                                }
+                                            }
+
+                                            if (isLatestReply || hasTurnError) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                    modifier = Modifier
+                                                        .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                                            if (!isStreaming) retryingTurn = msg
+                                                        }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Refresh,
+                                                        contentDescription = "换模型重试",
+                                                        tint = theme.accent,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                    Text(
+                                                        text = "换模型重试",
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = theme.accent,
+                                                        maxLines = 1,
+                                                        softWrap = false
+                                                    )
+                                                }
                                             }
 
                                             if (isLatestReply || hasTurnError) {
