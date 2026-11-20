@@ -1085,7 +1085,23 @@ fun ChatRoomScreen(
                                             .padding(horizontal = 13.dp, vertical = 10.dp),
                                         verticalArrangement = Arrangement.spacedBy(7.dp)
                                     ) {
-                                        if (msg.reasoning.isNotEmpty() || msg.toolTraces.isNotEmpty() || msg.tools.isNotEmpty()) {
+                                        val visibleTraces = remember(msg.toolTraces) {
+                                            val structuredNames = setOf(
+                                                "manage_assets",
+                                                "query_nezha_nodes",
+                                                "manage_todos",
+                                                "manage_tasks",
+                                                "workspace_briefing"
+                                            )
+                                            msg.toolTraces.filter { tr ->
+                                                val pendingOrErr = tr.status == "进行中" ||
+                                                    tr.status == "执行中" ||
+                                                    tr.status.equals("error", ignoreCase = true) ||
+                                                    tr.status.contains("失败")
+                                                pendingOrErr || tr.name !in structuredNames || tr.result.isBlank()
+                                            }.distinctBy { it.name to it.status }
+                                        }
+                                        if (msg.reasoning.isNotEmpty() || visibleTraces.isNotEmpty() || (msg.toolTraces.isEmpty() && msg.tools.isNotEmpty())) {
                                             val toolOk = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
                                             val toolOkText = if (theme.isLight) Color(0xFF065F46) else Color(0xFFA7F3D0)
                                             val toolPending = if (theme.isLight) Color(0xFFD97706) else Color(0xFFFBBF24)
@@ -1146,23 +1162,7 @@ fun ChatRoomScreen(
                                                     }
                                                 }
 
-                                                if (msg.toolTraces.isNotEmpty()) {
-                                                    val visibleTraces = remember(msg.toolTraces) {
-                                                        val structuredNames = setOf(
-                                                            "manage_assets",
-                                                            "query_nezha_nodes",
-                                                            "manage_todos",
-                                                            "manage_tasks",
-                                                            "workspace_briefing"
-                                                        )
-                                                        msg.toolTraces.filter { tr ->
-                                                            val pendingOrErr = tr.status == "进行中" ||
-                                                                tr.status == "执行中" ||
-                                                                tr.status.equals("error", ignoreCase = true) ||
-                                                                tr.status.contains("失败")
-                                                            pendingOrErr || tr.name !in structuredNames || tr.result.isBlank()
-                                                        }.distinctBy { it.name to it.status }
-                                                    }
+                                                if (visibleTraces.isNotEmpty()) {
                                                     items(visibleTraces, key = { "tr_${it.id}_${it.name}" }) { trace ->
                                                         val isPending = trace.status == "进行中" || trace.status == "执行中"
                                                         val isError = trace.status.equals("error", ignoreCase = true) ||
@@ -1205,7 +1205,7 @@ fun ChatRoomScreen(
                                                             )
                                                         }
                                                     }
-                                                } else if (msg.tools.isNotEmpty()) {
+                                                } else if (msg.toolTraces.isEmpty() && msg.tools.isNotEmpty()) {
                                                     items(msg.tools) { tLabel ->
                                                         val isPending = tLabel.contains("进行中") || tLabel.contains("执行中")
                                                         val dotColor = if (isPending) toolPending else toolOk
