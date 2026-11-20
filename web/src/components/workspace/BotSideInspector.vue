@@ -872,7 +872,7 @@ function fullViewLabel(): string {
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5 mb-0.5">
                   <span class="font-mono text-xs px-1.5 py-0.5 rounded border border-info-border bg-info-soft text-info">
-                    {{ item.kind === 'note' ? '闪念' : item.kind === 'github' ? 'GitHub' : item.kind === 'bilibili' ? 'Bilibili' : 'Web' }}
+                    {{ item.kind === 'note' ? '闪念' : item.kind === 'github' ? 'GitHub' : item.kind === 'bilibili' ? 'Bilibili' : item.kind === 'xiaohongshu' ? '小红书' : item.kind === 'douyin' ? '抖音' : item.kind === 'wechat' ? '公众号' : 'Web' }}
                   </span>
                   <span v-if="item.read_count === 0" class="w-1.5 h-1.5 rounded-full bg-danger shrink-0" aria-hidden="true" />
                   <span v-if="item.domain" class="font-mono text-xs text-fg-muted truncate">{{ item.domain }}</span>

@@ -101,8 +101,22 @@ func (e *Engine) stashSemaphore() chan struct{} {
 	return make(chan struct{}, 3)
 }
 
+// ClientPrefetchHint carries optional public metadata pre-fetched on the user's client device (e.g. Android share sheet)
+// so overseas VPS datacenter IP restrictions on Bilibili/Douyin/Xiaohongshu cannot block distillation.
+type ClientPrefetchHint struct {
+	CanonicalURL string
+	Title        string
+	Excerpt      string
+	Tags         string
+}
+
 // CaptureAndDistillStash persists a newly captured link/share/thought immediately (<50ms) and schedules background distillation.
 func (e *Engine) CaptureAndDistillStash(rawInput, userNote, tags string, forceReprocess bool) (store.StashItem, bool, error) {
+	return e.CaptureAndDistillStashWithHint(rawInput, userNote, tags, forceReprocess, nil)
+}
+
+// CaptureAndDistillStashWithHint persists a captured item along with optional client-prefetched metadata before background distillation.
+func (e *Engine) CaptureAndDistillStashWithHint(rawInput, userNote, tags string, forceReprocess bool, hint *ClientPrefetchHint) (store.StashItem, bool, error) {
 	cleanRaw := notifier.StripEmoji(strings.TrimSpace(rawInput))
 	cleanNote := notifier.StripEmoji(strings.TrimSpace(userNote))
 	cleanTags := notifier.StripEmoji(strings.TrimSpace(tags))
@@ -114,6 +128,55 @@ func (e *Engine) CaptureAndDistillStash(rawInput, userNote, tags string, forceRe
 	if err != nil {
 		return store.StashItem{}, false, err
 	}
+
+	if hint != nil {
+		changed := false
+		if cURL := strings.TrimSpace(hint.CanonicalURL); cURL != "" {
+			if normURL, dom, k, ok := store.NormalizeStashURL(cURL); ok {
+				if strings.Contains(strings.ToLower(item.URL), "b23.tv") ||
+					strings.Contains(strings.ToLower(item.URL), "xhslink.com") ||
+					strings.Contains(strings.ToLower(item.URL), "v.douyin.com") {
+					item.URL = normURL
+					item.Domain = dom
+					if k != store.StashKindLink {
+						item.Kind = k
+					}
+					changed = true
+				}
+			}
+		}
+		if cTitle := notifier.StripEmoji(strings.TrimSpace(hint.Title)); cTitle != "" {
+			if item.Title == "" || item.Title == item.Domain || len([]rune(cTitle)) > len([]rune(item.Title)) {
+				item.Title = store.TruncateRunes(cTitle, 180)
+				changed = true
+			}
+		}
+		if cExcerpt := notifier.StripEmoji(strings.TrimSpace(hint.Excerpt)); cExcerpt != "" {
+			if len([]rune(cExcerpt)) > len([]rune(item.ContentExcerpt)) {
+				item.ContentExcerpt = store.TruncateRunes(cExcerpt, store.MaxStashExcerptRunes)
+				changed = true
+				if item.Status == store.StashStatusFailed || item.AITldr == "" {
+					item.Status = store.StashStatusProcessing
+					item.ErrorMsg = ""
+					shouldDistill = true
+				}
+			}
+		}
+		if cTags := notifier.StripEmoji(strings.TrimSpace(hint.Tags)); cTags != "" {
+			merged := store.MergeStashTags(item.Tags, cTags)
+			if merged != item.Tags {
+				item.Tags = merged
+				changed = true
+			}
+		}
+		if changed {
+			item.UpdatedAt = store.NowShanghai()
+			if updated, uErr := e.store.UpsertStashItemFull(item); uErr == nil {
+				item = updated
+			}
+		}
+	}
+
 	e.publishAssistantUpdate("stash")
 	if shouldDistill {
 		e.DistillStashAsync(item.ID)
@@ -239,6 +302,25 @@ func buildLocalFallbackSummary(title, desc, excerpt string) (string, []string) {
 	return tldr, points
 }
 
+func defaultTagForStashKind(kind string) string {
+	switch kind {
+	case store.StashKindBilibili:
+		return "Bilibili"
+	case store.StashKindGitHub:
+		return "GitHub"
+	case store.StashKindXiaohongshu:
+		return "小红书"
+	case store.StashKindDouyin:
+		return "抖音"
+	case store.StashKindWeChat:
+		return "公众号"
+	case store.StashKindNote:
+		return "闪念"
+	default:
+		return ""
+	}
+}
+
 // DistillStashNow executes synchronous source extraction + lightweight AI summarization for a stash item.
 func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 	item, err := e.store.GetStashItem(id)
@@ -246,6 +328,7 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 		return err
 	}
 
+	preExistingExcerpt := strings.TrimSpace(item.ContentExcerpt)
 	var src *extractedStashSource
 	var fetchErr error
 
@@ -262,6 +345,12 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 			src, fetchErr = e.extractBilibiliSource(ctx, item.URL)
 		case store.StashKindGitHub:
 			src, fetchErr = e.extractGitHubSource(ctx, item.URL)
+		case store.StashKindXiaohongshu:
+			src, fetchErr = e.extractXiaohongshuSource(ctx, item.URL)
+		case store.StashKindDouyin:
+			src, fetchErr = e.extractDouyinSource(ctx, item.URL)
+		case store.StashKindWeChat:
+			src, fetchErr = e.extractWeChatSource(ctx, item.URL)
 		default:
 			src, fetchErr = e.extractGenericWebSource(ctx, item.URL)
 		}
@@ -281,11 +370,18 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 			item.Title = notifier.StripEmoji(strings.TrimSpace(src.Title))
 		}
 		if src.Excerpt != "" {
-			item.ContentExcerpt = store.TruncateRunes(notifier.StripEmoji(src.Excerpt), store.MaxStashExcerptRunes)
+			cleanSrcExcerpt := store.TruncateRunes(notifier.StripEmoji(src.Excerpt), store.MaxStashExcerptRunes)
+			if len([]rune(cleanSrcExcerpt)) >= len([]rune(preExistingExcerpt)) || preExistingExcerpt == "" {
+				item.ContentExcerpt = cleanSrcExcerpt
+			}
 		}
 		if len(src.SuggestedTag) > 0 {
 			item.Tags = store.MergeStashTags(item.Tags, strings.Join(src.SuggestedTag, ","))
 		}
+	}
+
+	if defTag := defaultTagForStashKind(item.Kind); defTag != "" {
+		item.Tags = store.MergeStashTags(item.Tags, defTag)
 	}
 
 	material := strings.TrimSpace(item.ContentExcerpt)
@@ -293,20 +389,43 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 		material = strings.TrimSpace(item.RawInput)
 	}
 
+	degradedNotice := ""
 	if fetchErr != nil && material == "" {
-		if item.Title == "" {
-			if item.Domain != "" {
-				item.Title = item.Domain
-			} else {
-				item.Title = store.TruncateRunes(item.RawInput, 60)
-			}
+		// Graceful degradation: when the remote platform restricts server-side access (e.g. datacenter IP / login wall),
+		// still distill from the cleaned share copy + user note if meaningful text is present.
+		shareCopy := store.ExtractShareTextWithoutURL(item.RawInput)
+		var fallbackMat strings.Builder
+		if shareCopy != "" {
+			fallbackMat.WriteString("分享文案：\n")
+			fallbackMat.WriteString(shareCopy)
 		}
-		item.Status = store.StashStatusFailed
-		item.ErrorMsg = notifier.StripEmoji(fmt.Sprintf("抓取受限，已保留原始链接与批注 (%v)", fetchErr))
-		item.UpdatedAt = store.NowShanghai()
-		_, uErr := e.store.UpsertStashItemFull(*item)
-		e.publishAssistantUpdate("stash")
-		return uErr
+		if strings.TrimSpace(item.UserNote) != "" {
+			if fallbackMat.Len() > 0 {
+				fallbackMat.WriteString("\n\n")
+			}
+			fallbackMat.WriteString("用户批注：\n")
+			fallbackMat.WriteString(strings.TrimSpace(item.UserNote))
+		}
+		candidateMat := strings.TrimSpace(fallbackMat.String())
+		if len([]rune(shareCopy)) >= 8 || len([]rune(strings.TrimSpace(item.UserNote))) >= 8 {
+			material = candidateMat
+			item.ContentExcerpt = store.TruncateRunes(candidateMat, store.MaxStashExcerptRunes)
+			degradedNotice = "原平台访问受限，已基于分享文案完成整理（可点击重提炼再试）"
+		} else {
+			if item.Title == "" {
+				if item.Domain != "" {
+					item.Title = item.Domain
+				} else {
+					item.Title = store.TruncateRunes(item.RawInput, 60)
+				}
+			}
+			item.Status = store.StashStatusFailed
+			item.ErrorMsg = notifier.StripEmoji(fmt.Sprintf("抓取受限，已保留原始链接与批注 (%v)", fetchErr))
+			item.UpdatedAt = store.NowShanghai()
+			_, uErr := e.store.UpsertStashItemFull(*item)
+			e.publishAssistantUpdate("stash")
+			return uErr
+		}
 	}
 
 	if e.hasLightTarget() {
@@ -314,7 +433,7 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 {"title":"简明准确的标题（不超过48字）","tldr":"一句话核心结论（不超过70字）","points":["核心干货要点1","核心干货要点2","核心干货要点3"],"tags":["标签1","标签2"]}
 严格规范：
 1. tldr 必须控制在 70 字以内，直击本质结论、核心方案或关键洞察，拒绝空话。
-2. points 数组提炼 3 到 5 条高信息密度干货要点（若输入是很短的随手闪念，可提炼 2 到 3 条关键行动或延伸要点）。
+2. points 数组提炼 3 到 5 条高信息密度干货要点（若输入是很短的随手闪念或仅含分享文案，可提炼 2 到 3 条关键主题、关注点或延伸行动，切勿编造未出现的数据细节）。
 3. tags 数组给出 2 到 4 个简短中文或技术分类标签（不含井号）。
 4. 绝对禁止在任何字段中使用 Emoji 表情或装饰性符号。`
 
@@ -350,7 +469,7 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 					item.Tags = store.MergeStashTags(item.Tags, strings.Join(parsed.Tags, ","))
 				}
 				item.Status = store.StashStatusReady
-				item.ErrorMsg = ""
+				item.ErrorMsg = degradedNotice
 				item.UpdatedAt = store.NowShanghai()
 				_, uErr := e.store.UpsertStashItemFull(*item)
 				e.publishAssistantUpdate("stash")
@@ -374,7 +493,9 @@ func (e *Engine) DistillStashNow(ctx context.Context, id string) error {
 		item.Points = fallbackPts
 	}
 	item.Status = store.StashStatusReady
-	if !e.hasLightTarget() {
+	if degradedNotice != "" {
+		item.ErrorMsg = degradedNotice
+	} else if !e.hasLightTarget() {
 		item.ErrorMsg = "未配置 AI 模型密钥，已基于抓取快照生成本地摘要"
 	} else {
 		item.ErrorMsg = "AI 模型暂时繁忙，已保留抓取快照与本地摘要，可稍后重提炼"

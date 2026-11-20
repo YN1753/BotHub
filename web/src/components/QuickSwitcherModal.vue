@@ -224,7 +224,7 @@ const entries = computed<SearchEntry[]>(() => {
       key: `st_${st.id}`,
       category: '收藏',
       title: st.title || truncateText(st.raw_input, 48),
-      subtitle: `${st.kind === 'bilibili' ? 'Bilibili' : st.kind === 'github' ? 'GitHub' : st.kind === 'note' ? '闪念' : 'Web'} · ${truncateText(st.ai_tldr || st.user_note || st.url || '', 52)}`,
+      subtitle: `${st.kind === 'bilibili' ? 'Bilibili' : st.kind === 'github' ? 'GitHub' : st.kind === 'xiaohongshu' ? '小红书' : st.kind === 'douyin' ? '抖音' : st.kind === 'wechat' ? '公众号' : st.kind === 'note' ? '闪念' : 'Web'} · ${truncateText(st.ai_tldr || st.user_note || st.url || '', 52)}`,
       searchBody: `${st.tags || ''} ${(st.points || []).join(' ')} ${st.user_note || ''} ${st.url || ''}`,
       run: () => {
         store.state.workhubTab = 'stash'

@@ -465,6 +465,15 @@ fun StashTabScreen(
                                 )
                             }
 
+                            if (item.aiTldr.isNotEmpty() && item.errorMsg.isNotEmpty()) {
+                                Text(
+                                    text = item.errorMsg,
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 16.sp,
+                                    color = theme.textMuted
+                                )
+                            }
+
                             Spacer(modifier = Modifier.height(4.dp))
 
                             Row(
@@ -475,67 +484,76 @@ fun StashTabScreen(
                                 TactilePrimaryButton(
                                     text = if (item.url.isNotEmpty()) "打开链接" else "标为已读",
                                     leadingIcon = if (item.url.isNotEmpty()) Icons.Default.OpenInNew else null,
-                                    cornerRadius = 12.dp,
+                                    cornerRadius = 11.dp,
                                     minHeight = 38.dp,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                     onClick = { onOpenUrl(item) },
                                     modifier = Modifier.weight(1f)
                                 )
 
                                 TactileSecondaryButton(
                                     text = "发到聊天",
-                                    cornerRadius = 12.dp,
+                                    cornerRadius = 11.dp,
                                     minHeight = 38.dp,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                     onClick = { onAskAi(item) },
                                     modifier = Modifier.weight(1f)
-                                )
-
-                                CompactStashIconBtn(
-                                    icon = if (item.pinned) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                    tint = if (item.pinned) theme.accent else theme.textSecondary,
-                                    contentDescription = if (item.pinned) "取消置顶" else "置顶",
-                                    onClick = { onTogglePin(item) }
-                                )
-
-                                if (item.status == "failed" || item.aiTldr.isEmpty()) {
-                                    CompactStashIconBtn(
-                                        icon = Icons.Default.Refresh,
-                                        tint = theme.textSecondary,
-                                        contentDescription = "重新提炼",
-                                        onClick = { onReprocess(item) }
-                                    )
-                                }
-
-                                CompactStashIconBtn(
-                                    icon = Icons.Default.DeleteOutline,
-                                    tint = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFDA4AF),
-                                    contentDescription = "删除",
-                                    onClick = { onDelete(item) }
                                 )
                             }
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 TactileSecondaryButton(
                                     text = "转待办",
                                     accent = true,
-                                    cornerRadius = 11.dp,
-                                    minHeight = 34.dp,
+                                    cornerRadius = 10.dp,
+                                    minHeight = 36.dp,
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
                                     onClick = { onConvertToTodo(item) },
                                     modifier = Modifier.weight(1f)
                                 )
                                 TactileSecondaryButton(
                                     text = "存为笔记",
-                                    cornerRadius = 11.dp,
-                                    minHeight = 34.dp,
+                                    cornerRadius = 10.dp,
+                                    minHeight = 36.dp,
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
                                     onClick = { onConvertToNote(item) },
                                     modifier = Modifier.weight(1f)
                                 )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    CompactStashIconBtn(
+                                        icon = if (item.pinned) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                        tint = if (item.pinned) theme.accent else theme.textSecondary,
+                                        contentDescription = if (item.pinned) "取消置顶" else "置顶",
+                                        onClick = { onTogglePin(item) }
+                                    )
+
+                                    if (item.status == "failed" || item.aiTldr.isEmpty() || item.errorMsg.isNotEmpty()) {
+                                        CompactStashIconBtn(
+                                            icon = Icons.Default.Refresh,
+                                            tint = theme.textSecondary,
+                                            contentDescription = "重新提炼",
+                                            onClick = { onReprocess(item) }
+                                        )
+                                    }
+
+                                    CompactStashIconBtn(
+                                        icon = Icons.Default.DeleteOutline,
+                                        tint = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFDA4AF),
+                                        contentDescription = "删除",
+                                        onClick = { onDelete(item) }
+                                    )
+                                }
                             }
                         }
                     }

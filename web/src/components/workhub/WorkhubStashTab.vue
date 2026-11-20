@@ -55,6 +55,9 @@ const detectedInputKind = computed(() => {
   const lower = urlMatch[0].toLowerCase()
   if (lower.includes('bilibili.com') || lower.includes('b23.tv')) return 'Bilibili 视频'
   if (lower.includes('github.com')) return 'GitHub 仓库'
+  if (lower.includes('xhslink.com') || lower.includes('xiaohongshu.com')) return '小红书笔记'
+  if (lower.includes('douyin.com') || lower.includes('iesdouyin.com')) return '抖音视频'
+  if (lower.includes('mp.weixin.qq.com')) return '公众号文章'
   return '网页外链'
 })
 
@@ -175,6 +178,21 @@ function kindBadgeMeta(kind: string): { label: string; cls: string } {
       return {
         label: 'GitHub',
         cls: 'border-info-border bg-info-soft text-info',
+      }
+    case 'xiaohongshu':
+      return {
+        label: '小红书',
+        cls: 'border-danger-border bg-danger-soft text-danger',
+      }
+    case 'douyin':
+      return {
+        label: '抖音',
+        cls: 'border-info-border bg-info-soft text-info',
+      }
+    case 'wechat':
+      return {
+        label: '公众号',
+        cls: 'border-ok-border bg-ok-soft text-ok',
       }
     case 'note':
       return {

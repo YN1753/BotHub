@@ -1147,14 +1147,21 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
     suspend fun createStashItem(
         rawInput: String,
         userNote: String = "",
-        tags: String = ""
+        tags: String = "",
+        prefetched: PrefetchedShareMeta? = null
     ): Result<Pair<StashItemUi, Boolean>> = withContext(Dispatchers.IO) {
         runCatching {
-            val payload = JSONObject()
+            val payloadObj = JSONObject()
                 .put("raw_input", rawInput.trim())
                 .put("user_note", userNote.trim())
                 .put("tags", tags.trim())
-                .toString()
+            if (prefetched != null && !prefetched.isEmpty) {
+                if (prefetched.canonicalUrl.isNotBlank()) payloadObj.put("client_url", prefetched.canonicalUrl.trim())
+                if (prefetched.title.isNotBlank()) payloadObj.put("client_title", prefetched.title.trim())
+                if (prefetched.excerpt.isNotBlank()) payloadObj.put("client_excerpt", prefetched.excerpt.trim())
+                if (prefetched.tags.isNotBlank()) payloadObj.put("client_tags", prefetched.tags.trim())
+            }
+            val payload = payloadObj.toString()
             val req = requestBuilder("/api/v2/stash")
                 .post(jsonBody(payload))
                 .build()

@@ -28,6 +28,8 @@ import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.BotThreadItem
 import uk.starryheavens.vesper.bothub.data.ChatToolTraceUi
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
+import uk.starryheavens.vesper.bothub.data.ClientSharePrefetcher
+import uk.starryheavens.vesper.bothub.data.ShareTextParser
 import uk.starryheavens.vesper.bothub.data.formatHumanToolName
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.JsonMappers
@@ -1806,7 +1808,13 @@ class BotHubViewModel(
 
     fun captureStashItem(rawInput: String, userNote: String) {
         viewModelScope.launch {
-            api.createStashItem(rawInput, userNote).onSuccess { (created, dedup) ->
+            val preview = ShareTextParser.parse(rawInput)
+            val prefetched = if (preview.extractedUrl.isNotBlank()) {
+                ClientSharePrefetcher.prefetch(preview.extractedUrl)
+            } else {
+                null
+            }
+            api.createStashItem(rawInput, userNote, prefetched = prefetched).onSuccess { (created, dedup) ->
                 if (!dedup && stashQuery.isBlank()) {
                     val prepended = listOf(created) + stashItems.filterNot { it.id == created.id }
                     stashItems = prepended

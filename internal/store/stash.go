@@ -13,10 +13,13 @@ import (
 )
 
 const (
-	StashKindLink     = "link"
-	StashKindBilibili = "bilibili"
-	StashKindGitHub   = "github"
-	StashKindNote     = "note"
+	StashKindLink        = "link"
+	StashKindBilibili    = "bilibili"
+	StashKindGitHub      = "github"
+	StashKindXiaohongshu = "xiaohongshu"
+	StashKindDouyin      = "douyin"
+	StashKindWeChat      = "wechat"
+	StashKindNote        = "note"
 
 	StashStatusPending    = "pending"
 	StashStatusProcessing = "processing"
@@ -101,6 +104,12 @@ func NormalizeStashKind(v string) string {
 		return StashKindBilibili
 	case StashKindGitHub:
 		return StashKindGitHub
+	case StashKindXiaohongshu:
+		return StashKindXiaohongshu
+	case StashKindDouyin:
+		return StashKindDouyin
+	case StashKindWeChat:
+		return StashKindWeChat
 	case StashKindNote:
 		return StashKindNote
 	case StashKindLink:
@@ -235,10 +244,43 @@ func NormalizeStashURL(rawURL string) (cleanURL, domain, kind string, ok bool) {
 		kind = StashKindBilibili
 	case host == "github.com" || host == "gist.github.com":
 		kind = StashKindGitHub
+	case host == "xhslink.com" || host == "xiaohongshu.com" || strings.HasSuffix(host, ".xiaohongshu.com"):
+		kind = StashKindXiaohongshu
+	case host == "v.douyin.com" || host == "douyin.com" || strings.HasSuffix(host, ".douyin.com") || host == "iesdouyin.com" || strings.HasSuffix(host, ".iesdouyin.com"):
+		kind = StashKindDouyin
+	case host == "mp.weixin.qq.com":
+		kind = StashKindWeChat
 	default:
 		kind = StashKindLink
 	}
 	return parsed.String(), domain, kind, true
+}
+
+var (
+	reDouyinPrefix   = regexp.MustCompile(`^\s*\d+(?:\.\d+)?\s*(?:复制打开抖音|长按复制此条消息|打开抖音搜索)[^【\n]*?(?:看看)?\s*`)
+	reDouyinPrompt   = regexp.MustCompile(`(?:复制此链接[，,]?\s*打开\s*(?:Dou音|抖音)\s*搜索[，,]?\s*直接观看视频[!！]?|长按复制此条消息[，,]?\s*打开抖音搜索[，,]?\s*查看TA的更多作品[!！]?|复制打开抖音[，,]?\s*看看)`)
+	reDouyinTailCode = regexp.MustCompile(`\s+\d{2}/\d{2}\s+[A-Za-z0-9@._/:+-]+(?:\s+[A-Za-z0-9@._/:+-]+)*\s*$`)
+	reXHSBoilerplate = regexp.MustCompile(`(?:复制本条信息[，,]?\s*打开\s*【?小红书】?\s*App\s*查看精彩内容[!！]?|打开\s*【?小红书】?\s*App\s*查看精彩内容[!！]?|小红书\s*-\s*你的生活指南)`)
+)
+
+// CleanShareCopyNoise strips platform share boilerplate (Douyin/Xiaohongshu copy prompts and share codes) while keeping titles, authors, and hashtags.
+func CleanShareCopyNoise(text string) string {
+	s := strings.TrimSpace(text)
+	if s == "" {
+		return ""
+	}
+	s = reDouyinPrefix.ReplaceAllString(s, "")
+	s = reDouyinPrompt.ReplaceAllString(s, " ")
+	s = reXHSBoilerplate.ReplaceAllString(s, " ")
+	s = reDouyinTailCode.ReplaceAllString(s, "")
+	s = reMultiBlankLine.ReplaceAllString(s, " ")
+	return strings.Trim(strings.TrimSpace(s), " -|—_·:：")
+}
+
+// ExtractShareTextWithoutURL returns meaningful share copy remaining after removing URLs and platform boilerplate.
+func ExtractShareTextWithoutURL(rawInput string) string {
+	noURL := reFirstHTTPURL.ReplaceAllString(strings.TrimSpace(rawInput), " ")
+	return CleanShareCopyNoise(noURL)
 }
 
 func trimTrailingURLPunctuation(u string) string {
@@ -296,14 +338,13 @@ func ParseStashInput(rawInput string) (cleanURL, domain, candidateTitle, kind st
 		return "", "", TruncateRunes(firstLine, 64), StashKindNote
 	}
 
-	prefix := strings.TrimSpace(trimmed[:loc[0]])
-	suffix := strings.TrimSpace(trimmed[loc[0]+len(trimmedURL):])
+	prefix := CleanShareCopyNoise(trimmed[:loc[0]])
+	suffix := CleanShareCopyNoise(trimmed[loc[0]+len(trimmedURL):])
 	cand := prefix
 	if cand == "" {
 		cand = suffix
 	}
-	cand = reMultiBlankLine.ReplaceAllString(cand, " ")
-	cand = strings.Trim(cand, " -|—_·:：")
+	cand = CleanShareCopyNoise(cand)
 
 	if cand == "" {
 		if k == StashKindGitHub {

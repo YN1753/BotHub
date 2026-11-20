@@ -39,12 +39,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
 import uk.starryheavens.vesper.bothub.data.BotHubPrefs
+import uk.starryheavens.vesper.bothub.data.ClientSharePrefetcher
+import uk.starryheavens.vesper.bothub.data.PrefetchedShareMeta
 import uk.starryheavens.vesper.bothub.data.ShareTextParser
 import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
@@ -77,13 +82,28 @@ fun QuickCaptureSheet(
     var errorMsg by remember(rawShared) { mutableStateOf("") }
 
     var hasToken by remember { mutableStateOf(prefs.isLikelyPaired) }
+    var prefetchDeferred by remember(rawShared) { mutableStateOf<Deferred<PrefetchedShareMeta?>?>(null) }
 
     fun submitCapture() {
         if (saving || savingTodo || !hasToken) return
         saving = true
         errorMsg = ""
         scope.launch {
-            api.createStashItem(rawInput = rawShared, userNote = noteInput).fold(
+            val prefetched = runCatching {
+                val active = prefetchDeferred
+                if (active != null) {
+                    withTimeoutOrNull(2800L) { active.await() }
+                } else if (preview.extractedUrl.isNotBlank()) {
+                    ClientSharePrefetcher.prefetch(preview.extractedUrl)
+                } else {
+                    null
+                }
+            }.getOrNull()
+            api.createStashItem(
+                rawInput = rawShared,
+                userNote = noteInput,
+                prefetched = prefetched
+            ).fold(
                 onSuccess = { (_, deduplicated) ->
                     val toastText = if (deduplicated) {
                         "该内容已在 BotHub 收藏匣，已合并批注"
@@ -135,6 +155,11 @@ fun QuickCaptureSheet(
     }
 
     LaunchedEffect(rawShared) {
+        if (preview.extractedUrl.isNotBlank() && ClientSharePrefetcher.shouldPrefetch(preview.extractedUrl)) {
+            prefetchDeferred = async(Dispatchers.IO) {
+                ClientSharePrefetcher.prefetch(preview.extractedUrl)
+            }
+        }
         val warmToken = withContext(Dispatchers.IO) { prefs.warmUpCredentials() }
         hasToken = warmToken.isNotEmpty()
         if (hasToken && prefs.zeroClickCaptureEnabled) {

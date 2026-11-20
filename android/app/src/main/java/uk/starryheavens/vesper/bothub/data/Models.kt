@@ -587,6 +587,24 @@ enum class ShareKind(
         shareHeaderLabel = "GitHub 仓库",
         avatarStyle = "sentinel:indigo"
     ),
+    XIAOHONGSHU(
+        wireKind = "xiaohongshu",
+        badgeLabel = "小红书",
+        shareHeaderLabel = "小红书笔记",
+        avatarStyle = "sentinel:rose"
+    ),
+    DOUYIN(
+        wireKind = "douyin",
+        badgeLabel = "抖音",
+        shareHeaderLabel = "抖音视频",
+        avatarStyle = "butler:cyan"
+    ),
+    WECHAT(
+        wireKind = "wechat",
+        badgeLabel = "公众号",
+        shareHeaderLabel = "公众号文章",
+        avatarStyle = "radar:emerald"
+    ),
     WEB_LINK(
         wireKind = "link",
         badgeLabel = "Web",
@@ -615,6 +633,16 @@ data class SharePreviewInfo(
 ) {
     val kindLabel: String
         get() = kind.shareHeaderLabel
+}
+
+data class PrefetchedShareMeta(
+    val canonicalUrl: String = "",
+    val title: String = "",
+    val excerpt: String = "",
+    val tags: String = ""
+) {
+    val isEmpty: Boolean
+        get() = canonicalUrl.isBlank() && title.isBlank() && excerpt.isBlank() && tags.isBlank()
 }
 
 @Immutable

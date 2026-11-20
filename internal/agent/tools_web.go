@@ -18,7 +18,11 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/notifier"
 )
 
-const MaxReadURLChars = 10000
+const (
+	MaxReadURLChars  = 10000
+	desktopBrowserUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+	mobileBrowserUA  = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1"
+)
 
 var (
 	reHTMLComment  = regexp.MustCompile(`(?s)<!--.*?-->`)
@@ -26,8 +30,12 @@ var (
 	reHTMLTags     = regexp.MustCompile(`(?s)<[^>]+>`)
 	reMultiSpace   = regexp.MustCompile(`[ \t\r\f]+`)
 	reMultiNewline = regexp.MustCompile(`\n{3,}`)
-	reMetaDesc1    = regexp.MustCompile(`(?is)<meta[^>]+name=["'](?:description|og:description)["'][^>]+content=["']([^"']{1,400})["']`)
-	reMetaDesc2    = regexp.MustCompile(`(?is)<meta[^>]+content=["']([^"']{1,400})["'][^>]+name=["'](?:description|og:description)["']`)
+	reMetaDesc1    = regexp.MustCompile(`(?is)<meta[^>]+(?:name|property)=["'](?:description|og:description|twitter:description)["'][^>]+content=["']([^"']{1,800})["']`)
+	reMetaDesc2    = regexp.MustCompile(`(?is)<meta[^>]+content=["']([^"']{1,800})["'][^>]+(?:name|property)=["'](?:description|og:description|twitter:description)["']`)
+	reMetaOGTitle1 = regexp.MustCompile(`(?is)<meta[^>]+(?:name|property)=["'](?:og:title|twitter:title)["'][^>]+content=["']([^"']{1,400})["']`)
+	reMetaOGTitle2 = regexp.MustCompile(`(?is)<meta[^>]+content=["']([^"']{1,400})["'][^>]+(?:name|property)=["'](?:og:title|twitter:title)["']`)
+	reMetaKeywords = regexp.MustCompile(`(?is)<meta[^>]+(?:name|property)=["']keywords["'][^>]+content=["']([^"']{1,400})["']`)
+	reMetaAuthor   = regexp.MustCompile(`(?is)<meta[^>]+(?:name|property)=["']author["'][^>]+content=["']([^"']{1,120})["']`)
 	reHTMLTitle    = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 	reDDGResult    = regexp.MustCompile(`(?is)<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>`)
 	reDDGSnippet   = regexp.MustCompile(`(?is)<a[^>]+class="result__snippet"[^>]*>(.*?)</a>`)
@@ -113,7 +121,36 @@ func webSearchToolSpec() ToolSpec {
 	}
 }
 
+func extractHTMLOGTitle(rawHTML string) string {
+	for _, rx := range []*regexp.Regexp{reMetaOGTitle1, reMetaOGTitle2} {
+		if m := rx.FindStringSubmatch(rawHTML); len(m) > 1 {
+			clean := strings.TrimSpace(html.UnescapeString(m[1]))
+			if clean != "" {
+				return notifier.StripEmoji(clean)
+			}
+		}
+	}
+	return ""
+}
+
+func extractHTMLKeywords(rawHTML string) string {
+	if m := reMetaKeywords.FindStringSubmatch(rawHTML); len(m) > 1 {
+		return notifier.StripEmoji(strings.TrimSpace(html.UnescapeString(m[1])))
+	}
+	return ""
+}
+
+func extractHTMLAuthor(rawHTML string) string {
+	if m := reMetaAuthor.FindStringSubmatch(rawHTML); len(m) > 1 {
+		return notifier.StripEmoji(strings.TrimSpace(html.UnescapeString(m[1])))
+	}
+	return ""
+}
+
 func extractHTMLTitle(rawHTML string) string {
+	if og := extractHTMLOGTitle(rawHTML); og != "" {
+		return og
+	}
 	m := reHTMLTitle.FindStringSubmatch(rawHTML)
 	if len(m) < 2 {
 		return ""
@@ -239,7 +276,8 @@ func (e *Engine) fetchWebResource(ctx context.Context, targetURL, accept string,
 	if err != nil {
 		return 0, "", "", "", err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; VesperBotHub/2.0)")
+	req.Header.Set("User-Agent", desktopBrowserUA)
+	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 	if accept == "" {
 		accept = "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8"
 	}
@@ -260,7 +298,7 @@ func (e *Engine) fetchWebResource(ctx context.Context, targetURL, accept string,
 	if resp.Request != nil && resp.Request.URL != nil {
 		finalURL = resp.Request.URL.String()
 	}
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 1536*1024))
 	if err != nil {
 		return resp.StatusCode, finalURL, "", "", err
 	}

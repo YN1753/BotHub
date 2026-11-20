@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/YN1753/vesper/bothub/internal/agent"
 	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
@@ -51,8 +52,12 @@ func (s *Server) handleCreateStash(w http.ResponseWriter, r *http.Request) {
 		UserNote       string `json:"user_note"`
 		Tags           string `json:"tags"`
 		ForceReprocess bool   `json:"force_reprocess"`
+		ClientURL      string `json:"client_url"`
+		ClientTitle    string `json:"client_title"`
+		ClientExcerpt  string `json:"client_excerpt"`
+		ClientTags     string `json:"client_tags"`
 	}
-	if !decodeJSON(w, r, 128*1024, &req) {
+	if !decodeJSON(w, r, 256*1024, &req) {
 		return
 	}
 	if strings.TrimSpace(req.RawInput) == "" {
@@ -60,7 +65,20 @@ func (s *Server) handleCreateStash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	saved, dedup, err := s.agent.CaptureAndDistillStash(req.RawInput, req.UserNote, req.Tags, req.ForceReprocess)
+	var hint *agent.ClientPrefetchHint
+	if strings.TrimSpace(req.ClientURL) != "" ||
+		strings.TrimSpace(req.ClientTitle) != "" ||
+		strings.TrimSpace(req.ClientExcerpt) != "" ||
+		strings.TrimSpace(req.ClientTags) != "" {
+		hint = &agent.ClientPrefetchHint{
+			CanonicalURL: req.ClientURL,
+			Title:        req.ClientTitle,
+			Excerpt:      req.ClientExcerpt,
+			Tags:         req.ClientTags,
+		}
+	}
+
+	saved, dedup, err := s.agent.CaptureAndDistillStashWithHint(req.RawInput, req.UserNote, req.Tags, req.ForceReprocess, hint)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "保存收藏失败: "+err.Error())
 		return

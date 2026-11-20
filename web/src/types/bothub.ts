@@ -194,7 +194,7 @@ export interface WorkNote {
   updated_at: string
 }
 
-export type StashKind = 'link' | 'bilibili' | 'github' | 'note' | string
+export type StashKind = 'link' | 'bilibili' | 'github' | 'xiaohongshu' | 'douyin' | 'wechat' | 'note' | string
 export type StashStatus = 'pending' | 'processing' | 'ready' | 'failed' | 'archived' | string
 
 export interface StashItem {
