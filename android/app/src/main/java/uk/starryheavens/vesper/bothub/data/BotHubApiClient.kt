@@ -152,22 +152,6 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
-    suspend fun mintWebSession(): Result<WebSessionTicket> = withContext(Dispatchers.IO) {
-        runCatching {
-            val req = requestBuilder("/api/v2/auth/web-session")
-                .post(emptyJsonBody)
-                .build()
-            val json = executeJson(req, "签发混合工作台会话失败")
-            val cookieName = json.optString("cookie_name", "bothub_session").trim()
-            val cookieValue = json.optString("cookie_value", "").trim()
-            val maxAge = json.optInt("max_age", 86400)
-            if (cookieValue.isEmpty()) {
-                throw IllegalStateException("服务端未返回有效工作台会话")
-            }
-            WebSessionTicket(cookieName = cookieName, cookieValue = cookieValue, maxAge = maxAge)
-        }
-    }
-
     suspend fun fetchAppVersion(serverUrlOverride: String? = null): Result<AppVersionInfo> = withContext(Dispatchers.IO) {
         runCatching {
             val req = requestBuilder(
@@ -758,22 +742,6 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 JsonMappers.parseAssetCategories(savedArr)
             }
         }
-
-    suspend fun fetchAgentSessions(): Result<List<AgentSessionSummary>> = withContext(Dispatchers.IO) {
-        runCatching {
-            val req = requestBuilder("/api/agent/sessions").get().build()
-            val json = executeJson(req, "获取会话列表失败")
-            JsonMappers.parseAgentSessions(json.optJSONArray("sessions"))
-        }
-    }
-
-    suspend fun fetchAgentSessionMessages(sessionId: String): Result<List<AgentHistoryMessage>> = withContext(Dispatchers.IO) {
-        runCatching {
-            val req = requestBuilder("/api/agent/sessions/$sessionId").get().build()
-            val json = executeJson(req, "加载历史会话失败")
-            JsonMappers.parseHistoryMessages(json.optJSONArray("messages"))
-        }
-    }
 
     suspend fun fetchBots(): Result<List<BotItem>> = withContext(Dispatchers.IO) {
         runCatching {

@@ -175,7 +175,6 @@ const state = reactive({
   isStreaming: false,
   sseConnected: false,
   soundEnabled: localStorage.getItem('bothub_sound') === '1',
-  ambientMotionPaused: localStorage.getItem('bothub_ambient_paused') === '1',
   chatWide: localStorage.getItem('bothub_chat_wide') === '1',
   sideInspectorOpen: localStorage.getItem('bothub_side_inspector_open') === '1',
   sideInspectorTab: loadSavedInspectorTab(),
@@ -909,12 +908,6 @@ export function useAppStore() {
     notify(state.soundEnabled ? '已开启完成轻提示音' : '已关闭提示音')
   }
 
-  function toggleAmbientMotion() {
-    state.ambientMotionPaused = !state.ambientMotionPaused
-    localStorage.setItem('bothub_ambient_paused', state.ambientMotionPaused ? '1' : '0')
-    notify(state.ambientMotionPaused ? '已暂停背景漂浮与待机动效' : '已恢复背景漂浮与待机动效')
-  }
-
   function toggleChatWide() {
     state.chatWide = !state.chatWide
     try {
@@ -1156,7 +1149,6 @@ export function useAppStore() {
     setBotDraft,
     getBotDraft,
     toggleSound,
-    toggleAmbientMotion,
     toggleChatWide,
     toggleSideInspector,
     setSideInspectorTab,

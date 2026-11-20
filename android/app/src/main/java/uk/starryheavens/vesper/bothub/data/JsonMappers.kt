@@ -383,24 +383,6 @@ object JsonMappers {
         return out
     }
 
-    fun parseAgentSessions(arr: JSONArray?): List<AgentSessionSummary> {
-        if (arr == null) return emptyList()
-        return buildList {
-            for (i in 0 until arr.length()) {
-                val s = arr.optJSONObject(i) ?: continue
-                add(
-                    AgentSessionSummary(
-                        id = s.optString("id"),
-                        title = s.optString("title", "未命名会话"),
-                        persona = s.optString("persona", "grok"),
-                        model = s.optString("model", "deepseek-flash"),
-                        updatedAt = s.optString("updated_at", "")
-                    )
-                )
-            }
-        }
-    }
-
     fun parseAssetCategories(catArr: JSONArray?): List<AssetCategoryItem> {
         if (catArr == null) return emptyList()
         return buildList {

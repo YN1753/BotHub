@@ -43,7 +43,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -62,17 +61,12 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
-import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
-import uk.starryheavens.vesper.bothub.ui.GrokBotGroupCluster
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 fun formatModuleBadge(moduleId: String): Pair<String, Color> {
@@ -105,20 +99,6 @@ fun ObsidianSheetDragHandle(modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-fun ObsidianSwitch(
-    checked: Boolean,
-    onCheckedChange: ((Boolean) -> Unit)?,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier
-) {
-    TactileToggle(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        enabled = enabled,
-        modifier = modifier
-    )
-}
 
 @Composable
 fun ObsidianGlassInput(
@@ -204,41 +184,6 @@ fun ObsidianGlassInput(
     }
 }
 
-@Composable
-fun BotAvatarOrCluster(
-    bot: BotItem?,
-    allBots: List<BotItem>,
-    state: String = bot?.state ?: "idle",
-    size: Dp = 36.dp,
-    interactive: Boolean = false,
-    isListening: Boolean = false,
-    activeSpeakerId: String = "",
-    defaultStyle: String = "butler:gold",
-    defaultSeedKey: String = "bothub_bot",
-    modifier: Modifier = Modifier
-) {
-    if (bot?.isGroup == true) {
-        GrokBotGroupCluster(
-            members = bot.resolveGroupMembers(allBots),
-            fallbackStyle = bot.avatarStyle,
-            state = state,
-            activeSpeakerId = activeSpeakerId,
-            size = size,
-            interactive = interactive,
-            modifier = modifier
-        )
-    } else {
-        GrokBotAvatar(
-            avatarStyle = bot?.avatarStyle ?: defaultStyle,
-            state = state,
-            size = size,
-            interactive = interactive,
-            isListening = isListening,
-            seedKey = bot?.id ?: defaultSeedKey,
-            modifier = modifier
-        )
-    }
-}
 
 /**
  * Clean, Theme-Adaptive WeChat / QQ Top Bar.
@@ -566,49 +511,6 @@ fun BotHubBottomBar(
     }
 }
 
-@Composable
-fun MetricMiniCard(
-    label: String,
-    value: String,
-    accentColor: Color = MaterialTheme.colorScheme.primary,
-    modifier: Modifier = Modifier
-) {
-    val theme = BotHubThemeTokens
-    SpecularGlassCard(
-        modifier = modifier,
-        cornerRadius = 18.dp,
-        accentTint = accentColor,
-        elevation = 5.dp
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-            Text(
-                text = label,
-                style = TextStyle(
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = theme.textMuted,
-                    platformStyle = NoFontPaddingStyle
-                ),
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = value,
-                style = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = accentColor,
-                    platformStyle = NoFontPaddingStyle
-                ),
-                maxLines = 1,
-                softWrap = false
-            )
-        }
-    }
-}
 
 @Composable
 fun ZeroClickCaptureRow(

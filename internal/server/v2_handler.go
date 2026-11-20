@@ -346,10 +346,8 @@ func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 		_, _ = s.store.CreateNotification("nezha_webhook", title, content, markdown, "high")
 	}
 
-	targetBotID := s.resolveAlertTargetBotID()
-
 	if shouldTriggerNezhaAITriage(title, content) && s.agent != nil {
-		go s.triageNezhaAlertAsync(targetBotID, title, content)
+		go s.triageNezhaAlertAsync(title, content)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -368,7 +366,7 @@ func shouldTriggerNezhaAITriage(title, content string) bool {
 	return false
 }
 
-func (s *Server) triageNezhaAlertAsync(targetBotID, title, content string) {
+func (s *Server) triageNezhaAlertAsync(title, content string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
@@ -386,60 +384,6 @@ func (s *Server) triageNezhaAlertAsync(targetBotID, title, content string) {
 		_ = s.push.SendWithPriority(ctx, "nezha_ai_triage", triageTitle, triageMD, "normal")
 	} else {
 		_, _ = s.store.CreateNotification("nezha_ai_triage", triageTitle, analysis, triageMD, "normal")
-	}
-}
-
-func (s *Server) resolveAlertTargetBotID() string {
-	bots, _ := s.store.ListBots()
-	for _, b := range bots {
-		if b.IsGroup {
-			continue
-		}
-		for _, tool := range b.AllowedToolList() {
-			if tool == "query_nezha_nodes" {
-				return b.ID
-			}
-		}
-	}
-	for _, b := range bots {
-		if !b.IsGroup {
-			return b.ID
-		}
-	}
-	return ""
-}
-
-func (s *Server) appendAlertToBot(botID, title, state, markdown string) {
-	if botID == "" {
-		return
-	}
-	now := store.NowShanghai()
-	msg := store.AgentMessage{
-		SessionID:   "bot:" + botID,
-		BotID:       botID,
-		SenderBotID: botID,
-		MsgKind:     "routine",
-		Role:        "assistant",
-		Content:     markdown,
-	}
-	if mid, mErr := s.store.AppendAgentMessage(msg); mErr == nil {
-		msg.ID = mid
-		msg.CreatedAt = now
-	}
-	_ = s.store.SetBotState(botID, state, title)
-	_ = s.store.IncrementBotUnread(botID, title)
-	unread := 0
-	if b, _ := s.store.GetBot(botID); b != nil {
-		unread = b.UnreadCount
-	}
-	if s.push != nil && s.push.Hub() != nil {
-		s.push.Hub().PublishEvent("bot_message", msg)
-		s.push.Hub().PublishEvent("bot_state", map[string]any{
-			"bot_id":       botID,
-			"state":        state,
-			"unread_count": unread,
-			"last_summary": title,
-		})
 	}
 }
 

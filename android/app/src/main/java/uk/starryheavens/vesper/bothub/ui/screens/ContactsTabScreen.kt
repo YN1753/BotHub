@@ -44,12 +44,10 @@ import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 @Composable
 fun ContactsTabScreen(
     bots: List<BotItem>,
-    unreadInboxCount: Int,
     onOpenProfile: (BotItem) -> Unit,
     onOpenChat: (String) -> Unit,
     onCreateFriend: () -> Unit,
     onCreateGroup: () -> Unit,
-    onOpenServiceFeed: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val theme = BotHubThemeTokens

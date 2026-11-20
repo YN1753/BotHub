@@ -9,7 +9,6 @@ import type {
   DashboardPayload,
   ModelHealthStats,
   ModelOptionDTO,
-  ModelPoolEntry,
   ModelProvider,
   ModelUsageSummary,
   PoolStrategies,
@@ -177,11 +176,6 @@ export const BotHubApi = {
       method: 'POST',
       body: JSON.stringify({ target_id }),
     }),
-  saveModelPool: (entries: ModelPoolEntry[]) =>
-    apiRequest<{ ok: boolean; model_pool: ModelPoolEntry[] }>('/api/v2/model-pool', {
-      method: 'POST',
-      body: JSON.stringify({ entries }),
-    }),
   testModelTarget: (payload: {
     provider_id?: string
     entry_id?: string
@@ -259,8 +253,6 @@ export const BotHubApi = {
     apiRequest('/api/system/import', { method: 'POST', body: JSON.stringify(payload) }),
 
   // Assets & Extensible Categories
-  getAssetCategories: () =>
-    apiRequest<{ ok: boolean; categories: AssetCategoryOption[] }>('/api/v2/asset-categories'),
   saveAssetCategories: (categories: AssetCategoryOption[]) =>
     apiRequest<{ ok: boolean; categories: AssetCategoryOption[] }>('/api/v2/asset-categories', {
       method: 'PUT',

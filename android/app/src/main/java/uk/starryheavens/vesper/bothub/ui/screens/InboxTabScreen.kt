@@ -59,7 +59,6 @@ private fun formatShortTimestamp(raw: String): String {
 fun InboxTabScreen(
     notifications: List<NotificationItem>,
     onSelectNotification: (NotificationItem) -> Unit,
-    onMarkAllRead: () -> Unit,
     onMarkOneRead: (NotificationItem) -> Unit = {},
     onDeleteNotification: (NotificationItem) -> Unit = {},
     modifier: Modifier = Modifier

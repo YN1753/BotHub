@@ -336,17 +336,6 @@ html[data-color-mode="light"] .bot-light-outline {
   }
 }
 
-/* WCAG 2.2.2 user-controlled pause for persistent ambient Bot idle motion */
-[data-ambient-paused="true"] .bot-avatar-idle .bot-float-rig,
-[data-ambient-paused="true"] .bot-avatar-idle .bot-act-rig,
-[data-ambient-paused="true"] .bot-avatar-idle .bot-ground-shadow,
-[data-ambient-paused="true"] .bot-avatar-idle .bot-inner-aurora,
-[data-ambient-paused="true"] .bot-avatar-idle .bot-eye-pair,
-[data-ambient-paused="true"] .bot-avatar-idle .bot-eye-l,
-[data-ambient-paused="true"] .bot-avatar-idle .bot-eye-gaze {
-  animation-play-state: paused !important;
-}
-
 @keyframes botSoftBodyFloat {
   0%, 100% {
     transform: translate3d(0, 1.4px, 0) scale(1.03, 0.97);

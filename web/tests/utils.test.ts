@@ -19,7 +19,6 @@ import {
   scoreOmnisearchMatch,
 } from '../src/utils/format.ts'
 import {
-  formatToolDisplayName,
   formatToolHumanName,
   groupAvailableTools,
   summarizeToolStep,
@@ -156,12 +155,6 @@ test('scoreOmnisearchMatch ranks exact, prefix, title, subtitle and body hits', 
 })
 
 test('toolMeta groups and formats builtin & skill names cleanly', () => {
-  assert.equal(formatToolDisplayName('manage_todos', []), '个人待办管理 (manage_todos)')
-  assert.equal(formatToolDisplayName('manage_stash', []), '收藏与闪念匣 (manage_stash)')
-  assert.equal(
-    formatToolDisplayName('skill_weather', [{ id: '1', slug: 'weather', name: '天气助手' } as any]),
-    '天气助手 (skill_weather)'
-  )
   const grouped = groupAvailableTools([
     { id: 'manage_todos', description: 'todos' },
     { id: 'custom_unknown', description: 'extra' },

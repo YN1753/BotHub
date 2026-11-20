@@ -73,7 +73,6 @@ import uk.starryheavens.vesper.bothub.ui.screens.ImChatsTabScreen
 import uk.starryheavens.vesper.bothub.ui.screens.ServiceFeedScreen
 import uk.starryheavens.vesper.bothub.ui.screens.StashDetailScreen
 import uk.starryheavens.vesper.bothub.ui.screens.StashTabScreen
-import uk.starryheavens.vesper.bothub.ui.sheets.AgentSessionsSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.BotMemoriesSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.BotProfileSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.ChatInfoSheet
@@ -439,12 +438,10 @@ fun BotHubApp(
                                 BotHubTab.INBOX -> ContactsTabScreen(
                                     modifier = contentModifier,
                                     bots = viewModel.bots,
-                                    unreadInboxCount = unreadInbox,
                                     onOpenProfile = viewModel::openBotProfile,
                                     onOpenChat = viewModel::openChatRoom,
                                     onCreateFriend = viewModel::openCreateFriend,
-                                    onCreateGroup = { viewModel.openCreateGroup("") },
-                                    onOpenServiceFeed = viewModel::openServiceFeed
+                                    onCreateGroup = { viewModel.openCreateGroup("") }
                                 )
 
                                 BotHubTab.STASH -> StashTabScreen(
@@ -726,16 +723,6 @@ fun BotHubApp(
             allBots = viewModel.bots,
             onSubmit = { memberIds -> viewModel.saveGroupMembers(freshGroup.id, memberIds) },
             onDismiss = viewModel::dismissManageGroupMembers
-        )
-    }
-
-    if (viewModel.showSessionsSheet) {
-        AgentSessionsSheet(
-            sessions = viewModel.agentSessions,
-            currentSessionId = viewModel.sessionId,
-            onSelectSession = viewModel::loadAgentSession,
-            onNewSession = viewModel::startNewSession,
-            onDismiss = viewModel::dismissSessions
         )
     }
 

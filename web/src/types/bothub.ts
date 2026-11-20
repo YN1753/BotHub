@@ -286,13 +286,6 @@ export interface AvailableToolMeta {
   description: string
 }
 
-export interface UpstreamModelCheck {
-  id: string
-  usable: boolean
-  latency_ms?: number
-  reason?: string
-}
-
 export type ProviderProtocol = 'openai' | 'gemini'
 export type PoolStrategy = 'priority' | 'round_robin' | 'lowest_latency'
 

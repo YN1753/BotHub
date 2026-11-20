@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
@@ -102,14 +101,4 @@ func (r *Registry) SetBotRoutineExecutor(exec BotRoutineExecutor) {
 			bp.SetExecutor(exec)
 		}
 	}
-}
-
-// EnsureRunnerExists validates if a runner is registered for the specified task type.
-func (r *Registry) EnsureRunnerExists(taskType string) error {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if _, ok := r.runners[taskType]; !ok {
-		return fmt.Errorf("no runner registered for template type: %s", taskType)
-	}
-	return nil
 }

@@ -704,7 +704,6 @@ async function clearTimeline() {
                 :bot="bot"
                 :is-group-bot="isGroupBot"
                 :group-members="groupMembers"
-                @pick-prompt="(p, prefill) => { if (prefill) { inputPrompt = p; nextTick(() => composerRef?.focus()) } else { sendPrompt(p) } }"
               />
 
               <BotMessageItem

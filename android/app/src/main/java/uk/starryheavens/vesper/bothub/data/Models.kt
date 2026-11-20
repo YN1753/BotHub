@@ -168,12 +168,6 @@ private fun formatShortNextRun(raw: String): String {
     return clean.take(16)
 }
 
-data class WebSessionTicket(
-    val cookieName: String,
-    val cookieValue: String,
-    val maxAge: Int
-)
-
 data class AppVersionInfo(
     val version: String,
     val apkUrl: String
@@ -368,15 +362,6 @@ data class DashboardSlicePayload(
     val revisions: Map<String, Long> = emptyMap()
 )
 
-@Immutable
-data class AgentSessionSummary(
-    val id: String,
-    val title: String,
-    val persona: String,
-    val model: String,
-    val updatedAt: String
-)
-
 fun formatImTime(raw: String): String {
     val clean = raw.trim()
     if (clean.isEmpty()) return ""
@@ -429,16 +414,6 @@ data class BotItem(
 
     fun liveState(isStreamingThisBot: Boolean): String =
         if (isStreamingThisBot) "working" else state
-
-    fun statusLabel(isStreamingThisBot: Boolean): String {
-        return when (liveState(isStreamingThisBot)) {
-            "thinking" -> "对方正在思考..."
-            "working" -> if (isGroup) "群成员协作中..." else "对方正在输入..."
-            "blocked" -> "等待确认"
-            "done" -> "在线"
-            else -> if (isGroup) "协同群聊" else roleTitle.ifEmpty { "在线" }
-        }
-    }
 
     fun modeBadgeLabel(): String {
         if (isGroup) return "群聊"

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -291,8 +290,6 @@ func (e *Engine) toolQueryNezhaNodes(ctx context.Context, argsJSON string) (stri
 	payload, _ := json.Marshal(payloadMap)
 	return string(payload), nil
 }
-
-var reAssetNumber = regexp.MustCompile(`([0-9]+(?:\.[0-9]+)?)`)
 
 func (e *Engine) summarizeAssetsPayload(categoryFilter string) (string, error) {
 	assets, err := e.store.ListAssets()

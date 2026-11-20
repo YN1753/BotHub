@@ -175,8 +175,7 @@ fun ServiceFeedScreen(
             notifications = notifications,
             onSelectNotification = onSelectNotification,
             onMarkOneRead = onMarkOneRead,
-            onDeleteNotification = onDeleteNotification,
-            onMarkAllRead = onMarkAllRead
+            onDeleteNotification = onDeleteNotification
         )
     }
 }

@@ -10,10 +10,6 @@ const props = defineProps<{
   groupMembers: Bot[]
 }>()
 
-defineEmits<{
-  pickPrompt: [prompt: string, prefillOnly?: boolean]
-}>()
-
 const isConcierge = computed(
   () => props.bot?.id === 'concierge' || props.bot?.name === '大管家'
 )

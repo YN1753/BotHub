@@ -19,7 +19,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import uk.starryheavens.vesper.bothub.data.AgentHistoryMessage
-import uk.starryheavens.vesper.bothub.data.AgentSessionSummary
 import uk.starryheavens.vesper.bothub.data.AssetCategoryItem
 import uk.starryheavens.vesper.bothub.data.AssetItem
 import uk.starryheavens.vesper.bothub.data.BotHubApiClient
@@ -144,12 +143,6 @@ class BotHubViewModel(
         private set
 
     var enableThinking by mutableStateOf(prefs.enableThinking)
-        private set
-
-    var agentSessions by mutableStateOf<List<AgentSessionSummary>>(emptyList())
-        private set
-
-    var showSessionsSheet by mutableStateOf(false)
         private set
 
     var inputText by mutableStateOf("")
@@ -964,10 +957,6 @@ class BotHubViewModel(
         }
     }
 
-    fun selectBot(botId: String) {
-        openChatRoom(botId)
-    }
-
     fun togglePinBot(bot: BotItem) {
         val nextPinned = !bot.isPinned
         val optimistic = bots.map { if (it.id == bot.id) it.copy(isPinned = nextPinned) else it }
@@ -1400,11 +1389,6 @@ class BotHubViewModel(
         }
     }
 
-    fun updatePersona(persona: String) {
-        activePersona = persona
-        prefs.activePersona = persona
-    }
-
     fun updateModel(model: String) {
         activeModel = model
         prefs.activeModel = model
@@ -1469,47 +1453,6 @@ class BotHubViewModel(
         inputText = text
         if (sessionId.isEmpty() && activeBotId.isNotBlank()) {
             persistBotDraft(activeBotId, text)
-        }
-    }
-
-    fun openSessions() {
-        viewModelScope.launch {
-            api.fetchAgentSessions().onSuccess { agentSessions = it }
-        }
-        showSessionsSheet = true
-    }
-
-    fun dismissSessions() {
-        showSessionsSheet = false
-    }
-
-    fun startNewSession() {
-        sessionId = ""
-        chatMessages.clear()
-        showSessionsSheet = false
-    }
-
-    fun loadAgentSession(sess: AgentSessionSummary) {
-        if (isStreaming) return
-        viewModelScope.launch {
-            api.fetchAgentSessionMessages(sess.id).onSuccess { msgs ->
-                sessionId = sess.id
-                activePersona = sess.persona
-                activeModel = sess.model
-                chatMessages.clear()
-                msgs.forEach { m ->
-                    chatMessages.add(
-                        m.toChatTurnUi(
-                            idPrefix = "hist",
-                            defaultPersona = sess.persona,
-                            defaultModel = sess.model
-                        )
-                    )
-                }
-                showSessionsSheet = false
-            }.onFailure { err ->
-                showMessage("加载历史会话失败: ${err.message}")
-            }
         }
     }
 

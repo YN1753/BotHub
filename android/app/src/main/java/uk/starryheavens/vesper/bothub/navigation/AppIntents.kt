@@ -1,6 +1,5 @@
 package uk.starryheavens.vesper.bothub.navigation
 
-import android.app.PendingIntent
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -41,15 +40,6 @@ object AppIntents {
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
             )
         }
-    }
-
-    fun createClipboardCapturePendingIntent(context: Context, requestCode: Int = 9201): PendingIntent {
-        return PendingIntent.getActivity(
-            context.applicationContext,
-            requestCode,
-            createClipboardCaptureIntent(context.applicationContext),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
     }
 
     fun readClipboardText(context: Context): String {

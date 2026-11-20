@@ -31,16 +31,6 @@ const TOOL_META: Record<string, { group: string; shortLabel: string }> = {
   query_nezha_nodes: { group: 'ops', shortLabel: '哪吒探针巡检' },
 }
 
-export function formatToolDisplayName(name: string, skills: Skill[] = []): string {
-  if (name.startsWith('skill_')) {
-    const slug = name.slice(6)
-    const found = skills.find((s) => s.slug === slug)
-    return found ? `${found.name} (${name})` : name
-  }
-  const meta = TOOL_META[name]
-  return meta ? `${meta.shortLabel} (${name})` : name
-}
-
 export function formatToolHumanName(name: string, skills: Skill[] = []): string {
   if (name.startsWith('skill_')) {
     const slug = name.slice(6)

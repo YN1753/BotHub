@@ -264,7 +264,6 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="relative min-h-dvh bg-canvas text-fg"
-    :data-ambient-paused="store.state.ambientMotionPaused || undefined"
     :data-app-shell="isAppShell ? '1' : undefined"
   >
     <!-- Initial Loading Gate -->
