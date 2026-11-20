@@ -2413,6 +2413,27 @@ class BotHubViewModel(
         }
     }
 
+    fun clearDoneTodos() {
+        val prevDash = dashboard
+        if (prevDash != null) {
+            val optimistic = prevDash.copy(todos = prevDash.todos.filterNot { it.isDone })
+            dashboard = optimistic
+            prefs.saveCachedDashboard(optimistic)
+        }
+        viewModelScope.launch {
+            api.clearDoneTodos().onSuccess { removed ->
+                showMessage(if (removed > 0) "已清理 $removed 项已完成待办" else "已完成待办已清空")
+                syncDashboardSlices(listOf("todos"))
+            }.onFailure { err ->
+                if (prevDash != null) {
+                    dashboard = prevDash
+                    prefs.saveCachedDashboard(prevDash)
+                }
+                showMessage(err.message ?: "清理已完成待办失败")
+            }
+        }
+    }
+
     fun saveNoteItem(
         existingId: String?,
         title: String,

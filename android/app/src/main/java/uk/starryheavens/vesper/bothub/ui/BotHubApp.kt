@@ -481,6 +481,7 @@ fun BotHubApp(
                                     onToggleTodoDone = viewModel::toggleTodoDone,
                                     onUpdateTodo = viewModel::updateTodoItem,
                                     onDeleteTodo = viewModel::deleteTodoItem,
+                                    onClearDoneTodos = viewModel::clearDoneTodos,
                                     onSaveNote = viewModel::saveNoteItem,
                                     onDeleteNote = viewModel::deleteNoteItem
                                 )

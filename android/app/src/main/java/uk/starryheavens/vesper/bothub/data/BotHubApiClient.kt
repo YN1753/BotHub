@@ -638,6 +638,16 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun clearDoneTodos(): Result<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/todos/clear-done")
+                .post(jsonBody("{}"))
+                .build()
+            val json = executeJson(req, "清理已完成待办失败")
+            json.optInt("removed", 0)
+        }
+    }
+
     suspend fun saveNote(
         existingId: String?,
         title: String,
