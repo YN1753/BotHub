@@ -351,6 +351,8 @@ object JsonMappers {
                 msgKind = msgKind,
                 senderBotId = m.optString("sender_bot_id", ""),
                 modelUsed = m.optString("model_used", ""),
+                modelTargetId = m.optString("model_target_id", ""),
+                modelTier = m.optString("model_tier", ""),
                 toolTraces = traces
             )
 
@@ -373,7 +375,9 @@ object JsonMappers {
                     reasoningContent = mergedReasoning,
                     toolTraces = prev.toolTraces + mapped.toolTraces,
                     content = mapped.content.ifEmpty { prev.content },
-                    modelUsed = mapped.modelUsed.ifBlank { prev.modelUsed }
+                    modelUsed = mapped.modelUsed.ifBlank { prev.modelUsed },
+                    modelTargetId = mapped.modelTargetId.ifBlank { prev.modelTargetId },
+                    modelTier = mapped.modelTier.ifBlank { prev.modelTier }
                 )
                 continue
             }
@@ -432,13 +436,16 @@ object JsonMappers {
                 val o = arr.optJSONObject(i) ?: continue
                 val id = o.optString("id", "").trim()
                 if (id.isNotEmpty()) {
+                    val keysList = optStringList(o, "api_keys")
+                    val primaryKey = o.optString("api_key", "").ifBlank { keysList.firstOrNull().orEmpty() }
                     add(
                         ModelProviderItem(
                             id = id,
                             name = o.optString("name", id).ifBlank { id },
                             protocol = o.optString("protocol", "openai").ifBlank { "openai" },
                             baseUrl = o.optString("base_url", ""),
-                            apiKey = o.optString("api_key", ""),
+                            apiKey = primaryKey,
+                            apiKeys = keysList.ifEmpty { listOfNotNull(primaryKey.takeIf { it.isNotBlank() }) },
                             enabled = o.optBoolean("enabled", true),
                             note = o.optString("note", "")
                         )

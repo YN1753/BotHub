@@ -97,6 +97,8 @@ type ChatResponse struct {
 	SenderBotID      string      `json:"sender_bot_id,omitempty"`
 	Persona          string      `json:"persona"`
 	Model            string      `json:"model"`
+	ModelTargetID    string      `json:"model_target_id,omitempty"`
+	ModelTier        string      `json:"model_tier,omitempty"`
 	ProviderLabel    string      `json:"provider_label,omitempty"`
 	ReasoningContent string      `json:"reasoning_content,omitempty"`
 	Content          string      `json:"content"`
@@ -600,6 +602,9 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 		SessionID:        session.ID,
 		Persona:          persona.ID,
 		Model:            model,
+		ModelTargetID:    activeTarget.ID,
+		ModelTier:        activeTarget.Tier,
+		ProviderLabel:    activeTarget.Label,
 		ReasoningContent: totalReasoning.String(),
 		Content:          finalContent.String(),
 		ToolTraces:       traces,
@@ -881,6 +886,11 @@ func (e *Engine) streamRoundWithFailover(
 				})
 			}
 		}
+		keys := e.health.prioritizeHealthyKeys(target.ID, target.EffectiveAPIKeys())
+		if len(keys) == 0 {
+			keys = []string{strings.TrimSpace(target.APIKey)}
+		}
+
 		var thinkingCfg *thinkingConfig
 		if target.AllowThinking {
 			enabled := true
@@ -894,45 +904,77 @@ func (e *Engine) streamRoundWithFailover(
 			}
 		}
 
-		turnStart := time.Now()
-		emittedAny := false
-		rReasoning, rContent, tcs, usage, err := e.streamSingleRoundWithProvider(
-			ctx, target.Provider, target.BaseURL, target.APIKey, target.Model,
-			messages, tools, thinkingCfg,
-			func(dR, dC string) {
-				if dR != "" || dC != "" {
-					emittedAny = true
+		targetFailed := false
+		for keyIdx, apiKey := range keys {
+			if keyIdx > 0 && emit != nil {
+				reason := ""
+				if lastErr != nil {
+					reason = truncateTitle(lastErr.Error())
 				}
-				if onDelta != nil {
-					onDelta(dR, dC)
-				}
-			},
-		)
-		if err == nil {
+				emit("model_switch", map[string]any{
+					"from_label": fmt.Sprintf("%s (密钥 #%d)", target.Label, keyIdx),
+					"to_label":   fmt.Sprintf("%s (密钥 #%d)", target.Label, keyIdx+1),
+					"to_model":   target.Model,
+					"reason":     reason,
+				})
+			}
+
+			turnStart := time.Now()
+			emittedAny := false
+			rReasoning, rContent, tcs, usage, err := e.streamSingleRoundWithProvider(
+				ctx, target.Provider, target.BaseURL, apiKey, target.Model,
+				messages, tools, thinkingCfg,
+				func(dR, dC string) {
+					if dR != "" || dC != "" {
+						emittedAny = true
+					}
+					if onDelta != nil {
+						onDelta(dR, dC)
+					}
+				},
+			)
+			if err == nil {
+				elapsedMs := time.Since(turnStart).Milliseconds()
+				e.health.recordKeySuccess(target.ID, apiKey)
+				e.health.recordSuccess(target.ID, elapsedMs)
+				e.recordModelUsage(ctx, target, "chat", usage, elapsedMs, true)
+				return rReasoning, rContent, tcs, usage, target, nil
+			}
+			if ctx.Err() != nil {
+				return "", "", nil, nil, target, err
+			}
+			lastErr = err
+			lowerMsg := strings.ToLower(err.Error())
+			is429 := strings.Contains(err.Error(), "(429)") || strings.Contains(lowerMsg, "rate")
+			e.health.recordKeyFailure(target.ID, apiKey, err.Error(), is429)
+
+			if emittedAny {
+				elapsedMs := time.Since(turnStart).Milliseconds()
+				e.health.recordFailure(target.ID, err.Error(), is429)
+				e.recordModelUsage(ctx, target, "chat", nil, elapsedMs, false)
+				return "", "", nil, nil, target, err
+			}
+
+			// If this target still has backup keys, immediately rotate to the next key before failing the target
+			if keyIdx+1 < len(keys) {
+				continue
+			}
+
 			elapsedMs := time.Since(turnStart).Milliseconds()
-			e.health.recordSuccess(target.ID, elapsedMs)
-			e.recordModelUsage(ctx, target, "chat", usage, elapsedMs, true)
-			return rReasoning, rContent, tcs, usage, target, nil
+			isTransient := is429 || strings.Contains(err.Error(), "(502)") || strings.Contains(err.Error(), "(503)") || strings.Contains(err.Error(), "(504)") || strings.Contains(lowerMsg, "eof") || strings.Contains(lowerMsg, "reset")
+			if len(targets) == 1 && idx == 0 && !isTransient {
+				e.health.recordFailure(target.ID, err.Error(), is429)
+				e.recordModelUsage(ctx, target, "chat", nil, elapsedMs, false)
+				return "", "", nil, nil, target, err
+			}
+			if len(targets) > 1 || idx > 0 || isTransient {
+				e.health.recordFailure(target.ID, err.Error(), is429)
+				e.recordModelUsage(ctx, target, "chat", nil, elapsedMs, false)
+			}
+			targetFailed = true
 		}
-		if ctx.Err() != nil {
-			return "", "", nil, nil, target, err
-		}
-		lastErr = err
-		elapsedMs := time.Since(turnStart).Milliseconds()
-		lowerMsg := strings.ToLower(err.Error())
-		is429 := strings.Contains(err.Error(), "(429)") || strings.Contains(lowerMsg, "rate")
-		isTransient := is429 || strings.Contains(err.Error(), "(502)") || strings.Contains(err.Error(), "(503)") || strings.Contains(err.Error(), "(504)") || strings.Contains(lowerMsg, "eof") || strings.Contains(lowerMsg, "reset")
-		if len(targets) == 1 && idx == 0 && !isTransient {
-			e.health.recordFailure(target.ID, err.Error(), is429)
-			e.recordModelUsage(ctx, target, "chat", nil, elapsedMs, false)
-			return "", "", nil, nil, target, err
-		}
-		if len(targets) > 1 || idx > 0 || isTransient {
-			e.health.recordFailure(target.ID, err.Error(), is429)
-			e.recordModelUsage(ctx, target, "chat", nil, elapsedMs, false)
-		}
-		if emittedAny {
-			return "", "", nil, nil, target, err
+		if targetFailed {
+			continue
 		}
 	}
 	if lastErr != nil {

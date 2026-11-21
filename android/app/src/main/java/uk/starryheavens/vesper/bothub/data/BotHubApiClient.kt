@@ -353,13 +353,16 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         runCatching {
             val provArr = JSONArray()
             providers.forEach { p ->
+                val effKeys = p.effectiveApiKeys()
+                val keysArr = JSONArray().apply { effKeys.forEach { put(it) } }
                 provArr.put(
                     JSONObject()
                         .put("id", p.id.trim())
                         .put("name", p.name.trim())
                         .put("protocol", p.protocol.ifBlank { "openai" })
                         .put("base_url", p.baseUrl.trim())
-                        .put("api_key", p.apiKey.trim())
+                        .put("api_key", effKeys.firstOrNull() ?: p.apiKey.trim())
+                        .put("api_keys", keysArr)
                         .put("enabled", p.enabled)
                         .put("note", p.note.trim())
                 )
@@ -399,21 +402,32 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         providerId: String,
         protocol: String,
         baseUrl: String,
-        apiKey: String
-    ): Result<List<String>> = withContext(Dispatchers.IO) {
+        apiKeys: List<String>,
+        verify: Boolean = true
+    ): Result<UpstreamFetchResult> = withContext(Dispatchers.IO) {
         runCatching {
+            val cleanKeys = apiKeys.flatMap { it.split('\n', '\r', ',', ';') }
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+            val keysArr = JSONArray().apply { cleanKeys.forEach { put(it) } }
             val payload = JSONObject()
                 .put("provider_id", providerId.trim())
                 .put("protocol", protocol.ifBlank { "openai" })
                 .put("base_url", baseUrl.trim())
-                .put("api_key", apiKey.trim())
-                .put("verify", false)
+                .put("api_key", cleanKeys.firstOrNull().orEmpty())
+                .put("api_keys", keysArr)
+                .put("verify", verify)
                 .toString()
             val req = requestBuilder("/api/v2/model-pool/models")
                 .post(jsonBody(payload))
                 .build()
             val json = executeJson(req, "拉取模型列表失败")
-            JsonMappers.optStringList(json, "models")
+            UpstreamFetchResult(
+                models = JsonMappers.optStringList(json, "models"),
+                filteredOutCount = json.optInt("filtered_out_count", 0),
+                failedVerifyCount = json.optInt("failed_verify_count", 0)
+            )
         }
     }
 
@@ -422,11 +436,14 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         modelId: String
     ): Result<ModelProbeResultItem> = withContext(Dispatchers.IO) {
         runCatching {
+            val effKeys = provider.effectiveApiKeys()
+            val keysArr = JSONArray().apply { effKeys.forEach { put(it) } }
             val payload = JSONObject()
                 .put("provider_id", provider.id.trim())
                 .put("protocol", provider.protocol.ifBlank { "openai" })
                 .put("base_url", provider.baseUrl.trim())
-                .put("api_key", provider.apiKey.trim())
+                .put("api_key", effKeys.firstOrNull() ?: provider.apiKey.trim())
+                .put("api_keys", keysArr)
                 .put("model", modelId.trim())
                 .put("probe_tools", true)
                 .toString()
@@ -1277,7 +1294,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         onToolDetail: (id: String, name: String, arguments: String, result: String, status: String) -> Unit = { _, _, _, _, _ -> },
         onContentDelta: (String) -> Unit,
         onModelSwitch: (fromLabel: String, toLabel: String, toModel: String, reason: String) -> Unit = { _, _, _, _ -> },
-        onDoneModel: (String) -> Unit = {},
+        onDoneModel: (usedModel: String, targetId: String, tier: String) -> Unit = { _, _, _ -> },
         onError: (String) -> Unit
     ) = withContext(Dispatchers.IO) {
         runCatching {
@@ -1347,7 +1364,11 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                         }
                         "done" -> {
                             val usedModel = dataObj.optString("model", "").trim()
-                            if (usedModel.isNotEmpty()) onDoneModel(usedModel)
+                            val targetId = dataObj.optString("model_target_id", "").trim()
+                            val tier = dataObj.optString("model_tier", "").trim()
+                            if (usedModel.isNotEmpty() || targetId.isNotEmpty()) {
+                                onDoneModel(usedModel, targetId, tier)
+                            }
                         }
                         "error" -> {
                             onError(dataObj.optString("error", "流式响应异常"))

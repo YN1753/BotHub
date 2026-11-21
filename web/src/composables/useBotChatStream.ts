@@ -344,6 +344,8 @@ export function useBotChatStream(options: {
                   ? `${payload.model} (已回退)`
                   : payload.model
               }
+              if (payload.model_target_id) activeTurn.modelTargetId = String(payload.model_target_id)
+              if (payload.model_tier) activeTurn.modelTier = String(payload.model_tier)
               const elapsedSec = ((Date.now() - turnStartedAt) / 1000).toFixed(1)
               activeTurn.statusText = modelSwitchedInTurn ? `已回退模型 · 用时 ${elapsedSec}s` : `用时 ${elapsedSec}s`
             }

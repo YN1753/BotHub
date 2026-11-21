@@ -229,6 +229,7 @@ export const BotHubApi = {
     provider?: string
     base_url: string
     api_key: string
+    api_keys?: string[]
     verify?: boolean
   }) =>
     apiRequest<{
@@ -242,6 +243,7 @@ export const BotHubApi = {
         reason?: string
       }>
       filtered_out_count?: number
+      failed_verify_count?: number
       unverified_count?: number
     }>('/api/v2/model-pool/models', { method: 'POST', timeoutMs: 120_000, body: JSON.stringify(payload) }),
   testPush: () => apiRequest<{ ok: boolean; message: string }>('/api/test-push', { method: 'POST' }),

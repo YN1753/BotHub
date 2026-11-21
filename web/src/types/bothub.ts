@@ -97,6 +97,8 @@ export interface AgentMessage {
   reply_to_id?: number
   reply_preview?: string
   model_used?: string
+  model_target_id?: string
+  model_tier?: string
   created_at: string
 }
 
@@ -295,6 +297,7 @@ export interface ModelProvider {
   protocol: ProviderProtocol | string
   base_url: string
   api_key: string
+  api_keys?: string[]
   enabled: boolean
   note?: string
   alias_ids?: string[]

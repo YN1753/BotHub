@@ -190,8 +190,23 @@ data class ModelProviderItem(
     val protocol: String = "openai",
     val baseUrl: String = "",
     val apiKey: String = "",
+    val apiKeys: List<String> = emptyList(),
     val enabled: Boolean = true,
     val note: String = ""
+) {
+    fun effectiveApiKeys(): List<String> {
+        val raw = if (apiKeys.isNotEmpty()) apiKeys else listOf(apiKey)
+        return raw.flatMap { it.split('\n', '\r', ',', ';') }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+    }
+}
+
+data class UpstreamFetchResult(
+    val models: List<String>,
+    val filteredOutCount: Int = 0,
+    val failedVerifyCount: Int = 0
 )
 
 @Immutable
@@ -491,6 +506,8 @@ data class AgentHistoryMessage(
     val msgKind: String = "chat",
     val senderBotId: String = "",
     val modelUsed: String = "",
+    val modelTargetId: String = "",
+    val modelTier: String = "",
     val toolTraces: List<ChatToolTraceUi> = emptyList()
 ) {
     fun toChatTurnUi(
@@ -518,6 +535,8 @@ data class AgentHistoryMessage(
             role = role,
             persona = senderBot?.name ?: defaultPersona,
             model = modelUsed.ifBlank { senderBot?.model ?: defaultModel },
+            modelTargetId = modelTargetId,
+            modelTier = modelTier,
             reasoning = reasoningContent,
             tools = derivedTools,
             toolTraces = toolTraces,
@@ -659,6 +678,8 @@ data class ChatTurnUi(
     val role: String,
     val persona: String,
     val model: String,
+    val modelTargetId: String = "",
+    val modelTier: String = "",
     val reasoning: String = "",
     val tools: List<String> = emptyList(),
     val toolTraces: List<ChatToolTraceUi> = emptyList(),

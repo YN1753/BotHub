@@ -575,6 +575,8 @@ func (e *Engine) runSingleBotTurn(
 					ReasoningContent: notifier.StripEmoji(totalReasoning.String()),
 					ToolCalls:        "[]",
 					ModelUsed:        activeTarget.Model,
+					ModelTargetID:    activeTarget.ID,
+					ModelTier:        activeTarget.Tier,
 				}
 				if aid, aErr := e.store.AppendAgentMessage(finalEntry); aErr == nil && msgKind != "routine" {
 					finalEntry.ID = aid
@@ -613,6 +615,8 @@ func (e *Engine) runSingleBotTurn(
 				ReasoningContent: notifier.StripEmoji(roundReasoning),
 				ToolCalls:        string(tcBytes),
 				ModelUsed:        activeTarget.Model,
+				ModelTargetID:    activeTarget.ID,
+				ModelTier:        activeTarget.Tier,
 			})
 		}
 		messages = append(messages, apiMessage{
@@ -841,6 +845,8 @@ func (e *Engine) runSingleBotTurn(
 					ReasoningContent: notifier.StripEmoji(totalReasoning.String() + sReasoning),
 					ToolCalls:        "[]",
 					ModelUsed:        activeTarget.Model,
+					ModelTargetID:    activeTarget.ID,
+					ModelTier:        activeTarget.Tier,
 				}
 				if aid, aErr := e.store.AppendAgentMessage(finalEntry); aErr == nil && msgKind != "routine" {
 					finalEntry.ID = aid
@@ -881,6 +887,8 @@ func (e *Engine) runSingleBotTurn(
 		SessionID:        "bot:" + timelineBotID,
 		Persona:          actingBot.ID,
 		Model:            activeTarget.Model,
+		ModelTargetID:    activeTarget.ID,
+		ModelTier:        activeTarget.Tier,
 		ProviderLabel:    activeTarget.Label,
 		ReasoningContent: totalReasoning.String(),
 		Content:          finalContent.String(),

@@ -360,8 +360,10 @@ func (s *Server) handleForkBotThread(w http.ResponseWriter, r *http.Request) {
 			MsgKind:      m.MsgKind,
 			Role:         m.Role,
 			Content:      m.Content,
-			ReplyPreview: m.ReplyPreview,
-			ModelUsed:    m.ModelUsed,
+			ReplyPreview:  m.ReplyPreview,
+			ModelUsed:     m.ModelUsed,
+			ModelTargetID: m.ModelTargetID,
+			ModelTier:     m.ModelTier,
 		})
 	}
 

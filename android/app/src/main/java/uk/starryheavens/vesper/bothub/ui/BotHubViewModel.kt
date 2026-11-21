@@ -329,6 +329,8 @@ class BotHubViewModel(
                                     msgKind = mKind,
                                     senderBotId = obj.optString("sender_bot_id", ""),
                                     modelUsed = obj.optString("model_used", ""),
+                                    modelTargetId = obj.optString("model_target_id", ""),
+                                    modelTier = obj.optString("model_tier", ""),
                                     toolTraces = JsonMappers.parseToolCallsJson(obj.optString("tool_calls", "[]"))
                                 ).toChatTurnUi(
                                     idPrefix = "botmsg",
@@ -1615,15 +1617,23 @@ class BotHubViewModel(
                             }
                         }
                     },
-                    onDoneModel = { usedModel ->
+                    onDoneModel = { usedModel, targetId, tier ->
                         viewModelScope.launch {
                             updateTurnById(assistantId) { cur ->
-                                val displayModel = if (modelSwitchedInTurn && !usedModel.contains("已回退")) {
-                                    "$usedModel (已回退)"
+                                val displayModel = if (usedModel.isNotBlank()) {
+                                    if (modelSwitchedInTurn && !usedModel.contains("已回退")) {
+                                        "$usedModel (已回退)"
+                                    } else {
+                                        usedModel
+                                    }
                                 } else {
-                                    usedModel
+                                    cur.model
                                 }
-                                cur.copy(model = displayModel)
+                                cur.copy(
+                                    model = displayModel,
+                                    modelTargetId = targetId.ifBlank { cur.modelTargetId },
+                                    modelTier = tier.ifBlank { cur.modelTier }
+                                )
                             }
                         }
                     },

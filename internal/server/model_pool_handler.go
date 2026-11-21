@@ -89,8 +89,7 @@ func (s *Server) handleSaveModelPool(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.modelConfigPayload())
 }
 
-func (s *Server) resolveProviderSecret(providerID, entryID, rawKey, rawBaseURL, rawProtocol string) (apiKey, baseURL, protocol string) {
-	apiKey = strings.TrimSpace(rawKey)
+func (s *Server) resolveProviderSecrets(providerID, entryID, rawKey string, rawKeys []string, rawBaseURL, rawProtocol string) (apiKeys []string, baseURL, protocol string) {
 	baseURL = strings.TrimSpace(rawBaseURL)
 	protocol = strings.TrimSpace(rawProtocol)
 	lookupID := strings.TrimSpace(providerID)
@@ -98,6 +97,7 @@ func (s *Server) resolveProviderSecret(providerID, entryID, rawKey, rawBaseURL, 
 		lookupID = strings.TrimSpace(entryID)
 	}
 
+	var storedKeys []string
 	if lookupID != "" {
 		providers, _, _ := s.store.GetModelConfig()
 		for _, p := range providers {
@@ -111,9 +111,7 @@ func (s *Server) resolveProviderSecret(providerID, entryID, rawKey, rawBaseURL, 
 				}
 			}
 			if matched {
-				if apiKey == "" || strings.Contains(apiKey, "****") {
-					apiKey = p.APIKey
-				}
+				storedKeys = p.EffectiveAPIKeys()
 				if baseURL == "" {
 					baseURL = p.BaseURL
 				}
@@ -125,16 +123,18 @@ func (s *Server) resolveProviderSecret(providerID, entryID, rawKey, rawBaseURL, 
 		}
 	}
 
-	if apiKey == "" || strings.Contains(apiKey, "****") {
+	if len(storedKeys) == 0 {
 		if lookupID == "primary" || lookupID == "legacy_deepseek" {
-			apiKey, _ = s.store.GetConfig(store.KeyDeepSeekAPIKey)
+			if k, _ := s.store.GetConfig(store.KeyDeepSeekAPIKey); strings.TrimSpace(k) != "" {
+				storedKeys = store.SplitAPIKeys(k)
+			}
 			if baseURL == "" {
 				baseURL, _ = s.store.GetConfig(store.KeyDeepSeekBaseURL)
 			}
 		} else if lookupID != "" {
 			for _, item := range s.store.GetModelPool() {
 				if item.ID == lookupID {
-					apiKey = item.APIKey
+					storedKeys = store.SplitAPIKeys(append(append([]string(nil), item.APIKeys...), item.APIKey)...)
 					if baseURL == "" {
 						baseURL = item.BaseURL
 					}
@@ -143,7 +143,40 @@ func (s *Server) resolveProviderSecret(providerID, entryID, rawKey, rawBaseURL, 
 			}
 		}
 	}
-	return strings.TrimSpace(apiKey), store.CleanProviderBaseURL(baseURL), store.NormalizeProviderProtocol(protocol, baseURL)
+
+	submitted := store.SplitAPIKeys(rawKeys...)
+	if len(submitted) == 0 {
+		submitted = store.SplitAPIKeys(rawKey)
+	}
+	if len(submitted) == 0 {
+		apiKeys = storedKeys
+	} else {
+		seen := make(map[string]bool, len(submitted))
+		for idx, k := range submitted {
+			rk := k
+			if strings.Contains(k, "****") {
+				rk = ""
+				for _, sk := range storedKeys {
+					if store.MaskSecretValue(sk) == k {
+						rk = sk
+						break
+					}
+				}
+				if rk == "" && idx < len(storedKeys) {
+					rk = storedKeys[idx]
+				}
+			}
+			if rk != "" && !seen[rk] {
+				seen[rk] = true
+				apiKeys = append(apiKeys, rk)
+			}
+		}
+		if len(apiKeys) == 0 {
+			apiKeys = storedKeys
+		}
+	}
+
+	return apiKeys, store.CleanProviderBaseURL(baseURL), store.NormalizeProviderProtocol(protocol, baseURL)
 }
 
 func (s *Server) handleFetchUpstreamModels(w http.ResponseWriter, r *http.Request) {
@@ -152,15 +185,16 @@ func (s *Server) handleFetchUpstreamModels(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var req struct {
-		ProviderID string `json:"provider_id"`
-		EntryID    string `json:"entry_id"`
-		Protocol   string `json:"protocol"`
-		Provider   string `json:"provider"`
-		BaseURL    string `json:"base_url"`
-		APIKey     string `json:"api_key"`
-		Verify     *bool  `json:"verify"`
+		ProviderID string   `json:"provider_id"`
+		EntryID    string   `json:"entry_id"`
+		Protocol   string   `json:"protocol"`
+		Provider   string   `json:"provider"`
+		BaseURL    string   `json:"base_url"`
+		APIKey     string   `json:"api_key"`
+		APIKeys    []string `json:"api_keys"`
+		Verify     *bool    `json:"verify"`
 	}
-	if !decodeJSON(w, r, 16384, &req) {
+	if !decodeJSON(w, r, 32768, &req) {
 		return
 	}
 
@@ -168,9 +202,8 @@ func (s *Server) handleFetchUpstreamModels(w http.ResponseWriter, r *http.Reques
 	if protoHint == "" {
 		protoHint = strings.TrimSpace(req.Provider)
 	}
-	apiKey, baseURL, protocol := s.resolveProviderSecret(req.ProviderID, req.EntryID, req.APIKey, req.BaseURL, protoHint)
+	apiKeys, baseURL, protocol := s.resolveProviderSecrets(req.ProviderID, req.EntryID, req.APIKey, req.APIKeys, req.BaseURL, protoHint)
 
-	// Default verify=false: zero-cost full model discovery with zero truncation!
 	verify := false
 	if req.Verify != nil {
 		verify = *req.Verify
@@ -183,18 +216,19 @@ func (s *Server) handleFetchUpstreamModels(w http.ResponseWriter, r *http.Reques
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
-	res, err := s.agent.FetchAndVerifyUpstreamModels(ctx, baseURL, apiKey, protocol, verify)
+	res, err := s.agent.FetchAndVerifyUpstreamModelsWithKeys(ctx, baseURL, apiKeys, protocol, verify)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":                 true,
-		"models":             res.Models,
-		"checked_models":     res.CheckedModels,
-		"filtered_out_count": res.FilteredOutCount,
-		"unverified_count":   res.UnverifiedCount,
-		"count":              len(res.Models),
+		"ok":                  true,
+		"models":              res.Models,
+		"checked_models":      res.CheckedModels,
+		"filtered_out_count":  res.FilteredOutCount,
+		"failed_verify_count": res.FailedVerifyCount,
+		"unverified_count":    res.UnverifiedCount,
+		"count":               len(res.Models),
 	})
 }
 
@@ -204,16 +238,17 @@ func (s *Server) handleTestModelTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ProviderID string `json:"provider_id"`
-		EntryID    string `json:"entry_id"`
-		Protocol   string `json:"protocol"`
-		Provider   string `json:"provider"`
-		BaseURL    string `json:"base_url"`
-		APIKey     string `json:"api_key"`
-		Model      string `json:"model"`
-		ProbeTools *bool  `json:"probe_tools"`
+		ProviderID string   `json:"provider_id"`
+		EntryID    string   `json:"entry_id"`
+		Protocol   string   `json:"protocol"`
+		Provider   string   `json:"provider"`
+		BaseURL    string   `json:"base_url"`
+		APIKey     string   `json:"api_key"`
+		APIKeys    []string `json:"api_keys"`
+		Model      string   `json:"model"`
+		ProbeTools *bool    `json:"probe_tools"`
 	}
-	if !decodeJSON(w, r, 16384, &req) {
+	if !decodeJSON(w, r, 32768, &req) {
 		return
 	}
 
@@ -225,7 +260,7 @@ func (s *Server) handleTestModelTarget(w http.ResponseWriter, r *http.Request) {
 	if pid == "" {
 		pid = strings.TrimSpace(req.EntryID)
 	}
-	apiKey, baseURL, protocol := s.resolveProviderSecret(req.ProviderID, req.EntryID, req.APIKey, req.BaseURL, protoHint)
+	apiKeys, baseURL, protocol := s.resolveProviderSecrets(req.ProviderID, req.EntryID, req.APIKey, req.APIKeys, req.BaseURL, protoHint)
 
 	probeTools := true
 	if req.ProbeTools != nil {
@@ -235,7 +270,7 @@ func (s *Server) handleTestModelTarget(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
 	defer cancel()
 
-	res, err := s.agent.ProbeModelTargetWithCapabilities(ctx, pid, baseURL, apiKey, req.Model, protocol, probeTools)
+	res, err := s.agent.ProbeModelTargetWithCapabilitiesAndKeys(ctx, pid, baseURL, apiKeys, req.Model, protocol, probeTools)
 	if err != nil {
 		latency := int64(0)
 		targetID := ""

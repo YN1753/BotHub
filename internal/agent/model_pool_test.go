@@ -733,3 +733,127 @@ func TestPinnedModelNeverSilentlyDemotedByCooldown(t *testing.T) {
 		t.Fatalf("expected pinned paid model at index 0, got %+v", paidResolved)
 	}
 }
+
+func TestMultiKeyProviderFailoverAndModelAttribution(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "multi_key_test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	var usedKeys []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		usedKeys = append(usedKeys, auth)
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			if auth == "sk-bad-123456" {
+				http.Error(w, `{"error":"invalid key"}`, http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"gemini-2.5-flash"},{"id":"nano-banana-pro-preview"},{"id":"gemini-1.5-pro"},{"id":"gemini-2.5-pro"}]}`))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/chat/completions") {
+			if auth == "sk-bad-123456" {
+				http.Error(w, `{"error":"rate limit"}`, http.StatusTooManyRequests)
+				return
+			}
+			var body struct {
+				Model  string `json:"model"`
+				Stream bool   `json:"stream"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.Model == "gemini-2.5-pro" {
+				http.Error(w, `{"error":"quota exceeded"}`, http.StatusTooManyRequests)
+				return
+			}
+			if !body.Stream {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"OK"}}]}`))
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprintln(w, `data: {"choices":[{"delta":{"role":"assistant","content":"多密钥自动切换成功"}}]}`)
+			_, _ = fmt.Fprintln(w)
+			_, _ = fmt.Fprintln(w, `data: [DONE]`)
+			_, _ = fmt.Fprintln(w)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	providers := []store.ModelProvider{
+		{
+			ID:       "prov_free",
+			Name:     "Free Channel",
+			Protocol: store.ProviderProtocolOpenAI,
+			BaseURL:  srv.URL + "/v1",
+			APIKeys:  []string{"sk-bad-123456", "sk-good-999999"},
+			Enabled:  true,
+		},
+		{
+			ID:       "prov_paid",
+			Name:     "Paid Channel",
+			Protocol: store.ProviderProtocolOpenAI,
+			BaseURL:  srv.URL + "/v1",
+			APIKeys:  []string{"sk-good-999999"},
+			Enabled:  true,
+		},
+	}
+	models := []store.PooledModel{
+		{ProviderID: "prov_free", ModelID: "gemini-2.5-flash", Tier: store.ModelTierFree, Enabled: true, Priority: 10},
+		{ProviderID: "prov_paid", ModelID: "gemini-2.5-flash", Tier: store.ModelTierPaid, Enabled: true, Priority: 10},
+	}
+	if err := st.SaveModelConfig(providers, models, store.PoolStrategyConfig{}); err != nil {
+		t.Fatalf("SaveModelConfig: %v", err)
+	}
+	// Verify masked roundtrip preserves both keys
+	gotProv, gotMod, gotStrat := st.GetModelConfig()
+	masked := store.MaskModelProviders(gotProv)
+	if len(masked[0].APIKeys) != 2 || !strings.Contains(masked[0].APIKeys[0], "****") {
+		t.Fatalf("expected 2 masked keys, got %+v", masked[0].APIKeys)
+	}
+	if err := st.SaveModelConfig(masked, gotMod, gotStrat); err != nil {
+		t.Fatalf("SaveModelConfig masked roundtrip: %v", err)
+	}
+	reloadedProv, _, _ := st.GetModelConfig()
+	if len(reloadedProv[0].EffectiveAPIKeys()) != 2 || reloadedProv[0].EffectiveAPIKeys()[1] != "sk-good-999999" {
+		t.Fatalf("expected preserved raw keys after masked save, got %+v", reloadedProv[0].EffectiveAPIKeys())
+	}
+
+	eng := NewEngine(st, &fakeTaskController{st: st})
+
+	// Test FetchAndVerifyUpstreamModelsWithKeys: rotates from bad key to good key, filters nano-banana & gemini-1.5, and intercepts failing gemini-2.5-pro
+	fetchRes, err := eng.FetchAndVerifyUpstreamModelsWithKeys(context.Background(), srv.URL+"/v1", []string{"sk-bad-123456", "sk-good-999999"}, "openai", true)
+	if err != nil {
+		t.Fatalf("FetchAndVerifyUpstreamModelsWithKeys: %v", err)
+	}
+	if len(fetchRes.Models) != 1 || fetchRes.Models[0] != "gemini-2.5-flash" {
+		t.Fatalf("expected only gemini-2.5-flash usable, got %+v", fetchRes)
+	}
+	if fetchRes.FilteredOutCount != 2 || fetchRes.FailedVerifyCount != 1 {
+		t.Fatalf("expected filteredOut=2 failedVerify=1, got %+v", fetchRes)
+	}
+
+	// Test multi-key failover during streaming chat + exact paid tier attribution when same model ID exists in both pools
+	targets, err := eng.ResolveChatTargetsWithOptions(context.Background(), "pool:prov_free::gemini-2.5-flash", ModelResolveOptions{})
+	if err != nil {
+		t.Fatalf("ResolveChatTargetsWithOptions: %v", err)
+	}
+	_, content, _, _, usedTarget, err := eng.streamRoundWithFailover(context.Background(), targets, []apiMessage{{Role: "user", Content: "hi"}}, nil, nil, nil, nil)
+	if err != nil || !strings.Contains(content, "多密钥自动切换成功") {
+		t.Fatalf("expected multi-key failover to succeed, got content=%q err=%v", content, err)
+	}
+	if usedTarget.ID != "pool:prov_free::gemini-2.5-flash" {
+		t.Fatalf("expected usedTarget.ID=pool:prov_free::gemini-2.5-flash, got %s", usedTarget.ID)
+	}
+
+	// Paid pinned target must preserve paid tier and target ID
+	paidTargets, err := eng.ResolveChatTargetsWithOptions(context.Background(), "pool:prov_paid::gemini-2.5-flash", ModelResolveOptions{AllowPaidFallback: true})
+	if err != nil || len(paidTargets) == 0 || paidTargets[0].Tier != store.ModelTierPaid || paidTargets[0].ID != "pool:prov_paid::gemini-2.5-flash" {
+		t.Fatalf("expected paid target attribution, got %+v err=%v", paidTargets, err)
+	}
+	_ = usedKeys
+}

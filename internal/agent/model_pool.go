@@ -156,6 +156,43 @@ func (t *ModelHealthTracker) prioritizeHealthy(targets []ModelTarget) []ModelTar
 	return append(healthy, cooling...)
 }
 
+func keyHealthID(targetID, apiKey string) string {
+	k := strings.TrimSpace(apiKey)
+	if k == "" {
+		return ""
+	}
+	return targetID + "#key:" + store.MaskSecretValue(k)
+}
+
+func (t *ModelHealthTracker) recordKeySuccess(targetID, apiKey string) {
+	if kid := keyHealthID(targetID, apiKey); kid != "" {
+		t.recordSuccess(kid, 0)
+	}
+}
+
+func (t *ModelHealthTracker) recordKeyFailure(targetID, apiKey, errMsg string, isRateLimit bool) {
+	if kid := keyHealthID(targetID, apiKey); kid != "" {
+		t.recordFailure(kid, errMsg, isRateLimit)
+	}
+}
+
+func (t *ModelHealthTracker) prioritizeHealthyKeys(targetID string, keys []string) []string {
+	if t == nil || len(keys) <= 1 {
+		return keys
+	}
+	healthy := make([]string, 0, len(keys))
+	cooling := make([]string, 0)
+	for _, k := range keys {
+		kid := keyHealthID(targetID, k)
+		if kid != "" && t.isCooling(kid) {
+			cooling = append(cooling, k)
+		} else {
+			healthy = append(healthy, k)
+		}
+	}
+	return append(healthy, cooling...)
+}
+
 func (t *ModelHealthTracker) Snapshot() map[string]ModelHealthStats {
 	out := make(map[string]ModelHealthStats)
 	if t == nil {
@@ -165,6 +202,9 @@ func (t *ModelHealthTracker) Snapshot() map[string]ModelHealthStats {
 	defer t.mu.Unlock()
 	now := time.Now()
 	for id, s := range t.stats {
+		if strings.Contains(id, "#key:") {
+			continue
+		}
 		cp := *s
 		if now.Before(s.cooldownUntil) {
 			cp.CooldownSec = int64(time.Until(s.cooldownUntil).Seconds()) + 1
@@ -200,11 +240,24 @@ type ModelTarget struct {
 	Provider         string // openai | gemini | deepseek | openrouter | custom
 	BaseURL          string
 	APIKey           string
+	APIKeys          []string
 	Model            string
 	AllowThinking    bool
 	SupportsTools    *bool
 	SupportsThinking *bool
 	LastLatencyMs    int64
+}
+
+func (t ModelTarget) EffectiveAPIKeys() []string {
+	if len(t.APIKeys) > 0 {
+		merged := make([]string, 0, len(t.APIKeys)+1)
+		merged = append(merged, t.APIKeys...)
+		if strings.TrimSpace(t.APIKey) != "" {
+			merged = append(merged, t.APIKey)
+		}
+		return store.SplitAPIKeys(merged...)
+	}
+	return store.SplitAPIKeys(t.APIKey)
 }
 
 type ModelResolveOptions struct {
@@ -217,6 +270,10 @@ func BuildChatCompletionsURL(baseURL string) string {
 	u := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if strings.HasSuffix(u, "/chat/completions") {
 		return u
+	}
+	lower := strings.ToLower(u)
+	if strings.Contains(lower, "generativelanguage.googleapis.com") && !strings.Contains(lower, "/openai") {
+		return u + "/openai/chat/completions"
 	}
 	return u + "/chat/completions"
 }
@@ -337,7 +394,8 @@ func activePoolTargetsByTier(st *store.Store, wantTier string) []ModelTarget {
 			continue
 		}
 		p, ok := pMap[m.ProviderID]
-		if !ok || !p.Enabled || strings.TrimSpace(p.APIKey) == "" || strings.TrimSpace(p.BaseURL) == "" {
+		effKeys := p.EffectiveAPIKeys()
+		if !ok || !p.Enabled || len(effKeys) == 0 || strings.TrimSpace(p.BaseURL) == "" {
 			continue
 		}
 		runtimeProv := inferRuntimeProvider(p.Protocol, p.BaseURL)
@@ -353,7 +411,8 @@ func activePoolTargetsByTier(st *store.Store, wantTier string) []ModelTarget {
 			Label:            label,
 			Provider:         runtimeProv,
 			BaseURL:          p.BaseURL,
-			APIKey:           strings.TrimSpace(p.APIKey),
+			APIKey:           effKeys[0],
+			APIKeys:          effKeys,
 			Model:            m.ModelID,
 			AllowThinking:    IsAllowThinkingModel(runtimeProv, m.ModelID),
 			SupportsTools:    m.SupportsTools,
@@ -508,7 +567,7 @@ func (e *Engine) ModelOptionsPayload() []ModelOptionDTO {
 		if !ok || !p.Enabled {
 			continue
 		}
-		ready := strings.TrimSpace(p.APIKey) != "" && strings.TrimSpace(p.BaseURL) != "" && strings.TrimSpace(m.ModelID) != ""
+		ready := len(p.EffectiveAPIKeys()) > 0 && strings.TrimSpace(p.BaseURL) != "" && strings.TrimSpace(m.ModelID) != ""
 		tier := store.NormalizeModelTier(m.Tier)
 		if ready {
 			if tier == store.ModelTierPaid {
@@ -732,7 +791,8 @@ func (e *Engine) ResolveChatTargetsWithOptions(ctx context.Context, requestedMod
 		if matchedProvider == nil {
 			return nil, fmt.Errorf("未找到指定的模型渠道: %s", entryID)
 		}
-		if strings.TrimSpace(matchedProvider.APIKey) == "" {
+		effKeys := matchedProvider.EffectiveAPIKeys()
+		if len(effKeys) == 0 {
 			return nil, fmt.Errorf("渠道「%s」尚未填写 API Key，请先在系统设置中填入密钥", matchedProvider.Name)
 		}
 
@@ -792,7 +852,8 @@ func (e *Engine) ResolveChatTargetsWithOptions(ctx context.Context, requestedMod
 			Label:            fmt.Sprintf("%s · %s", matchedProvider.Name, chosenModel),
 			Provider:         runtimeProv,
 			BaseURL:          matchedProvider.BaseURL,
-			APIKey:           strings.TrimSpace(matchedProvider.APIKey),
+			APIKey:           effKeys[0],
+			APIKeys:          effKeys,
 			Model:            chosenModel,
 			AllowThinking:    IsAllowThinkingModel(runtimeProv, chosenModel),
 			SupportsTools:    supportsTools,
@@ -926,6 +987,10 @@ func (e *Engine) ProbeModelTargetWithID(ctx context.Context, targetID, baseURL, 
 // ProbeModelTargetWithCapabilities executes a live connectivity test plus optional lightweight Tool Calling
 // capability probe, updates runtime health under the canonical target ID, and persists capability flags into SQLite.
 func (e *Engine) ProbeModelTargetWithCapabilities(ctx context.Context, providerID, baseURL, apiKey, model, protocol string, probeTools bool) (*ProbeResult, error) {
+	return e.ProbeModelTargetWithCapabilitiesAndKeys(ctx, providerID, baseURL, store.SplitAPIKeys(apiKey), model, protocol, probeTools)
+}
+
+func (e *Engine) ProbeModelTargetWithCapabilitiesAndKeys(ctx context.Context, providerID, baseURL string, apiKeys []string, model, protocol string, probeTools bool) (*ProbeResult, error) {
 	pid := strings.TrimSpace(providerID)
 	mid := strings.TrimSpace(model)
 	canonicalID := "primary"
@@ -933,7 +998,27 @@ func (e *Engine) ProbeModelTargetWithCapabilities(ctx context.Context, providerI
 		canonicalID = "pool:" + pid + "::" + mid
 	}
 	runtimeProv := inferRuntimeProvider(protocol, baseURL)
-	return e.probeModelTargetInternal(ctx, canonicalID, pid, baseURL, apiKey, mid, runtimeProv, probeTools)
+	keys := e.health.prioritizeHealthyKeys(canonicalID, store.SplitAPIKeys(apiKeys...))
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("Base URL、API Key 与模型 ID 均不能为空")
+	}
+	var lastRes *ProbeResult
+	var lastErr error
+	for _, k := range keys {
+		res, err := e.probeModelTargetInternal(ctx, canonicalID, pid, baseURL, k, mid, runtimeProv, probeTools)
+		if err == nil {
+			e.health.recordKeySuccess(canonicalID, k)
+			return res, nil
+		}
+		lastRes = res
+		lastErr = err
+		lower := strings.ToLower(err.Error())
+		e.health.recordKeyFailure(canonicalID, k, err.Error(), strings.Contains(err.Error(), "429") || strings.Contains(lower, "rate"))
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return lastRes, lastErr
 }
 
 func (e *Engine) probeModelTargetInternal(ctx context.Context, targetID, providerID, baseURL, apiKey, model, provider string, probeTools bool) (*ProbeResult, error) {
@@ -1114,10 +1199,11 @@ type UpstreamModelCheck struct {
 }
 
 type FetchModelsResult struct {
-	Models           []string             `json:"models"`
-	CheckedModels    []UpstreamModelCheck `json:"checked_models"`
-	FilteredOutCount int                  `json:"filtered_out_count"`
-	UnverifiedCount  int                  `json:"unverified_count"`
+	Models            []string             `json:"models"`
+	CheckedModels     []UpstreamModelCheck `json:"checked_models"`
+	FilteredOutCount  int                  `json:"filtered_out_count"`
+	FailedVerifyCount int                  `json:"failed_verify_count"`
+	UnverifiedCount   int                  `json:"unverified_count"`
 }
 
 func isLikelyChatModel(id string) bool {
@@ -1128,10 +1214,11 @@ func isLikelyChatModel(id string) bool {
 	nonChatKeywords := []string{
 		"embed", "bge-", "rerank",
 		"imagen", "veo", "lyria", "flux", "stable-diffusion", "sdxl", "sd-", "kolors", "wanx", "cogview", "dall-e", "midjourney",
-		"image-generation", "-image-preview", "preview-image", "-image",
+		"image-generation", "-image-preview", "preview-image", "-image", "nano-banana",
 		"whisper", "sensevoice", "cosyvoice", "fish-speech", "native-audio", "-tts", "tts-",
 		"aqa", "bidi", "-live", "live-", "moderation", "shieldgemma",
-		"robotics", "computer-use", "deep-research", "gemini-1.0", "gemini-pro-vision",
+		"robotics", "computer-use", "deep-research", "learnlm",
+		"gemini-1.0", "gemini-1.5", "gemini-pro-vision", "gemini-exp",
 	}
 	for _, kw := range nonChatKeywords {
 		if strings.Contains(lower, kw) {
@@ -1270,38 +1357,45 @@ func (e *Engine) FetchUpstreamModels(ctx context.Context, baseURL, apiKey, provi
 	return res.Models, nil
 }
 
-// FetchAndVerifyUpstreamModels fetches ALL candidate chat models (filtering non-chat modalities such as embeddings,
-// image/video generators, audio/TTS) with zero truncation when verify=false.
-// When verify=true (legacy/optional mode), it also verifies live usability via concurrent chat probes.
+// FetchAndVerifyUpstreamModels fetches candidate chat models (filtering non-chat modalities)
+// and optionally verifies live usability via concurrent probes.
 func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiKey, provider string, verify bool) (*FetchModelsResult, error) {
+	return e.FetchAndVerifyUpstreamModelsWithKeys(ctx, baseURL, store.SplitAPIKeys(apiKey), provider, verify)
+}
+
+func (e *Engine) FetchAndVerifyUpstreamModelsWithKeys(ctx context.Context, baseURL string, apiKeys []string, provider string, verify bool) (*FetchModelsResult, error) {
 	baseURL = store.CleanProviderBaseURL(baseURL)
-	apiKey = strings.TrimSpace(apiKey)
-	if baseURL == "" || apiKey == "" {
+	keys := store.SplitAPIKeys(apiKeys...)
+	if baseURL == "" || len(keys) == 0 {
 		return nil, fmt.Errorf("请先填写 Base URL 与 API Key")
 	}
 
 	var candidates []string
 	filteredOut := 0
+	var lastFetchErr error
+	activeKey := keys[0]
 
-	if strings.Contains(strings.ToLower(baseURL), "generativelanguage.googleapis.com") || strings.EqualFold(strings.TrimSpace(provider), store.ProviderProtocolGemini) {
-		if strings.Contains(strings.ToLower(baseURL), "generativelanguage.googleapis.com") {
-			if gModels, gFiltered, ok := e.fetchGoogleNativeModels(ctx, apiKey); ok {
-				candidates = gModels
-				filteredOut = gFiltered
+	for _, k := range keys {
+		if strings.Contains(strings.ToLower(baseURL), "generativelanguage.googleapis.com") || strings.EqualFold(strings.TrimSpace(provider), store.ProviderProtocolGemini) {
+			if strings.Contains(strings.ToLower(baseURL), "generativelanguage.googleapis.com") {
+				if gModels, gFiltered, ok := e.fetchGoogleNativeModels(ctx, k); ok {
+					candidates = gModels
+					filteredOut = gFiltered
+					activeKey = k
+					break
+				}
 			}
 		}
-	}
 
-	if len(candidates) == 0 {
 		reqCtx, cancel := context.WithTimeout(ctx, 18*time.Second)
-		defer cancel()
-
 		endpoint := BuildModelsListURL(baseURL)
 		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, endpoint, nil)
 		if err != nil {
-			return nil, err
+			cancel()
+			lastFetchErr = err
+			continue
 		}
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("Authorization", "Bearer "+k)
 		if provider == "openrouter" || strings.Contains(strings.ToLower(baseURL), "openrouter.ai") {
 			req.Header.Set("HTTP-Referer", "https://github.com/YN1753/BotHub")
 			req.Header.Set("X-Title", "BotHub")
@@ -1309,13 +1403,16 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 
 		resp, err := e.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("拉取模型列表失败: %w", err)
+			cancel()
+			lastFetchErr = fmt.Errorf("拉取模型列表失败: %w", err)
+			continue
 		}
-		defer resp.Body.Close()
-
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
+		_ = resp.Body.Close()
+		cancel()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return nil, fmt.Errorf("拉取模型列表 HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+			lastFetchErr = fmt.Errorf("拉取模型列表 HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+			continue
 		}
 
 		var parsed struct {
@@ -1328,11 +1425,13 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 			} `json:"models"`
 		}
 		if err := json.Unmarshal(raw, &parsed); err != nil {
-			return nil, fmt.Errorf("解析模型列表 JSON 失败: %w", err)
+			lastFetchErr = fmt.Errorf("解析模型列表 JSON 失败: %w", err)
+			continue
 		}
 
 		seen := make(map[string]bool)
 		candidates = make([]string, 0, len(parsed.Data)+len(parsed.Models))
+		filteredOut = 0
 		addModel := func(id string) {
 			id = strings.TrimSpace(id)
 			id = strings.TrimPrefix(id, "models/")
@@ -1357,6 +1456,12 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 			}
 		}
 		sortCandidateModels(candidates)
+		activeKey = k
+		lastFetchErr = nil
+		break
+	}
+	if len(candidates) == 0 && lastFetchErr != nil {
+		return nil, lastFetchErr
 	}
 
 	result := &FetchModelsResult{
@@ -1376,8 +1481,8 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 		return result, nil
 	}
 
-	// Optional explicit live verify mode (retained for backward compatibility)
-	const maxVerify = 24
+	// Optional explicit live verify mode (intercepts unusable / zero-quota / retired models)
+	const maxVerify = 50
 	toVerify := candidates
 	if len(candidates) > maxVerify {
 		toVerify = candidates[:maxVerify]
@@ -1385,7 +1490,7 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 	}
 
 	checks := make([]UpstreamModelCheck, len(toVerify))
-	sem := make(chan struct{}, 5)
+	sem := make(chan struct{}, 6)
 	var wg sync.WaitGroup
 	for i, modelID := range toVerify {
 		wg.Add(1)
@@ -1394,7 +1499,7 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			probeCtx, cancel := context.WithTimeout(ctx, 9*time.Second)
+			probeCtx, cancel := context.WithTimeout(ctx, 7*time.Second)
 			defer cancel()
 
 			start := time.Now()
@@ -1413,7 +1518,7 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 				return
 			}
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", "Bearer "+apiKey)
+			req.Header.Set("Authorization", "Bearer "+activeKey)
 			if provider == "openrouter" || strings.Contains(strings.ToLower(baseURL), "openrouter.ai") {
 				req.Header.Set("HTTP-Referer", "https://github.com/YN1753/BotHub")
 				req.Header.Set("X-Title", "BotHub")
@@ -1479,6 +1584,7 @@ func (e *Engine) FetchAndVerifyUpstreamModels(ctx context.Context, baseURL, apiK
 		}
 	}
 	result.Models = usable
+	result.FailedVerifyCount = len(failedChecks)
 	result.CheckedModels = append(usableChecks, failedChecks...)
 	return result, nil
 }

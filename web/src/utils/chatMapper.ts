@@ -9,6 +9,8 @@ export interface ChatMessageUI {
   roleTitle?: string
   avatarStyle: string
   model: string
+  modelTargetId?: string
+  modelTier?: string
   msgKind: 'chat' | 'routine' | 'system'
   createdAt: string
   content: string
@@ -75,6 +77,8 @@ export function mapServerMessage(
     roleTitle: sender?.role_title || '',
     avatarStyle: sender?.avatar_style || 'cyan',
     model: m.model_used || sender?.model || options.defaultModel || '',
+    modelTargetId: m.model_target_id || undefined,
+    modelTier: m.model_tier || undefined,
     msgKind: kind,
     createdAt: m.created_at,
     content: m.content || '',
@@ -135,6 +139,12 @@ export function mapServerMessages(
       }
       if (mapped.model) {
         prev.model = mapped.model
+      }
+      if (mapped.modelTargetId) {
+        prev.modelTargetId = mapped.modelTargetId
+      }
+      if (mapped.modelTier) {
+        prev.modelTier = mapped.modelTier
       }
       prev.createdAt = mapped.createdAt
       continue

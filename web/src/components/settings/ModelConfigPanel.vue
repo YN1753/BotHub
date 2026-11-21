@@ -54,6 +54,8 @@ const probingPoolTier = ref<'' | 'free' | 'paid'>('')
 const probeMsgByKey = ref<Record<string, { ok: boolean; msg: string }>>({})
 const clearingCooldown = ref(false)
 const showUsageDetail = ref(false)
+const verifyOnFetch = ref(true)
+const revealedKeyProviderId = ref<string>('')
 
 function isLikelyFreeModelId(id: string): boolean {
   const lower = id.toLowerCase()
@@ -141,6 +143,38 @@ function addProviderFromPreset(preset: PublicProviderPreset) {
 function updateProviderField(id: string, patch: Partial<ModelProvider>) {
   const next = props.providers.map((p) => (p.id === id ? { ...p, ...patch } : p))
   emit('update:providers', next)
+}
+
+function splitApiKeys(raw: string): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const part of raw.split(/[\r\n,;]+/)) {
+    const k = part.trim()
+    if (k && !seen.has(k)) {
+      seen.add(k)
+      out.push(k)
+    }
+  }
+  return out
+}
+
+function providerEffectiveKeys(provider: ModelProvider): string[] {
+  if (Array.isArray(provider.api_keys) && provider.api_keys.length > 0) {
+    return splitApiKeys(provider.api_keys.join('\n'))
+  }
+  return splitApiKeys(provider.api_key || '')
+}
+
+function providerKeysText(provider: ModelProvider): string {
+  return providerEffectiveKeys(provider).join('\n')
+}
+
+function updateProviderKeys(provider: ModelProvider, rawText: string) {
+  const keys = splitApiKeys(rawText)
+  updateProviderField(provider.id, {
+    api_key: keys[0] || '',
+    api_keys: keys,
+  })
 }
 
 function normalizeProviderUrl(provider: ModelProvider) {
@@ -243,8 +277,9 @@ function addManualModels(providerId: string, tier: 'free' | 'paid') {
 async function fetchFullModels(provider: ModelProvider) {
   if (fetchingProviderId.value) return
   const baseUrl = cleanProviderBaseUrl(provider.base_url)
-  if (!baseUrl) {
-    store.notify('请先填写 Base URL 再拉取模型列表')
+  const keys = providerEffectiveKeys(provider)
+  if (!baseUrl || keys.length === 0) {
+    store.notify('请先填写 Base URL 与至少一个 API Key 再拉取模型列表')
     return
   }
   if (baseUrl !== provider.base_url) {
@@ -256,20 +291,23 @@ async function fetchFullModels(provider: ModelProvider) {
       provider_id: provider.id,
       protocol: provider.protocol,
       base_url: baseUrl,
-      api_key: provider.api_key.trim(),
-      verify: false,
+      api_key: keys[0],
+      api_keys: keys,
+      verify: verifyOnFetch.value,
     })
     const list = res.models || []
     fetchedByProvider.value[provider.id] = {
       models: list,
-      filteredOutCount: res.filtered_out_count || 0,
+      filteredOutCount: (res.filtered_out_count || 0) + (res.failed_verify_count || 0),
       query: '',
       filterTag: '',
     }
     if (list.length > 0) {
-      const skipNote =
-        (res.filtered_out_count || 0) > 0 ? `（已过滤 ${res.filtered_out_count} 个非对话模型）` : ''
-      store.notify(`零消耗拉取完成：共 ${list.length} 个对话模型${skipNote}`)
+      const parts: string[] = []
+      if ((res.filtered_out_count || 0) > 0) parts.push(`过滤 ${res.filtered_out_count} 个非对话模型`)
+      if ((res.failed_verify_count || 0) > 0) parts.push(`拦截 ${res.failed_verify_count} 个不可用模型`)
+      const skipNote = parts.length > 0 ? `（已${parts.join('、')}）` : ''
+      store.notify(`${verifyOnFetch.value ? '实测拉取' : '拉取'}完成：共 ${list.length} 个可用对话模型${skipNote}`)
     } else {
       store.notify('上游接口未返回可用对话模型')
     }
@@ -758,13 +796,19 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
             <span
               :class="[
                 'w-2 h-2 rounded-full shrink-0',
-                provider.enabled && provider.api_key ? 'bg-ok' : 'bg-fg-muted',
+                provider.enabled && providerEffectiveKeys(provider).length > 0 ? 'bg-ok' : 'bg-fg-muted',
               ]"
               aria-hidden="true"
             />
             <span class="text-xs font-semibold text-fg truncate">{{ provider.name || provider.id }}</span>
             <span class="font-mono text-xs px-1.5 py-0.5 rounded-lg border border-line text-fg-sub shrink-0">
               {{ provider.protocol === 'gemini' ? 'Gemini' : 'OpenAI 兼容' }}
+            </span>
+            <span
+              v-if="providerEffectiveKeys(provider).length > 1"
+              class="font-mono text-xs px-1.5 py-0.5 rounded-lg border border-line text-fg-sub shrink-0"
+            >
+              {{ providerEffectiveKeys(provider).length }} 密钥
             </span>
             <span
               v-if="providerAssignedCounts(provider.id).free > 0"
@@ -869,21 +913,50 @@ const activeTierStrategy = computed<PoolStrategy>(() =>
                 class="min-h-[38px] rounded-xl border border-line bg-canvas px-2.5 py-1.5 font-mono text-xs text-fg focus:border-accent"
               />
             </label>
-            <label class="flex flex-col gap-1 text-xs text-fg-sub">
-              <span>API Key（同渠道免费/付费模型共享）</span>
-              <SecretInput
-                :model-value="provider.api_key"
-                @update:model-value="updateProviderField(provider.id, { api_key: $event })"
-                :toggle-label="`${provider.name} API Key`"
-                placeholder="sk-... / AIza..."
+            <div class="flex flex-col gap-1 text-xs text-fg-sub">
+              <div class="flex items-center justify-between gap-2">
+                <span>API Keys（每行一个，失败自动切换下一个）</span>
+                <button
+                  type="button"
+                  @click="revealedKeyProviderId = revealedKeyProviderId === provider.id ? '' : provider.id"
+                  class="text-[11px] text-accent-fg hover:underline cursor-pointer"
+                >
+                  {{ revealedKeyProviderId === provider.id ? '隐藏明文' : '显示输入' }}
+                </button>
+              </div>
+              <textarea
+                v-if="revealedKeyProviderId === provider.id || providerEffectiveKeys(provider).length > 1"
+                :value="providerKeysText(provider)"
+                @change="updateProviderKeys(provider, ($event.target as HTMLTextAreaElement).value)"
+                rows="3"
+                spellcheck="false"
+                placeholder="每行填入一个 Key，如：&#10;AIza...&#10;AIza..."
+                class="rounded-xl border border-line bg-canvas px-2.5 py-1.5 font-mono text-xs text-fg focus:border-accent resize-y"
               />
-            </label>
+              <SecretInput
+                v-else
+                :model-value="provider.api_key"
+                @update:model-value="updateProviderKeys(provider, $event)"
+                :toggle-label="`${provider.name} API Key`"
+                placeholder="sk-... / AIza...（可点右上角切换多行输入多个 Key）"
+              />
+            </div>
           </div>
 
           <!-- Zero-Cost Model Discovery & Manual Model Input -->
           <div class="rounded-xl border border-line bg-canvas p-2.5 flex flex-col gap-2.5">
             <div class="flex items-center justify-between gap-2 flex-wrap">
-              <div class="text-xs font-medium text-fg">模型发现与池分配</div>
+              <div class="flex items-center gap-3 flex-wrap">
+                <span class="text-xs font-medium text-fg">模型发现与池分配</span>
+                <label class="inline-flex items-center gap-1.5 text-[11px] text-fg-sub cursor-pointer select-none">
+                  <input
+                    v-model="verifyOnFetch"
+                    type="checkbox"
+                    class="rounded border-line accent-accent"
+                  />
+                  <span>实测并拦截不可用模型</span>
+                </label>
+              </div>
               <button
                 type="button"
                 :disabled="fetchingProviderId === provider.id"

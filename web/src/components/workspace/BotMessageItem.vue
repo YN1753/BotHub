@@ -43,7 +43,21 @@ const touchActionsOpen = ref(false)
 const rowMaxWidthClass = computed(() => (store.state.chatWide ? 'max-w-[1120px]' : 'max-w-[840px]'))
 
 const modelTierTag = computed<'' | 'free' | 'paid'>(() => {
-  const m = (props.message.model || '').trim()
+  const explicitTier = (props.message.modelTier || '').trim().toLowerCase()
+  if (explicitTier === 'paid' || explicitTier === 'free') return explicitTier as 'free' | 'paid'
+  const targetId = (props.message.modelTargetId || '').trim()
+  if (targetId) {
+    if (targetId === 'primary' || targetId === 'auto:paid') return 'paid'
+    const exactOpt = (store.state.modelOptions || []).find((o) => o.id === targetId)
+    if (exactOpt && (exactOpt.tier === 'paid' || exactOpt.tier === 'free')) {
+      return exactOpt.tier as 'free' | 'paid'
+    }
+    const exactPooled = (store.state.pooledModels || []).find(
+      (p) => `pool:${p.provider_id}::${p.model_id}` === targetId
+    )
+    if (exactPooled) return exactPooled.tier === 'paid' ? 'paid' : 'free'
+  }
+  const m = (props.message.model || '').replace(/\s*\(已回退\)$/, '').trim()
   if (!m) return ''
   if (m === 'auto:paid' || m === 'paid-pool' || m === 'primary') return 'paid'
   if (m === 'auto:free' || m === 'free-pool') return 'free'

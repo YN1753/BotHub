@@ -67,9 +67,43 @@ type ModelProvider struct {
 	Protocol string   `json:"protocol"` // openai | gemini
 	BaseURL  string   `json:"base_url"`
 	APIKey   string   `json:"api_key"`
+	APIKeys  []string `json:"api_keys,omitempty"`
 	Enabled  bool     `json:"enabled"`
 	Note     string   `json:"note,omitempty"`
 	AliasIDs []string `json:"alias_ids,omitempty"` // preserved legacy ModelPoolEntry IDs when merged during migration
+}
+
+// SplitAPIKeys splits raw key strings (supporting newline, comma, or semicolon separators)
+// and returns a deduplicated ordered slice of non-empty API keys.
+func SplitAPIKeys(rawKeys ...string) []string {
+	out := make([]string, 0, len(rawKeys))
+	seen := make(map[string]bool, len(rawKeys))
+	for _, raw := range rawKeys {
+		parts := strings.FieldsFunc(raw, func(r rune) bool {
+			return r == '\n' || r == '\r' || r == ',' || r == ';'
+		})
+		for _, part := range parts {
+			k := strings.TrimSpace(part)
+			if k != "" && !seen[k] {
+				seen[k] = true
+				out = append(out, k)
+			}
+		}
+	}
+	return out
+}
+
+// EffectiveAPIKeys returns all configured API keys for this provider in priority order.
+func (p ModelProvider) EffectiveAPIKeys() []string {
+	if len(p.APIKeys) > 0 {
+		merged := make([]string, 0, len(p.APIKeys)+1)
+		merged = append(merged, p.APIKeys...)
+		if strings.TrimSpace(p.APIKey) != "" {
+			merged = append(merged, p.APIKey)
+		}
+		return SplitAPIKeys(merged...)
+	}
+	return SplitAPIKeys(p.APIKey)
 }
 
 // PooledModel represents Layer 2: a specific model assigned to either the Free Pool or Paid Pool.
@@ -103,6 +137,7 @@ type ModelPoolEntry struct {
 	Provider string   `json:"provider"` // openai | gemini | deepseek | custom
 	BaseURL  string   `json:"base_url"`
 	APIKey   string   `json:"api_key"`
+	APIKeys  []string `json:"api_keys,omitempty"`
 	Model    string   `json:"model"`            // primary / default model on this endpoint
 	Models   []string `json:"models,omitempty"` // multiple checked model IDs sharing BaseURL+APIKey
 	Enabled  bool     `json:"enabled"`
@@ -387,20 +422,49 @@ func (s *Store) migrateLegacyModelConfig(strategies PoolStrategyConfig) ([]Model
 func (s *Store) SaveModelConfig(providers []ModelProvider, models []PooledModel, strategies PoolStrategyConfig) error {
 	existingProviders, existingModels, _ := s.GetModelConfig()
 	existingKeys := make(map[string]string, len(existingProviders)+2)
+	existingKeyLists := make(map[string][]string, len(existingProviders)+2)
 	existingAliases := make(map[string][]string, len(existingProviders))
 	for _, p := range existingProviders {
-		existingKeys[p.ID] = p.APIKey
+		effKeys := p.EffectiveAPIKeys()
+		primaryKey := p.APIKey
+		if primaryKey == "" && len(effKeys) > 0 {
+			primaryKey = effKeys[0]
+		}
+		existingKeys[p.ID] = primaryKey
+		existingKeyLists[p.ID] = effKeys
 		if len(p.AliasIDs) > 0 {
 			existingAliases[p.ID] = p.AliasIDs
 		}
 		for _, alias := range p.AliasIDs {
-			existingKeys[alias] = p.APIKey
+			existingKeys[alias] = primaryKey
+			existingKeyLists[alias] = effKeys
 		}
 	}
 	if dsKey, _ := s.GetConfig(KeyDeepSeekAPIKey); strings.TrimSpace(dsKey) != "" {
 		if _, ok := existingKeys["legacy_deepseek"]; !ok {
 			existingKeys["legacy_deepseek"] = strings.TrimSpace(dsKey)
+			existingKeyLists["legacy_deepseek"] = []string{strings.TrimSpace(dsKey)}
 		}
+	}
+
+	resolveMaskedKey := func(providerID, candidate string, idx int) string {
+		c := strings.TrimSpace(candidate)
+		if !strings.Contains(c, "****") {
+			return c
+		}
+		stored := existingKeyLists[providerID]
+		for _, raw := range stored {
+			if MaskSecretValue(raw) == c {
+				return raw
+			}
+		}
+		if idx >= 0 && idx < len(stored) {
+			return stored[idx]
+		}
+		if existingKeys[providerID] != "" {
+			return existingKeys[providerID]
+		}
+		return ""
 	}
 
 	existingProbeMeta := make(map[string]PooledModel, len(existingModels))
@@ -415,7 +479,6 @@ func (s *Store) SaveModelConfig(providers []ModelProvider, models []PooledModel,
 		p.Name = strings.TrimSpace(p.Name)
 		p.BaseURL = CleanProviderBaseURL(p.BaseURL)
 		p.Protocol = NormalizeProviderProtocol(p.Protocol, p.BaseURL)
-		p.APIKey = strings.TrimSpace(p.APIKey)
 		p.Note = strings.TrimSpace(p.Note)
 		if p.ID == "" || p.BaseURL == "" {
 			continue
@@ -423,8 +486,27 @@ func (s *Store) SaveModelConfig(providers []ModelProvider, models []PooledModel,
 		if p.Name == "" {
 			p.Name = p.ID
 		}
-		if strings.Contains(p.APIKey, "****") {
-			p.APIKey = existingKeys[p.ID]
+		var rawSubmitted []string
+		if len(p.APIKeys) > 0 {
+			rawSubmitted = SplitAPIKeys(p.APIKeys...)
+		} else {
+			rawSubmitted = SplitAPIKeys(p.APIKey)
+		}
+		resolvedKeys := make([]string, 0, len(rawSubmitted))
+		seenResolved := make(map[string]bool, len(rawSubmitted))
+		for idx, k := range rawSubmitted {
+			rk := resolveMaskedKey(p.ID, k, idx)
+			if rk != "" && !seenResolved[rk] {
+				seenResolved[rk] = true
+				resolvedKeys = append(resolvedKeys, rk)
+			}
+		}
+		if len(resolvedKeys) > 0 {
+			p.APIKeys = resolvedKeys
+			p.APIKey = resolvedKeys[0]
+		} else {
+			p.APIKeys = nil
+			p.APIKey = ""
 		}
 		if len(p.AliasIDs) == 0 && len(existingAliases[p.ID]) > 0 {
 			p.AliasIDs = existingAliases[p.ID]
@@ -648,11 +730,25 @@ func MaskSecretValue(val string) string {
 	return string(runes[:3]) + "****" + string(runes[len(runes)-4:])
 }
 
+func MaskAPIKeys(keys []string) []string {
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if m := MaskSecretValue(k); m != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 func MaskModelPool(entries []ModelPoolEntry) []ModelPoolEntry {
 	out := make([]ModelPoolEntry, 0, len(entries))
 	for _, e := range entries {
 		copyEntry := e
 		copyEntry.APIKey = MaskSecretValue(e.APIKey)
+		copyEntry.APIKeys = MaskAPIKeys(e.APIKeys)
 		out = append(out, copyEntry)
 	}
 	return out
@@ -662,7 +758,14 @@ func MaskModelProviders(providers []ModelProvider) []ModelProvider {
 	out := make([]ModelProvider, 0, len(providers))
 	for _, p := range providers {
 		cp := p
-		cp.APIKey = MaskSecretValue(p.APIKey)
+		eff := p.EffectiveAPIKeys()
+		if len(eff) > 0 {
+			cp.APIKey = MaskSecretValue(eff[0])
+			cp.APIKeys = MaskAPIKeys(eff)
+		} else {
+			cp.APIKey = MaskSecretValue(p.APIKey)
+			cp.APIKeys = nil
+		}
 		out = append(out, cp)
 	}
 	return out

@@ -40,7 +40,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -550,8 +549,10 @@ fun ModelConfigSheet(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
+                                        val keyCount = prov.effectiveApiKeys().size
+                                        val keyTag = if (keyCount > 1) " · $keyCount 密钥" else ""
                                         Text(
-                                            text = "${if (prov.protocol == "gemini") "Gemini" else "OpenAI 兼容"} · 免费 $freeCount / 付费 $paidCount",
+                                            text = "${if (prov.protocol == "gemini") "Gemini" else "OpenAI 兼容"}$keyTag · 免费 $freeCount / 付费 $paidCount",
                                             fontSize = 11.sp,
                                             color = theme.textMuted
                                         )
@@ -629,16 +630,30 @@ fun ModelConfigSheet(
                                         placeholder = "https://api.example.com/v1"
                                     )
 
+                                    val rawKeysText = remember(prov.id, prov.apiKey, prov.apiKeys) {
+                                        mutableStateOf(prov.effectiveApiKeys().joinToString("\n"))
+                                    }
                                     ObsidianGlassInput(
-                                        value = prov.apiKey,
+                                        value = rawKeysText.value,
                                         onValueChange = { v ->
+                                            rawKeysText.value = v
+                                            val parsed = v.split('\n', '\r', ',', ';')
+                                                .map { it.trim() }
+                                                .filter { it.isNotEmpty() }
+                                                .distinct()
                                             draftProviders = draftProviders.map {
-                                                if (it.id == prov.id) it.copy(apiKey = v) else it
+                                                if (it.id == prov.id) {
+                                                    it.copy(
+                                                        apiKey = parsed.firstOrNull().orEmpty(),
+                                                        apiKeys = parsed
+                                                    )
+                                                } else it
                                             }
                                         },
-                                        label = "API Key（留原掩码不变）",
-                                        placeholder = "sk-... / AIza...",
-                                        visualTransformation = PasswordVisualTransformation()
+                                        label = "API Keys（每行一个，失败自动切换下一个）",
+                                        placeholder = "sk-... / AIza...\n可换行粘贴多个密钥",
+                                        singleLine = false,
+                                        maxLines = 4
                                     )
 
                                     Row(
@@ -646,22 +661,25 @@ fun ModelConfigSheet(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         TactileSecondaryButton(
-                                            text = if (fetchingProviderId == prov.id) "拉取中..." else "拉取全量模型 (0消耗)",
+                                            text = if (fetchingProviderId == prov.id) "实测拉取中..." else "拉取并拦截不可用模型",
                                             accent = true,
                                             enabled = fetchingProviderId.isEmpty(),
                                             minHeight = 38.dp,
                                             onClick = {
                                                 val cleanUrl = cleanBaseUrlAndroid(prov.baseUrl)
-                                                if (cleanUrl.isBlank()) {
-                                                    onShowMessage("请先填写 Base URL")
+                                                val effKeys = prov.effectiveApiKeys()
+                                                if (cleanUrl.isBlank() || effKeys.isEmpty()) {
+                                                    onShowMessage("请先填写 Base URL 与至少一个 API Key")
                                                     return@TactileSecondaryButton
                                                 }
                                                 fetchingProviderId = prov.id
                                                 scope.launch {
-                                                    api.fetchUpstreamModels(prov.id, prov.protocol, cleanUrl, prov.apiKey)
-                                                        .onSuccess { list ->
-                                                            fetchedModelsMap[prov.id] = list
-                                                            onShowMessage("零消耗拉取成功：共 ${list.size} 个模型")
+                                                    api.fetchUpstreamModels(prov.id, prov.protocol, cleanUrl, effKeys, verify = true)
+                                                        .onSuccess { res ->
+                                                            fetchedModelsMap[prov.id] = res.models
+                                                            val filteredTotal = res.filteredOutCount + res.failedVerifyCount
+                                                            val note = if (filteredTotal > 0) "（已拦截 $filteredTotal 个不可用/非对话模型）" else ""
+                                                            onShowMessage("实测拉取成功：共 ${res.models.size} 个可用模型$note")
                                                         }
                                                         .onFailure { err ->
                                                             onShowMessage(err.message ?: "拉取失败")

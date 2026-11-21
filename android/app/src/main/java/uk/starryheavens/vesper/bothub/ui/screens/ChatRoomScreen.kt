@@ -1249,19 +1249,31 @@ fun ChatRoomScreen(
                                             msg.content.contains("\n[中断:")
                                         )
 
-                                    val matchedModelOpt = remember(msg.model, modelOptions) {
-                                        val clean = msg.model.trim()
-                                        if (clean.isEmpty()) null
-                                        else modelOptions.firstOrNull {
-                                            it.id == clean || it.model == clean || it.id.endsWith("::$clean")
+                                    val matchedModelOpt = remember(msg.model, msg.modelTargetId, modelOptions) {
+                                        val cleanTarget = msg.modelTargetId.trim()
+                                        val clean = msg.model.replace(Regex("\\s*\\(已回退\\)$"), "").trim()
+                                        if (cleanTarget.isNotEmpty()) {
+                                            modelOptions.firstOrNull { it.id == cleanTarget }
+                                        } else {
+                                            null
+                                        } ?: if (clean.isEmpty()) {
+                                            null
+                                        } else {
+                                            modelOptions.firstOrNull {
+                                                it.id == clean || it.model == clean || it.id.endsWith("::$clean")
+                                            }
                                         }
                                     }
-                                    val isPaidModelUsed = remember(msg.model, matchedModelOpt) {
-                                        msg.model == "auto:paid" || matchedModelOpt?.tier == "paid"
+                                    val isPaidModelUsed = remember(msg.model, msg.modelTier, msg.modelTargetId, matchedModelOpt) {
+                                        msg.modelTier.equals("paid", ignoreCase = true) ||
+                                            msg.modelTargetId == "primary" ||
+                                            msg.modelTargetId == "auto:paid" ||
+                                            msg.model == "auto:paid" ||
+                                            matchedModelOpt?.tier == "paid"
                                     }
                                     val shortModelUsed = remember(msg.model, matchedModelOpt) {
-                                        val raw = matchedModelOpt?.model?.ifBlank { matchedModelOpt.label } ?: msg.model
-                                        raw.removePrefix("pool:").substringAfter("::").substringAfterLast("/").take(22)
+                                        val raw = msg.model.ifBlank { matchedModelOpt?.model?.ifBlank { matchedModelOpt.label }.orEmpty() }
+                                        raw.removePrefix("pool:").substringAfter("::").substringAfterLast("/").take(26)
                                     }
 
                                     if (!isLiveTurn && msg.content.isNotEmpty() && (isLatestReply || hasTurnError)) {
