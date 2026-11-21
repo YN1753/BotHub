@@ -27,6 +27,10 @@ func filterToolsForBot(bot *store.Bot, attachedSkills []store.Skill) []ToolDefin
 					filtered = append(filtered, td)
 				}
 			}
+		} else if store.NormalizeBotMode(bot.BotMode) != store.BotModeCompanion {
+			// All built-in tools are enabled by default for non-companion Bots;
+			// only user-created/added custom skills are opt-in per Bot.
+			filtered = append(filtered, all...)
 		}
 	}
 	for _, sk := range attachedSkills {

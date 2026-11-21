@@ -278,6 +278,12 @@ export const BotHubApi = {
     apiRequest(`/api/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   runTask: (id: string) =>
     apiRequest<{ summary: string }>(`/api/tasks/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+  optimizeTaskPrompt: (payload: { name: string; prompt: string; description?: string }) =>
+    apiRequest<{ ok: boolean; optimized_prompt: string }>('/api/v2/tasks/optimize-prompt', {
+      method: 'POST',
+      timeoutMs: 50_000,
+      body: JSON.stringify(payload),
+    }),
 
   // Persistent Bots
   createBot: (payload: Partial<Bot>) =>

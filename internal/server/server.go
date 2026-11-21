@@ -147,6 +147,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tasks/{id}", s.requireAuth(s.handleUpdateTask))
 	mux.HandleFunc("DELETE /api/tasks/{id}", s.requireAuth(s.handleDeleteTask))
 	mux.HandleFunc("POST /api/tasks/{id}/run", s.requireAuth(s.handleRunTask))
+	mux.HandleFunc("POST /api/v2/tasks/optimize-prompt", s.requireAuth(s.handleOptimizeTaskPrompt))
 
 	// Assets Management
 	mux.HandleFunc("GET /api/asset-templates", s.requireAuth(s.handleListAssetTemplates))

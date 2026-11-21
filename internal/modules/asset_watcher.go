@@ -297,39 +297,48 @@ func (a *anchorDayAdapter) Sync(_ context.Context, _ *store.Store, _ *http.Clien
 }
 
 func (w *AssetWatcherModule) dispatchNotice(ctx context.Context, taskID string, items []store.Asset, dateStr string) error {
+	autoCount := 0
+	for _, a := range items {
+		if a.AutoRenew {
+			autoCount++
+		}
+	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### BotHub 数字资产临期预警 · %s\n\n", dateStr))
-	sb.WriteString("守望哨兵检测到以下资产临近到期或自动扣款日：\n\n")
+	sb.WriteString(fmt.Sprintf("### 数字资产临期预警 · %s\n\n", dateStr))
+	sb.WriteString(fmt.Sprintf("> **风险概览**：共 %d 项资产即将到期（最快剩余 %d 天 · 其中 %d 项已开自动续费）\n\n", len(items), items[0].DaysLeft, autoCount))
 
 	for i, a := range items {
-		autoStr := "否"
+		autoStr := "手动续费"
 		if a.AutoRenew {
-			autoStr = "是"
+			autoStr = "自动续费"
 		}
-
-		sb.WriteString(fmt.Sprintf("%d. **%s（%s）**\n", i+1, a.Name, a.Spec))
-		sb.WriteString(fmt.Sprintf("   - **到期时间**：%s\n", a.DueDate))
-		sb.WriteString(fmt.Sprintf("   - **剩余时间**：**剩余 %d 天** · 自动续费：%s\n", a.DaysLeft, autoStr))
+		pricePart := ""
+		if p := strings.TrimSpace(a.Price); p != "" {
+			pricePart = " · " + p
+		}
+		sb.WriteString(fmt.Sprintf("%d. **%s**（%s%s）\n", i+1, a.Name, a.Spec, pricePart))
+		sb.WriteString(fmt.Sprintf("   - **到期**：%s（**剩余 %d 天** · %s）\n", a.DueDate, a.DaysLeft, autoStr))
 
 		if a.AutoRenew {
-			sb.WriteString("   - **[自动续费提醒]** 该项目已启用自动续费，如不再使用请及时关闭免密/自动扣款授权。\n")
+			sb.WriteString("   - **行动建议**：已开启自动扣款，如不再续用请尽快关闭免密/自动续费授权。\n")
 		} else {
 			var extra map[string]any
 			_ = json.Unmarshal([]byte(a.ExtraConfig), &extra)
 			note, _ := extra["note"].(string)
 			retiring, _ := extra["retiring"].(bool)
 			if note = notifier.StripEmoji(strings.TrimSpace(note)); note != "" {
-				sb.WriteString(fmt.Sprintf("   - **[停续倒计时提醒]** %s\n", note))
+				sb.WriteString(fmt.Sprintf("   - **备注提醒**：%s\n", note))
 			} else if retiring {
-				sb.WriteString("   - **[停续倒计时提醒]** 该项目已标记到期退役不续费，请在到期前完成数据与业务迁移。\n")
+				sb.WriteString("   - **退役提醒**：已标记到期退役不续费，请在到期前完成数据备份与迁移。\n")
+			} else {
+				sb.WriteString("   - **行动建议**：请提前确认是否续费或迁移，避免服务中断。\n")
 			}
 		}
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("---\n*来自 BotHub 自动化汇报*")
 	title := fmt.Sprintf("[资产临期预警] %d 项资产即将到期（最快剩余 %d 天）", len(items), items[0].DaysLeft)
-	return w.push.SendMarkdown(ctx, taskID, title, sb.String())
+	return w.push.SendMarkdown(ctx, taskID, title, strings.TrimSpace(sb.String()))
 }
 
 // shouldWarn determines if an asset should trigger an alert based on its active status,

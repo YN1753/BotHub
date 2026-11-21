@@ -4,8 +4,6 @@ import { useAppStore } from '../../stores/useAppStore'
 import { BotHubApi } from '../../api/client'
 import { resolveScopedMemories } from '../../utils/botLook'
 import { parseJsonStringArray } from '../../utils/format'
-import { groupAvailableTools } from '../../utils/toolMeta'
-import { clearSearchOnEscape } from '../../utils/topLayer'
 import type { AgentMemory, BotMode, MemoryPolicy } from '../../types/bothub'
 import BotAvatar from '../BotAvatar.vue'
 import BotAvatarPicker from '../BotAvatarPicker.vue'
@@ -27,11 +25,9 @@ const cfgThinking = ref(true)
 const cfgBotMode = ref<BotMode>('hybrid')
 const cfgMemoryPolicy = ref<MemoryPolicy>('standard')
 const cfgTraits = ref('')
-const cfgTools = ref<string[]>([])
 const cfgSkillIds = ref<string[]>([])
 const cfgMembers = ref<string[]>([])
 const cfgGroupMode = ref('smart')
-const cfgToolFilter = ref('')
 const savingProfile = ref(false)
 
 const newMemKey = ref('')
@@ -57,25 +53,7 @@ const MEMORY_POLICY_OPTIONS = [
 
 const isGroupBot = computed(() => Boolean(bot.value?.is_group))
 const availableSpecialistBots = computed(() => store.state.bots.filter((b) => !b.is_group))
-const availableTools = computed(() => store.state.availableTools || [])
 const availableSkills = computed(() => (store.state.skills || []).filter((s) => s.enabled !== false))
-const groupedTools = computed(() => groupAvailableTools(availableTools.value))
-
-const filteredGroupedTools = computed(() => {
-  const q = cfgToolFilter.value.trim().toLowerCase()
-  if (!q) return groupedTools.value
-  return groupedTools.value
-    .map((grp) => ({
-      ...grp,
-      tools: grp.tools.filter(
-        (t) =>
-          t.id.toLowerCase().includes(q) ||
-          t.shortLabel.toLowerCase().includes(q) ||
-          (t.description || '').toLowerCase().includes(q)
-      ),
-    }))
-    .filter((grp) => grp.tools.length > 0)
-})
 
 const hasProfileChanges = computed(() => {
   const b = bot.value
@@ -96,7 +74,6 @@ const hasProfileChanges = computed(() => {
     cfgMemoryPolicy.value !== normPolicy ||
     cfgTraits.value.trim() !== (b.traits || '').trim() ||
     cfgGroupMode.value !== (b.group_mode || 'smart') ||
-    cfgTools.value.toSorted().join(',') !== parseSorted(b.allowed_tools) ||
     cfgSkillIds.value.toSorted().join(',') !== parseSorted(b.skill_ids) ||
     cfgMembers.value.toSorted().join(',') !== parseSorted(b.member_ids)
   )
@@ -123,7 +100,6 @@ watch(
     cfgTraits.value = b.traits || ''
     cfgGroupMode.value = b.group_mode || 'smart'
     editingMemId.value = null
-    cfgTools.value = parseJsonStringArray(b.allowed_tools)
     cfgSkillIds.value = parseJsonStringArray(b.skill_ids)
     cfgMembers.value = parseJsonStringArray(b.member_ids)
   },
@@ -153,7 +129,7 @@ async function saveBotProfile() {
       traits: cfgTraits.value.trim(),
       enable_thinking: cfgThinking.value,
       system_prompt: cfgPrompt.value.trim(),
-      allowed_tools: JSON.stringify(cfgTools.value),
+      allowed_tools: '[]',
       skill_ids: JSON.stringify(cfgSkillIds.value),
       member_ids: JSON.stringify(cfgMembers.value),
       group_mode: cfgGroupMode.value,
@@ -312,7 +288,7 @@ function openScopedMemoriesManager() {
             <ModelRoutePreview
               :selected-model="cfgModel"
               :allow-paid-fallback="cfgAllowPaidFallback"
-              :need-tools="cfgTools.length > 0"
+              :need-tools="cfgBotMode !== 'companion' || cfgSkillIds.length > 0"
             />
           </div>
 
@@ -362,60 +338,20 @@ function openScopedMemoriesManager() {
             <textarea v-model="cfgPrompt" rows="4" class="auto-size-textarea rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent resize-y" />
           </label>
 
-          <div class="md:col-span-2 flex flex-col gap-2 text-xs text-fg-sub">
-            <div class="flex items-center justify-between gap-2 flex-wrap">
-              <span>绑定内置工具集 ({{ cfgTools.length }}/{{ availableTools.length }})</span>
-              <div class="flex items-center gap-2 text-xs flex-wrap">
-                <input
-                  v-model="cfgToolFilter"
-                  type="search"
-                  aria-label="筛选工具"
-                  placeholder="筛选工具..."
-                  @keydown.escape="clearSearchOnEscape($event, cfgToolFilter, () => { cfgToolFilter = '' })"
-                  class="w-32 min-h-[26px] rounded-lg border border-line bg-canvas px-2 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
-                />
-                <button
-                  type="button"
-                  @click="cfgTools = availableTools.map((t) => t.id)"
-                  class="text-accent-fg hover:underline cursor-pointer"
-                >
-                  全选
-                </button>
-                <button
-                  type="button"
-                  @click="cfgTools = availableTools.filter((t) => ['manage_bots','manage_todos','manage_notes','manage_stash','manage_tasks','workspace_briefing','send_notification','web_search','read_url','calculate_eval','datetime_calc','remember_fact','recall_memory','manage_memory','consult_bot'].includes(t.id)).map((t) => t.id)"
-                  class="text-info hover:underline cursor-pointer"
-                >
-                  总助推荐
-                </button>
-                <button
-                  type="button"
-                  @click="cfgTools = []"
-                  class="text-fg-muted hover:underline cursor-pointer"
-                >
-                  清空
-                </button>
-              </div>
+          <div class="md:col-span-2 rounded-xl border border-line bg-canvas/70 px-3.5 py-2.5 flex flex-col gap-1 text-xs">
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-medium text-fg">系统默认内置能力</span>
+              <span class="font-mono text-[11px] px-2 py-0.5 rounded-full border border-ok-border bg-ok-soft text-ok">
+                {{ cfgBotMode === 'companion' ? '伴聊轻量模式' : '已默认全量内置' }}
+              </span>
             </div>
-            <div class="flex flex-col gap-2.5">
-              <div v-if="filteredGroupedTools.length === 0" class="text-xs text-fg-muted py-2">
-                未找到匹配「{{ cfgToolFilter }}」的内置工具
-              </div>
-              <div v-for="grp in filteredGroupedTools" :key="grp.id" class="flex flex-col gap-1.5">
-                <span class="text-xs font-mono text-fg-muted">{{ grp.label }}</span>
-                <div class="flex flex-wrap gap-2">
-                  <label
-                    v-for="tool in grp.tools"
-                    :key="tool.id"
-                    :title="tool.description"
-                    class="min-h-[34px] inline-flex items-center gap-2 px-3 py-1 rounded-xl border border-line bg-canvas text-xs text-fg-sub cursor-pointer hover:border-accent-border has-[:checked]:border-accent-border has-[:checked]:bg-accent-soft has-[:checked]:text-accent-fg transition-colors"
-                  >
-                    <input v-model="cfgTools" type="checkbox" :value="tool.id" class="accent-accent" />
-                    <span>{{ tool.shortLabel }}</span>
-                  </label>
-                </div>
-              </div>
-            </div>
+            <p class="text-fg-muted leading-relaxed">
+              {{
+                cfgBotMode === 'companion'
+                  ? '陪伴聊天型默认保持轻量纯对话体验；切换为「综合协同型 / 干活执行型」即自动具备全套系统内置能力。'
+                  : '待办与笔记、收藏闪念匣、定时例程、联网搜索与网页读取、数字资产与探针、长期记忆及跨 Bot 协同均已默认内置，无需手动勾选。'
+              }}
+            </p>
           </div>
 
           <div class="md:col-span-2 flex flex-col gap-2 text-xs text-fg-sub pt-2 border-t border-line">

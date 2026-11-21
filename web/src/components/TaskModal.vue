@@ -263,6 +263,30 @@ async function handleDelete() {
   await BotHubApi.deleteTask(targetId)
   void store.refreshWorkspaceSlices(['tasks'])
 }
+
+const optimizingPrompt = ref(false)
+async function handleOptimizePrompt() {
+  const raw = String(paramsMap.value.prompt || '').trim()
+  if (!raw || optimizingPrompt.value) {
+    if (!raw) store.notify('请先输入原始执行指令再精修')
+    return
+  }
+  optimizingPrompt.value = true
+  try {
+    const res = await BotHubApi.optimizeTaskPrompt({
+      name: name.value.trim(),
+      prompt: raw,
+    })
+    if (res?.optimized_prompt) {
+      paramsMap.value.prompt = res.optimized_prompt
+      store.notify('已生成高密度防复读版指令，确认后点击保存即可生效')
+    }
+  } catch (err: any) {
+    store.notify(err.message || 'AI 精修指令失败')
+  } finally {
+    optimizingPrompt.value = false
+  }
+}
 </script>
 
 <template>
@@ -407,20 +431,39 @@ async function handleDelete() {
       <div v-if="currentFields.length > 0" class="modal-section flex flex-col gap-3">
         <div class="text-xs font-semibold text-accent-fg">执行引擎参数</div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label
+          <div
             v-for="f in currentFields"
             :key="f.key"
-            class="flex flex-col gap-1 text-xs text-fg-sub"
+            :class="['flex flex-col gap-1 text-xs text-fg-sub', f.key === 'prompt' ? 'sm:col-span-2' : '']"
           >
-            <span>{{ f.label }}</span>
+            <div class="flex items-center justify-between gap-2">
+              <span>{{ f.label }}</span>
+              <button
+                v-if="f.key === 'prompt'"
+                type="button"
+                :disabled="optimizingPrompt || !String(paramsMap[f.key] || '').trim()"
+                @click="handleOptimizePrompt"
+                class="px-2.5 py-0.5 rounded-lg border border-accent-border bg-accent-soft text-xs text-accent-fg hover:brightness-105 cursor-pointer disabled:opacity-50"
+              >
+                {{ optimizingPrompt ? 'AI 精修中...' : 'AI 精修优化指令' }}
+              </button>
+            </div>
+            <textarea
+              v-if="f.key === 'prompt'"
+              v-model="paramsMap[f.key]"
+              rows="4"
+              :placeholder="f.placeholder || f.default_val || f.default_value || ''"
+              class="rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent resize-y"
+            />
             <input
+              v-else
               v-model="paramsMap[f.key]"
               :type="f.type === 'number' ? 'number' : 'text'"
               :placeholder="f.placeholder || f.default_val || f.default_value || ''"
               class="min-h-[44px] sm:min-h-[40px] rounded-xl border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg focus:border-accent"
             />
             <span v-if="f.hint" class="text-xs text-fg-muted">{{ f.hint }}</span>
-          </label>
+          </div>
         </div>
       </div>
 

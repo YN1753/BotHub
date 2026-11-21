@@ -205,6 +205,18 @@ func TestCompanionVsWorkerPromptAndSkills(t *testing.T) {
 	if len(workerTools) != 1 || workerTools[0].Function.Name != "query_nezha_nodes" {
 		t.Fatalf("expected 1 worker tool query_nezha_nodes, got %+v", workerTools)
 	}
+
+	// Non-companion Bot with default empty allowed_tools automatically receives all built-in tools
+	defaultWorker := store.Bot{
+		ID:           "bot_default_worker",
+		Name:         "默认助理",
+		BotMode:      store.BotModeHybrid,
+		AllowedTools: "[]",
+	}
+	defaultTools := filterToolsForBot(&defaultWorker, nil)
+	if len(defaultTools) != len(BuiltinTools()) {
+		t.Fatalf("expected all %d built-in tools by default for non-companion bot, got %d", len(BuiltinTools()), len(defaultTools))
+	}
 }
 
 func TestSearchTokenizationGroupRoutingAndManageMemoryTool(t *testing.T) {

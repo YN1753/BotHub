@@ -158,6 +158,7 @@ export const BUILTIN_SLASH_SPECS: readonly SlashCommandSpec[] = [
 
 export function buildSlashCommands(bot: Bot | null | undefined, skills: Skill[] = []): SlashCmdItem[] {
   const allowedTools = new Set(parseJsonStringArray(bot?.allowed_tools))
+  const defaultAllBuiltin = allowedTools.size === 0 && bot?.bot_mode !== 'companion'
   const boundSkills = new Set(parseJsonStringArray(bot?.skill_ids))
   const items: SlashCmdItem[] = []
 
@@ -172,7 +173,7 @@ export function buildSlashCommands(bot: Bot | null | undefined, skills: Skill[] 
   }
 
   for (const spec of BUILTIN_SLASH_SPECS) {
-    if (spec.anyOfTools && !spec.anyOfTools.some((t) => allowedTools.has(t))) {
+    if (spec.anyOfTools && !defaultAllBuiltin && !spec.anyOfTools.some((t) => allowedTools.has(t))) {
       continue
     }
     const { anyOfTools: _unused, ...item } = spec

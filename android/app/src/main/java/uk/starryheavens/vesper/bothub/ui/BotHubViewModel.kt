@@ -2359,6 +2359,24 @@ class BotHubViewModel(
         }
     }
 
+    fun optimizeTaskPrompt(name: String, rawPrompt: String, onResult: (String?) -> Unit) {
+        val clean = rawPrompt.trim()
+        if (clean.isEmpty()) {
+            showMessage("请先输入任务指令再进行精修")
+            onResult(null)
+            return
+        }
+        viewModelScope.launch {
+            api.optimizeTaskPrompt(name, clean).onSuccess { optimized ->
+                showMessage("已生成高密度防复读版指令，点击保存即可生效")
+                onResult(optimized)
+            }.onFailure { err ->
+                showMessage(err.message ?: "AI 精修指令失败")
+                onResult(null)
+            }
+        }
+    }
+
     fun deleteTaskItem(taskId: String) {
         val prevDash = dashboard
         if (prevDash != null) {

@@ -498,8 +498,19 @@ CREATE INDEX IF NOT EXISTS idx_model_usage_task_day ON model_usage_logs(task_id,
 		return err
 	}
 	s.migrateStashToolOnce()
+	s.migrateBuiltinToolsDefaultOnce()
 	s.cleanupNoisyRoutineLogs()
 	return nil
+}
+
+func (s *Store) migrateBuiltinToolsDefaultOnce() {
+	if v, _ := s.GetConfig("builtin_tools_default_migrated"); v == "1" {
+		return
+	}
+	// Built-in tools are now enabled by default for all non-companion Bots (allowed_tools = '[]'),
+	// while custom skills remain opt-in per Bot.
+	_, _ = s.db.Exec(`UPDATE bots SET allowed_tools = '[]' WHERE COALESCE(bot_mode, 'hybrid') != 'companion' AND allowed_tools != '[]'`)
+	_ = s.SetConfig("builtin_tools_default_migrated", "1")
 }
 
 func (s *Store) cleanupNoisyRoutineLogs() {

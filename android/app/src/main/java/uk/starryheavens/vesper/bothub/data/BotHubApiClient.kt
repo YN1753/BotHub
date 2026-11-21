@@ -553,6 +553,21 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun optimizeTaskPrompt(name: String, prompt: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("name", name.trim())
+                .put("prompt", prompt.trim())
+                .toString()
+            val req = requestBuilder("/api/v2/tasks/optimize-prompt")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "AI 精修指令失败")
+            json.optString("optimized_prompt", "").trim()
+                .ifBlank { throw IllegalStateException("未返回有效精修结果") }
+        }
+    }
+
     suspend fun toggleTaskEnabled(taskId: String, enabled: Boolean): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = JSONObject().put("enabled", enabled).toString()

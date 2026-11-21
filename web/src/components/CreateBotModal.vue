@@ -3,8 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '../stores/useAppStore'
 import { BotHubApi } from '../api/client'
 import { groupModeLabel, parseJsonStringArray } from '../utils/format'
-import { clearSearchOnEscape, trackSpotlight } from '../utils/topLayer'
-import { groupAvailableTools } from '../utils/toolMeta'
+import { trackSpotlight } from '../utils/topLayer'
 import type { BotMode, MemoryPolicy } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import BotAvatar from './BotAvatar.vue'
@@ -49,7 +48,6 @@ const memoryPolicy = ref<MemoryPolicy>('isolated')
 const traits = ref('')
 const enableThinking = ref(true)
 const systemPrompt = ref('')
-const allowedTools = ref<string[]>([])
 const selectedSkillIds = ref<string[]>([])
 
 // Group chat state
@@ -60,7 +58,6 @@ const groupMembers = ref<string[]>([])
 const groupMode = ref<'smart' | 'sequential' | 'parallel' | 'mention_only'>('smart')
 const groupModel = ref('')
 const groupAnnouncement = ref('')
-const toolSearch = ref('')
 const saving = ref(false)
 const botNameInputRef = ref<HTMLInputElement | null>(null)
 const groupNameInputRef = ref<HTMLInputElement | null>(null)
@@ -74,7 +71,6 @@ function resetCreateForm() {
   groupName.value = ''
   groupDesc.value = ''
   groupAnnouncement.value = ''
-  toolSearch.value = ''
 }
 
 const STARTER_ARCHETYPES: Array<{
@@ -136,30 +132,8 @@ function applyArchetype(preset: (typeof STARTER_ARCHETYPES)[number]) {
   traits.value = preset.traits
   systemPrompt.value = preset.prompt
   botMode.value = preset.mode
-  nextTick(() => {
-    allowedTools.value = availableTools.value
-      .filter((t) => preset.tools.includes(t.id))
-      .map((t) => t.id)
-  })
 }
 
-const availableTools = computed(() => store.state.availableTools || [])
-const groupedTools = computed(() => groupAvailableTools(availableTools.value))
-const filteredGroupedTools = computed(() => {
-  const q = toolSearch.value.trim().toLowerCase()
-  if (!q) return groupedTools.value
-  return groupedTools.value
-    .map((grp) => ({
-      ...grp,
-      tools: grp.tools.filter(
-        (t) =>
-          t.id.toLowerCase().includes(q) ||
-          t.shortLabel.toLowerCase().includes(q) ||
-          (t.description || '').toLowerCase().includes(q)
-      ),
-    }))
-    .filter((grp) => grp.tools.length > 0)
-})
 const availableSkills = computed(() => (store.state.skills || []).filter((s) => s.enabled !== false))
 
 const availableSpecialistBots = computed(() =>
@@ -167,19 +141,7 @@ const availableSpecialistBots = computed(() =>
 )
 
 function applyBotModeDefaults(nextMode: BotMode) {
-  if (nextMode === 'companion') {
-    // Companion friend bots should converse naturally without forced ops tools unless explicitly selected
-    allowedTools.value = availableTools.value
-      .filter((t) => t.id === 'remember_fact' || t.id === 'recall_memory')
-      .map((t) => t.id)
-    enableThinking.value = false
-  } else if (nextMode === 'worker') {
-    allowedTools.value = availableTools.value.map((t) => t.id)
-    enableThinking.value = true
-  } else {
-    allowedTools.value = availableTools.value.map((t) => t.id)
-    enableThinking.value = true
-  }
+  enableThinking.value = nextMode !== 'companion'
 }
 
 watch(botMode, (next) => {
@@ -194,9 +156,6 @@ watch(
       model.value = store.modelOptions.value[0]?.value || 'auto:free'
     }
     allowPaidFallback.value = false
-    if (allowedTools.value.length === 0 && botMode.value !== 'companion' && availableTools.value.length > 0) {
-      allowedTools.value = availableTools.value.map((t) => t.id)
-    }
     if (groupMembers.value.length === 0) {
       groupMembers.value = availableSpecialistBots.value.slice(0, 3).map((b) => b.id)
     }
@@ -311,7 +270,7 @@ async function handleSubmit() {
       enable_thinking: enableThinking.value,
       is_group: false,
       member_ids: '[]',
-      allowed_tools: JSON.stringify(allowedTools.value),
+      allowed_tools: '[]',
       skill_ids: JSON.stringify(selectedSkillIds.value),
       system_prompt: systemPrompt.value.trim(),
     })
@@ -449,7 +408,7 @@ async function handleSubmit() {
               <ModelRoutePreview
                 :selected-model="model"
                 :allow-paid-fallback="allowPaidFallback"
-                :need-tools="allowedTools.length > 0"
+                :need-tools="botMode !== 'companion' || selectedSkillIds.length > 0"
               />
             </div>
           </div>
@@ -465,62 +424,20 @@ async function handleSubmit() {
               />
             </label>
 
-            <div class="flex flex-col gap-2 text-xs text-fg-sub">
-              <div class="flex items-center justify-between gap-2 flex-wrap">
-                <span>内置工具白名单 ({{ allowedTools.length }}/{{ availableTools.length }})</span>
-                <div class="flex items-center gap-1.5 text-xs flex-wrap">
-                  <input
-                    v-model="toolSearch"
-                    type="search"
-                    aria-label="搜索工具"
-                    placeholder="筛选工具..."
-                    @keydown.escape="clearSearchOnEscape($event, toolSearch, () => { toolSearch = '' })"
-                    class="w-28 min-h-[26px] rounded-lg border border-line bg-canvas px-2 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    @click="allowedTools = availableTools.map((t) => t.id)"
-                    class="text-accent-fg hover:underline cursor-pointer"
-                  >
-                    全选
-                  </button>
-                  <span class="text-fg-muted">·</span>
-                  <button
-                    type="button"
-                    @click="allowedTools = availableTools.filter((t) => ['manage_bots','manage_todos','manage_notes','manage_stash','manage_tasks','workspace_briefing','send_notification','web_search','read_url','calculate_eval','datetime_calc','remember_fact','recall_memory','manage_memory','consult_bot'].includes(t.id)).map((t) => t.id)"
-                    class="text-info hover:underline cursor-pointer"
-                  >
-                    个人总助推荐
-                  </button>
-                  <span class="text-fg-muted">·</span>
-                  <button
-                    type="button"
-                    @click="allowedTools = []"
-                    class="text-fg-muted hover:underline cursor-pointer"
-                  >
-                    清空
-                  </button>
-                </div>
+            <div class="rounded-xl border border-line bg-canvas/70 px-3 py-2 flex flex-col gap-1 text-xs">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-medium text-fg">系统默认内置能力</span>
+                <span class="font-mono text-[11px] px-2 py-0.5 rounded-full border border-ok-border bg-ok-soft text-ok">
+                  {{ botMode === 'companion' ? '伴聊轻量模式' : '已默认全量内置' }}
+                </span>
               </div>
-              <div class="flex flex-col gap-2">
-                <div v-if="filteredGroupedTools.length === 0" class="text-xs text-fg-muted py-2">
-                  无匹配工具「{{ toolSearch }}」
-                </div>
-                <div v-for="grp in filteredGroupedTools" :key="grp.id" class="flex flex-col gap-1">
-                  <span class="text-xs font-mono text-fg-muted">{{ grp.label }}</span>
-                  <div class="flex flex-wrap gap-1.5">
-                    <label
-                      v-for="tool in grp.tools"
-                      :key="tool.id"
-                      :title="tool.description"
-                      class="min-h-[32px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-line bg-canvas text-xs text-fg-sub cursor-pointer hover:border-accent-border has-[:checked]:border-accent-border has-[:checked]:bg-accent-soft has-[:checked]:text-accent-fg transition-colors"
-                    >
-                      <input v-model="allowedTools" type="checkbox" :value="tool.id" class="accent-accent" />
-                      <span>{{ tool.shortLabel }}</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
+              <p class="text-fg-muted leading-relaxed">
+                {{
+                  botMode === 'companion'
+                    ? '陪伴聊天型默认保持轻量纯对话体验；切换为「综合协同型 / 干活执行型」即自动具备全套系统内置能力。'
+                    : '待办、笔记、收藏匣、定时例程、联网搜索、资产探针与长期记忆均已默认内置，无需手动勾选。'
+                }}
+              </p>
             </div>
 
             <div class="flex flex-col gap-1.5 text-xs text-fg-sub pt-1 border-t border-line">
@@ -657,7 +574,7 @@ async function handleSubmit() {
       <div class="flex items-center justify-between gap-2 pt-2 border-t border-line shrink-0 flex-wrap">
         <span class="font-mono text-xs text-fg-muted">
           <template v-if="mode === 'bot'">
-            {{ BOT_MODE_TABS.find((t) => t.id === botMode)?.label }} · {{ allowedTools.length }} 工具 · {{ selectedSkillIds.length }} 技能
+            {{ BOT_MODE_TABS.find((t) => t.id === botMode)?.label }} · {{ botMode === 'companion' ? '轻量对话' : '默认全套内置能力' }} · {{ selectedSkillIds.length }} 自定义技能
           </template>
           <template v-else>
             已拉起 {{ groupMembers.length }} 位群成员 · {{ groupModeLabel(groupMode) }}

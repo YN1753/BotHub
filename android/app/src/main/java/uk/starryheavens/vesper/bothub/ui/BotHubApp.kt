@@ -486,6 +486,7 @@ fun BotHubApp(
                                     onSaveAssetCategories = viewModel::saveAssetCategories,
                                     onSaveTask = viewModel::saveTaskItem,
                                     onDeleteTask = viewModel::deleteTaskItem,
+                                    onOptimizeTaskPrompt = viewModel::optimizeTaskPrompt,
                                     onCreateTodo = viewModel::createTodoItem,
                                     onToggleTodoDone = viewModel::toggleTodoDone,
                                     onUpdateTodo = viewModel::updateTodoItem,

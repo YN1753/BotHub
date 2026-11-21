@@ -83,78 +83,59 @@ private val AVATAR_OPTIONS = listOf(
     "critic:rose" to "绯红"
 )
 
-private val ANDROID_BUILTIN_TOOLS = listOf(
-    "manage_todos" to "个人待办",
-    "manage_notes" to "工作笔记",
-    "manage_stash" to "收藏闪念",
-    "manage_tasks" to "定时提醒",
-    "workspace_briefing" to "今日简报",
-    "send_notification" to "主动推送",
-    "web_search" to "联网检索",
-    "read_url" to "阅读网页",
-    "calculate_eval" to "数学计算",
-    "datetime_calc" to "日期推算",
-    "remember_fact" to "写入记忆",
-    "recall_memory" to "检索记忆",
-    "manage_memory" to "整理记忆",
-    "consult_bot" to "协同队友",
-    "manage_assets" to "数字资产",
-    "query_nezha_nodes" to "探针巡检"
-)
-
-private fun defaultToolsForModeAndroid(botMode: String): List<String> = when (botMode) {
-    "companion" -> listOf("remember_fact", "recall_memory")
-    "worker" -> listOf(
-        "web_search", "read_url", "calculate_eval", "datetime_calc",
-        "manage_notes", "manage_todos", "manage_stash", "manage_assets", "query_nezha_nodes",
-        "remember_fact", "recall_memory", "manage_memory"
-    )
-    else -> listOf(
-        "manage_todos", "manage_notes", "manage_stash", "manage_tasks",
-        "workspace_briefing", "send_notification", "web_search", "read_url",
-        "calculate_eval", "datetime_calc", "remember_fact", "recall_memory",
-        "manage_memory", "consult_bot", "manage_assets"
-    )
-}
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ToolAndSkillSelectorBlock(
-    selectedTools: List<String>,
-    onToggleTool: (String) -> Unit,
+private fun BuiltinAndCustomSkillsBlock(
+    botMode: String,
     selectedSkillIds: List<String>,
     availableSkills: List<SkillItemUi>,
     onToggleSkill: (String) -> Unit
 ) {
     val theme = BotHubThemeTokens
+    val isCompanion = botMode.equals("companion", ignoreCase = true)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "内置工具权限 (${selectedTools.size})",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            color = theme.textMuted
-        )
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+        SpecularGlassCard(
+            cornerRadius = 12.dp,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            ANDROID_BUILTIN_TOOLS.forEach { (tid, label) ->
-                val checked = tid in selectedTools
-                TactileSecondaryButton(
-                    text = label,
-                    accent = checked,
-                    cornerRadius = 9.dp,
-                    minHeight = 29.dp,
-                    contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp),
-                    onClick = { onToggleTool(tid) }
+            Column(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "系统默认内置能力",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = theme.textPrimary
+                    )
+                    Text(
+                        text = if (isCompanion) "伴聊轻量模式" else "已默认全量内置",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF10B981)
+                    )
+                }
+                Text(
+                    text = if (isCompanion) {
+                        "伴聊模式默认保持轻盈纯对话；切换为「综合 / 助理」即自动内置全套系统能力。"
+                    } else {
+                        "待办、笔记、收藏匣、定时例程、联网搜索、资产探针与长期记忆均已默认内置，无需手动勾选。"
+                    },
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    color = theme.textMuted
                 )
             }
         }
 
         if (availableSkills.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "挂载自定义技能卡 (${selectedSkillIds.size}/${availableSkills.size})",
+                text = "挂载自定义技能 (${selectedSkillIds.size}/${availableSkills.size})",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 color = theme.textMuted
@@ -674,7 +655,6 @@ fun EditBotSheet(
     var groupMode by remember(bot.id) { mutableStateOf(bot.groupMode.ifBlank { "smart" }) }
     var announcement by remember(bot.id) { mutableStateOf(bot.announcement) }
     var allowPaidFallback by remember(bot.id) { mutableStateOf(bot.allowPaidFallback) }
-    var selectedTools by remember(bot.id) { mutableStateOf(bot.allowedTools) }
     var selectedSkillIds by remember(bot.id) { mutableStateOf(bot.skillIds) }
 
     val groupModes = listOf(
@@ -779,15 +759,8 @@ fun EditBotSheet(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                ToolAndSkillSelectorBlock(
-                    selectedTools = selectedTools,
-                    onToggleTool = { tid ->
-                        selectedTools = if (tid in selectedTools) {
-                            selectedTools.filterNot { it == tid }
-                        } else {
-                            selectedTools + tid
-                        }
-                    },
+                BuiltinAndCustomSkillsBlock(
+                    botMode = bot.botMode,
                     selectedSkillIds = selectedSkillIds,
                     availableSkills = availableSkills,
                     onToggleSkill = { sid ->
@@ -842,7 +815,7 @@ fun EditBotSheet(
                             groupMode,
                             announcement.trim(),
                             allowPaidFallback,
-                            if (bot.isGroup) null else selectedTools,
+                            if (bot.isGroup) null else emptyList(),
                             if (bot.isGroup) null else selectedSkillIds
                         )
                     }
@@ -961,7 +934,6 @@ fun CreateFriendSheet(
     var traits by remember { mutableStateOf("") }
     var systemPrompt by remember { mutableStateOf("") }
     var allowPaidFallback by remember { mutableStateOf(false) }
-    var selectedTools by remember { mutableStateOf(defaultToolsForModeAndroid("hybrid")) }
     var selectedSkillIds by remember { mutableStateOf<List<String>>(emptyList()) }
 
     ModalBottomSheet(
@@ -1006,7 +978,6 @@ fun CreateFriendSheet(
                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 7.dp),
                         onClick = {
                             selectedMode = mid
-                            selectedTools = defaultToolsForModeAndroid(mid)
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -1050,15 +1021,8 @@ fun CreateFriendSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            ToolAndSkillSelectorBlock(
-                selectedTools = selectedTools,
-                onToggleTool = { tid ->
-                    selectedTools = if (tid in selectedTools) {
-                        selectedTools.filterNot { it == tid }
-                    } else {
-                        selectedTools + tid
-                    }
-                },
+            BuiltinAndCustomSkillsBlock(
+                botMode = selectedMode,
                 selectedSkillIds = selectedSkillIds,
                 availableSkills = availableSkills,
                 onToggleSkill = { sid ->
@@ -1115,7 +1079,7 @@ fun CreateFriendSheet(
                             traits.trim(),
                             prompt,
                             allowPaidFallback,
-                            selectedTools,
+                            emptyList(),
                             selectedSkillIds
                         )
                     }

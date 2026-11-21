@@ -297,8 +297,14 @@ const starterChips = computed<StarterChipItem[]>(() => {
       highlight: true,
     })
   }
-  const allowed = parseJsonStringArray(b.allowed_tools)
-  for (const id of allowed) {
+  const explicitAllowed = parseJsonStringArray(b.allowed_tools)
+  const effectiveToolIds =
+    explicitAllowed.length > 0
+      ? explicitAllowed
+      : b.bot_mode !== 'companion'
+        ? ['manage_todos', 'manage_stash', 'manage_tasks', 'web_search', 'manage_assets']
+        : []
+  for (const id of effectiveToolIds) {
     if (chips.some((c) => c.id === id)) continue
     const found = (store.state.availableTools || []).find((t) => t.id === id)
     chips.push({

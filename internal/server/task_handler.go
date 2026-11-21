@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/modules"
+	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/scheduler"
 	"github.com/YN1753/vesper/bothub/internal/store"
 	"github.com/robfig/cron/v3"
@@ -197,4 +198,54 @@ func (s *Server) handleRunTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "summary": res.Summary, "items_pushed": res.ItemsPushed})
+}
+
+func (s *Server) handleOptimizeTaskPrompt(w http.ResponseWriter, r *http.Request) {
+	if s.agent == nil {
+		writeError(w, http.StatusServiceUnavailable, "Agent 引擎未就绪")
+		return
+	}
+	var req struct {
+		Name        string `json:"name"`
+		Prompt      string `json:"prompt"`
+		Description string `json:"description"`
+	}
+	if !decodeJSON(w, r, 16384, &req) {
+		return
+	}
+	rawPrompt := strings.TrimSpace(req.Prompt)
+	if rawPrompt == "" {
+		rawPrompt = strings.TrimSpace(req.Description)
+	}
+	if rawPrompt == "" {
+		writeError(w, http.StatusBadRequest, "请先填写任务指令内容再进行精修优化")
+		return
+	}
+
+	sysPrompt := `你是定时推送 Prompt 工程专家。请将用户草拟的定时任务指令改写为“高信息密度、防复读、可执行”的专业版定时例程指令（中文，120-260 字）。
+改写原则：
+1. 剥离并抽象用户原话里随口举的“比如/例如”具体示例，改为泛化主题范围与质量标准，明确禁止每次照搬示例。
+2. 明确要求直接输出干货正文，禁止寒暄问候、套话与空泛鸡汤。
+3. 若涉及实时信息、待办、资产、收藏或外部新闻，明确要求先调用内置工具获取真实数据后再凝练总结。
+4. 明确要求每次触发结合当日视角与历史去重账本，产出全新切入点与具体事实/案例。
+5. 只输出改写后的最终指令正文，不要加任何解释、标题引号或 Emoji。`
+
+	userInput := "任务名称：" + strings.TrimSpace(req.Name) + "\n原始指令：\n" + rawPrompt
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+
+	optimized, err := s.agent.CallLightModel(ctx, sysPrompt, userInput)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "AI 精修失败: "+err.Error())
+		return
+	}
+	optimized = notifier.StripEmoji(strings.TrimSpace(optimized))
+	if optimized == "" {
+		writeError(w, http.StatusBadGateway, "AI 未返回有效精修结果")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":               true,
+		"optimized_prompt": optimized,
+	})
 }

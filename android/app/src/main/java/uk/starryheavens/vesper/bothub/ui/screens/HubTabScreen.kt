@@ -270,6 +270,7 @@ fun HubTabScreen(
         params: String
     ) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _ -> },
     onDeleteTask: (String) -> Unit = {},
+    onOptimizeTaskPrompt: (name: String, rawPrompt: String, onResult: (String?) -> Unit) -> Unit = { _, _, cb -> cb(null) },
     onCreateTodo: (title: String, notes: String, dueAt: String, priority: String) -> Unit = { _, _, _, _ -> },
     onToggleTodoDone: (TodoItemUi) -> Unit = {},
     onUpdateTodo: (id: String, title: String, notes: String, dueAt: String, priority: String) -> Unit = { _, _, _, _, _ -> },
@@ -1362,6 +1363,7 @@ fun HubTabScreen(
                     showTaskSheet = false
                 }
             },
+            onOptimizePrompt = onOptimizeTaskPrompt,
             onDismiss = { showTaskSheet = false }
         )
     }
@@ -1426,6 +1428,7 @@ private fun TaskEditorSheet(
         params: String
     ) -> Unit,
     onDelete: (() -> Unit)?,
+    onOptimizePrompt: (name: String, rawPrompt: String, onResult: (String?) -> Unit) -> Unit = { _, _, cb -> cb(null) },
     onDismiss: () -> Unit
 ) {
     val theme = BotHubThemeTokens
@@ -1635,14 +1638,40 @@ private fun TaskEditorSheet(
             }
 
             if (type == "bot_prompt") {
-                ObsidianGlassInput(
-                    value = promptText,
-                    onValueChange = { promptText = it },
-                    label = "定时执行的指令内容 (Prompt)",
-                    placeholder = "例如：请巡检所有数字资产与探针节点状态，并汇总今日待办提醒...",
-                    singleLine = false,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                var optimizingPrompt by remember(task) { mutableStateOf(false) }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("定时执行的指令内容 (Prompt)", fontSize = 12.sp, color = theme.textMuted)
+                        TactileSecondaryButton(
+                            text = if (optimizingPrompt) "AI 精修中..." else "AI 精修优化指令",
+                            accent = true,
+                            enabled = !optimizingPrompt && promptText.isNotBlank(),
+                            cornerRadius = 999.dp,
+                            minHeight = 28.dp,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp),
+                            onClick = {
+                                optimizingPrompt = true
+                                onOptimizePrompt(name, promptText) { optimized ->
+                                    if (!optimized.isNullOrBlank()) {
+                                        promptText = optimized
+                                    }
+                                    optimizingPrompt = false
+                                }
+                            }
+                        )
+                    }
+                    ObsidianGlassInput(
+                        value = promptText,
+                        onValueChange = { promptText = it },
+                        placeholder = "例如：请巡检所有数字资产与探针节点状态，并汇总今日待办提醒...",
+                        singleLine = false,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
