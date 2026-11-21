@@ -200,6 +200,45 @@ func (s *Store) ClearReadNotifications() (int64, error) {
 	return affected, nil
 }
 
+func (s *Store) GetNotification(id int64) (*Notification, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("无效通知 ID")
+	}
+	var n Notification
+	err := s.db.QueryRow(
+		`SELECT id, module_id, title, summary, markdown_body, priority, created_at, read_at
+		 FROM notifications WHERE id = ?`,
+		id,
+	).Scan(&n.ID, &n.ModuleID, &n.Title, &n.Summary, &n.MarkdownBody, &n.Priority, &n.CreatedAt, &n.ReadAt)
+	if err != nil {
+		return nil, err
+	}
+	return &n, nil
+}
+
+func (s *Store) UpdateNotificationContent(id int64, title, summary, markdownBody string) (*Notification, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("无效通知 ID")
+	}
+	title = strings.TrimSpace(title)
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		summary = summarizeMarkdownPreview(markdownBody, 120)
+	}
+	now := NowShanghai()
+	res, err := s.db.Exec(
+		`UPDATE notifications SET title = ?, summary = ?, markdown_body = ?, created_at = ?, read_at = '' WHERE id = ?`,
+		title, summary, markdownBody, now, id,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return nil, fmt.Errorf("未找到该通知")
+	}
+	return s.GetNotification(id)
+}
+
 func (s *Store) DeleteNotification(id int64) (bool, error) {
 	res, err := s.db.Exec(`DELETE FROM notifications WHERE id = ?`, id)
 	if err != nil {

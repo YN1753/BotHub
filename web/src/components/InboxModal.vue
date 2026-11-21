@@ -13,6 +13,11 @@ const activeFilter = ref<'all' | 'morning' | 'radar' | 'asset' | 'alert'>('all')
 const onlyUnread = ref(false)
 const inboxQuery = ref('')
 const listRef = ref<HTMLElement | null>(null)
+const rerollOpenId = ref<number | null>(null)
+const rerollFeedback = ref('')
+const rerollingId = ref<number | null>(null)
+const savedTodoIds = ref<Record<number, boolean>>({})
+const savedNoteIds = ref<Record<number, boolean>>({})
 
 const FILTER_TABS = [
   { id: 'all', label: '全部' },
@@ -45,7 +50,7 @@ function closeModal() {
   store.state.showInboxModal = false
 }
 
-async function askBotAnalyze(n: { id: number; source: string; title: string; summary: string }) {
+async function askBotAnalyze(n: { id: number; source: string; title: string; summary: string; markdown: string }) {
   await markRead(n.id)
   if (store.state.bots.length === 0) {
     store.state.showInboxModal = false
@@ -66,10 +71,11 @@ async function askBotAnalyze(n: { id: number; source: string; title: string; sum
   let picked =
     botFromTitle ||
     (boundTask?.bot_id && store.state.bots.find((b) => b.id === boundTask.bot_id)) ||
+    store.state.bots.find((b) => b.id === 'bot_butler') ||
     store.state.bots.find((b) => !b.is_group && (b.bot_mode === 'worker' || b.bot_mode === 'hybrid')) ||
     store.state.bots[0]
 
-  if (!boundTask?.bot_id) {
+  if (!boundTask?.bot_id && !botFromTitle) {
     if (s.includes('nezha') || s.includes('alert') || s.includes('webhook')) {
       picked = findByTool('query_nezha_nodes') || picked
     } else if (s.includes('radar') || s.includes('bili')) {
@@ -78,10 +84,54 @@ async function askBotAnalyze(n: { id: number; source: string; title: string; sum
       picked = findByTool('manage_assets') || picked
     }
   }
-  await store.jumpToBot(picked.id, `请深度分析这条系统情报并给出建议：\n标题：${n.title}\n摘要：${n.summary}`)
+  await store.quoteNotificationToBot(picked.id, n)
+}
+
+function toggleRerollBox(id: number) {
+  if (rerollingId.value) return
+  if (rerollOpenId.value === id) {
+    rerollOpenId.value = null
+    rerollFeedback.value = ''
+  } else {
+    rerollOpenId.value = id
+    rerollFeedback.value = ''
+  }
+}
+
+async function submitReroll(n: { id: number; title: string }, customFeedback?: string) {
+  if (rerollingId.value) return
+  rerollingId.value = n.id
+  const fb = (customFeedback ?? rerollFeedback.value).trim()
+  try {
+    const res = await BotHubApi.rerollNotification(n.id, fb)
+    if (res?.notification) {
+      const updated = res.notification
+      store.state.notifications = store.state.notifications.map((item) =>
+        item.id === n.id
+          ? {
+              ...item,
+              title: updated.title || item.title,
+              summary: updated.summary || item.summary,
+              markdown: updated.markdown_body || updated.summary || item.markdown,
+              created_at: updated.created_at || item.created_at,
+              read_at: updated.read_at || '',
+            }
+          : item
+      )
+    }
+    rerollOpenId.value = null
+    rerollFeedback.value = ''
+    void store.refreshWorkspaceSlices(['memories'])
+    store.notify(res?.memory_saved ? '已换全新方向重推，并将你的口味偏好写入长期记忆' : '已换全新方向原位重推')
+  } catch (err: any) {
+    store.notify(err.message || '重推失败，请稍后重试')
+  } finally {
+    rerollingId.value = null
+  }
 }
 
 async function convertInboxToTodo(n: { id: number; title: string; summary: string; markdown: string; priority: string }) {
+  if (savedTodoIds.value[n.id]) return
   void markRead(n.id)
   try {
     const res = await BotHubApi.createTodo({
@@ -93,6 +143,7 @@ async function convertInboxToTodo(n: { id: number; title: string; summary: strin
     if (res?.todo) {
       store.state.todos = [res.todo, ...store.state.todos.filter((x) => x.id !== res.todo.id)]
     }
+    savedTodoIds.value[n.id] = true
     void store.refreshWorkspaceSlices(['todos'])
     store.notify('已转入个人待办清单')
   } catch (err: any) {
@@ -101,6 +152,7 @@ async function convertInboxToTodo(n: { id: number; title: string; summary: strin
 }
 
 async function saveInboxToNote(n: { id: number; source: string; title: string; summary: string; markdown: string }) {
+  if (savedNoteIds.value[n.id]) return
   void markRead(n.id)
   try {
     const res = await BotHubApi.createNote({
@@ -111,6 +163,7 @@ async function saveInboxToNote(n: { id: number; source: string; title: string; s
     if (res?.note) {
       store.state.notes = [res.note, ...store.state.notes.filter((x) => x.id !== res.note.id)]
     }
+    savedNoteIds.value[n.id] = true
     void store.refreshWorkspaceSlices(['notes'])
     store.notify(`已归档至工作文档《${n.title}》`)
   } catch (err: any) {
@@ -295,7 +348,7 @@ watch(
             </summary>
             <div @click="handleMarkdownCodeCopy($event)" class="mt-2 pt-2 border-t border-line" v-html="renderSafeMarkdown(n.markdown || n.summary)" />
           </details>
-          <div class="flex items-center gap-1.5 shrink-0 self-start">
+          <div class="flex items-center gap-1.5 flex-wrap shrink-0 self-start">
             <button
               v-if="!n.read_at"
               type="button"
@@ -306,17 +359,37 @@ watch(
             </button>
             <button
               type="button"
+              :disabled="savedTodoIds[n.id]"
               @click="convertInboxToTodo(n)"
-              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-info-border bg-info-soft hover:bg-info-soft text-xs text-info cursor-pointer"
+              :class="[
+                'min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border text-xs cursor-pointer',
+                savedTodoIds[n.id]
+                  ? 'border-ok-border bg-ok-soft text-ok cursor-default'
+                  : 'border-info-border bg-info-soft text-info',
+              ]"
             >
-              转待办
+              {{ savedTodoIds[n.id] ? '已建待办' : '转为待办' }}
             </button>
             <button
               type="button"
+              :disabled="savedNoteIds[n.id]"
               @click="saveInboxToNote(n)"
-              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-line hover:border-accent-border text-xs text-fg-sub hover:text-accent-fg cursor-pointer"
+              :class="[
+                'min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border text-xs cursor-pointer',
+                savedNoteIds[n.id]
+                  ? 'border-ok-border bg-ok-soft text-ok cursor-default'
+                  : 'border-line hover:border-accent-border text-fg-sub hover:text-accent-fg',
+              ]"
             >
-              存手记
+              {{ savedNoteIds[n.id] ? '已存笔记' : '存为笔记' }}
+            </button>
+            <button
+              type="button"
+              :disabled="rerollingId !== null"
+              @click="toggleRerollBox(n.id)"
+              class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-line hover:border-amber-400/60 text-xs text-fg-sub hover:text-amber-500 cursor-pointer disabled:opacity-50"
+            >
+              {{ rerollingId === n.id ? '重推中...' : '换一条重推' }}
             </button>
             <button
               type="button"
@@ -331,6 +404,37 @@ watch(
               class="min-h-[32px] sm:min-h-[26px] px-2 py-0.5 rounded-lg border border-line hover:border-danger-border text-xs text-fg-muted hover:text-danger cursor-pointer"
             >
               删除
+            </button>
+          </div>
+        </div>
+        <div
+          v-if="rerollOpenId === n.id"
+          class="mt-2.5 pt-2.5 border-t border-line flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
+        >
+          <input
+            v-model="rerollFeedback"
+            type="text"
+            :disabled="rerollingId === n.id"
+            placeholder="可选：告诉 TA 哪里不满意或想看什么（留空直接换方向重推并记入避雷偏好）"
+            @keydown.enter.prevent="submitReroll(n)"
+            class="flex-1 min-h-[34px] rounded-xl border border-line bg-canvas px-3 text-xs text-fg placeholder:text-fg-muted focus:border-accent"
+          />
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              :disabled="rerollingId !== null"
+              @click="submitReroll(n)"
+              class="min-h-[34px] px-3 rounded-xl border border-accent-border bg-accent-soft text-xs font-medium text-accent-fg hover:brightness-105 cursor-pointer disabled:opacity-50"
+            >
+              {{ rerollingId === n.id ? '正在重新生成...' : '立即原位重推' }}
+            </button>
+            <button
+              type="button"
+              :disabled="rerollingId !== null"
+              @click="toggleRerollBox(n.id)"
+              class="min-h-[34px] px-2.5 rounded-xl border border-line text-xs text-fg-muted hover:text-fg cursor-pointer"
+            >
+              取消
             </button>
           </div>
         </div>

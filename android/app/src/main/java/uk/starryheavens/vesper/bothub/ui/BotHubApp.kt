@@ -272,6 +272,8 @@ fun BotHubApp(
                             activeThreadId = viewModel.activeThreadId,
                             inputText = viewModel.inputText,
                             isStreaming = viewModel.isStreaming,
+                            quotedNotification = viewModel.quotedNotification,
+                            onDismissQuotedNotification = viewModel::dismissQuotedNotification,
                             onBack = viewModel::closeChatRoom,
                             onInputChange = viewModel::updateInputText,
                             onSendPrompt = { prompt -> viewModel.sendAgentPrompt(prompt) },
@@ -317,10 +319,17 @@ fun BotHubApp(
                     ) { _ ->
                         ServiceFeedScreen(
                             notifications = viewModel.notifications,
+                            rerollingNotificationId = viewModel.rerollingNotificationId,
+                            savedTodoIds = viewModel.savedTodoNotificationIds,
+                            savedNoteIds = viewModel.savedNoteNotificationIds,
                             onBack = viewModel::closeServiceFeed,
                             onSelectNotification = viewModel::selectNotification,
                             onMarkOneRead = viewModel::markNotificationReadOnly,
                             onDeleteNotification = viewModel::deleteNotificationItem,
+                            onDiagnoseWithAi = viewModel::diagnoseNotificationWithAi,
+                            onRerollNotification = { item -> viewModel.rerollNotificationItem(item) },
+                            onConvertToTodo = viewModel::convertNotificationToTodo,
+                            onSaveToNote = viewModel::saveNotificationToNote,
                             onMarkAllRead = viewModel::markAllNotificationsRead,
                             onClearRead = viewModel::clearReadNotifications,
                             onRefresh = { viewModel.refreshAll(silent = false) }
@@ -729,12 +738,16 @@ fun BotHubApp(
     viewModel.selectedNotification?.let { item ->
         NotificationDetailSheet(
             item = item,
+            isRerolling = viewModel.rerollingNotificationId == item.id,
+            isTodoSaved = item.id in viewModel.savedTodoNotificationIds,
+            isNoteSaved = item.id in viewModel.savedNoteNotificationIds,
             onCopyBody = { body ->
                 clipboard.setText(AnnotatedString(body))
                 viewModel.showMessage("已复制")
             },
             onConvertToTodo = viewModel::convertNotificationToTodo,
             onSaveToNote = viewModel::saveNotificationToNote,
+            onReroll = viewModel::rerollNotificationItem,
             onDelete = viewModel::deleteNotificationItem,
             onDiagnoseWithAi = viewModel::diagnoseNotificationWithAi,
             onDismiss = viewModel::dismissNotificationDetail

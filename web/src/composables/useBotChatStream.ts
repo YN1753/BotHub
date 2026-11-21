@@ -67,6 +67,7 @@ export function useBotChatStream(options: {
     const botId = curBot.id
     const activeThreadSnapshot = store.state.activeThreadId || ''
     const quote = replyTarget.value
+    const notifQuote = store.state.pendingNotificationQuote
     const effectiveModel = (turnOpts?.overrideModel || selectedModel.value || 'auto:free').trim()
     lastPrompt.value = msg
     if (!overrideText) {
@@ -75,7 +76,18 @@ export function useBotChatStream(options: {
     }
     onClosePopovers?.()
     replyTarget.value = null
+    if (notifQuote) {
+      store.state.pendingNotificationQuote = null
+    }
     relaySteps.value = []
+
+    const notifPreview = notifQuote
+      ? `[服务通知] ${notifQuote.title}: ${(notifQuote.summary || notifQuote.markdown || '').slice(0, 80)}`
+      : ''
+    const payloadMessage = notifQuote
+      ? `[引用服务通知上下文]\n标题：${notifQuote.title}\n正文：\n${(notifQuote.markdown || notifQuote.summary).slice(0, 1500)}\n\n[用户追问]\n${msg}`
+      : msg
+    const effectiveReplyPreview = quote?.preview || notifPreview
 
     // In-place replacement when retrying with another model: remove the old assistant reply and its paired user turn
     if (turnOpts?.replaceAssistantMsg) {
@@ -119,7 +131,7 @@ export function useBotChatStream(options: {
       reasoning: '',
       tools: [],
       replyToId: quote?.serverId,
-      replyPreview: quote?.preview,
+      replyPreview: effectiveReplyPreview || undefined,
       statusText: '已发送',
       isLiveNew: true,
     })
@@ -204,12 +216,12 @@ export function useBotChatStream(options: {
         body: JSON.stringify({
           bot_id: botId,
           thread_id: store.state.activeThreadId || '',
-          message: msg,
+          message: payloadMessage,
           model: effectiveModel,
           enable_thinking: enableThinking.value,
           ...(turnOpts?.allowPaidOnce ? { allow_paid_fallback: true } : {}),
           reply_to_id: quote?.serverId || 0,
-          reply_preview: quote?.preview || '',
+          reply_preview: effectiveReplyPreview,
         }),
       })
       if (!res.ok) {

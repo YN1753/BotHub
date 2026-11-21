@@ -47,10 +47,17 @@ import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 @Composable
 fun ServiceFeedScreen(
     notifications: List<NotificationItem>,
+    rerollingNotificationId: Long? = null,
+    savedTodoIds: Set<Long> = emptySet(),
+    savedNoteIds: Set<Long> = emptySet(),
     onBack: () -> Unit,
     onSelectNotification: (NotificationItem) -> Unit,
     onMarkOneRead: (NotificationItem) -> Unit = {},
     onDeleteNotification: (NotificationItem) -> Unit = {},
+    onDiagnoseWithAi: (NotificationItem) -> Unit = {},
+    onRerollNotification: (NotificationItem) -> Unit = {},
+    onConvertToTodo: (NotificationItem) -> Unit = {},
+    onSaveToNote: (NotificationItem) -> Unit = {},
     onMarkAllRead: () -> Unit,
     onClearRead: () -> Unit = {},
     onRefresh: () -> Unit,
@@ -173,9 +180,16 @@ fun ServiceFeedScreen(
         InboxTabScreen(
             modifier = Modifier.fillMaxSize(),
             notifications = notifications,
+            rerollingNotificationId = rerollingNotificationId,
+            savedTodoIds = savedTodoIds,
+            savedNoteIds = savedNoteIds,
             onSelectNotification = onSelectNotification,
             onMarkOneRead = onMarkOneRead,
-            onDeleteNotification = onDeleteNotification
+            onDeleteNotification = onDeleteNotification,
+            onDiagnoseWithAi = onDiagnoseWithAi,
+            onRerollNotification = onRerollNotification,
+            onConvertToTodo = onConvertToTodo,
+            onSaveToNote = onSaveToNote
         )
     }
 }

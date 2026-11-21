@@ -98,6 +98,7 @@ import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.BotThreadItem
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
+import uk.starryheavens.vesper.bothub.data.NotificationItem
 import uk.starryheavens.vesper.bothub.data.SkillItemUi
 import uk.starryheavens.vesper.bothub.data.TodoItemUi
 import uk.starryheavens.vesper.bothub.data.formatHumanToolName
@@ -200,6 +201,8 @@ fun ChatRoomScreen(
     activeThreadId: String = "",
     inputText: String,
     isStreaming: Boolean,
+    quotedNotification: NotificationItem? = null,
+    onDismissQuotedNotification: () -> Unit = {},
     onBack: () -> Unit,
     onInputChange: (String) -> Unit,
     onSendPrompt: (String) -> Unit,
@@ -1675,6 +1678,101 @@ fun ChatRoomScreen(
                         .size(16.dp)
                         .clickable { quoteTarget = null }
                 )
+            }
+        }
+
+        if (quotedNotification != null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(theme.bottomBarTop)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "引用服务通知 · ${quotedNotification.title}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = theme.accent,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val qPreview = quotedNotification.previewText(80)
+                        if (qPreview.isNotEmpty()) {
+                            Text(
+                                text = qPreview,
+                                fontSize = 11.5.sp,
+                                color = theme.textMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "取消引用通知",
+                        tint = theme.textSecondary,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable { onDismissQuotedNotification() }
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val chipShape = RoundedCornerShape(999.dp)
+                    Box(
+                        modifier = Modifier
+                            .clip(chipShape)
+                            .background(theme.accent.copy(alpha = 0.14f), chipShape)
+                            .border(0.7.dp, theme.accent.copy(alpha = 0.42f), chipShape)
+                            .tactileClickable(enabled = !isStreaming, pressedScale = 0.94f, hapticOnTap = true) {
+                                onSendPrompt("请针对这条服务通知深入展开讲讲，补充关键背景、细节与延伸思考。")
+                            }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = "深入展开讲讲",
+                            style = TextStyle(
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = theme.accent,
+                                platformStyle = NoFontPaddingStyle
+                            )
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(chipShape)
+                            .background(theme.inputTop, chipShape)
+                            .border(0.7.dp, theme.divider, chipShape)
+                            .tactileClickable(enabled = !isStreaming, pressedScale = 0.94f, hapticOnTap = true) {
+                                onSendPrompt("请结合我的个人情况、近期记忆与待办，分析这条服务通知对我有什么直接启发或行动建议。")
+                            }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = "结合我的情况分析",
+                            style = TextStyle(
+                                fontSize = 11.5.sp,
+                                color = theme.textSecondary,
+                                platformStyle = NoFontPaddingStyle
+                            )
+                        )
+                    }
+                }
             }
         }
 

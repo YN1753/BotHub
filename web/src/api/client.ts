@@ -422,6 +422,27 @@ export const BotHubApi = {
   // Notifications
   markNotificationRead: (id: number) =>
     apiRequest(`/api/v2/notifications/${encodeURIComponent(String(id))}/read`, { method: 'POST' }),
+  rerollNotification: (id: number, feedback = '') =>
+    apiRequest<{
+      ok: boolean
+      bot_id: string
+      memory_saved: boolean
+      unread_count: number
+      notification: {
+        id: number
+        module_id: string
+        title: string
+        summary: string
+        markdown_body: string
+        priority: string
+        created_at: string
+        read_at: string
+      }
+    }>(`/api/v2/notifications/${encodeURIComponent(String(id))}/reroll`, {
+      method: 'POST',
+      timeoutMs: 95_000,
+      body: JSON.stringify({ feedback }),
+    }),
   deleteNotification: (id: number) =>
     apiRequest<{ ok: boolean; unread_count: number }>(`/api/v2/notifications/${encodeURIComponent(String(id))}`, {
       method: 'DELETE',

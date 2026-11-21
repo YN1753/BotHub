@@ -943,6 +943,16 @@ func isSilentRoutineReply(raw string) bool {
 // with its own personality, scoped memories, and tools without leaking chat-room examples
 // or repeating recent push notifications.
 func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName string) (string, error) {
+	return e.runBotRoutineInternal(ctx, botID, prompt, taskName, "", "", false)
+}
+
+// RerollBotRoutine re-generates a fresh push replacement for a rejected notification,
+// incorporating the rejected content and optional user feedback while enforcing anti-repeat guards.
+func (e *Engine) RerollBotRoutine(ctx context.Context, botID, prompt, taskName, rejectedBody, userFeedback string) (string, error) {
+	return e.runBotRoutineInternal(ctx, botID, prompt, taskName, rejectedBody, userFeedback, true)
+}
+
+func (e *Engine) runBotRoutineInternal(ctx context.Context, botID, prompt, taskName, rejectedBody, userFeedback string, isReroll bool) (string, error) {
 	bot, err := e.store.GetBot(strings.TrimSpace(botID))
 	if err != nil || bot == nil {
 		return "", fmt.Errorf("未找到例程绑定 Bot: %s", botID)
@@ -966,14 +976,33 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 
 	now := time.Now().In(store.ShanghaiLocation())
 	_, promptExamples := extractPromptExamples(prompt)
-	isMonitoring := isMonitoringRoutine(taskName, prompt)
+	isMonitoring := !isReroll && isMonitoringRoutine(taskName, prompt)
 	taskSeed := taskID
 	if taskSeed == "" {
 		taskSeed = bot.ID + ":" + taskName
 	}
+	if isReroll {
+		// Perturb the daily angle seed so reroll picks a different editorial focus immediately
+		taskSeed += fmt.Sprintf(":reroll:%d", now.UnixNano()%100000)
+	}
 	contextSnapshot := buildRoutineContextSnapshot(e.store, taskSeed, now)
 	antiRepeatLedger := buildRoutineAntiRepeatLedger(recentPushes)
 	routinePrompt := buildRoutinePromptMessage(taskName, prompt, now, contextSnapshot, antiRepeatLedger, promptExamples, isMonitoring)
+
+	if isReroll {
+		var fb strings.Builder
+		fb.WriteString("\n\n[用户对上一条推送不满意，触发「换一条重推」指令]\n")
+		if cleanFB := notifier.StripEmoji(strings.TrimSpace(userFeedback)); cleanFB != "" {
+			fb.WriteString("- 用户明确反馈/调教要求：" + cleanFB + "\n")
+		} else {
+			fb.WriteString("- 用户希望换一个完全不同的全新方向、具体案例与切入点。\n")
+		}
+		if cleanRej := strings.TrimSpace(rejectedBody); cleanRej != "" {
+			fb.WriteString("- 被否定的旧推送（严禁重复其主题、案例或结构）：" + truncateRunes(cleanRej, 240) + "\n")
+		}
+		fb.WriteString("- 请直接输出全新的高质量推送正文，不要道歉、不要提及“换一条/重写”等元话术。")
+		routinePrompt += fb.String()
+	}
 
 	reqModel := strings.TrimSpace(bot.Model)
 	if taskOverride := store.TaskModelFromContext(ctx); taskOverride != "" {
@@ -1033,15 +1062,24 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 		return "", err
 	}
 
+	// Include rejectedBody in anti-repeat comparison when rerolling
+	comparePushes := recentPushes
+	if isReroll && strings.TrimSpace(rejectedBody) != "" {
+		comparePushes = append([]store.Notification{{
+			MarkdownBody: rejectedBody,
+			CreatedAt:    now.Format("2006-01-02 15:04"),
+		}}, recentPushes...)
+	}
+
 	finalReply := resp.Content
 	if !isSilentRoutineReply(finalReply) {
-		quality := evaluateRoutineDraft(finalReply, recentPushes, promptExamples)
+		quality := evaluateRoutineDraft(finalReply, comparePushes, promptExamples)
 		if quality.shouldSuppressMonitoring(isMonitoring) {
 			finalReply = ""
 		} else if quality.needsRewrite(isMonitoring) && ctx.Err() == nil {
 			rewritePrompt := routinePrompt + "\n\n" + buildRoutineRewriteInstruction(quality, finalReply)
 			if rwResp, rwErr := executeTurn(rewritePrompt); rwErr == nil && rwResp != nil && !isSilentRoutineReply(rwResp.Content) {
-				rwQuality := evaluateRoutineDraft(rwResp.Content, recentPushes, promptExamples)
+				rwQuality := evaluateRoutineDraft(rwResp.Content, comparePushes, promptExamples)
 				improvedExample := quality.EchoedExample != "" && rwQuality.EchoedExample == ""
 				improvedSim := rwQuality.EchoedExample == "" && rwQuality.MaxPastSim < quality.MaxPastSim
 				if improvedExample || improvedSim || !rwQuality.needsRewrite(isMonitoring) {
@@ -1062,8 +1100,8 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 			"last_summary": prevSummary,
 		})
 	}
-	if isSilentRoutineReply(finalReply) {
+	if !isReroll && isSilentRoutineReply(finalReply) {
 		return "", nil
 	}
-	return finalReply, nil
+	return strings.TrimSpace(finalReply), nil
 }

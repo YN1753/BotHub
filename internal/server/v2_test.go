@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -587,5 +588,106 @@ func TestBootstrapSyncPayloadAndRevisionBumps(t *testing.T) {
 	h.ServeHTTP(recSlice, reqSlice)
 	if recSlice.Code != http.StatusOK || !strings.Contains(recSlice.Body.String(), "model_options") || !strings.Contains(recSlice.Body.String(), "revisions") {
 		t.Fatalf("expected models slice to return model_options and revisions, got %d: %s", recSlice.Code, recSlice.Body.String())
+	}
+}
+
+func TestV2NotificationRerollInPlaceAndPreferenceMemory(t *testing.T) {
+	s, cleanup := setupTestServer(t)
+	defer cleanup()
+	s.push = notifier.NewClient(s.store)
+	appTok, err := s.ensureAppBearerToken()
+	if err != nil {
+		t.Fatalf("ensureAppBearerToken: %v", err)
+	}
+	h := s.Handler()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintln(w, `data: {"choices":[{"delta":{"role":"assistant","content":"实操技巧：在 Linux 服务器上用 ss -tulpn 替代旧版 netstat，能更快定位端口占用与对应进程 PID。"}}]}`)
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, `data: [DONE]`)
+		_, _ = fmt.Fprintln(w)
+	}))
+	defer mockLLM.Close()
+
+	_ = s.store.SetConfig(store.KeyDeepSeekAPIKey, "")
+	_ = s.store.SaveModelConfig(
+		[]store.ModelProvider{{
+			ID:       "prov_reroll",
+			Name:     "Mock",
+			Protocol: store.ProviderProtocolOpenAI,
+			BaseURL:  mockLLM.URL + "/v1",
+			APIKey:   "sk-reroll-test",
+			Enabled:  true,
+		}},
+		[]store.PooledModel{{
+			ProviderID: "prov_reroll",
+			ModelID:    "mock-chat",
+			Tier:       store.ModelTierFree,
+			Enabled:    true,
+			Priority:   10,
+		}},
+		store.PoolStrategyConfig{},
+	)
+	_ = s.store.SaveBot(store.Bot{
+		ID:      "bot_tips",
+		Name:    "TipsBot",
+		BotMode: store.BotModeWorker,
+		Model:   "auto:free",
+	})
+	_ = s.store.SaveTask(store.Task{
+		ID:       "task_daily_tip",
+		Name:     "每日技巧",
+		Type:     "bot_prompt",
+		BotID:    "bot_tips",
+		CronExpr: "0 9 * * *",
+		Enabled:  true,
+		Params:   `{"prompt":"每天推送一条实用工程技巧"}`,
+	})
+	oldNotif, err := s.store.CreateNotification("task_daily_tip", "[TipsBot] 每日技巧", "旧的纯理论内容", "这是一条很空洞的纯理论推送，没有实操价值。", "normal")
+	if err != nil {
+		t.Fatalf("CreateNotification: %v", err)
+	}
+	_ = s.store.MarkNotificationRead(oldNotif.ID)
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v2/notifications/%d/reroll", oldNotif.ID), strings.NewReader(`{"feedback":"少推纯理论，多推命令行实操技巧"}`))
+	req.Header.Set("Authorization", "Bearer "+appTok)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reroll failed: %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		OK           bool               `json:"ok"`
+		BotID        string             `json:"bot_id"`
+		MemorySaved  bool               `json:"memory_saved"`
+		Notification store.Notification `json:"notification"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal reroll: %v", err)
+	}
+	if !resp.OK || !resp.MemorySaved || resp.BotID != "bot_tips" {
+		t.Fatalf("unexpected reroll metadata: %+v", resp)
+	}
+	if resp.Notification.ID != oldNotif.ID || !strings.Contains(resp.Notification.MarkdownBody, "ss -tulpn") || resp.Notification.ReadAt != "" {
+		t.Fatalf("expected in-place updated unread notification, got %+v", resp.Notification)
+	}
+
+	// Verify scoped preference memory was persisted on bot:bot_tips
+	mems, err := s.store.ListScopedMemories([]string{"bot:bot_tips"}, "", 20)
+	if err != nil {
+		t.Fatalf("ListScopedMemories: %v", err)
+	}
+	foundPref := false
+	for _, m := range mems {
+		if m.Category == "preference" && strings.Contains(m.Content, "少推纯理论") {
+			foundPref = true
+			break
+		}
+	}
+	if !foundPref {
+		t.Fatalf("expected preference memory saved for bot:bot_tips, got %+v", mems)
 	}
 }

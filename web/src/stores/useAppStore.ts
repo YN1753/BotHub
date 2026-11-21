@@ -202,6 +202,13 @@ const state = reactive({
   forwardingMessage: null as { fromName: string; content: string } | null,
   createModalMode: 'bot' as 'bot' | 'group',
   pendingDraftPrompt: '',
+  pendingNotificationQuote: null as {
+    id: number
+    source: string
+    title: string
+    summary: string
+    markdown: string
+  } | null,
   pendingNoteId: '',
   editingAsset: undefined as Asset | null | undefined, // undefined = closed, null = new
   editingTask: undefined as Task | Partial<Task> | null | undefined,
@@ -838,6 +845,24 @@ export function useAppStore() {
     }
   }
 
+  async function quoteNotificationToBot(
+    botId: string,
+    notif: { id: number; source: string; title: string; summary: string; markdown: string }
+  ) {
+    state.botView = 'stream'
+    state.showInboxModal = false
+    state.showGroupDrawer = false
+    state.showQuickSwitcher = false
+    await selectBot(botId)
+    state.pendingNotificationQuote = {
+      id: notif.id,
+      source: notif.source,
+      title: notif.title,
+      summary: notif.summary,
+      markdown: notif.markdown || notif.summary,
+    }
+  }
+
   async function togglePinBot(targetBot: Bot) {
     try {
       const nextPinned = !targetBot.is_pinned
@@ -1143,6 +1168,7 @@ export function useAppStore() {
     deleteThread,
     summarizeThread,
     jumpToBot,
+    quoteNotificationToBot,
     togglePinBot,
     deleteSingleMessage,
     clearActiveBotTimeline,

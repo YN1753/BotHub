@@ -161,6 +161,18 @@ class BotHubViewModel(
     var selectedNotification by mutableStateOf<NotificationItem?>(null)
         private set
 
+    var quotedNotification by mutableStateOf<NotificationItem?>(null)
+        private set
+
+    var rerollingNotificationId by mutableStateOf<Long?>(null)
+        private set
+
+    var savedTodoNotificationIds by mutableStateOf<Set<Long>>(emptySet())
+        private set
+
+    var savedNoteNotificationIds by mutableStateOf<Set<Long>>(emptySet())
+        private set
+
     var stashItems by mutableStateOf(prefs.loadCachedStash())
         private set
 
@@ -1495,6 +1507,16 @@ class BotHubViewModel(
                 persistBotDraft(targetBotId, "")
             }
         }
+        val activeQuote = quotedNotification
+        if (activeQuote != null) {
+            quotedNotification = null
+        }
+        val payloadMessage = if (activeQuote != null) {
+            val body = activeQuote.markdownBody.ifBlank { activeQuote.summary }.take(1500)
+            "[引用服务通知上下文]\n标题：${activeQuote.title}\n正文：\n$body\n\n[用户追问]\n$clean"
+        } else {
+            clean
+        }
         isStreaming = true
         chatMessages.add(
             ChatTurnUi(
@@ -1502,7 +1524,7 @@ class BotHubViewModel(
                 role = "user",
                 persona = botDisplayName,
                 model = effectiveModel,
-                content = clean
+                content = if (activeQuote != null) "> 引用通知：${activeQuote.title}\n\n$clean" else clean
             )
         )
         chatMessages.add(
@@ -1526,7 +1548,7 @@ class BotHubViewModel(
                     sessionId = sessionId,
                     botId = activeBotId,
                     threadId = targetThreadId,
-                    message = clean,
+                    message = payloadMessage,
                     persona = activePersona,
                     model = effectiveModel,
                     enableThinking = enableThinking,
@@ -1753,7 +1775,12 @@ class BotHubViewModel(
         selectedNotification = null
     }
 
+    fun dismissQuotedNotification() {
+        quotedNotification = null
+    }
+
     fun diagnoseNotificationWithAi(item: NotificationItem) {
+        markNotificationReadOnly(item)
         selectedNotification = null
         showServiceFeed = false
         selectedTab = BotHubTab.AGENT
@@ -1764,13 +1791,14 @@ class BotHubViewModel(
             ?.trim()
             .orEmpty()
         val matchedByPrefix = if (prefixBotName.isNotEmpty()) {
-            bots.firstOrNull { !it.isGroup && it.name.equals(prefixBotName, ignoreCase = true) }
+            bots.firstOrNull { !it.isGroup && (it.name.equals(prefixBotName, ignoreCase = true) || it.id == prefixBotName) }
         } else null
         val matchedByTask = dashboard?.tasks
             ?.firstOrNull { it.id == item.moduleId && it.botId.isNotBlank() }
             ?.let { task -> bots.firstOrNull { !it.isGroup && it.id == task.botId } }
         val targetBot = matchedByPrefix
             ?: matchedByTask
+            ?: bots.firstOrNull { it.id == "bot_butler" }
             ?: bots.firstOrNull { !it.isGroup && it.botMode != "companion" }
             ?: bots.firstOrNull { !it.isGroup }
             ?: bots.firstOrNull()
@@ -1779,7 +1807,27 @@ class BotHubViewModel(
         } else {
             inChatRoom = true
         }
-        sendAgentPrompt("关于刚才收到的服务通知「${item.title}」：\n${item.previewText(320)}\n\n请帮我进一步分析或处理。")
+        quotedNotification = item
+    }
+
+    fun rerollNotificationItem(item: NotificationItem, feedback: String = "") {
+        if (rerollingNotificationId != null) return
+        rerollingNotificationId = item.id
+        viewModelScope.launch {
+            api.rerollNotification(item.id, feedback).onSuccess { (updated, memorySaved) ->
+                val nextList = notifications.map { if (it.id == item.id) updated else it }
+                notifications = nextList
+                prefs.saveCachedNotifications(nextList)
+                if (selectedNotification?.id == item.id) {
+                    selectedNotification = updated
+                }
+                showMessage(if (memorySaved) "已换全新方向重推，并写入长期避雷记忆" else "已换全新方向原位重推")
+                refreshAll(silent = true)
+            }.onFailure { err ->
+                showMessage(err.message ?: "原位重推失败，请稍后重试")
+            }
+            rerollingNotificationId = null
+        }
     }
 
     fun markAllNotificationsRead() {
@@ -1845,7 +1893,9 @@ class BotHubViewModel(
     }
 
     fun convertNotificationToTodo(item: NotificationItem) {
+        if (item.id in savedTodoNotificationIds) return
         markNotificationReadOnly(item)
+        savedTodoNotificationIds = savedTodoNotificationIds + item.id
         val priority = if (item.priority.equals("high", ignoreCase = true) || item.priority.equals("critical", ignoreCase = true)) "high" else "normal"
         createTodoItem(
             title = item.title.take(120),
@@ -1855,7 +1905,9 @@ class BotHubViewModel(
     }
 
     fun saveNotificationToNote(item: NotificationItem) {
+        if (item.id in savedNoteNotificationIds) return
         markNotificationReadOnly(item)
+        savedNoteNotificationIds = savedNoteNotificationIds + item.id
         saveNoteItem(
             existingId = null,
             title = item.title.take(80),

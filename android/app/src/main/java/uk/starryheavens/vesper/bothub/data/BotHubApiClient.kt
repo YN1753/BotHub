@@ -250,6 +250,22 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         }
     }
 
+    suspend fun rerollNotification(id: Long, feedback: String = ""): Result<Pair<NotificationItem, Boolean>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("feedback", feedback.trim())
+                .toString()
+            val req = requestBuilder("/api/v2/notifications/$id/reroll")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "原位重推失败")
+            val notifObj = json.optJSONObject("notification")
+                ?: throw IllegalStateException("服务器未返回更新后的通知内容")
+            val memorySaved = json.optBoolean("memory_saved", false)
+            JsonMappers.parseNotification(notifObj) to memorySaved
+        }
+    }
+
     suspend fun deleteNotification(id: Long): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val req = requestBuilder("/api/v2/notifications/$id")

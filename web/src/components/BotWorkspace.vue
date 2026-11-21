@@ -269,6 +269,15 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => store.state.pendingNotificationQuote,
+  (q) => {
+    if (!q) return
+    nextTick(() => composerRef.value?.focus())
+  },
+  { immediate: true }
+)
+
 const isGroupBot = computed(() => Boolean(bot.value?.is_group))
 const isStreamEmpty = computed(() => store.state.timeline.length === 0)
 
@@ -769,6 +778,52 @@ async function clearTimeline() {
                 </span>
               </button>
             </Transition>
+          </div>
+
+          <!-- Quoted Service Notification Follow-Up Banner -->
+          <div
+            v-if="store.state.pendingNotificationQuote"
+            class="mx-auto w-full max-w-[840px] px-3 sm:px-6 pt-2"
+          >
+            <div class="rounded-2xl border border-accent-border bg-accent-soft/40 px-3.5 py-2.5 flex flex-col gap-2">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5 text-xs font-medium text-accent-fg">
+                    <span>引用服务通知</span>
+                    <span class="text-fg-muted">·</span>
+                    <span class="truncate text-fg">{{ store.state.pendingNotificationQuote.title }}</span>
+                  </div>
+                  <p class="text-xs text-fg-muted truncate mt-0.5">
+                    {{ store.state.pendingNotificationQuote.summary || store.state.pendingNotificationQuote.markdown }}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  @click="store.state.pendingNotificationQuote = null"
+                  class="shrink-0 px-2 py-0.5 rounded-lg border border-line text-xs text-fg-muted hover:text-fg cursor-pointer"
+                >
+                  取消引用
+                </button>
+              </div>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  :disabled="store.state.isStreaming"
+                  @click="sendPrompt('请针对这条服务通知深入展开讲讲，补充关键背景、细节与延伸思考。')"
+                  class="min-h-[28px] px-2.5 rounded-full border border-accent-border bg-surface text-xs text-accent-fg hover:bg-hover cursor-pointer disabled:opacity-50"
+                >
+                  深入展开讲讲
+                </button>
+                <button
+                  type="button"
+                  :disabled="store.state.isStreaming"
+                  @click="sendPrompt('请结合我的个人情况、近期记忆与待办，分析这条服务通知对我有什么直接启发或行动建议。')"
+                  class="min-h-[28px] px-2.5 rounded-full border border-line bg-surface text-xs text-fg-sub hover:border-accent-border hover:text-accent-fg cursor-pointer disabled:opacity-50"
+                >
+                  结合我的情况分析
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Unified Spotlight / Bottom-Docked Composer -->

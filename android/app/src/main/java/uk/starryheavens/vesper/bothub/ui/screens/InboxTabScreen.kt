@@ -47,6 +47,7 @@ import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
 import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
 import uk.starryheavens.vesper.bothub.ui.components.TactileFilterChip
 import uk.starryheavens.vesper.bothub.ui.components.formatModuleBadge
+import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 private fun formatShortTimestamp(raw: String): String {
@@ -58,9 +59,16 @@ private fun formatShortTimestamp(raw: String): String {
 @Composable
 fun InboxTabScreen(
     notifications: List<NotificationItem>,
+    rerollingNotificationId: Long? = null,
+    savedTodoIds: Set<Long> = emptySet(),
+    savedNoteIds: Set<Long> = emptySet(),
     onSelectNotification: (NotificationItem) -> Unit,
     onMarkOneRead: (NotificationItem) -> Unit = {},
     onDeleteNotification: (NotificationItem) -> Unit = {},
+    onDiagnoseWithAi: (NotificationItem) -> Unit = {},
+    onRerollNotification: (NotificationItem) -> Unit = {},
+    onConvertToTodo: (NotificationItem) -> Unit = {},
+    onSaveToNote: (NotificationItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val theme = BotHubThemeTokens
@@ -295,6 +303,122 @@ fun InboxTabScreen(
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                            }
+
+                            val isRerolling = rerollingNotificationId == item.id
+                            val todoSaved = item.id in savedTodoIds
+                            val noteSaved = item.id in savedNoteIds
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val chipShape = RoundedCornerShape(8.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(chipShape)
+                                        .background(theme.accent.copy(alpha = 0.14f), chipShape)
+                                        .border(0.6.dp, theme.accent.copy(alpha = 0.42f), chipShape)
+                                        .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                                            onDiagnoseWithAi(item)
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "找 TA 追问",
+                                        style = TextStyle(
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = theme.accent,
+                                            platformStyle = NoFontPaddingStyle
+                                        )
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(chipShape)
+                                        .background(theme.inputTop, chipShape)
+                                        .border(0.6.dp, theme.divider, chipShape)
+                                        .tactileClickable(
+                                            enabled = rerollingNotificationId == null,
+                                            pressedScale = 0.94f,
+                                            hapticOnTap = true
+                                        ) {
+                                            onRerollNotification(item)
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = if (isRerolling) "重推中..." else "换一条",
+                                        style = TextStyle(
+                                            fontSize = 11.sp,
+                                            color = theme.textSecondary,
+                                            platformStyle = NoFontPaddingStyle
+                                        )
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(chipShape)
+                                        .background(
+                                            if (todoSaved) Color(0x1F10B981) else theme.inputTop,
+                                            chipShape
+                                        )
+                                        .border(
+                                            0.6.dp,
+                                            if (todoSaved) Color(0x4A10B981) else theme.divider,
+                                            chipShape
+                                        )
+                                        .tactileClickable(
+                                            enabled = !todoSaved,
+                                            pressedScale = 0.94f,
+                                            hapticOnTap = true
+                                        ) {
+                                            onConvertToTodo(item)
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = if (todoSaved) "已建待办" else "待办",
+                                        style = TextStyle(
+                                            fontSize = 11.sp,
+                                            color = if (todoSaved) Color(0xFF10B981) else theme.textSecondary,
+                                            platformStyle = NoFontPaddingStyle
+                                        )
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(chipShape)
+                                        .background(
+                                            if (noteSaved) Color(0x1F10B981) else theme.inputTop,
+                                            chipShape
+                                        )
+                                        .border(
+                                            0.6.dp,
+                                            if (noteSaved) Color(0x4A10B981) else theme.divider,
+                                            chipShape
+                                        )
+                                        .tactileClickable(
+                                            enabled = !noteSaved,
+                                            pressedScale = 0.94f,
+                                            hapticOnTap = true
+                                        ) {
+                                            onSaveToNote(item)
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = if (noteSaved) "已存笔记" else "笔记",
+                                        style = TextStyle(
+                                            fontSize = 11.sp,
+                                            color = if (noteSaved) Color(0xFF10B981) else theme.textSecondary,
+                                            platformStyle = NoFontPaddingStyle
+                                        )
+                                    )
+                                }
                             }
                         }
                     }

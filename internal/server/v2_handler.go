@@ -261,6 +261,157 @@ func (s *Server) handleV2DeleteNotification(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+func (s *Server) resolveNotificationSource(notif *store.Notification) (botID, taskName, prompt string, task *store.Task) {
+	if notif == nil {
+		return "bot_butler", "服务通知", "", nil
+	}
+	if t, err := s.store.GetTask(strings.TrimSpace(notif.ModuleID)); err == nil && t != nil {
+		task = t
+		botID = strings.TrimSpace(t.BotID)
+		taskName = strings.TrimSpace(t.Name)
+		var params map[string]any
+		_ = json.Unmarshal([]byte(t.Params), &params)
+		if params != nil {
+			if p, ok := params["prompt"].(string); ok {
+				prompt = strings.TrimSpace(p)
+			}
+		}
+		if prompt == "" {
+			prompt = strings.TrimSpace(t.Description)
+		}
+	}
+	if taskName == "" {
+		taskName = strings.TrimSpace(notif.Title)
+		if idx := strings.Index(taskName, "] "); idx > 0 {
+			taskName = strings.TrimSpace(taskName[idx+2:])
+		}
+	}
+	if botID == "" {
+		// Try matching "[BotName] ..." prefix in notification title
+		title := strings.TrimSpace(notif.Title)
+		if strings.HasPrefix(title, "[") {
+			if end := strings.Index(title, "]"); end > 1 {
+				candName := strings.TrimSpace(title[1:end])
+				if bots, err := s.store.ListBots(); err == nil {
+					for _, b := range bots {
+						if strings.EqualFold(strings.TrimSpace(b.Name), candName) || b.ID == candName {
+							botID = b.ID
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	if botID == "" {
+		if b, err := s.store.GetBot("bot_butler"); err == nil && b != nil {
+			botID = b.ID
+		} else if bots, err := s.store.ListBots(); err == nil && len(bots) > 0 {
+			botID = bots[0].ID
+		}
+	}
+	if prompt == "" {
+		prompt = fmt.Sprintf("围绕「%s」主题，生成一条全新的、信息密度高且有具体实用价值的推送内容。", taskName)
+	}
+	return botID, taskName, prompt, task
+}
+
+func (s *Server) handleV2RerollNotification(w http.ResponseWriter, r *http.Request) {
+	if s.agent == nil {
+		writeError(w, http.StatusServiceUnavailable, "Agent 引擎未就绪")
+		return
+	}
+	idStr := strings.TrimSpace(r.PathValue("id"))
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "无效通知 ID")
+		return
+	}
+	var req struct {
+		Feedback string `json:"feedback"`
+	}
+	_ = decodeJSON(w, r, 8192, &req)
+	feedback := notifier.StripEmoji(strings.TrimSpace(req.Feedback))
+
+	notif, err := s.store.GetNotification(id)
+	if err != nil || notif == nil {
+		writeError(w, http.StatusNotFound, "未找到该条服务通知")
+		return
+	}
+
+	botID, taskName, prompt, task := s.resolveNotificationSource(notif)
+	if botID == "" {
+		writeError(w, http.StatusBadRequest, "未能找到可用于重推的 Bot")
+		return
+	}
+
+	// Persist negative taste / tuning feedback into the source Bot's scoped preference memory
+	rejectedBody := strings.TrimSpace(notif.MarkdownBody)
+	if rejectedBody == "" {
+		rejectedBody = strings.TrimSpace(notif.Summary)
+	}
+	rejectedPreview := strings.ReplaceAll(strings.ReplaceAll(rejectedBody, "\r", " "), "\n", " ")
+	rejectedRunes := []rune(strings.Join(strings.Fields(rejectedPreview), " "))
+	if len(rejectedRunes) > 90 {
+		rejectedPreview = string(rejectedRunes[:90]) + "..."
+	} else {
+		rejectedPreview = string(rejectedRunes)
+	}
+
+	memScope := "bot:" + botID
+	memKey := fmt.Sprintf("push_feedback_%d", notif.ID)
+	var memContent string
+	if feedback != "" {
+		memContent = fmt.Sprintf("推送「%s」用户调教偏好：%s（曾否定旧内容：%s）", taskName, feedback, rejectedPreview)
+	} else {
+		memContent = fmt.Sprintf("推送「%s」避雷偏好：用户不感兴趣并要求换方向，后续避开类似主题与风格（旧内容：%s）", taskName, rejectedPreview)
+	}
+	memorySaved := s.store.SaveAgentMemoryDetailed(memScope, "preference", memKey, memContent, 4, false) == nil
+
+	runCtx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	if task != nil {
+		runCtx = store.WithTaskQuota(runCtx, task.ID, task.MaxPaidCallsPerDay)
+		if strings.TrimSpace(task.Model) != "" {
+			runCtx = store.WithTaskModelOverride(runCtx, task.Model)
+		}
+		runCtx = store.WithPaidFallback(runCtx, task.AllowPaidFallback)
+	} else if strings.TrimSpace(notif.ModuleID) != "" {
+		runCtx = store.WithTaskQuota(runCtx, notif.ModuleID, 0)
+	}
+
+	newReply, err := s.agent.RerollBotRoutine(runCtx, botID, prompt, taskName, rejectedBody, feedback)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "重推生成失败: "+err.Error())
+		return
+	}
+	newReply = notifier.StripEmoji(strings.TrimSpace(newReply))
+	if newReply == "" {
+		writeError(w, http.StatusBadGateway, "重推未返回有效内容，请稍后再试")
+		return
+	}
+
+	updated, err := s.store.UpdateNotificationContent(notif.ID, notif.Title, "", newReply)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "更新通知内容失败: "+err.Error())
+		return
+	}
+
+	if s.push != nil && s.push.Hub() != nil {
+		s.push.Hub().PublishEvent("assistant_update", map[string]any{
+			"kind": "notifications,memories",
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":           true,
+		"notification": updated,
+		"bot_id":       botID,
+		"memory_saved": memorySaved,
+		"unread_count": s.store.CountUnreadNotifications(),
+	})
+}
+
 // handleNezhaWebhook receives alert callbacks from Nezha Monitoring Dashboard (/api/v1/webhook/nezha).
 func (s *Server) handleNezhaWebhook(w http.ResponseWriter, r *http.Request) {
 	// Verify webhook token or standard auth
