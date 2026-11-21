@@ -64,7 +64,7 @@ func BuiltinTemplates() []TaskTemplate {
 		{
 			Type:        "morning",
 			Name:        "每日早报简报",
-			Description: "汇总目标城市气象预报、出行建议、每日格言、节点脉搏与临期资产",
+			Description: "融合 AI 行动参谋置顶、今日待办焦点、临期资产、气象出行、收藏匣重温与可选节点脉搏",
 			DefaultCron: "0 8 * * *",
 			ParamsSchema: []ParamField{
 				{

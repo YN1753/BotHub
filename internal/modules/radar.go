@@ -135,11 +135,9 @@ func (r *RadarModule) RunWithTask(ctx context.Context, task store.Task) (RunResu
 		return RunResult{Summary: "抓取完成，暂无新增条目", ItemsPushed: 0}, nil
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### %s · %s\n\n", taskName, time.Now().In(ShanghaiLocation()).Format("2006-01-02 15:04")))
-
+	var rawList strings.Builder
 	if len(freshGH) > 0 {
-		sb.WriteString("#### 1. GitHub Trending 每日热门\n")
+		rawList.WriteString("#### GitHub Trending 每日热门\n")
 		for i, repo := range freshGH {
 			lang := notifier.StripEmoji(strings.TrimSpace(repo.Language))
 			if lang == "" {
@@ -149,32 +147,59 @@ func (r *RadarModule) RunWithTask(ctx context.Context, task store.Task) (RunResu
 				lang += " · " + notifier.StripEmoji(strings.TrimSpace(repo.StarsToday))
 			}
 			cleanDesc := notifier.StripEmoji(strings.TrimSpace(repo.Desc))
-			sb.WriteString(fmt.Sprintf("%d. **[%s](%s)**（%s）\n   %s\n", i+1, notifier.StripEmoji(repo.Name), repo.URL, lang, cleanDesc))
+			rawList.WriteString(fmt.Sprintf("%d. **[%s](%s)**（%s）\n   %s\n", i+1, notifier.StripEmoji(repo.Name), repo.URL, lang, cleanDesc))
 		}
-		sb.WriteString("\n")
+		rawList.WriteString("\n")
 	}
 
 	if len(freshHN) > 0 {
-		sb.WriteString("#### 2. Hacker News 精选高分\n")
+		rawList.WriteString("#### Hacker News 高分热帖\n")
 		for i, st := range freshHN {
 			target := st.URL
 			if target == "" {
 				target = fmt.Sprintf("https://news.ycombinator.com/item?id=%d", st.ID)
 			}
-			sb.WriteString(fmt.Sprintf("%d. **[%s](%s)**（%d pts · [讨论](https://news.ycombinator.com/item?id=%d)）\n", i+1, notifier.StripEmoji(strings.TrimSpace(st.Title)), target, st.Score, st.ID))
+			rawList.WriteString(fmt.Sprintf("%d. **[%s](%s)**（%d pts · [讨论](https://news.ycombinator.com/item?id=%d)）\n", i+1, notifier.StripEmoji(strings.TrimSpace(st.Title)), target, st.Score, st.ID))
 		}
-		sb.WriteString("\n")
+		rawList.WriteString("\n")
 	}
 
-	// Optional AI synthesis & curation when Light/Pool/DeepSeek API Key is configured
-	sysPrompt := "你是 BotHub 的开源技术雷达架构师。请从以下抓取的 GitHub Trending 与 Hacker News 列表中，挑选最值得关注的 3 个项目或话题，逐条给出核心亮点、技术价值与适用场景简评（中文，高信息密度）。严禁输出任何 Emoji 或特殊装饰符号。"
-	if aiReview, aiErr := summarizeModuleContent(ctx, r.store, r.getSummarizer(), sysPrompt, sb.String()); aiErr == nil && aiReview != "" {
-		sb.WriteString("#### 3. DeepSeek 架构师精选锐评\n")
+	// Enrich AI curation with the user's top Stash interest tags & recent Radar summaries to avoid repetitive angles
+	var interestBuf strings.Builder
+	if topTags, err := r.store.ListTopStashTags(8); err == nil && len(topTags) > 0 {
+		var tagNames []string
+		for _, tg := range topTags {
+			if t := strings.TrimSpace(tg.Tag); t != "" {
+				tagNames = append(tagNames, t)
+			}
+		}
+		if len(tagNames) > 0 {
+			interestBuf.WriteString("\n[用户近期收藏高频关注标签（优先筛选高度相关的项目/话题）]\n")
+			interestBuf.WriteString(strings.Join(tagNames, "、") + "\n")
+		}
+	}
+	if recent, _ := r.store.ListRecentNotificationsByModule(task.ID, 3); len(recent) > 0 {
+		interestBuf.WriteString("\n[近期已推送雷达摘要（避免重复点评相同话题）]\n")
+		for i, n := range recent {
+			interestBuf.WriteString(fmt.Sprintf("%d. [%s] %s\n", i+1, n.CreatedAt, strings.TrimSpace(n.Summary)))
+		}
+	}
+
+	sysPrompt := "你是 BotHub 的开源技术雷达主编。请结合用户长期记忆与收藏高频标签，从以下 GitHub Trending 与 Hacker News 新增条目中，严格筛选最值得关注的 3 个项目或话题，用简洁高密度的中文输出「核心精选 Top 3」。每条固定格式：\n- **项目/话题名**：一句话讲清它解决了什么具体问题 + 为什么值得现在关注或可怎么用（禁止空泛夸赞、禁止寒暄套话、严禁输出任何 Emoji）。"
+	aiReview, aiErr := summarizeModuleContent(ctx, r.store, r.getSummarizer(), sysPrompt, rawList.String()+interestBuf.String())
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("### %s · %s\n\n", taskName, time.Now().In(ShanghaiLocation()).Format("2006-01-02 15:04")))
+
+	// Inverted pyramid: curated Chinese insights at the very top, full source lists below
+	if aiErr == nil && aiReview != "" {
+		sb.WriteString("#### 核心精选 Top 3\n")
 		sb.WriteString(aiReview)
 		sb.WriteString("\n\n")
 	}
 
-	sb.WriteString("---\n*来自 BotHub 自动化汇报*")
+	sb.WriteString(strings.TrimSpace(rawList.String()))
+
 	title := fmt.Sprintf("%s · 新增 %d 条精选（GH %d / HN %d）", taskName, totalNew, len(freshGH), len(freshHN))
 
 	if r.push != nil {

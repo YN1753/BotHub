@@ -95,36 +95,40 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 	weekday := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}[now.Weekday()]
 
 	w, wErr := m.fetchWeatherWithFallback(ctx, city)
-	quote := dailyQuotes[now.YearDay()%len(dailyQuotes)]
-	nodePulse := m.fetchNodePulse(ctx, nezhaURL)
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("### %s · %s (%s)\n\n", taskName, dateStr, weekday))
-
-	sb.WriteString("#### 1. 气象与出行建议\n")
-	if wErr == nil {
-		sb.WriteString(fmt.Sprintf("- **城市**：%s（Open-Meteo）\n", w.City))
-		sb.WriteString(fmt.Sprintf("- **天气状况**：%s\n", w.Condition))
-		sb.WriteString(fmt.Sprintf("- **实时气温**：%.1f°C（今日 %.1f°C ~ %.1f°C）\n", w.CurrentTemp, w.MinTemp, w.MaxTemp))
-		sb.WriteString(fmt.Sprintf("- **降水概率**：%d%% · **风速**：%.1f km/h\n", w.PrecipProb, w.WindSpeed))
-		sb.WriteString(fmt.Sprintf("- **穿衣建议**：%s\n\n", buildAdvice(w)))
-	} else {
-		sb.WriteString(fmt.Sprintf("- **城市**：%s（气象接口暂不可用: %v）\n\n", city, wErr))
+	nodePulse := ""
+	if strings.TrimSpace(nezhaURL) != "" {
+		nodePulse = m.fetchNodePulse(ctx, nezhaURL)
 	}
 
-	sb.WriteString("#### 2. 节点脉搏摘要\n")
-	sb.WriteString(nodePulse)
-	sb.WriteString("\n\n")
+	openTodos, _ := m.store.ListTodos("open", "", 20)
+	overdueCount := 0
+	dueTodayCount := 0
+	for _, td := range openTodos {
+		if d := strings.TrimSpace(td.DueAt); d != "" {
+			day := d
+			if len(day) >= 10 {
+				day = day[:10]
+			}
+			if day < dateStr {
+				overdueCount++
+			} else if day == dateStr {
+				dueTodayCount++
+			}
+		}
+	}
+	expiring, _ := m.store.GetExpiringAssets(7)
+	unreadStashes, _ := m.store.SearchStashItems("", "unread", "", 50)
+	reviewItem, rErr := m.store.PickStashForReview()
 
-	sb.WriteString("#### 3. 每日格言\n")
-	sb.WriteString(fmt.Sprintf("> %s\n\n", quote))
+	// Build structured detail sections first so AI executive summary can synthesize ALL real data and sit at the very top
+	var detailBuf strings.Builder
 
-	if openTodos, err := m.store.ListTodos("open", "", 15); err == nil && len(openTodos) > 0 {
-		sb.WriteString("#### 4. 今日个人待办提醒\n")
+	if len(openTodos) > 0 {
+		detailBuf.WriteString("#### 今日行动焦点（待办）\n")
 		shown := 0
 		for _, td := range openTodos {
 			if shown >= 8 {
-				sb.WriteString(fmt.Sprintf("- ... 另有 %d 项待办请前往个人行动台查看\n", len(openTodos)-8))
+				detailBuf.WriteString(fmt.Sprintf("- 其余 %d 项待办请在行动台查看\n", len(openTodos)-8))
 				break
 			}
 			dueNote := ""
@@ -141,40 +145,49 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 					dueNote = fmt.Sprintf(" [截止 %s]", td.DueAt)
 				}
 			}
-			sb.WriteString(fmt.Sprintf("- **[%s]** %s%s\n", td.Priority, td.Title, dueNote))
+			detailBuf.WriteString(fmt.Sprintf("- **[%s]** %s%s\n", td.Priority, td.Title, dueNote))
 			shown++
 		}
-		sb.WriteString("\n")
+		detailBuf.WriteString("\n")
 	}
 
-	if expiring, _ := m.store.GetExpiringAssets(7); len(expiring) > 0 {
-		sb.WriteString("#### 5. 数字资产临期提醒\n")
+	if len(expiring) > 0 {
+		detailBuf.WriteString("#### 临期数字资产（7 天内）\n")
 		for _, a := range expiring {
-			sb.WriteString(fmt.Sprintf("- **临期资产**：%s（%s · 剩余 %d 天）\n", a.Name, a.Spec, a.DaysLeft))
+			costPart := ""
+			if p := strings.TrimSpace(a.Price); p != "" {
+				costPart = " · " + p
+			}
+			detailBuf.WriteString(fmt.Sprintf("- **%s**（%s%s · 剩余 %d 天）\n", a.Name, a.Spec, costPart, a.DaysLeft))
 		}
-		sb.WriteString("\n")
+		detailBuf.WriteString("\n")
 	}
 
-	// Optional AI synthesis when Light/Pool/DeepSeek API Key is configured
-	sysPrompt := "你是 BotHub 的晨间参谋。请基于提供的今日气象、哪吒节点脉搏、个人待办清单与临期资产原始数据，用不超过 160 字输出「今日执更要点与行动优先级建议」（分 2-3 条简明要点）。严禁输出任何 Emoji 或特殊装饰符号。"
-	if aiInsight, aiErr := summarizeModuleContent(ctx, m.store, m.getSummarizer(), sysPrompt, sb.String()); aiErr == nil && aiInsight != "" {
-		sb.WriteString("#### AI 执更参谋锐评\n")
-		sb.WriteString(aiInsight)
-		sb.WriteString("\n\n")
+	detailBuf.WriteString("#### 气象与出行\n")
+	if wErr == nil {
+		detailBuf.WriteString(fmt.Sprintf("- **%s**：%s，实时 %.1f°C（今日 %.1f°C ~ %.1f°C），降水概率 %d%%，风速 %.1f km/h\n", w.City, w.Condition, w.CurrentTemp, w.MinTemp, w.MaxTemp, w.PrecipProb, w.WindSpeed))
+		detailBuf.WriteString(fmt.Sprintf("- **出行建议**：%s\n\n", buildAdvice(w)))
+	} else {
+		detailBuf.WriteString(fmt.Sprintf("- **%s**：气象接口暂不可用（%v）\n\n", city, wErr))
 	}
 
-	if reviewItem, rErr := m.store.PickStashForReview(); rErr == nil && reviewItem != nil {
-		sb.WriteString("#### 收藏匣记忆重温\n")
+	if nodePulse != "" {
+		detailBuf.WriteString("#### 节点脉搏\n")
+		detailBuf.WriteString(nodePulse)
+		detailBuf.WriteString("\n\n")
+	}
+
+	if rErr == nil && reviewItem != nil {
+		detailBuf.WriteString("#### 收藏匣记忆重温\n")
 		titleText := notifier.StripEmoji(strings.TrimSpace(reviewItem.Title))
 		if titleText == "" {
 			titleText = "未命名收藏条目"
 		}
-		sb.WriteString(fmt.Sprintf("- **标题**：%s\n", titleText))
+		detailBuf.WriteString(fmt.Sprintf("- **标题**：%s\n", titleText))
 		if tldr := notifier.StripEmoji(strings.TrimSpace(reviewItem.AITldr)); tldr != "" {
-			sb.WriteString(fmt.Sprintf("- **核心结论**：%s\n", tldr))
+			detailBuf.WriteString(fmt.Sprintf("- **核心结论**：%s\n", tldr))
 		}
 		if len(reviewItem.Points) > 0 {
-			sb.WriteString("- **核心要点**：\n")
 			maxPts := len(reviewItem.Points)
 			if maxPts > 3 {
 				maxPts = 3
@@ -182,22 +195,70 @@ func (m *MorningModule) RunWithTask(ctx context.Context, task store.Task) (RunRe
 			for i := 0; i < maxPts; i++ {
 				pt := notifier.StripEmoji(strings.TrimSpace(reviewItem.Points[i]))
 				if pt != "" {
-					sb.WriteString(fmt.Sprintf("  - %s\n", pt))
+					detailBuf.WriteString(fmt.Sprintf("  - %s\n", pt))
 				}
 			}
 		}
 		if u := strings.TrimSpace(reviewItem.URL); u != "" {
-			sb.WriteString(fmt.Sprintf("- **原链接**：%s\n", u))
+			detailBuf.WriteString(fmt.Sprintf("- **原链接**：%s\n", u))
 		}
-		sb.WriteString("\n")
+		detailBuf.WriteString("\n")
 		_ = m.store.MarkStashReviewed(reviewItem.ID)
 	}
 
-	sb.WriteString("---\n*来自 BotHub 自动化汇报*")
+	// Build compact 1-line overview strip
+	var overviewParts []string
+	if wErr == nil {
+		overviewParts = append(overviewParts, fmt.Sprintf("%s %s %.0f~%.0f°C", w.City, w.Condition, w.MinTemp, w.MaxTemp))
+	}
+	if len(openTodos) > 0 {
+		todoStat := fmt.Sprintf("待办 %d 项", len(openTodos))
+		if overdueCount > 0 || dueTodayCount > 0 {
+			todoStat += fmt.Sprintf("（逾期 %d / 今日 %d）", overdueCount, dueTodayCount)
+		}
+		overviewParts = append(overviewParts, todoStat)
+	} else {
+		overviewParts = append(overviewParts, "今日无积压待办")
+	}
+	if len(expiring) > 0 {
+		overviewParts = append(overviewParts, fmt.Sprintf("临期资产 %d 项", len(expiring)))
+	}
+	if len(unreadStashes) > 0 {
+		overviewParts = append(overviewParts, fmt.Sprintf("未读收藏 %d 条", len(unreadStashes)))
+	}
+
+	// Feed recent 3 morning briefs to AI summarizer so it avoids repeating phrasing across consecutive days
+	var pastHint strings.Builder
+	if recent, _ := m.store.ListRecentNotificationsByModule(task.ID, 3); len(recent) > 0 {
+		pastHint.WriteString("\n\n[近几日早报摘要（禁止重复相同措辞与模板）]\n")
+		for i, n := range recent {
+			pastHint.WriteString(fmt.Sprintf("%d. [%s] %s\n", i+1, n.CreatedAt, strings.TrimSpace(n.Summary)))
+		}
+	}
+
+	sysPrompt := "你是 BotHub 的晨间行动参谋。请基于提供的今日真实数据（待办优先级与逾期项、临期资产、气象出行、节点状态、收藏匣），直接输出 2-3 条高信息密度、立刻可执行的「今日行动建议」（总字数不超过 180 字）。严格规则：1) 禁止寒暄问候与鸡汤格言（严禁出现“早安”“新的一天”“加油”等空话）；2) 优先点名最紧急的逾期/今日待办或临期资产，给出具体先后顺序；3) 严禁输出任何 Emoji。"
+	aiInput := fmt.Sprintf("日期：%s (%s)\n概览：%s\n\n%s%s", dateStr, weekday, strings.Join(overviewParts, " · "), detailBuf.String(), pastHint.String())
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("### %s · %s (%s)\n\n", taskName, dateStr, weekday))
+	sb.WriteString(fmt.Sprintf("> **今日概览**：%s\n\n", strings.Join(overviewParts, " · ")))
+
+	if aiInsight, aiErr := summarizeModuleContent(ctx, m.store, m.getSummarizer(), sysPrompt, aiInput); aiErr == nil && aiInsight != "" {
+		sb.WriteString("#### 今日核心行动建议\n")
+		sb.WriteString(aiInsight)
+		sb.WriteString("\n\n")
+	}
+
+	sb.WriteString(strings.TrimSpace(detailBuf.String()))
 
 	title := fmt.Sprintf("%s · %s %s", taskName, dateStr, city)
 	if wErr == nil {
 		title = fmt.Sprintf("%s · %s %s %.0f~%.0f°C", taskName, dateStr, w.City, w.MinTemp, w.MaxTemp)
+	}
+	if overdueCount > 0 {
+		title += fmt.Sprintf("（%d 项逾期）", overdueCount)
+	} else if len(expiring) > 0 {
+		title += fmt.Sprintf("（%d 项临期）", len(expiring))
 	}
 
 	if m.push == nil {
@@ -435,38 +496,4 @@ func wmoCodeCN(code int) string {
 	default:
 		return "阴"
 	}
-}
-
-var dailyQuotes = []string{
-	"迟暮之光，星穹破晓；在安静的系统里保持秩序与澄明。",
-	"Simplicity is prerequisite for reliability. —— Edsger W. Dijkstra",
-	"星海横流，岁月成碑；把复杂留给底层，把清爽留给日常。",
-	"Make it work, make it right, make it fast. —— Kent Beck",
-	"夜色深处自有微光，慢下来反而能看清系统的每一道脉络。",
-	"Programs must be written for people to read, and only incidentally for machines to execute.",
-	"风起于青萍之末，浪成于微澜之间；今日宜稳步推进。",
-	"Premature optimization is the root of all evil. —— Donald Knuth",
-	"秩序产生于自律，优雅来自于克制；心有山海，静水深流。",
-	"Any fool can write code that a computer can understand. Good programmers write code that humans can understand.",
-	"山海辽阔，群星闪烁；每一个稳定的守护都源自细微的打磨。",
-	"First, solve the problem. Then, write the code. —— John Johnson",
-	"在不确定的世界里，保持确定性的节奏与专注。",
-	"The best way to predict the future is to invent it. —— Alan Kay",
-	"行至水穷处，坐看云起时；系统与心灵皆需常驻静气。",
-	"There are only two hard things in Computer Science: cache invalidation and naming things.",
-	"删繁就简三秋树，领异标新二月花；轻量方可恒久。",
-	"Good design adds value faster than it adds cost. —— Thomas C. Gale",
-	"凡是过往，皆为序章；星轨交替，从容前行。",
-	"Talk is cheap. Show me the code. —— Linus Torvalds",
-	"万物皆有裂隙，那是光照进来的地方。",
-	"Computers are good at following instructions, but not at reading your mind. —— Donald Knuth",
-	"暮色深沉处，方见星光之纯粹。",
-	"The function of good software is to make the complex appear simple. —— Grady Booch",
-	"日日行，不怕千万里；常常做，不怕千万事。",
-	"Debugging is twice as hard as writing the code in the first place. —— Brian Kernighan",
-	"博观而约取，厚积而薄发；今日亦有新光景。",
-	"Truth can only be found in one place: the code. —— Robert C. Martin",
-	"海不辞水，故能成其大；山不辞土，故能成其高。",
-	"Software is a great combination between artistry and engineering. —— Bill Gates",
-	"夜尽天明，星河入怀；保持热爱，奔赴山海。",
 }
