@@ -940,7 +940,8 @@ func isSilentRoutineReply(raw string) bool {
 }
 
 // RunBotRoutine implements modules.BotRoutineExecutor so cron tasks wake up any Bot cleanly
-// with its own personality, scoped memories, and tools without storing artificial user prompts.
+// with its own personality, scoped memories, and tools without leaking chat-room examples
+// or repeating recent push notifications.
 func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName string) (string, error) {
 	bot, err := e.store.GetBot(strings.TrimSpace(botID))
 	if err != nil || bot == nil {
@@ -954,13 +955,25 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 	prevUnread := bot.UnreadCount
 
 	threadID := strings.TrimSpace(bot.ActiveThreadID)
-	history, _ := e.store.ListBotMessagesByThread(bot.ID, threadID, 20)
-	prevMaxID := int64(0)
-	if len(history) > 0 {
-		prevMaxID = history[len(history)-1].ID
+	taskID, _ := store.TaskQuotaFromContext(ctx)
+	var recentPushes []store.Notification
+	if taskID != "" {
+		recentPushes, _ = e.store.ListRecentNotificationsByModule(taskID, 7)
 	}
-	nowStr := store.NowShanghai()
-	routinePrompt := fmt.Sprintf("[后台定时例程「%s」于 %s 自动触发，请用你本人的口吻与工具能力完成以下指令并直接输出给用户；若本指令属于状态监控、健康检查或异常巡检性质，且当前各项指标均正常无需报警，请仅输出 [SILENT_OK]，不要输出例行正常汇报]\n%s", taskName, nowStr, strings.TrimSpace(prompt))
+	if len(recentPushes) == 0 && strings.TrimSpace(taskName) != "" {
+		recentPushes, _ = e.store.ListRecentNotificationsByTitlePrefix(fmt.Sprintf("[%s] %s", bot.Name, taskName), 7)
+	}
+
+	now := time.Now().In(store.ShanghaiLocation())
+	_, promptExamples := extractPromptExamples(prompt)
+	isMonitoring := isMonitoringRoutine(taskName, prompt)
+	taskSeed := taskID
+	if taskSeed == "" {
+		taskSeed = bot.ID + ":" + taskName
+	}
+	contextSnapshot := buildRoutineContextSnapshot(e.store, taskSeed, now)
+	antiRepeatLedger := buildRoutineAntiRepeatLedger(recentPushes)
+	routinePrompt := buildRoutinePromptMessage(taskName, prompt, now, contextSnapshot, antiRepeatLedger, promptExamples, isMonitoring)
 
 	reqModel := strings.TrimSpace(bot.Model)
 	if taskOverride := store.TaskModelFromContext(ctx); taskOverride != "" {
@@ -980,41 +993,66 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 		AllowPaidFallback: allowPaidPtr,
 	}
 
-	var resp *ChatResponse
-	if bot.IsGroup {
-		allBots, _ := e.store.ListBots()
-		members := resolveGroupMemberBots(bot, allBots)
-		if len(members) == 0 {
-			return "", fmt.Errorf("群聊「%s」暂无可用成员", bot.Name)
+	// Intentionally pass nil chat history so background routines rely on the Bot's persona,
+	// scoped long-term memories, live tools, and the recent push ledger—never parroting
+	// casual examples from the interactive chat room.
+	var routineHistory []store.AgentMessage
+	executeTurn := func(turnPrompt string) (*ChatResponse, error) {
+		turnReq := req
+		turnReq.Message = turnPrompt
+		if bot.IsGroup {
+			allBots, _ := e.store.ListBots()
+			members := resolveGroupMemberBots(bot, allBots)
+			if len(members) == 0 {
+				return nil, fmt.Errorf("群聊「%s」暂无可用成员", bot.Name)
+			}
+			memberSet := make(map[string]bool, len(members))
+			for _, m := range members {
+				memberSet[m.ID] = true
+			}
+			allSkills, _ := e.store.ListSkills()
+			skillMap := make(map[string]store.Skill, len(allSkills))
+			for _, sk := range allSkills {
+				skillMap[sk.ID] = sk
+			}
+			switch strings.TrimSpace(bot.GroupMode) {
+			case "parallel":
+				return e.runTeamRoomParallel(ctx, turnReq, bot, members, memberSet, routineHistory, turnPrompt, nil)
+			case "sequential":
+				return e.runTeamRoomHandoff(ctx, turnReq, bot, members, memberSet, routineHistory, turnPrompt, nil)
+			default:
+				targets := selectSmartGroupMembersWithSkills(members, skillMap, prompt)
+				return e.runTeamRoomHandoff(ctx, turnReq, bot, targets, memberSet, routineHistory, turnPrompt, nil)
+			}
 		}
-		memberSet := make(map[string]bool, len(members))
-		for _, m := range members {
-			memberSet[m.ID] = true
-		}
-		allSkills, _ := e.store.ListSkills()
-		skillMap := make(map[string]store.Skill, len(allSkills))
-		for _, sk := range allSkills {
-			skillMap[sk.ID] = sk
-		}
-		switch strings.TrimSpace(bot.GroupMode) {
-		case "parallel":
-			resp, err = e.runTeamRoomParallel(ctx, req, bot, members, memberSet, history, routinePrompt, nil)
-		case "sequential":
-			resp, err = e.runTeamRoomHandoff(ctx, req, bot, members, memberSet, history, routinePrompt, nil)
-		default:
-			targets := selectSmartGroupMembersWithSkills(members, skillMap, prompt)
-			resp, err = e.runTeamRoomHandoff(ctx, req, bot, targets, memberSet, history, routinePrompt, nil)
-		}
-	} else {
-		resp, err = e.runSingleBotTurn(ctx, req, bot, bot.ID, history, routinePrompt, nil)
+		return e.runSingleBotTurn(ctx, turnReq, bot, bot.ID, routineHistory, turnPrompt, nil)
 	}
+
+	resp, err := executeTurn(routinePrompt)
 	if err != nil {
 		return "", err
 	}
 
+	finalReply := resp.Content
+	if !isSilentRoutineReply(finalReply) {
+		quality := evaluateRoutineDraft(finalReply, recentPushes, promptExamples)
+		if quality.shouldSuppressMonitoring(isMonitoring) {
+			finalReply = ""
+		} else if quality.needsRewrite(isMonitoring) && ctx.Err() == nil {
+			rewritePrompt := routinePrompt + "\n\n" + buildRoutineRewriteInstruction(quality, finalReply)
+			if rwResp, rwErr := executeTurn(rewritePrompt); rwErr == nil && rwResp != nil && !isSilentRoutineReply(rwResp.Content) {
+				rwQuality := evaluateRoutineDraft(rwResp.Content, recentPushes, promptExamples)
+				improvedExample := quality.EchoedExample != "" && rwQuality.EchoedExample == ""
+				improvedSim := rwQuality.EchoedExample == "" && rwQuality.MaxPastSim < quality.MaxPastSim
+				if improvedExample || improvedSim || !rwQuality.needsRewrite(isMonitoring) {
+					finalReply = rwResp.Content
+				}
+			}
+		}
+	}
+
 	// Always restore the Bot's chat state & summary cleanly without polluting chat history or unread badge;
 	// BotPromptModule delivers the routine result directly to 服务通知 (notifications).
-	_ = e.store.DeleteBotMessagesAfterID(bot.ID, threadID, prevMaxID)
 	_ = e.store.SetBotState(bot.ID, store.BotStateIdle, prevSummary)
 	if e.hub != nil {
 		e.hub.PublishEvent("bot_state", map[string]any{
@@ -1024,8 +1062,8 @@ func (e *Engine) RunBotRoutine(ctx context.Context, botID, prompt, taskName stri
 			"last_summary": prevSummary,
 		})
 	}
-	if isSilentRoutineReply(resp.Content) {
+	if isSilentRoutineReply(finalReply) {
 		return "", nil
 	}
-	return resp.Content, nil
+	return finalReply, nil
 }

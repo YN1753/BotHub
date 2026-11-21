@@ -113,6 +113,66 @@ func (s *Store) LatestNotificationID() int64 {
 	return id
 }
 
+// ListRecentNotificationsByModule returns the most recent notifications produced by a specific task/module ID.
+func (s *Store) ListRecentNotificationsByModule(moduleID string, limit int) ([]Notification, error) {
+	mid := strings.TrimSpace(moduleID)
+	if mid == "" {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 30 {
+		limit = 7
+	}
+	rows, err := s.db.Query(
+		`SELECT id, module_id, title, summary, markdown_body, priority, created_at, read_at
+		 FROM notifications WHERE module_id = ? ORDER BY id DESC LIMIT ?`,
+		mid, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]Notification, 0, limit)
+	for rows.Next() {
+		var n Notification
+		if err := rows.Scan(&n.ID, &n.ModuleID, &n.Title, &n.Summary, &n.MarkdownBody, &n.Priority, &n.CreatedAt, &n.ReadAt); err != nil {
+			return nil, err
+		}
+		list = append(list, n)
+	}
+	return list, rows.Err()
+}
+
+// ListRecentNotificationsByTitlePrefix returns recent notifications matching a title prefix (fallback when taskID is unavailable).
+func (s *Store) ListRecentNotificationsByTitlePrefix(prefix string, limit int) ([]Notification, error) {
+	p := strings.TrimSpace(prefix)
+	if p == "" {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 30 {
+		limit = 7
+	}
+	rows, err := s.db.Query(
+		`SELECT id, module_id, title, summary, markdown_body, priority, created_at, read_at
+		 FROM notifications WHERE title LIKE ? ORDER BY id DESC LIMIT ?`,
+		p+"%", limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]Notification, 0, limit)
+	for rows.Next() {
+		var n Notification
+		if err := rows.Scan(&n.ID, &n.ModuleID, &n.Title, &n.Summary, &n.MarkdownBody, &n.Priority, &n.CreatedAt, &n.ReadAt); err != nil {
+			return nil, err
+		}
+		list = append(list, n)
+	}
+	return list, rows.Err()
+}
+
 func (s *Store) CountUnreadNotifications() int {
 	var count int
 	_ = s.db.QueryRow(`SELECT COUNT(1) FROM notifications WHERE read_at = ''`).Scan(&count)

@@ -68,6 +68,9 @@ func (m *BotPromptModule) RunWithTask(ctx context.Context, task store.Task) (Run
 		return RunResult{}, fmt.Errorf("AI Agent 执行器尚未初始化")
 	}
 
+	if existingTaskID, _ := store.TaskQuotaFromContext(ctx); existingTaskID == "" && strings.TrimSpace(task.ID) != "" {
+		ctx = store.WithTaskQuota(ctx, task.ID, task.MaxPaidCallsPerDay)
+	}
 	reply, err := exec.RunBotRoutine(ctx, botID, prompt, task.Name)
 	if err != nil {
 		return RunResult{}, err

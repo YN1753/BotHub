@@ -154,7 +154,7 @@ func manageTasksToolSpec() ToolSpec {
 						},
 						"prompt": map[string]any{
 							"type":        "string",
-							"description": "可选：bot_prompt 类型任务到期时要执行的具体指令内容",
+							"description": "可选：bot_prompt 类型任务到期时要执行的抽象执行指令（请提炼清晰目标、所需工具与输出信息密度要求，切勿把用户口头举的“比如/例如”具体例子写成固定输出模板）",
 						},
 						"enabled": map[string]any{
 							"type":        "boolean",
@@ -701,7 +701,7 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 			}
 			task.Params = strings.TrimSpace(args.Params)
 		}
-		if p := notifier.StripEmoji(strings.TrimSpace(args.Prompt)); p != "" {
+		if p := normalizeRoutinePromptOnCreate(args.Prompt); p != "" {
 			paramMap := map[string]any{}
 			if task.Params != "" && task.Params != "{}" {
 				_ = json.Unmarshal([]byte(task.Params), &paramMap)
