@@ -9,11 +9,13 @@ import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 import SkillWebhookBuilder, { type HeaderRowItem } from './skills/SkillWebhookBuilder.vue'
 import SkillTestBench from './skills/SkillTestBench.vue'
+import SandboxNodesPanel from './skills/SandboxNodesPanel.vue'
 
 const store = useAppStore()
 
 const KIND_TABS = [
   { id: 'app_connector', label: '连接应用 (Apps)' },
+  { id: 'sandbox_vm', label: '执行虚拟机 (VMs)' },
   { id: 'mcp', label: '标准 MCP' },
   { id: 'json_import', label: 'JSON 导入' },
   { id: 'webhook', label: 'Webhook' },
@@ -34,7 +36,7 @@ const appConfigForm = ref<Record<string, string>>({})
 const editingId = ref<string | null>(null)
 const name = ref('')
 const slug = ref('')
-const kind = ref<'app_connector' | 'mcp' | 'json_import' | 'webhook' | 'prompt'>('app_connector')
+const kind = ref<'app_connector' | 'sandbox_vm' | 'mcp' | 'json_import' | 'webhook' | 'prompt'>('app_connector')
 const description = ref('')
 const instruction = ref('')
 const httpMethod = ref('POST')
@@ -271,7 +273,7 @@ function buildPayload(): Partial<Skill> {
     const k = h.key.trim()
     if (k) headersObj[k] = h.value.trim()
   }
-  const actualKind = kind.value === 'json_import' || kind.value === 'app_connector' ? 'mcp' : kind.value
+  const actualKind = kind.value === 'json_import' || kind.value === 'app_connector' || kind.value === 'sandbox_vm' ? 'mcp' : kind.value
   const payload: Partial<Skill> = {
     name: name.value.trim(),
     slug: slug.value.trim(),
@@ -315,6 +317,9 @@ async function handleImportJSON() {
 }
 
 async function handleSave() {
+  if (kind.value === 'sandbox_vm') {
+    return
+  }
   if (kind.value === 'app_connector') {
     await saveAppConnector(false)
     return
@@ -699,6 +704,11 @@ watch(
               {{ saving ? '保存中...' : '保存并连接应用' }}
             </button>
           </div>
+        </template>
+
+        <!-- Mode 1.5: Multi-VM Remote Execution Sandbox Nodes (Pure Go Agent) -->
+        <template v-else-if="kind === 'sandbox_vm'">
+          <SandboxNodesPanel />
         </template>
 
         <!-- Mode 2: JSON Import Mode -->
