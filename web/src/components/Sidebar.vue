@@ -475,13 +475,13 @@ watch(() => filteredBots.value.length, () => nextTick(() => applySiblingStaggerF
 
           <button
             type="button"
-            title="技能工坊与 Webhook"
-            aria-label="技能工坊"
+            title="MCP 服务与扩展中心"
+            aria-label="MCP 中心"
             @click="store.state.showSkillsModal = true; emit('closeMobile')"
             class="min-h-[44px] sm:min-h-[40px] flex flex-col items-center justify-center gap-0.5 rounded-lg text-fg-muted hover:text-accent-fg hover:bg-hover cursor-pointer"
           >
             <svg viewBox="0 0 24 24" width="14.5" height="14.5" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></svg>
-            <span class="text-xs leading-none">技能</span>
+            <span class="text-xs leading-none">MCP</span>
           </button>
 
           <button

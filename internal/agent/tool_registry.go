@@ -107,6 +107,7 @@ func init() {
 		workspaceBriefingToolSpec(),
 		calculateEvalToolSpec(),
 		datetimeCalcToolSpec(),
+		mountMCPToolSpec(),
 	}
 	builtinToolIndex = make(map[string]ToolSpec, len(builtinToolSpecs))
 	for _, sp := range builtinToolSpecs {
@@ -178,10 +179,10 @@ func normalizeToolArgsJSON(raw string) string {
 	return s
 }
 
-// ExecuteTool dispatches built-in tools from the declarative registry and user-defined custom webhook skills.
+// ExecuteTool dispatches built-in tools from the declarative registry, remote MCP server tools, and user-defined custom webhook skills.
 func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) (out string, err error) {
 	timeout := defaultToolTimeout
-	if strings.HasPrefix(name, "skill_") {
+	if strings.HasPrefix(name, "skill_") || strings.HasPrefix(name, "mcp_") {
 		timeout = 25 * time.Second
 	} else if spec, ok := LookupToolSpec(name); ok && spec.Timeout > 0 {
 		timeout = spec.Timeout
@@ -197,7 +198,9 @@ func (e *Engine) ExecuteTool(ctx context.Context, name string, argsJSON string) 
 	}()
 
 	cleanArgs := repairToolArguments(name, argsJSON)
-	if strings.HasPrefix(name, "skill_") {
+	if strings.HasPrefix(name, "mcp_") {
+		out, err = e.ExecuteRemoteMCPTool(toolCtx, name, cleanArgs)
+	} else if strings.HasPrefix(name, "skill_") {
 		slug := strings.TrimPrefix(name, "skill_")
 		sk, gErr := e.store.GetSkillBySlug(slug)
 		if gErr != nil || sk == nil || !sk.Enabled || sk.Kind != "webhook" {
@@ -265,6 +268,9 @@ func humanToolStatus(name string, argsJSON ...string) string {
 		if spec.StatusLabel != "" {
 			return spec.StatusLabel
 		}
+	}
+	if strings.HasPrefix(name, "mcp_") {
+		return "正在调用远程 MCP 服务..."
 	}
 	if strings.HasPrefix(name, "skill_") {
 		return "正在执行自定义技能..."

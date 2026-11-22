@@ -420,7 +420,7 @@ func (e *Engine) upsertSkillFromParams(in skillUpsertInput) (*store.Skill, error
 	if v := strings.TrimSpace(in.Slug); v != "" || sk.Slug == "" {
 		sk.Slug = normalizeSkillSlug(v, sk.Name)
 	}
-	if v := strings.ToLower(strings.TrimSpace(in.Kind)); v == "webhook" || v == "prompt" {
+	if v := strings.ToLower(strings.TrimSpace(in.Kind)); v == "webhook" || v == "prompt" || v == "mcp" {
 		sk.Kind = v
 	}
 	if v := notifier.StripEmoji(strings.TrimSpace(in.Description)); v != "" {

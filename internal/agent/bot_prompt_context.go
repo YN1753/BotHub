@@ -13,8 +13,20 @@ import (
 func filterToolsForBot(bot *store.Bot, attachedSkills []store.Skill) []ToolDefinition {
 	all := BuiltinTools()
 	var filtered []ToolDefinition
+	seen := make(map[string]bool)
+	appendUnique := func(td ToolDefinition) {
+		name := strings.TrimSpace(td.Function.Name)
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		filtered = append(filtered, td)
+	}
+
 	if bot == nil {
-		filtered = append(filtered, all...)
+		for _, td := range all {
+			appendUnique(td)
+		}
 	} else {
 		allowed := bot.AllowedToolList()
 		if len(allowed) > 0 {
@@ -24,21 +36,69 @@ func filterToolsForBot(bot *store.Bot, attachedSkills []store.Skill) []ToolDefin
 			}
 			for _, td := range all {
 				if allowSet[td.Function.Name] {
-					filtered = append(filtered, td)
+					appendUnique(td)
 				}
 			}
-		} else if store.NormalizeBotMode(bot.BotMode) != store.BotModeCompanion {
-			// All built-in tools are enabled by default for non-companion Bots;
-			// only user-created/added custom skills are opt-in per Bot.
-			filtered = append(filtered, all...)
+		} else {
+			// GrokBot / Muse Native Core: every Bot (including companion, hybrid, and worker)
+			// inherently possesses the 9 Native Core capabilities (web_search, read_url, memory,
+			// time/math, consult_bot, and mount_mcp). Domain modules and external tools come from mounted MCPs.
+			for _, td := range NativeCoreTools() {
+				appendUnique(td)
+			}
 		}
 	}
+
 	for _, sk := range attachedSkills {
-		if sk.Enabled && sk.Kind == "webhook" {
-			filtered = append(filtered, CompileSkillTool(sk))
+		if !sk.Enabled {
+			continue
+		}
+		switch store.NormalizeSkillKind(sk.Kind) {
+		case store.SkillKindBuiltinMCP:
+			for _, tName := range sk.BuiltinMCPToolNames() {
+				if sp, ok := LookupToolSpec(tName); ok {
+					appendUnique(sp.Definition)
+				}
+			}
+		case store.SkillKindMCP:
+			for _, td := range CompileMCPServerTools(sk) {
+				appendUnique(td)
+			}
+		case store.SkillKindWebhook:
+			appendUnique(CompileSkillTool(sk))
 		}
 	}
 	return filtered
+}
+
+func buildUnmountedMCPDirectoryBlock(bot *store.Bot, allSkills []store.Skill) string {
+	if bot == nil || len(allSkills) == 0 {
+		return ""
+	}
+	mounted := make(map[string]bool)
+	for _, id := range bot.SkillIDList() {
+		mounted[strings.TrimSpace(id)] = true
+	}
+	var unmounted []store.Skill
+	for _, sk := range allSkills {
+		if sk.Enabled && !mounted[sk.ID] {
+			unmounted = append(unmounted, sk)
+		}
+	}
+	if len(unmounted) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("[可用未挂载 MCP 服务目录 (当对话或任务突然需要以下能力时，请直接调用 mount_mcp 工具将其永久挂载给自己，挂载后同一回合即可直接调用其下属工具)]\n")
+	for _, sk := range unmounted {
+		toolNames := mcpExposedToolNames(sk)
+		toolTag := ""
+		if len(toolNames) > 0 {
+			toolTag = fmt.Sprintf(" | 包含工具: %s", strings.Join(toolNames, ", "))
+		}
+		sb.WriteString(fmt.Sprintf("- id=%q | %s (%s): %s%s\n", sk.ID, sk.Name, sk.Kind, strings.TrimSpace(sk.Description), toolTag))
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 func (e *Engine) buildWorkingContextBlock(bot *store.Bot, tools []ToolDefinition) string {
@@ -145,8 +205,9 @@ func buildBotSystemPromptWithContext(bot *store.Bot, attachedSkills []store.Skil
 	case store.BotModeWorker:
 		sb.WriteString("- 工作准则：你是干练务实的专业执行者。涉及实时状态、资产、待办、文档、任务或外部技能时，优先调用手头工具查证或直接落地执行，先给明确结论与可验证结果，绝不编造数据。\n")
 	default:
-		sb.WriteString("- 互动与执行准则：日常对话自然真诚、像真人般有温度；当用户交代要办的事、提醒、链接收藏、闪念记录、资料检索或产出长文档时，像靠谱的个人助手一样主动调用待办(manage_todos)、收藏与闪念匣(manage_stash)、文档(manage_notes)、定时提醒(manage_tasks)及授权工具直接帮你落地。\n")
+		sb.WriteString("- 互动与执行准则：日常对话自然真诚、像真人般有温度；当用户交代要办的事、提醒、链接收藏、闪念记录、资料检索或产出长文档时，像靠谱的个人助手一样主动调用已挂载的 MCP 工具或调用 mount_mcp 动态挂载对应 MCP 服务直接帮你落地。\n")
 	}
+	sb.WriteString("- 原生联网与核心能力声明：你天生内置实时联网搜索工具 web_search、网页抓取工具 read_url、长期记忆与时间推算能力。任何时候只要需要今日资讯、实时动态、外部事实或网址正文，必须直接调用 web_search 或 read_url 获取实时内容，严禁声称自己“没有联网方式”、“无法访问互联网”或“没有实时搜索能力”。\n")
 
 	if botHasStructuredDisplayTool(bot) {
 		sb.WriteString("- 结构化展示准则：当本轮调用了 manage_assets、query_nezha_nodes、manage_todos、manage_tasks 或 workspace_briefing 等结构化查询工具时，客户端界面已自动将工具返回的 JSON 渲染为高密度可视化卡片。请勿再将每条数据的 ID、状态、费用、配置等字段逐行机械复述为超长单列清单；正文仅需精炼总结核心数字、到期/健康异常风险与可直接执行的建议。\n")
@@ -391,6 +452,12 @@ func botHasStructuredDisplayTool(bot *store.Bot) bool {
 	for _, id := range bot.AllowedToolList() {
 		switch strings.TrimSpace(id) {
 		case "manage_assets", "query_nezha_nodes", "manage_todos", "manage_tasks", "workspace_briefing":
+			return true
+		}
+	}
+	for _, skID := range bot.SkillIDList() {
+		switch strings.TrimSpace(skID) {
+		case store.BuiltinMCPWorkbenchID, store.BuiltinMCPAssetsID, store.BuiltinMCPNezhaID, store.BuiltinMCPOpsID:
 			return true
 		}
 	}

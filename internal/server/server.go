@@ -170,9 +170,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/agent/memories/{id}", s.requireAuth(s.handleUpdateAgentMemory))
 	mux.HandleFunc("DELETE /api/agent/memories/{id}", s.requireAuth(s.handleDeleteAgentMemory))
 
-	// BotHub v2 Custom Skills
+	// BotHub v2 Custom Skills & MCP Servers
 	mux.HandleFunc("GET /api/v2/skills", s.requireAuth(s.handleListSkills))
 	mux.HandleFunc("POST /api/v2/skills", s.requireAuth(s.handleCreateSkill))
+	mux.HandleFunc("POST /api/v2/skills/import-mcp", s.requireAuth(s.handleImportMCPServers))
 	mux.HandleFunc("POST /api/v2/skills/{id}", s.requireAuth(s.handleUpdateSkill))
 	mux.HandleFunc("DELETE /api/v2/skills/{id}", s.requireAuth(s.handleDeleteSkill))
 	mux.HandleFunc("POST /api/v2/skills/{id}/test", s.requireAuth(s.handleTestSkill))

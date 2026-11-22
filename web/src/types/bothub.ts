@@ -40,7 +40,13 @@ export interface SkillParamField {
   default?: string
 }
 
-export type SkillKind = 'prompt' | 'webhook'
+export interface MCPToolMeta {
+  name: string
+  description: string
+  input_schema?: Record<string, any>
+}
+
+export type SkillKind = 'builtin_mcp' | 'mcp' | 'webhook' | 'prompt'
 
 export interface Skill {
   id: string

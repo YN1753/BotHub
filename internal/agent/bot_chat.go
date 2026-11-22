@@ -226,7 +226,9 @@ func (e *Engine) runSingleBotTurn(
 		thinkFlag = &v
 	}
 
+	newlyAutoMounted := e.autoMountRelevantMCPs(actingBot, userMsg)
 	attachedSkills, _ := e.store.GetSkillsByIDs(actingBot.SkillIDList())
+	allWorkspaceSkills, _ := e.store.ListSkills()
 	allBotTools := filterToolsForBot(actingBot, attachedSkills)
 	tools := pruneToolsForTurn(allBotTools, userMsg, history)
 
@@ -305,6 +307,13 @@ func (e *Engine) runSingleBotTurn(
 		peerBots = allBots
 	}
 	workingCtx := e.buildWorkingContextBlock(actingBot, tools)
+	if unmountedDir := buildUnmountedMCPDirectoryBlock(actingBot, allWorkspaceSkills); unmountedDir != "" {
+		if workingCtx != "" {
+			workingCtx += "\n\n" + unmountedDir
+		} else {
+			workingCtx = unmountedDir
+		}
+	}
 	sysPrompt := buildBotSystemPromptWithContext(actingBot, attachedSkills, memories, peerBots, threadTitle, timelineBotID != actingBot.ID, workingCtx)
 
 	var botNameMap map[string]string
@@ -388,9 +397,62 @@ func (e *Engine) runSingleBotTurn(
 
 	const maxRounds = 8
 	endedWithTools := false
+	fallbackSearchExecuted := false
 	var turnCacheMu sync.Mutex
 	turnReadCache := make(map[string]string)
 	executedCallCounts := make(map[string]int)
+
+	if len(newlyAutoMounted) > 0 {
+		mountedNames := make([]string, 0, len(newlyAutoMounted))
+		mountedIDs := make([]string, 0, len(newlyAutoMounted))
+		var unlockedTools []string
+		for _, sk := range newlyAutoMounted {
+			mountedNames = append(mountedNames, sk.Name)
+			mountedIDs = append(mountedIDs, sk.ID)
+			unlockedTools = append(unlockedTools, mcpExposedToolNames(sk)...)
+		}
+		autoArgsBytes, _ := json.Marshal(map[string]any{"mcp_id": strings.Join(mountedIDs, ",")})
+		autoResBytes, _ := json.Marshal(map[string]any{
+			"ok":             true,
+			"auto_mounted":   true,
+			"mounted_mcps":   mountedNames,
+			"unlocked_tools": unlockedTools,
+		})
+		autoArgs := string(autoArgsBytes)
+		autoRes := string(autoResBytes)
+		if emit != nil {
+			emit("tool_start", map[string]any{
+				"id":            "automount_1",
+				"name":          "mount_mcp",
+				"arguments":     autoArgs,
+				"sender_bot_id": actingBot.ID,
+			})
+			emit("tool_result", map[string]any{
+				"id":            "automount_1",
+				"name":          "mount_mcp",
+				"result":        autoRes,
+				"status":        "ok",
+				"duration_ms":   1,
+				"sender_bot_id": actingBot.ID,
+			})
+		}
+		traces = append(traces, ToolTrace{
+			ID:        "automount_1",
+			Name:      "mount_mcp",
+			Arguments: autoArgs,
+			Result:    autoRes,
+		})
+		e.store.RecordBotExecution(store.BotExecutionLog{
+			BotID:         timelineBotID,
+			ThreadID:      threadID,
+			ExecType:      "tool",
+			Name:          "mount_mcp",
+			InputSummary:  store.TruncateRunes(autoArgs, 160),
+			OutputSummary: store.TruncateRunes(autoRes, 200),
+			Status:        "ok",
+			DurationMs:    1,
+		})
+	}
 
 	// Harness 1: Correction boost & anti-repetition guardrail when the user explicitly corrects a prior reply.
 	isCorrection := detectCorrectionTurn(userMsg, history)
@@ -524,6 +586,76 @@ func (e *Engine) runSingleBotTurn(
 					finalContent.WriteString(rescued)
 					if emit != nil {
 						emit("content", map[string]any{"delta": rescued, "sender_bot_id": actingBot.ID})
+					}
+				}
+			}
+
+			// Harness 4b: No-Internet Excuse Interceptor & Scheduled Routine Live Web Search Fallback.
+			// If a model falsely claims it has "no internet access / no search tool" or skips web_search on a
+			// live-info scheduled routine, automatically execute web_search in Go and force a grounded rewrite.
+			hasExcuse := containsNoInternetExcuse(finalContent.String())
+			needsRoutineWeb := msgKind == "routine" && !hasExecutedWebSearch(traces) && routineNeedsLiveWebSearch(userMsg)
+			if !fallbackSearchExecuted && (hasExcuse || needsRoutineWeb) && hasToolNamed(tools, "web_search") && ctx.Err() == nil && round+1 < maxRounds {
+				fallbackSearchExecuted = true
+				fbQuery := buildFallbackWebSearchQuery(userMsg)
+				if fbQuery != "" {
+					fbArgsBytes, _ := json.Marshal(map[string]any{"query": fbQuery, "limit": 5})
+					fbArgs := string(fbArgsBytes)
+					e.emitBotState(actingBot.ID, store.BotStateWorking, humanToolStatus("web_search", fbArgs))
+					fbID := fmt.Sprintf("auto_web_%d", round+1)
+					if emit != nil {
+						emit("tool_start", map[string]any{
+							"id":            fbID,
+							"name":          "web_search",
+							"arguments":     fbArgs,
+							"sender_bot_id": actingBot.ID,
+						})
+					}
+					fbStart := time.Now()
+					fbOut, fbErr := e.ExecuteTool(toolCtx, "web_search", fbArgs)
+					fbDur := time.Since(fbStart).Milliseconds()
+					fbStatus := "ok"
+					if fbErr != nil {
+						fbStatus = "error"
+						fbOut = toolErrorPayload("web_search", fbErr)
+					}
+					cleanFBOut := notifier.StripEmoji(fbOut)
+					if emit != nil {
+						emit("tool_result", map[string]any{
+							"id":            fbID,
+							"name":          "web_search",
+							"result":        cleanFBOut,
+							"status":        fbStatus,
+							"duration_ms":   fbDur,
+							"sender_bot_id": actingBot.ID,
+						})
+					}
+					traces = append(traces, ToolTrace{
+						ID:        fbID,
+						Name:      "web_search",
+						Arguments: fbArgs,
+						Result:    cleanFBOut,
+					})
+					e.store.RecordBotExecution(store.BotExecutionLog{
+						BotID:         timelineBotID,
+						ThreadID:      threadID,
+						ExecType:      "tool",
+						Name:          "web_search",
+						InputSummary:  store.TruncateRunes(fbArgs, 160),
+						OutputSummary: store.TruncateRunes(cleanFBOut, 200),
+						Status:        fbStatus,
+						DurationMs:    fbDur,
+					})
+					if fbErr == nil {
+						finalContent.Reset()
+						messages = append(messages, apiMessage{
+							Role: "system",
+							Content: fmt.Sprintf(
+								"[系统强制联网检索结果（查询词: %s）]\n%s\n\n重要指令：你具备完整的实时联网搜索能力，系统已直接为你拉取上述最新全网实时检索结果。请立即彻底抛弃任何“没有联网方式”、“无法访问互联网”或“没有实时信息”的说法，直接基于上述实时检索结果输出高质量、有信息密度的正文。",
+								fbQuery, cleanFBOut,
+							),
+						})
+						continue
 					}
 				}
 			}
@@ -788,6 +920,22 @@ func (e *Engine) runSingleBotTurn(
 				Content:    toolMsgContent,
 				ToolCallID: tc.ID,
 			})
+		}
+
+		// Hot-reload Bot's mounted MCP tools in-place if mount_mcp was called during this round
+		mountedInRound := false
+		for _, tc := range toolCalls {
+			if tc.Function.Name == "mount_mcp" {
+				mountedInRound = true
+				break
+			}
+		}
+		if mountedInRound {
+			if freshBot, fErr := e.store.GetBot(actingBot.ID); fErr == nil && freshBot != nil {
+				*actingBot = *freshBot
+				attachedSkills, _ = e.store.GetSkillsByIDs(actingBot.SkillIDList())
+				tools = filterToolsForBot(actingBot, attachedSkills)
+			}
 		}
 	}
 

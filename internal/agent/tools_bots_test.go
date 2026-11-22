@@ -31,8 +31,8 @@ func TestDefaultButlerSeededCleanAndIdempotent(t *testing.T) {
 	if b.Model != "auto:free" || b.AllowPaidFallback {
 		t.Fatalf("expected default butler to use auto:free with allow_paid_fallback=false, got model=%q paid=%v", b.Model, b.AllowPaidFallback)
 	}
-	if !strings.Contains(b.AllowedTools, "manage_bots") {
-		t.Fatalf("expected default butler to have manage_bots enabled, got %s", b.AllowedTools)
+	if b.AllowedTools != "[]" || b.SkillIDs != "[]" {
+		t.Fatalf("expected default butler to start with pure Native Core (AllowedTools=[], SkillIDs=[]), got tools=%s skills=%s", b.AllowedTools, b.SkillIDs)
 	}
 	// Ensure zero hardcoded personal user tech stack assumptions in default prompt
 	for _, forbidden := range []string{"CloudCone", "Golang", "Kubernetes", "Android 开发"} {
@@ -158,10 +158,10 @@ func TestManageModelsAndManageSkillsConciergeTools(t *testing.T) {
 	}
 	defer st.Close()
 
-	// Verify concierge seeded with manage_models and manage_skills
+	// Verify concierge seeded with pure Native Core and zero pre-mounted MCPs
 	concierge, _ := st.GetBot(store.DefaultConciergeBotID)
-	if concierge == nil || !strings.Contains(concierge.AllowedTools, "manage_models") || !strings.Contains(concierge.AllowedTools, "manage_skills") {
-		t.Fatalf("expected concierge to have manage_models and manage_skills, got %+v", concierge)
+	if concierge == nil || concierge.AllowedTools != "[]" || concierge.SkillIDs != "[]" {
+		t.Fatalf("expected concierge to start with pure Native Core and zero pre-mounted MCPs, got %+v", concierge)
 	}
 
 	_ = st.SaveModelConfig(

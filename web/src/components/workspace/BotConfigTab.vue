@@ -340,33 +340,29 @@ function openScopedMemoriesManager() {
 
           <div class="md:col-span-2 rounded-xl border border-line bg-canvas/70 px-3.5 py-2.5 flex flex-col gap-1 text-xs">
             <div class="flex items-center justify-between gap-2">
-              <span class="font-medium text-fg">系统默认内置能力</span>
+              <span class="font-medium text-fg">Agent 原生认知底座 (Native Core)</span>
               <span class="font-mono text-[11px] px-2 py-0.5 rounded-full border border-ok-border bg-ok-soft text-ok">
-                {{ cfgBotMode === 'companion' ? '伴聊轻量模式' : '已默认全量内置' }}
+                已全员永久内置
               </span>
             </div>
             <p class="text-fg-muted leading-relaxed">
-              {{
-                cfgBotMode === 'companion'
-                  ? '陪伴聊天型默认保持轻量纯对话体验；切换为「综合协同型 / 干活执行型」即自动具备全套系统内置能力。'
-                  : '待办与笔记、收藏闪念匣、定时例程、联网搜索与网页读取、数字资产与探针、长期记忆及跨 Bot 协同均已默认内置，无需手动勾选。'
-              }}
+              实时多源联网搜索 (web_search)、网页正文读取 (read_url)、长期记忆、精确时间与数学计算、多 Bot 协同及 MCP 动态发现能力已对所有模式 Bot 默认内置，无需手动勾选且永不被裁剪。
             </p>
           </div>
 
           <div class="md:col-span-2 flex flex-col gap-2 text-xs text-fg-sub pt-2 border-t border-line">
             <div class="flex items-center justify-between">
-              <span>挂载自定义技能 ({{ cfgSkillIds.length }}/{{ availableSkills.length }})</span>
+              <span>已挂载 MCP 服务与扩展 ({{ cfgSkillIds.length }}/{{ availableSkills.length }} · 聊到相关功能时自动发现并永久挂载)</span>
               <button
                 type="button"
                 @click="store.state.showSkillsModal = true"
                 class="text-xs text-accent-fg hover:underline cursor-pointer"
               >
-                打开技能工坊
+                打开 MCP 中心
               </button>
             </div>
             <div v-if="availableSkills.length === 0" class="text-xs text-fg-muted">
-              暂无已启用的自定义技能，点击右上「打开技能工坊」创建自己的 Playbook 或 Webhook 工具。
+              暂无已启用的 MCP 服务，点击右上「打开 MCP 中心」接入标准 MCP Server 或启用内置业务 MCP。
             </div>
             <div v-else class="flex flex-wrap gap-2">
               <label
@@ -376,7 +372,7 @@ function openScopedMemoriesManager() {
               >
                 <input v-model="cfgSkillIds" type="checkbox" :value="sk.id" class="accent-cyan-400" />
                 <span>{{ sk.name }}</span>
-                <span class="font-mono text-xs opacity-70">{{ sk.kind === 'webhook' ? 'API' : 'Doc' }}</span>
+                <span class="font-mono text-xs opacity-70">{{ sk.kind === 'builtin_mcp' || sk.kind === 'mcp' ? 'MCP' : sk.kind === 'webhook' ? 'API' : 'Doc' }}</span>
               </label>
             </div>
           </div>

@@ -184,10 +184,10 @@ func TestCompanionVsWorkerPromptAndSkills(t *testing.T) {
 		t.Fatalf("expected companion prompt with traits and playbook skill, got:\n%s", prompt)
 	}
 
-	// Companion with no tools attached yields nil tools slice (prevents LLM tool-calling overhead)
+	// Companion with default empty allowed_tools receives the 9 Native Core tools (including web_search, read_url, mount_mcp)
 	tools := filterToolsForBot(&companionBot, []store.Skill{playbook})
-	if tools != nil {
-		t.Fatalf("expected nil tools when companion bot has empty allowed_tools and only prompt skill, got %d tools", len(tools))
+	if len(tools) != len(NativeCoreTools()) || !hasToolNamed(tools, "web_search") || !hasToolNamed(tools, "mount_mcp") {
+		t.Fatalf("expected %d Native Core tools for companion bot, got %d tools", len(NativeCoreTools()), len(tools))
 	}
 
 	workerBot := store.Bot{
@@ -206,7 +206,7 @@ func TestCompanionVsWorkerPromptAndSkills(t *testing.T) {
 		t.Fatalf("expected 1 worker tool query_nezha_nodes, got %+v", workerTools)
 	}
 
-	// Non-companion Bot with default empty allowed_tools automatically receives all built-in tools
+	// Non-companion Bot with default empty allowed_tools receives Native Core tools + any mounted MCP tools
 	defaultWorker := store.Bot{
 		ID:           "bot_default_worker",
 		Name:         "默认助理",
@@ -214,8 +214,17 @@ func TestCompanionVsWorkerPromptAndSkills(t *testing.T) {
 		AllowedTools: "[]",
 	}
 	defaultTools := filterToolsForBot(&defaultWorker, nil)
-	if len(defaultTools) != len(BuiltinTools()) {
-		t.Fatalf("expected all %d built-in tools by default for non-companion bot, got %d", len(BuiltinTools()), len(defaultTools))
+	if len(defaultTools) != len(NativeCoreTools()) {
+		t.Fatalf("expected %d Native Core tools by default when zero MCPs are mounted, got %d", len(NativeCoreTools()), len(defaultTools))
+	}
+	// Mounting built-in Workbench MCP expands its 4 domain tools on top of Native Core
+	workbenchMCP, _ := st.GetSkill(store.BuiltinMCPWorkbenchID)
+	if workbenchMCP == nil {
+		t.Fatalf("expected seeded builtin mcp_workbench")
+	}
+	mountedTools := filterToolsForBot(&defaultWorker, []store.Skill{*workbenchMCP})
+	if !hasToolNamed(mountedTools, "manage_todos") || !hasToolNamed(mountedTools, "manage_notes") || !hasToolNamed(mountedTools, "manage_stash") {
+		t.Fatalf("expected mounted mcp_workbench to expose manage_todos/manage_notes/manage_stash, got %+v", mountedTools)
 	}
 }
 
@@ -599,5 +608,98 @@ func TestAssistantToolsTodosNotesNotificationConsultAndDatetime(t *testing.T) {
 	}
 	if canonicalSearchURL("https://www.example.com/docs/") != canonicalSearchURL("http://example.com/docs") {
 		t.Fatalf("expected canonicalSearchURL to normalize scheme/www/trailing slash")
+	}
+}
+
+func TestDynamicMCPAutoMountAndRemoteMCPProtocol(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "mcp_dynamic.db"))
+	if err != nil {
+		t.Fatalf("open store failed: %v", err)
+	}
+	defer st.Close()
+
+	eng := NewEngine(st, nil)
+	eng.allowLocalhostForTest = true
+
+	// 1. Bot starts with 0 mounted MCPs
+	bot := store.Bot{
+		ID:           "bot_dynamic",
+		Name:         "Muse",
+		RoleTitle:    "全能助手",
+		BotMode:      store.BotModeHybrid,
+		AllowedTools: "[]",
+		SkillIDs:     "[]",
+	}
+	if err := st.SaveBot(bot); err != nil {
+		t.Fatalf("save bot: %v", err)
+	}
+
+	// 2. Chat mentions待办 & 哪吒探针 -> autoMountRelevantMCPs mounts mcp_workbench & mcp_nezha permanently
+	mounted := eng.autoMountRelevantMCPs(&bot, "帮我记个待办明天排查一下哪吒探针服务器负载")
+	if len(mounted) != 2 {
+		t.Fatalf("expected 2 auto-mounted MCPs (workbench + nezha), got %+v", mounted)
+	}
+	reloadedBot, _ := st.GetBot("bot_dynamic")
+	if reloadedBot == nil || !strings.Contains(reloadedBot.SkillIDs, store.BuiltinMCPWorkbenchID) || !strings.Contains(reloadedBot.SkillIDs, store.BuiltinMCPNezhaID) {
+		t.Fatalf("expected permanent persistence of mcp_workbench and mcp_nezha on bot, got %s", reloadedBot.SkillIDs)
+	}
+
+	// 3. Model-invoked mount_mcp permanently mounts mcp_assets
+	ctx := WithToolScope(context.Background(), ToolScope{
+		BotID:         "bot_dynamic",
+		TimelineBotID: "bot_dynamic",
+	})
+	mountOut, mErr := eng.ExecuteTool(ctx, "mount_mcp", `{"mcp_id":"mcp_assets"}`)
+	if mErr != nil || !strings.Contains(mountOut, "manage_assets") {
+		t.Fatalf("mount_mcp failed: err=%v out=%s", mErr, mountOut)
+	}
+	reloadedBot2, _ := st.GetBot("bot_dynamic")
+	if !strings.Contains(reloadedBot2.SkillIDs, store.BuiltinMCPAssetsID) {
+		t.Fatalf("expected mcp_assets persisted on bot, got %s", reloadedBot2.SkillIDs)
+	}
+
+	// 4. Mock standard Remote MCP Server (JSON-RPC 2.0 initialize -> tools/list -> tools/call)
+	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var rpc mcpJSONRPCRequest
+		_ = json.NewDecoder(r.Body).Decode(&rpc)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Mcp-Session-Id", "sess_test_123")
+		switch rpc.Method {
+		case "initialize":
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}}}}`))
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"search_docs","description":"检索 DeepWiki 架构文档","inputSchema":{"type":"object","properties":{"repo":{"type":"string"}},"required":["repo"]}}]}}`))
+		case "tools/call":
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"DeepWiki 文档摘要：架构正常"}],"isError":false}}`))
+		}
+	}))
+	defer mcpSrv.Close()
+
+	parsedMCPs, pErr := ParseMCPServersJSON(fmt.Sprintf(`{"mcpServers":{"deepwiki":{"url":%q,"description":"DeepWiki 仓库知识库"}}}`, mcpSrv.URL))
+	if pErr != nil || len(parsedMCPs) != 1 {
+		t.Fatalf("ParseMCPServersJSON failed: err=%v out=%+v", pErr, parsedMCPs)
+	}
+	remoteMCP := parsedMCPs[0]
+	discovered, dErr := eng.DiscoverMCPServerTools(ctx, remoteMCP)
+	if dErr != nil || len(discovered) != 1 || discovered[0].Name != "search_docs" {
+		t.Fatalf("DiscoverMCPServerTools failed: err=%v tools=%+v", dErr, discovered)
+	}
+	rawSchema, _ := json.Marshal(discovered)
+	remoteMCP.ParamsSchema = string(rawSchema)
+	if err := st.SaveSkill(remoteMCP); err != nil {
+		t.Fatalf("save remote MCP: %v", err)
+	}
+
+	// Execute remote MCP tool via ExecuteTool
+	callOut, cErr := eng.ExecuteTool(ctx, "mcp_deepwiki__search_docs", `{"repo":"vesper/bothub"}`)
+	if cErr != nil || !strings.Contains(callOut, "DeepWiki 文档摘要：架构正常") {
+		t.Fatalf("ExecuteRemoteMCPTool failed: err=%v out=%s", cErr, callOut)
+	}
+
+	// 5. No-internet excuse detection
+	if !containsNoInternetExcuse("抱歉，我目前没有联网方式，无法查询今日新闻。") {
+		t.Fatalf("expected containsNoInternetExcuse to detect excuse")
 	}
 }

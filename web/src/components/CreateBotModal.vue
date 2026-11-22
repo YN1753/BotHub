@@ -426,33 +426,29 @@ async function handleSubmit() {
 
             <div class="rounded-xl border border-line bg-canvas/70 px-3 py-2 flex flex-col gap-1 text-xs">
               <div class="flex items-center justify-between gap-2">
-                <span class="font-medium text-fg">系统默认内置能力</span>
+                <span class="font-medium text-fg">Agent 原生认知底座 (Native Core)</span>
                 <span class="font-mono text-[11px] px-2 py-0.5 rounded-full border border-ok-border bg-ok-soft text-ok">
-                  {{ botMode === 'companion' ? '伴聊轻量模式' : '已默认全量内置' }}
+                  全员永久内置
                 </span>
               </div>
               <p class="text-fg-muted leading-relaxed">
-                {{
-                  botMode === 'companion'
-                    ? '陪伴聊天型默认保持轻量纯对话体验；切换为「综合协同型 / 干活执行型」即自动具备全套系统内置能力。'
-                    : '待办、笔记、收藏匣、定时例程、联网搜索、资产探针与长期记忆均已默认内置，无需手动勾选。'
-                }}
+                实时联网搜索、网页读取、长期记忆、时间计算与多 Bot 协同默认自带；业务模块与外部工具通过下方 MCP 服务按需挂载（在对话中提及相关需求时也会自动发现并永久挂载）。
               </p>
             </div>
 
             <div class="flex flex-col gap-1.5 text-xs text-fg-sub pt-1 border-t border-line">
               <div class="flex items-center justify-between">
-                <span>挂载自定义技能 ({{ selectedSkillIds.length }}/{{ availableSkills.length }})</span>
+                <span>预挂载 MCP 服务 ({{ selectedSkillIds.length }}/{{ availableSkills.length }} · 也可留空靠聊天自动挂载)</span>
                 <button
                   type="button"
                   @click="openSkillsWorkshop"
                   class="text-xs text-accent-fg hover:underline cursor-pointer"
                 >
-                  + 去技能工坊新建
+                  + 打开 MCP 中心
                 </button>
               </div>
               <div v-if="availableSkills.length === 0" class="text-xs text-fg-muted">
-                暂无已启用的自定义技能，可随时在「技能工坊」创建后回来绑定。
+                暂无已启用的 MCP 服务，可随时在「MCP 中心」接入。
               </div>
               <div v-else class="flex flex-wrap gap-1.5">
                 <label
@@ -462,7 +458,7 @@ async function handleSubmit() {
                 >
                   <input v-model="selectedSkillIds" type="checkbox" :value="sk.id" class="accent-cyan-400" />
                   <span>{{ sk.name }}</span>
-                  <span class="font-mono text-xs opacity-70">{{ sk.kind === 'webhook' ? 'API' : 'Doc' }}</span>
+                  <span class="font-mono text-xs opacity-70">{{ sk.kind === 'builtin_mcp' || sk.kind === 'mcp' ? 'MCP' : sk.kind === 'webhook' ? 'API' : 'Doc' }}</span>
                 </label>
               </div>
             </div>

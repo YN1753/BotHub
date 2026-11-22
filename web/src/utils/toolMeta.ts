@@ -24,7 +24,8 @@ const TOOL_META: Record<string, { group: string; shortLabel: string }> = {
   manage_memory: { group: 'memory', shortLabel: '整理与遗忘记忆' },
   manage_bots: { group: 'memory', shortLabel: '创建 Bot 与拉群' },
   manage_models: { group: 'ops', shortLabel: 'AI 模型池巡检调优' },
-  manage_skills: { group: 'assistant', shortLabel: '自定义技能工坊' },
+  manage_skills: { group: 'assistant', shortLabel: 'MCP 与扩展中心' },
+  mount_mcp: { group: 'assistant', shortLabel: '动态挂载 MCP 服务' },
   consult_bot: { group: 'memory', shortLabel: '协同队友委派' },
 
   manage_assets: { group: 'ops', shortLabel: '数字资产台账' },
@@ -32,6 +33,17 @@ const TOOL_META: Record<string, { group: string; shortLabel: string }> = {
 }
 
 export function formatToolHumanName(name: string, skills: Skill[] = []): string {
+  if (name === 'mount_mcp') return '动态挂载 MCP 服务'
+  if (name.startsWith('mcp_')) {
+    const rest = name.slice(4)
+    const sep = rest.indexOf('__')
+    if (sep > 0) {
+      const slug = rest.slice(0, sep)
+      const toolName = rest.slice(sep + 2)
+      const found = skills.find((s) => s.slug === slug)
+      return found ? `${found.name} · ${toolName}` : `${slug} · ${toolName}`
+    }
+  }
   if (name.startsWith('skill_')) {
     const slug = name.slice(6)
     const found = skills.find((s) => s.slug === slug)

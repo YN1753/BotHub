@@ -132,13 +132,20 @@ func TestPruneToolsForTurn(t *testing.T) {
 		t.Fatalf("expected >7 builtin tools, got %d", len(allTools))
 	}
 
-	// 1. Web search prompt should prune to <=7 tools and include web_search & read_url
+	// 1. Web search prompt should prune to <=12 tools and always pin web_search, read_url & mount_mcp
 	webPruned := pruneToolsForTurn(allTools, "帮我联网搜一下 2026 年最新的开源大模型评测", nil)
-	if len(webPruned) < 4 || len(webPruned) > 7 {
-		t.Fatalf("expected 4..7 pruned tools, got %d", len(webPruned))
+	if len(webPruned) < 6 || len(webPruned) > 12 {
+		t.Fatalf("expected 6..12 pruned tools, got %d", len(webPruned))
 	}
-	if !hasToolNamed(webPruned, "web_search") || !hasToolNamed(webPruned, "read_url") {
-		t.Fatalf("expected web_search and read_url in pruned set, got %+v", webPruned)
+	if !hasToolNamed(webPruned, "web_search") || !hasToolNamed(webPruned, "read_url") || !hasToolNamed(webPruned, "mount_mcp") {
+		t.Fatalf("expected web_search, read_url, and mount_mcp in pruned set, got %+v", webPruned)
+	}
+
+	// 1b. Scheduled routine wrapper with noisy context snapshot keywords must NEVER kick out web_search
+	noisyRoutinePrompt := "[后台定时例程「每日简报」于 2026-11-22 08:00:00 自动触发]\n[今日实时上下文快照]\n- 定时、待办、资产、探针、收藏、闪念、时间、截止\n[本次例程任务目标]\n给我分享一下今日开源技术与最新资讯"
+	routinePruned := pruneToolsForTurn(allTools, noisyRoutinePrompt, nil)
+	if !hasToolNamed(routinePruned, "web_search") || !hasToolNamed(routinePruned, "read_url") {
+		t.Fatalf("expected web_search and read_url to stay pinned during routine turn, got %+v", routinePruned)
 	}
 
 	// 2. Server monitoring prompt should include query_nezha_nodes

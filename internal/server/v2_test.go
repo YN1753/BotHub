@@ -258,8 +258,8 @@ func TestGrokBotRosterAndTimelineLifecycle(t *testing.T) {
 	if err := json.Unmarshal(recList.Body.Bytes(), &listResp); err != nil {
 		t.Fatalf("unmarshal bots: %v", err)
 	}
-	if len(listResp.Bots) != 1 || listResp.Bots[0].ID != store.DefaultConciergeBotID || !strings.Contains(listResp.Bots[0].AllowedTools, "manage_bots") {
-		t.Fatalf("expected fresh DB to have 1 default concierge bot (butler) with manage_bots, got %+v", listResp.Bots)
+	if len(listResp.Bots) != 1 || listResp.Bots[0].ID != store.DefaultConciergeBotID || listResp.Bots[0].AllowedTools != "[]" {
+		t.Fatalf("expected fresh DB to have 1 default concierge bot (butler) with pure Native Core, got %+v", listResp.Bots)
 	}
 
 	// 2. Create custom bot, update it, verify messages & unread clear

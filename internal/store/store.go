@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -499,6 +498,7 @@ CREATE INDEX IF NOT EXISTS idx_model_usage_task_day ON model_usage_logs(task_id,
 	}
 	s.migrateStashToolOnce()
 	s.migrateBuiltinToolsDefaultOnce()
+	s.migrateMCPZeroMountOnce()
 	s.cleanupNoisyRoutineLogs()
 	return nil
 }
@@ -507,10 +507,19 @@ func (s *Store) migrateBuiltinToolsDefaultOnce() {
 	if v, _ := s.GetConfig("builtin_tools_default_migrated"); v == "1" {
 		return
 	}
-	// Built-in tools are now enabled by default for all non-companion Bots (allowed_tools = '[]'),
-	// while custom skills remain opt-in per Bot.
 	_, _ = s.db.Exec(`UPDATE bots SET allowed_tools = '[]' WHERE COALESCE(bot_mode, 'hybrid') != 'companion' AND allowed_tools != '[]'`)
 	_ = s.SetConfig("builtin_tools_default_migrated", "1")
+}
+
+func (s *Store) migrateMCPZeroMountOnce() {
+	_ = s.SeedBuiltinMCPs()
+	if v, _ := s.GetConfig("mcp_zero_mount_migrated_v1"); v == "1" {
+		return
+	}
+	// Reset existing Bots to zero pre-mounted MCPs (skill_ids = '[]') and pure Native Core (allowed_tools = '[]');
+	// MCPs are dynamically self-mounted on demand during chat/routines or manually attached by the user, and permanently persisted thereafter.
+	_, _ = s.db.Exec(`UPDATE bots SET allowed_tools = '[]', skill_ids = '[]'`)
+	_ = s.SetConfig("mcp_zero_mount_migrated_v1", "1")
 }
 
 func (s *Store) cleanupNoisyRoutineLogs() {
@@ -673,28 +682,12 @@ func (s *Store) seedDefaults() error {
 		_ = s.SetConfig(KeyAdminPassHash, HashPassword(envPass))
 	}
 
-	if existingConcierge, _ := s.GetBot(DefaultConciergeBotID); existingConcierge != nil {
-		curTools := existingConcierge.AllowedToolList()
-		toolSet := make(map[string]bool, len(curTools))
-		for _, t := range curTools {
-			toolSet[t] = true
-		}
-		var missing []string
-		for _, reqTool := range []string{"manage_bots", "manage_models", "manage_skills"} {
-			if !toolSet[reqTool] {
-				missing = append(missing, reqTool)
+	_ = s.SeedBuiltinMCPs()
+	if existingConcierge, _ := s.GetBot(DefaultConciergeBotID); existingConcierge == nil {
+		if seeded, _ := s.GetConfig(KeyDefaultConciergeSeeded); seeded != "true" {
+			if err := s.SaveBot(DefaultConciergeBot()); err != nil {
+				return err
 			}
-		}
-		if len(missing) > 0 {
-			nextTools := append(missing, curTools...)
-			if raw, mErr := json.Marshal(nextTools); mErr == nil {
-				existingConcierge.AllowedTools = string(raw)
-				_ = s.SaveBot(*existingConcierge)
-			}
-		}
-	} else if seeded, _ := s.GetConfig(KeyDefaultConciergeSeeded); seeded != "true" {
-		if err := s.SaveBot(DefaultConciergeBot()); err != nil {
-			return err
 		}
 	}
 	_ = s.SetConfig(KeyDefaultConciergeSeeded, "true")

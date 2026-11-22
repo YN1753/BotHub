@@ -477,7 +477,8 @@ fun formatHumanToolName(toolName: String): String {
         clean == "read_url" -> "阅读网页"
         clean == "manage_bots" -> "Bot 与群聊管理"
         clean == "manage_models" -> "AI 模型池巡检调优"
-        clean == "manage_skills" -> "自定义技能工坊"
+        clean == "manage_skills" -> "MCP 与扩展中心"
+        clean == "mount_mcp" -> "动态挂载 MCP"
         clean == "consult_bot" -> "协同成员"
         clean == "manage_todos" -> "待办管理"
         clean == "manage_notes" -> "工作文档"
@@ -492,6 +493,7 @@ fun formatHumanToolName(toolName: String): String {
         clean == "manage_memory" -> "整理记忆"
         clean == "manage_assets" -> "资产台账"
         clean == "query_nezha_nodes" -> "探针巡检"
+        clean.startsWith("mcp_") -> clean.removePrefix("mcp_").replace("__", " · ")
         clean.startsWith("skill_") -> clean.removePrefix("skill_")
         clean.isBlank() -> "扩展能力"
         else -> clean

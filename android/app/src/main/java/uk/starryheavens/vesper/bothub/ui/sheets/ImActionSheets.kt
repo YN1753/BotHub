@@ -108,24 +108,20 @@ private fun BuiltinAndCustomSkillsBlock(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "系统默认内置能力",
+                        text = "Agent 原生认知底座",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = theme.textPrimary
                     )
                     Text(
-                        text = if (isCompanion) "伴聊轻量模式" else "已默认全量内置",
+                        text = "全员永久内置",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color(0xFF10B981)
                     )
                 }
                 Text(
-                    text = if (isCompanion) {
-                        "伴聊模式默认保持轻盈纯对话；切换为「综合 / 助理」即自动内置全套系统能力。"
-                    } else {
-                        "待办、笔记、收藏匣、定时例程、联网搜索、资产探针与长期记忆均已默认内置，无需手动勾选。"
-                    },
+                    text = "实时多源联网搜索、网页正文读取、长期记忆、时间计算与多 Bot 协同已对所有模式默认内置；业务模块与外部工具通过下方 MCP 服务按需挂载（在对话中提及相关需求时也会自动发现并永久挂载）。",
                     fontSize = 11.5.sp,
                     lineHeight = 16.sp,
                     color = theme.textMuted
@@ -135,7 +131,7 @@ private fun BuiltinAndCustomSkillsBlock(
 
         if (availableSkills.isNotEmpty()) {
             Text(
-                text = "挂载自定义技能 (${selectedSkillIds.size}/${availableSkills.size})",
+                text = "已挂载 MCP 服务与扩展 (${selectedSkillIds.size}/${availableSkills.size} · 支持聊天自动挂载)",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 color = theme.textMuted

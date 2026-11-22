@@ -406,11 +406,16 @@ export const BotHubApi = {
       body: JSON.stringify({ scope }),
     }),
 
-  // Custom Skills
+  // Custom Skills & MCP Servers
   createSkill: (payload: Partial<Skill>) =>
     apiRequest<{ ok: boolean; skill: Skill }>('/api/v2/skills', {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+  importMCPServers: (json: string, botId = '') =>
+    apiRequest<{ ok: boolean; count: number; imported: Skill[] }>('/api/v2/skills/import-mcp', {
+      method: 'POST',
+      body: JSON.stringify({ json, bot_id: botId }),
     }),
   updateSkill: (id: string, payload: Partial<Skill>) =>
     apiRequest<{ ok: boolean; skill: Skill }>(`/api/v2/skills/${encodeURIComponent(id)}`, {
@@ -420,7 +425,7 @@ export const BotHubApi = {
   deleteSkill: (id: string) =>
     apiRequest(`/api/v2/skills/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   testSkill: (id: string, args: Record<string, any>) =>
-    apiRequest<{ ok: boolean; status_code: number; latency_ms: number; result: any }>(
+    apiRequest<{ ok: boolean; status_code?: number; latency_ms?: number; tools?: any[]; result: any }>(
       `/api/v2/skills/${encodeURIComponent(id)}/test`,
       { method: 'POST', body: JSON.stringify({ args }) }
     ),

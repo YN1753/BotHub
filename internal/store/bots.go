@@ -27,26 +27,6 @@ const (
 // DefaultConciergeBot returns the single neutral default butler/concierge Bot seeded on blank installs.
 // It intentionally contains zero hardcoded personal user facts or tech-stack assumptions.
 func DefaultConciergeBot() Bot {
-	toolsJSON, _ := json.Marshal([]string{
-		"manage_bots",
-		"manage_models",
-		"manage_skills",
-		"consult_bot",
-		"manage_tasks",
-		"manage_todos",
-		"manage_notes",
-		"manage_stash",
-		"manage_assets",
-		"workspace_briefing",
-		"send_notification",
-		"web_search",
-		"read_url",
-		"calculate_eval",
-		"datetime_calc",
-		"remember_fact",
-		"recall_memory",
-		"manage_memory",
-	})
 	return Bot{
 		ID:                DefaultConciergeBotID,
 		Name:              "大管家",
@@ -58,7 +38,7 @@ func DefaultConciergeBot() Bot {
 		Model:             "auto:free",
 		AllowPaidFallback: false,
 		EnableThinking:    true,
-		AllowedTools:      string(toolsJSON),
+		AllowedTools:      "[]",
 		SkillIDs:          "[]",
 		State:             BotStateIdle,
 		IsPinned:          true,

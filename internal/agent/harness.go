@@ -132,15 +132,20 @@ var (
 	}
 )
 
-// pruneToolsForTurn narrows a bot's tool schema list from up to 19 tools down to the
-// 4-7 tools most relevant to the current user message and recent 2 turns.
+// pruneToolsForTurn narrows a bot's tool schema list when many MCPs are mounted,
+// while permanently pinning core tools (web_search, read_url, mount_mcp, memory, time)
+// and scoring only the user's actual core goal (ignoring system-injected routine snapshots).
 func pruneToolsForTurn(allBotTools []ToolDefinition, userMsg string, recentHistory []store.AgentMessage) []ToolDefinition {
-	if len(allBotTools) <= 7 {
+	const maxPrunedTools = 12
+	const minPrunedTools = 6
+	if len(allBotTools) <= maxPrunedTools {
 		return allBotTools
 	}
 
+	coreUserMsg := extractCoreGoalFromRoutinePrompt(userMsg)
+
 	var contextBuf strings.Builder
-	contextBuf.WriteString(strings.ToLower(strings.TrimSpace(userMsg)))
+	contextBuf.WriteString(strings.ToLower(strings.TrimSpace(coreUserMsg)))
 	recentAdded := 0
 	for i := len(recentHistory) - 1; i >= 0 && recentAdded < 2; i-- {
 		m := recentHistory[i]
@@ -155,18 +160,21 @@ func pruneToolsForTurn(allBotTools []ToolDefinition, userMsg string, recentHisto
 		}
 	}
 	haystack := contextBuf.String()
-	userLower := strings.ToLower(strings.TrimSpace(userMsg))
+	userLower := strings.ToLower(strings.TrimSpace(coreUserMsg))
 
 	scores := make(map[string]int, len(allBotTools))
 	for _, td := range allBotTools {
 		name := td.Function.Name
+		if IsPinnedCoreTool(name) {
+			scores[name] = 100
+		}
 		switch name {
 		case "web_search":
-			scores[name] = 3
+			scores[name] += 3
 		case "read_url":
-			scores[name] = 2
+			scores[name] += 2
 		case "remember_fact":
-			scores[name] = 1
+			scores[name] += 1
 		}
 
 		if sp, ok := LookupToolSpec(name); ok {
@@ -183,9 +191,12 @@ func pruneToolsForTurn(allBotTools []ToolDefinition, userMsg string, recentHisto
 			}
 		}
 
-		if strings.HasPrefix(name, "skill_") {
-			skillKey := strings.TrimPrefix(name, "skill_")
-			if strings.Contains(userLower, skillKey) || strings.Contains(userLower, "技能") || strings.Contains(userLower, "skill") {
+		if strings.HasPrefix(name, "skill_") || strings.HasPrefix(name, "mcp_") {
+			skillKey := strings.TrimPrefix(strings.TrimPrefix(name, "skill_"), "mcp_")
+			if idx := strings.Index(skillKey, "__"); idx > 0 {
+				skillKey = skillKey[:idx]
+			}
+			if strings.Contains(userLower, skillKey) || strings.Contains(userLower, "技能") || strings.Contains(userLower, "mcp") {
 				scores[name] += 8
 			} else if desc := strings.ToLower(td.Function.Description); desc != "" {
 				for _, tok := range strings.Fields(userLower) {
@@ -237,8 +248,6 @@ func pruneToolsForTurn(allBotTools []ToolDefinition, userMsg string, recentHisto
 		return ranked[i].idx < ranked[j].idx
 	})
 
-	const maxPrunedTools = 7
-	const minPrunedTools = 4
 	selected := make(map[int]bool, maxPrunedTools)
 	for _, st := range ranked {
 		if len(selected) >= maxPrunedTools {
