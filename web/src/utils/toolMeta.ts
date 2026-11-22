@@ -30,6 +30,11 @@ const TOOL_META: Record<string, { group: string; shortLabel: string }> = {
 
   manage_assets: { group: 'ops', shortLabel: '数字资产台账' },
   query_nezha_nodes: { group: 'ops', shortLabel: '哪吒探针巡检' },
+  github_connector: { group: 'ops', shortLabel: 'GitHub 连接器' },
+  email_connector: { group: 'assistant', shortLabel: 'Gmail / 邮箱连接器' },
+  cloudflare_connector: { group: 'ops', shortLabel: 'Cloudflare 连接器' },
+  rss_connector: { group: 'research', shortLabel: 'RSS 资讯订阅连接器' },
+  webdav_connector: { group: 'assistant', shortLabel: 'WebDAV 云盘连接器' },
 }
 
 export function formatToolHumanName(name: string, skills: Skill[] = []): string {

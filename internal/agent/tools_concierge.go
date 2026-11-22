@@ -525,7 +525,7 @@ func (e *Engine) toolManageSkills(_ context.Context, argsJSON string) (string, e
 		b, _ := json.Marshal(map[string]any{
 			"ok":     true,
 			"count":  len(skills),
-			"skills": skills,
+			"skills": store.MaskSkillsForPublic(skills),
 		})
 		return string(b), nil
 

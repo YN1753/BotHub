@@ -634,6 +634,7 @@ func (s *Server) handleV2AppBootstrap(w http.ResponseWriter, r *http.Request) {
 	tasks, _ := s.schedulerTasksList()
 	bots, _ := s.store.ListBots()
 	skills, _ := s.store.ListSkills()
+	skills = store.MaskSkillsForPublic(skills)
 	notifications, _ := s.store.ListNotifications(0, 40, false)
 	assets, _ := s.store.ListAssets()
 	stash, _ := s.store.SearchStashItemsWithKind("", "all", "", "", 60)

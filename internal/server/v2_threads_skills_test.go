@@ -204,7 +204,7 @@ func TestV2SkillsThreadsScopedMemoriesAndBackup(t *testing.T) {
 	reqImp := httptest.NewRequest(http.MethodPost, "/api/backup/import", bytes.NewReader(rawBackup))
 	recImp := httptest.NewRecorder()
 	s2.handleImportBackup(recImp, reqImp)
-	if recImp.Code != http.StatusOK || !strings.Contains(recImp.Body.String(), `"skills_restored":5`) {
+	if recImp.Code != http.StatusOK || !strings.Contains(recImp.Body.String(), `"skills_restored":10`) {
 		t.Fatalf("import backup failed (%d): %s", recImp.Code, recImp.Body.String())
 	}
 

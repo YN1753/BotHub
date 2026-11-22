@@ -108,6 +108,11 @@ func init() {
 		calculateEvalToolSpec(),
 		datetimeCalcToolSpec(),
 		mountMCPToolSpec(),
+		githubConnectorToolSpec(),
+		emailConnectorToolSpec(),
+		cloudflareConnectorToolSpec(),
+		rssConnectorToolSpec(),
+		webdavConnectorToolSpec(),
 	}
 	builtinToolIndex = make(map[string]ToolSpec, len(builtinToolSpecs))
 	for _, sp := range builtinToolSpecs {

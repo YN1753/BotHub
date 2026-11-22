@@ -493,6 +493,11 @@ fun formatHumanToolName(toolName: String): String {
         clean == "manage_memory" -> "整理记忆"
         clean == "manage_assets" -> "资产台账"
         clean == "query_nezha_nodes" -> "探针巡检"
+        clean == "github_connector" -> "GitHub 连接器"
+        clean == "email_connector" -> "Gmail / 邮箱连接器"
+        clean == "cloudflare_connector" -> "Cloudflare 连接器"
+        clean == "rss_connector" -> "RSS 资讯订阅连接器"
+        clean == "webdav_connector" -> "WebDAV 云盘连接器"
         clean.startsWith("mcp_") -> clean.removePrefix("mcp_").replace("__", " · ")
         clean.startsWith("skill_") -> clean.removePrefix("skill_")
         clean.isBlank() -> "扩展能力"

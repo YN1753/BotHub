@@ -151,7 +151,7 @@ func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
 	}
 	if want["skills"] {
 		skills, _ := s.store.ListSkills()
-		resp["skills"] = skills
+		resp["skills"] = store.MaskSkillsForPublic(skills)
 	}
 	if want["notifications"] {
 		notifications, _ := s.store.ListNotifications(0, 40, false)
@@ -203,6 +203,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	notifications, _ := s.store.ListNotifications(0, 40, false)
 	bots, _ := s.store.ListBots()
 	skills, _ := s.store.ListSkills()
+	skills = store.MaskSkillsForPublic(skills)
 	todos, _ := s.store.ListTodos("all", "", 120)
 	notes, _ := s.store.ListNotes("", "", 80)
 	stashItems, _ := s.store.SearchStashItems("", "all", "", 100)

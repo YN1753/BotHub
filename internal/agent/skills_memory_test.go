@@ -702,4 +702,98 @@ func TestDynamicMCPAutoMountAndRemoteMCPProtocol(t *testing.T) {
 	if !containsNoInternetExcuse("抱歉，我目前没有联网方式，无法查询今日新闻。") {
 		t.Fatalf("expected containsNoInternetExcuse to detect excuse")
 	}
+
+	// 6. Connected Apps (GitHub / Cloudflare / RSS / WebDAV / Email) auto-mount + execution + secret masking
+	mockAppSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/gh/user/repos"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"full_name":"YN1753/BotHub","description":"Personal AI BotHub","stargazers_count":42,"open_issues_count":1,"language":"Go","html_url":"https://github.com/YN1753/BotHub"}]`))
+		case strings.HasPrefix(r.URL.Path, "/gh/repos/YN1753/BotHub/issues"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"number":88,"title":"Add App Connectors","html_url":"https://github.com/YN1753/BotHub/issues/88"}`))
+		case strings.HasPrefix(r.URL.Path, "/cf/zones"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"success":true,"result":[{"id":"zone_123456789012345678901234567890","name":"starryheavens.uk","status":"active"}]}`))
+		case strings.HasPrefix(r.URL.Path, "/rss/feed.xml"):
+			w.Header().Set("Content-Type", "application/rss+xml")
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Tech Radar</title><item><title>Go 1.26 Released</title><link>https://go.dev/blog/go1.26</link><description>Fast and clean.</description></item></channel></rss>`))
+		case strings.HasPrefix(r.URL.Path, "/dav/"):
+			if r.Method == "PROPFIND" {
+				w.Header().Set("Content-Type", "application/xml")
+				w.WriteHeader(http.StatusMultiStatus)
+				_, _ = w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>/dav/notes.md</D:href><D:propstat><D:prop><D:displayname>notes.md</D:displayname><D:getcontentlength>128</D:getcontentlength></D:prop></D:propstat></D:response></D:multistatus>`))
+			} else if r.Method == http.MethodPut {
+				w.WriteHeader(http.StatusCreated)
+			} else if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte("# Cloud Note\nHello WebDAV"))
+			}
+		}
+	}))
+	defer mockAppSrv.Close()
+
+	// Enable GitHub, Cloudflare, RSS, and WebDAV connectors
+	ghSk, _ := st.GetSkill(store.BuiltinMCPAppGitHubID)
+	ghSk.Enabled = true
+	ghSk.HTTPHeaders = fmt.Sprintf(`{"token":"ghp_secret1234567890","default_owner":"YN1753","api_base":%q}`, mockAppSrv.URL+"/gh")
+	_ = st.SaveSkill(*ghSk)
+
+	// Verify secret masking & preservation
+	maskedGH := ghSk.MaskedForPublic()
+	if strings.Contains(maskedGH.HTTPHeaders, "ghp_secret1234567890") || !strings.Contains(maskedGH.HTTPHeaders, "****") {
+		t.Fatalf("expected token to be masked in MaskedForPublic, got %s", maskedGH.HTTPHeaders)
+	}
+	mergedHeaders := store.MergePreservingMaskedSecrets(ghSk.HTTPHeaders, maskedGH.HTTPHeaders)
+	if !strings.Contains(mergedHeaders, "ghp_secret1234567890") {
+		t.Fatalf("expected MergePreservingMaskedSecrets to preserve raw token, got %s", mergedHeaders)
+	}
+
+	// Auto-mount GitHub connector when chat mentions GitHub PR / Issue
+	mountedGH := eng.autoMountRelevantMCPs(&bot, "帮我看看我 GitHub 仓库的 Issue 和 PR")
+	if len(mountedGH) == 0 || mountedGH[0].ID != store.BuiltinMCPAppGitHubID {
+		t.Fatalf("expected mcp_app_github to auto-mount on GitHub mention, got %+v", mountedGH)
+	}
+
+	ghReposOut, gErr := eng.ExecuteTool(ctx, "github_connector", `{"action":"list_repos"}`)
+	if gErr != nil || !strings.Contains(ghReposOut, "YN1753/BotHub") {
+		t.Fatalf("github_connector list_repos failed: err=%v out=%s", gErr, ghReposOut)
+	}
+	ghIssueOut, giErr := eng.ExecuteTool(ctx, "github_connector", `{"action":"create_issue","repo":"BotHub","title":"Add App Connectors","body":"Support GitHub/Gmail/CF"}`)
+	if giErr != nil || !strings.Contains(ghIssueOut, `"number":88`) {
+		t.Fatalf("github_connector create_issue failed: err=%v out=%s", giErr, ghIssueOut)
+	}
+
+	// Cloudflare connector test
+	cfSk, _ := st.GetSkill(store.BuiltinMCPAppCloudflareID)
+	cfSk.Enabled = true
+	cfSk.HTTPHeaders = fmt.Sprintf(`{"api_token":"cf_tok_12345678","default_zone":"starryheavens.uk","api_base":%q}`, mockAppSrv.URL+"/cf")
+	_ = st.SaveSkill(*cfSk)
+	cfZonesOut, cfErr := eng.ExecuteTool(ctx, "cloudflare_connector", `{"action":"list_zones"}`)
+	if cfErr != nil || !strings.Contains(cfZonesOut, "starryheavens.uk") {
+		t.Fatalf("cloudflare_connector list_zones failed: err=%v out=%s", cfErr, cfZonesOut)
+	}
+
+	// RSS connector test
+	rssSk, _ := st.GetSkill(store.BuiltinMCPAppRSSID)
+	rssSk.Enabled = true
+	rssSk.HTTPHeaders = fmt.Sprintf(`{"feeds":"TechRadar|%s/rss/feed.xml"}`, mockAppSrv.URL)
+	_ = st.SaveSkill(*rssSk)
+	rssOut, rErr := eng.ExecuteTool(ctx, "rss_connector", `{"action":"fetch_latest"}`)
+	if rErr != nil || !strings.Contains(rssOut, "Go 1.26 Released") {
+		t.Fatalf("rss_connector fetch_latest failed: err=%v out=%s", rErr, rssOut)
+	}
+
+	// WebDAV connector test
+	davSk, _ := st.GetSkill(store.BuiltinMCPAppWebDAVID)
+	davSk.Enabled = true
+	davSk.HTTPHeaders = fmt.Sprintf(`{"base_url":%q,"username":"u","password":"p"}`, mockAppSrv.URL+"/dav/")
+	_ = st.SaveSkill(*davSk)
+	davListOut, dlErr := eng.ExecuteTool(ctx, "webdav_connector", `{"action":"list_files","path":"/"}`)
+	if dlErr != nil || !strings.Contains(davListOut, "notes.md") {
+		t.Fatalf("webdav_connector list_files failed: err=%v out=%s", dlErr, davListOut)
+	}
+	davWriteOut, dwErr := eng.ExecuteTool(ctx, "webdav_connector", `{"action":"write_file","path":"/notes.md","content":"# Updated"}`)
+	if dwErr != nil || !strings.Contains(davWriteOut, `"ok":true`) {
+		t.Fatalf("webdav_connector write_file failed: err=%v out=%s", dwErr, davWriteOut)
+	}
 }

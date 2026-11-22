@@ -18,6 +18,12 @@ const (
 	BuiltinMCPAssetsID    = "mcp_assets"
 	BuiltinMCPNezhaID     = "mcp_nezha"
 	BuiltinMCPOpsID       = "mcp_ops"
+
+	BuiltinMCPAppGitHubID     = "mcp_app_github"
+	BuiltinMCPAppEmailID      = "mcp_app_email"
+	BuiltinMCPAppCloudflareID = "mcp_app_cloudflare"
+	BuiltinMCPAppRSSID        = "mcp_app_rss"
+	BuiltinMCPAppWebDAVID     = "mcp_app_webdav"
 )
 
 type SkillParamField struct {
@@ -65,7 +71,75 @@ func NormalizeSkillKind(raw string) string {
 }
 
 func (sk Skill) IsBuiltinMCP() bool {
-	return sk.Kind == SkillKindBuiltinMCP || strings.HasPrefix(sk.ID, "mcp_") && (sk.ID == BuiltinMCPWorkbenchID || sk.ID == BuiltinMCPAssetsID || sk.ID == BuiltinMCPNezhaID || sk.ID == BuiltinMCPOpsID)
+	return sk.Kind == SkillKindBuiltinMCP || strings.HasPrefix(sk.ID, "mcp_") && (sk.ID == BuiltinMCPWorkbenchID || sk.ID == BuiltinMCPAssetsID || sk.ID == BuiltinMCPNezhaID || sk.ID == BuiltinMCPOpsID || sk.IsAppConnector())
+}
+
+func (sk Skill) IsAppConnector() bool {
+	return strings.HasPrefix(strings.TrimSpace(sk.ID), "mcp_app_")
+}
+
+func isSecretHeaderKey(k string) bool {
+	low := strings.ToLower(strings.TrimSpace(k))
+	return low == "token" || low == "password" || low == "api_token" || low == "api_key" || low == "secret" || low == "authorization"
+}
+
+func MaskSecretHeadersJSON(rawJSON string) string {
+	var m map[string]string
+	if err := json.Unmarshal([]byte(rawJSON), &m); err != nil || len(m) == 0 {
+		return rawJSON
+	}
+	changed := false
+	for k, v := range m {
+		if isSecretHeaderKey(k) && strings.TrimSpace(v) != "" && !strings.Contains(v, "****") {
+			m[k] = MaskSecretValue(v)
+			changed = true
+		}
+	}
+	if !changed {
+		return rawJSON
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return rawJSON
+	}
+	return string(b)
+}
+
+func MergePreservingMaskedSecrets(oldJSON, newJSON string) string {
+	var oldMap, newMap map[string]string
+	_ = json.Unmarshal([]byte(oldJSON), &oldMap)
+	if err := json.Unmarshal([]byte(newJSON), &newMap); err != nil {
+		return newJSON
+	}
+	for k, newVal := range newMap {
+		if strings.Contains(newVal, "****") {
+			if oldVal, ok := oldMap[k]; ok && strings.TrimSpace(oldVal) != "" {
+				newMap[k] = oldVal
+			}
+		}
+	}
+	b, err := json.Marshal(newMap)
+	if err != nil {
+		return newJSON
+	}
+	return string(b)
+}
+
+func (sk Skill) MaskedForPublic() Skill {
+	cp := sk
+	cp.HTTPHeaders = MaskSecretHeadersJSON(cp.HTTPHeaders)
+	return cp
+}
+
+func MaskSkillsForPublic(list []Skill) []Skill {
+	if len(list) == 0 {
+		return list
+	}
+	out := make([]Skill, len(list))
+	for i := range list {
+		out[i] = list[i].MaskedForPublic()
+	}
+	return out
 }
 
 func (sk Skill) Params() []SkillParamField {
@@ -202,6 +276,81 @@ func BuiltinMCPServers() []Skill {
 			}),
 			Enabled: true,
 		},
+		{
+			ID:          BuiltinMCPAppGitHubID,
+			Name:        "GitHub 应用连接器",
+			Slug:        "github",
+			Kind:        SkillKindBuiltinMCP,
+			Description: "连接 GitHub 账号：查询与搜索代码仓库、查看或新建 Issue/评论、检索 Pull Requests、查看与重跑 GitHub Actions 流水线及未读通知",
+			Instruction: "github,仓库,repo,issue,pr,pull request,actions,流水线,workflow,commit,提交,开源项目,代码库",
+			HTTPMethod:  "APP",
+			HTTPURL:     "mcp://app/github",
+			HTTPHeaders: "{}",
+			ParamsSchema: mustMarshalMCPTools([]MCPToolMeta{
+				{Name: "github_connector", Description: "GitHub 全功能连接器：支持 list_repos / get_repo / list_issues / create_issue / comment_issue / list_pulls / list_runs / rerun_workflow / list_notifications / search"},
+			}),
+			Enabled: false,
+		},
+		{
+			ID:          BuiltinMCPAppEmailID,
+			Name:        "Gmail 与通用邮箱连接器",
+			Slug:        "email",
+			Kind:        SkillKindBuiltinMCP,
+			Description: "连接 Gmail 或任意 IMAP/SMTP 邮箱：读取最新未读邮件、按发件人或主题搜索邮件、查看邮件全文以及发送/回复邮件",
+			Instruction: "gmail,邮箱,邮件,email,mail,收件箱,未读邮件,发邮件,发信,回信,smtp,imap",
+			HTTPMethod:  "APP",
+			HTTPURL:     "mcp://app/email",
+			HTTPHeaders: "{}",
+			ParamsSchema: mustMarshalMCPTools([]MCPToolMeta{
+				{Name: "email_connector", Description: "Gmail 与通用 IMAP/SMTP 邮箱连接器：支持 list_unread / list_recent / search_emails / read_email / send_email"},
+			}),
+			Enabled: false,
+		},
+		{
+			ID:          BuiltinMCPAppCloudflareID,
+			Name:        "Cloudflare 应用连接器",
+			Slug:        "cloudflare",
+			Kind:        SkillKindBuiltinMCP,
+			Description: "连接 Cloudflare 账号：查看域名 Zone 列表、查询/新增/修改/删除 DNS 解析记录以及一键清理站点缓存",
+			Instruction: "cloudflare,cf,dns,域名解析,解析记录,a记录,cname,清缓存,zone,cdn",
+			HTTPMethod:  "APP",
+			HTTPURL:     "mcp://app/cloudflare",
+			HTTPHeaders: "{}",
+			ParamsSchema: mustMarshalMCPTools([]MCPToolMeta{
+				{Name: "cloudflare_connector", Description: "Cloudflare 域名与 DNS 连接器：支持 list_zones / list_dns / upsert_dns / delete_dns / purge_cache"},
+			}),
+			Enabled: false,
+		},
+		{
+			ID:          BuiltinMCPAppRSSID,
+			Name:        "RSS 资讯源订阅连接器",
+			Slug:        "rss",
+			Kind:        SkillKindBuiltinMCP,
+			Description: "绑定常看的博客、科技资讯、YouTube 频道与开源动态 RSS/Atom 订阅源，支持并发抓取最新文章及动态增删订阅源",
+			Instruction: "rss,订阅源,atom,feed,博客更新,订阅文章,最新文章,资讯源",
+			HTTPMethod:  "APP",
+			HTTPURL:     "mcp://app/rss",
+			HTTPHeaders: "{}",
+			ParamsSchema: mustMarshalMCPTools([]MCPToolMeta{
+				{Name: "rss_connector", Description: "RSS/Atom 资讯源订阅连接器：支持 fetch_latest / list_feeds / add_feed / remove_feed"},
+			}),
+			Enabled: false,
+		},
+		{
+			ID:          BuiltinMCPAppWebDAVID,
+			Name:        "WebDAV / Alist 云盘连接器",
+			Slug:        "webdav",
+			Kind:        SkillKindBuiltinMCP,
+			Description: "连接坚果云、Alist、Nextcloud 等 WebDAV 云盘存储：浏览云端目录、读取云端文档以及上传/保存笔记与文件到云盘",
+			Instruction: "webdav,alist,坚果云,nextcloud,云盘,网盘,云端文件,上传云盘,云存储",
+			HTTPMethod:  "APP",
+			HTTPURL:     "mcp://app/webdav",
+			HTTPHeaders: "{}",
+			ParamsSchema: mustMarshalMCPTools([]MCPToolMeta{
+				{Name: "webdav_connector", Description: "WebDAV / Alist 云盘读写连接器：支持 list_files / read_file / write_file / mkdir / delete_file"},
+			}),
+			Enabled: false,
+		},
 	}
 }
 
@@ -210,9 +359,12 @@ func (s *Store) SeedBuiltinMCPs() error {
 	for _, mcp := range BuiltinMCPServers() {
 		existing, _ := s.GetSkill(mcp.ID)
 		if existing != nil {
-			// Refresh built-in MCP schema/description while preserving user's enabled toggle
+			// Refresh built-in MCP schema/description while preserving user's enabled toggle & configured headers
 			mcp.Enabled = existing.Enabled
 			mcp.CreatedAt = existing.CreatedAt
+			if strings.TrimSpace(existing.HTTPHeaders) != "" && strings.TrimSpace(existing.HTTPHeaders) != "{}" {
+				mcp.HTTPHeaders = existing.HTTPHeaders
+			}
 		} else {
 			mcp.CreatedAt = now
 		}

@@ -44,7 +44,7 @@ func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "获取 MCP 与技能列表失败: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "skills": skills})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "skills": store.MaskSkillsForPublic(skills)})
 }
 
 func (s *Server) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +191,7 @@ func (s *Server) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if existing.IsBuiltinMCP() {
-		// Built-in MCP servers allow toggling enabled or updating trigger instruction/description
+		// Built-in MCP servers & App Connectors allow toggling enabled, updating credentials/headers, or updating trigger instruction/description
 		if req.Enabled != nil {
 			existing.Enabled = *req.Enabled
 		}
@@ -203,13 +203,27 @@ func (s *Server) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 		if req.Instruction != nil {
 			existing.Instruction = notifier.StripEmoji(strings.TrimSpace(*req.Instruction))
 		}
+		if req.HTTPHeaders != nil {
+			merged := store.MergePreservingMaskedSecrets(existing.HTTPHeaders, strings.TrimSpace(*req.HTTPHeaders))
+			var hdrs map[string]any
+			if json.Unmarshal([]byte(merged), &hdrs) != nil {
+				writeError(w, http.StatusBadRequest, "http_headers 必须为合法 JSON 对象")
+				return
+			}
+			existing.HTTPHeaders = merged
+		}
 		if err := s.store.SaveSkill(*existing); err != nil {
-			writeError(w, http.StatusInternalServerError, "更新内置 MCP 状态失败: "+err.Error())
+			writeError(w, http.StatusInternalServerError, "更新内置 MCP / 连接器状态失败: "+err.Error())
 			return
 		}
 		updated, _ := s.store.GetSkill(id)
+		var masked any
+		if updated != nil {
+			m := updated.MaskedForPublic()
+			masked = m
+		}
 		s.publishAssistantEvent("skills")
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "skill": updated})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "skill": masked})
 		return
 	}
 
@@ -240,7 +254,7 @@ func (s *Server) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 		existing.HTTPURL = strings.TrimSpace(*req.HTTPURL)
 	}
 	if req.HTTPHeaders != nil {
-		existing.HTTPHeaders = strings.TrimSpace(*req.HTTPHeaders)
+		existing.HTTPHeaders = store.MergePreservingMaskedSecrets(existing.HTTPHeaders, strings.TrimSpace(*req.HTTPHeaders))
 	}
 	if req.ParamsSchema != nil {
 		existing.ParamsSchema = strings.TrimSpace(*req.ParamsSchema)
@@ -343,6 +357,24 @@ func (s *Server) handleTestSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	kind := store.NormalizeSkillKind(sk.Kind)
+	if sk.IsAppConnector() {
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		start := time.Now()
+		msg, tErr := s.agent.TestAppConnector(ctx, *sk)
+		latencyMs := time.Since(start).Milliseconds()
+		if tErr != nil {
+			writeError(w, http.StatusBadGateway, tErr.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":         true,
+			"latency_ms": latencyMs,
+			"tools":      sk.MCPTools(),
+			"result":     msg,
+		})
+		return
+	}
 	if kind == store.SkillKindBuiltinMCP {
 		tools := sk.MCPTools()
 		names := make([]string, 0, len(tools))
