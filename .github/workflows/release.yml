@@ -82,12 +82,15 @@ jobs:
           mkdir -p dist
           LDFLAGS="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X 'main.BuildTime=${BUILD_TIME}'"
           go build -trimpath -ldflags="${LDFLAGS}" -o "dist/${{ matrix.binary_name }}" .
+          if [ "${{ matrix.goos }}" = "linux" ] && [ "${{ matrix.goarch }}" = "amd64" ] && [ -d "cmd/sandbox-agent" ]; then
+            GOAMD64=v2 go build -trimpath -ldflags="-s -w" -o "dist/vesper-sandbox-agent-linux-amd64" ./cmd/sandbox-agent
+          fi
 
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.binary_name }}
-          path: dist/${{ matrix.binary_name }}
+          path: dist/*
           retention-days: 1
 
   build-android:
@@ -175,11 +178,11 @@ jobs:
 
   # NOTE: Do NOT remove the deploy job below; it handles automatic continuous deployment to the production VPS!
   deploy:
-    name: Deploy to CloudCone VPS
+    name: Deploy to RackNerd VPS
     needs: release
     runs-on: ubuntu-latest
     concurrency:
-      group: vps-deploy
+      group: vps-deploy-bothub
       cancel-in-progress: false
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -207,24 +210,28 @@ jobs:
         if: steps.check-secrets.outputs.skip == 'false'
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.VPS_HOST || '103.232.94.2' }}
+          host: ${{ secrets.VPS_HOST || '198.84.85.196' }}
           username: ${{ secrets.VPS_USER || 'root' }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
           script: |
             set -e
             TAG="${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}"
-            echo "[1/4] Fetching binary (tag: ${TAG}) from GitHub Releases..."
-            curl -fsSL -o /tmp/bothub-new "https://github.com/YN1753/BotHub/releases/download/${TAG}/bothub-linux-amd64"
-            chmod +x /tmp/bothub-new
+            mkdir -p /tmp/bothub-ci && cd /tmp/bothub-ci
+            echo "[1/4] Fetching binary and checksums (tag: ${TAG}) from GitHub Releases..."
+            curl -fsSL -o bothub-linux-amd64 "https://github.com/YN1753/BotHub/releases/download/${TAG}/bothub-linux-amd64"
+            curl -fsSL -o checksums.txt "https://github.com/YN1753/BotHub/releases/download/${TAG}/checksums.txt"
+            grep 'bothub-linux-amd64' checksums.txt | sha256sum -c -
+            chmod +x bothub-linux-amd64
 
             echo "[2/4] Stopping bothub service..."
             systemctl stop bothub || true
 
             echo "[3/4] Deploying new binary..."
-            mv /tmp/bothub-new /opt/bothub/bothub
+            mv bothub-linux-amd64 /opt/bothub/bothub
+            rm -rf /tmp/bothub-ci
 
             echo "[4/4] Restarting and verifying service..."
             systemctl start bothub
             sleep 2
-            systemctl is-active --quiet bothub && echo "BotHub deployed successfully and is active!"
+            systemctl is-active --quiet bothub && echo "BotHub deployed successfully from GitHub Release ${TAG}!"
