@@ -22,7 +22,7 @@ const name = ref('')
 const type = ref('morning')
 const botId = ref('')
 const taskModel = ref('')
-const allowPaidFallback = ref(false)
+const allowPaidFallback = ref(true)
 const maxPaidCallsPerDay = ref(0)
 const enabled = ref(true)
 const description = ref('')
@@ -97,7 +97,7 @@ const botOptions = computed(() => [
   ...store.state.bots.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` })),
 ])
 const taskModelOptions = computed(() => [
-  { value: '', label: '沿用默认 (优先免费模型池 / 绑定 Bot)' },
+  { value: '', label: '沿用默认 (优先付费主力池 / 绑定 Bot)' },
   ...store.modelOptions.value,
 ])
 const currentFields = computed(() => {
@@ -159,7 +159,7 @@ watch(
       type.value = store.state.templates[0]?.type || 'bot_prompt'
       botId.value = (item as any)?.bot_id || store.state.activeBotId || ''
       taskModel.value = ''
-      allowPaidFallback.value = false
+      allowPaidFallback.value = true
       maxPaidCallsPerDay.value = 0
       enabled.value = true
       description.value = ''

@@ -1081,24 +1081,14 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         botMode: String,
         traits: String,
         systemPrompt: String,
-        model: String = "auto:free",
-        allowPaidFallback: Boolean = false,
+        model: String = "auto:paid",
+        allowPaidFallback: Boolean = true,
         allowedTools: List<String>? = null,
         skillIds: List<String> = emptyList()
     ): Result<BotItem> = withContext(Dispatchers.IO) {
         runCatching {
             val toolsArr = JSONArray()
-            if (allowedTools != null) {
-                allowedTools.forEach { toolsArr.put(it) }
-            } else if (botMode == "companion") {
-                toolsArr.put("remember_fact").put("recall_memory")
-            } else {
-                listOf(
-                    "manage_todos", "manage_notes", "manage_stash", "manage_tasks",
-                    "manage_assets", "query_nezha_nodes", "web_search", "read_url",
-                    "calculate_eval", "datetime_calc", "remember_fact", "recall_memory"
-                ).forEach { toolsArr.put(it) }
-            }
+            allowedTools?.forEach { toolsArr.put(it) }
             val skillArr = JSONArray()
             skillIds.forEach { skillArr.put(it) }
             val payload = JSONObject()
@@ -1106,13 +1096,14 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("role_title", roleTitle.trim())
                 .put("avatar_style", avatarStyle)
                 .put("bot_mode", botMode)
-                .put("model", model.ifBlank { "auto:free" })
+                .put("memory_policy", "standard")
+                .put("model", model.ifBlank { "auto:paid" })
                 .put("allow_paid_fallback", allowPaidFallback)
                 .put("traits", traits.trim())
                 .put("system_prompt", systemPrompt.trim())
                 .put("allowed_tools", toolsArr.toString())
                 .put("skill_ids", skillArr.toString())
-                .put("enable_thinking", botMode != "companion")
+                .put("enable_thinking", true)
                 .toString()
             val req = requestBuilder("/api/v2/bots")
                 .post(jsonBody(payload))

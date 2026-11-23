@@ -18,8 +18,8 @@ const bot = store.activeBot
 const cfgName = ref('')
 const cfgRole = ref('')
 const cfgPrompt = ref('')
-const cfgModel = ref('auto:free')
-const cfgAllowPaidFallback = ref(false)
+const cfgModel = ref('auto:paid')
+const cfgAllowPaidFallback = ref(true)
 const cfgAvatar = ref('butler:gold')
 const cfgThinking = ref(true)
 const cfgBotMode = ref<BotMode>('hybrid')
@@ -29,6 +29,7 @@ const cfgSkillIds = ref<string[]>([])
 const cfgMembers = ref<string[]>([])
 const cfgGroupMode = ref('smart')
 const savingProfile = ref(false)
+const forgingPrompt = ref(false)
 
 const newMemKey = ref('')
 const newMemContent = ref('')
@@ -58,7 +59,7 @@ const availableSkills = computed(() => (store.state.skills || []).filter((s) => 
 const hasProfileChanges = computed(() => {
   const b = bot.value
   if (!b) return false
-  const normModel = !b.model || b.model === 'free-pool' ? 'auto:free' : b.model
+  const normModel = !b.model ? 'auto:paid' : b.model === 'free-pool' ? 'auto:free' : b.model
   const normMode = (b.bot_mode as BotMode) || 'hybrid'
   const normPolicy = (b.memory_policy as MemoryPolicy) || 'standard'
   const parseSorted = (raw?: string) => parseJsonStringArray(raw).toSorted().join(',')
@@ -87,7 +88,7 @@ watch(
   bot,
   (b) => {
     if (!b) return
-    const normModel = !b.model || b.model === 'free-pool' ? 'auto:free' : b.model
+    const normModel = !b.model ? 'auto:paid' : b.model === 'free-pool' ? 'auto:free' : b.model
     cfgName.value = b.name
     cfgRole.value = b.role_title
     cfgPrompt.value = b.system_prompt
@@ -111,6 +112,36 @@ function toggleCfgMember(id: string) {
     cfgMembers.value = cfgMembers.value.filter((x) => x !== id)
   } else {
     cfgMembers.value = [...cfgMembers.value, id]
+  }
+}
+
+async function forgeBotPromptWithAI() {
+  if (forgingPrompt.value) return
+  if (!cfgName.value.trim()) {
+    store.notify('请先填写 Bot 名称')
+    return
+  }
+  forgingPrompt.value = true
+  try {
+    const res = await BotHubApi.forgeBotPrompt({
+      bot_id: bot.value?.id,
+      name: cfgName.value.trim(),
+      role_title: cfgRole.value.trim(),
+      bot_mode: cfgBotMode.value,
+      traits: cfgTraits.value.trim(),
+      system_prompt: cfgPrompt.value.trim(),
+    })
+    if (res.system_prompt) {
+      cfgPrompt.value = res.system_prompt
+    }
+    if (res.traits && res.traits.trim()) {
+      cfgTraits.value = res.traits.trim()
+    }
+    store.notify('已完成 AI 人设深度精修，请检查后点击「保存配置」生效')
+  } catch (err: any) {
+    store.notify(err.message || 'AI 精修人设失败')
+  } finally {
+    forgingPrompt.value = false
   }
 }
 
@@ -331,11 +362,22 @@ function openScopedMemoriesManager() {
           </div>
 
           <label class="md:col-span-2 flex flex-col gap-1.5 text-xs text-fg-sub">
-            <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center justify-between gap-2 flex-wrap">
               <span>专属人设与行为约束 (System Prompt)</span>
-              <span class="font-mono text-xs text-fg-muted">{{ cfgPrompt.length }} 字符</span>
+              <div class="flex items-center gap-2">
+                <button
+                  v-if="!isGroupBot"
+                  type="button"
+                  :disabled="forgingPrompt"
+                  @click="forgeBotPromptWithAI"
+                  class="px-2.5 py-1 rounded-lg border border-accent-border bg-accent-soft text-accent-fg hover:bg-accent/20 text-xs font-medium cursor-pointer disabled:opacity-50"
+                >
+                  {{ forgingPrompt ? 'AI 精修中...' : 'AI 深度精修人设' }}
+                </button>
+                <span class="font-mono text-xs text-fg-muted">{{ cfgPrompt.length }} 字符</span>
+              </div>
             </div>
-            <textarea v-model="cfgPrompt" rows="4" class="auto-size-textarea rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent resize-y" />
+            <textarea v-model="cfgPrompt" rows="5" class="auto-size-textarea rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent resize-y" />
           </label>
 
           <div class="md:col-span-2 rounded-xl border border-line bg-canvas/70 px-3.5 py-2.5 flex flex-col gap-1 text-xs">

@@ -159,10 +159,6 @@ func (e *Engine) RunAutoDream(ctx context.Context, targetScope string, isBackgro
 	nowStr := now.Format("2006-01-02 15:04:05")
 	lastDreamAt, _ := e.store.GetConfig(ConfigKeyLastAutoDreamAt)
 
-	if isBackground {
-		ctx = store.WithPaidFallback(ctx, false)
-	}
-
 	// Phase 1: Determine scopes to process
 	scopeArg := strings.TrimSpace(targetScope)
 	var scopes []string

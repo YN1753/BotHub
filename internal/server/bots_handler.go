@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/store"
@@ -98,12 +100,25 @@ func (s *Server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 	if req.SystemPrompt == "" {
 		if req.IsGroup {
 			req.SystemPrompt = "你是协同群聊成员的统筹伙伴，结合各位成员专长简洁协作，严禁使用 Emoji。"
-		} else if req.BotMode == store.BotModeCompanion {
-			req.SystemPrompt = "你是一个真诚、有温度、有自己性格的聊天伙伴。像老朋友一样自然聊天陪伴，记住我们的点滴约定，严禁使用 Emoji。"
-		} else if req.BotMode == store.BotModeWorker {
-			req.SystemPrompt = "你是干练可靠的专业执行助手，优先调动绑定工具与技能核查真实数据并直接落地解决，严禁使用 Emoji。"
-		} else {
-			req.SystemPrompt = "你是用户的专属智能伙伴，既能自然沟通陪伴也能调动工具高效办事，严禁使用 Emoji。"
+		} else if s.agent != nil {
+			forgeCtx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+			forged, forgedTraits, _ := s.agent.ForgeHighIQBotPrompt(forgeCtx, req.Name, req.RoleTitle, req.BotMode, req.Traits, "")
+			cancel()
+			if strings.TrimSpace(forged) != "" {
+				req.SystemPrompt = forged
+			}
+			if req.Traits == "" && strings.TrimSpace(forgedTraits) != "" {
+				req.Traits = forgedTraits
+			}
+		}
+		if req.SystemPrompt == "" {
+			if req.BotMode == store.BotModeCompanion {
+				req.SystemPrompt = "你是一个真诚、有温度、有自己性格的聊天伙伴。像老朋友一样自然聊天陪伴，记住我们的点滴约定，严禁使用 Emoji。"
+			} else if req.BotMode == store.BotModeWorker {
+				req.SystemPrompt = "你是干练可靠的专业执行助手，优先调动绑定工具与技能核查真实数据并直接落地解决，严禁使用 Emoji。"
+			} else {
+				req.SystemPrompt = "你是用户的专属智能伙伴，既能自然沟通陪伴也能调动工具高效办事，严禁使用 Emoji。"
+			}
 		}
 	}
 	if v, ok := normalizeJSONStringArray(req.AllowedTools, ""); !ok {
@@ -132,6 +147,9 @@ func (s *Server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 		} else {
 			req.SortOrder = 20
 		}
+	}
+	if strings.TrimSpace(req.Model) == "" {
+		req.Model = "auto:paid"
 	}
 	req.IsBuiltin = false
 	req.State = store.BotStateIdle
@@ -291,4 +309,73 @@ func (s *Server) handleDeleteBot(w http.ResponseWriter, r *http.Request) {
 	}
 	s.publishAssistantEvent("bots")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleForgeBotPrompt(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		BotID        string `json:"bot_id"`
+		Name         string `json:"name"`
+		RoleTitle    string `json:"role_title"`
+		BotMode      string `json:"bot_mode"`
+		Traits       string `json:"traits"`
+		SystemPrompt string `json:"system_prompt"`
+		Apply        bool   `json:"apply"`
+	}
+	if !decodeJSON(w, r, 64*1024, &req) {
+		return
+	}
+	if s.agent == nil {
+		writeError(w, http.StatusServiceUnavailable, "Agent 引擎未初始化")
+		return
+	}
+	var existing *store.Bot
+	if id := strings.TrimSpace(req.BotID); id != "" {
+		existing, _ = s.store.GetBot(id)
+		if existing != nil {
+			if strings.TrimSpace(req.Name) == "" {
+				req.Name = existing.Name
+			}
+			if strings.TrimSpace(req.RoleTitle) == "" {
+				req.RoleTitle = existing.RoleTitle
+			}
+			if strings.TrimSpace(req.BotMode) == "" {
+				req.BotMode = existing.BotMode
+			}
+			if strings.TrimSpace(req.Traits) == "" {
+				req.Traits = existing.Traits
+			}
+			if strings.TrimSpace(req.SystemPrompt) == "" {
+				req.SystemPrompt = existing.SystemPrompt
+			}
+		}
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "请提供 Bot 名称或 bot_id")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+	defer cancel()
+	forgedPrompt, forgedTraits, err := s.agent.ForgeHighIQBotPrompt(ctx, req.Name, req.RoleTitle, req.BotMode, req.Traits, req.SystemPrompt)
+	if err != nil && strings.TrimSpace(forgedPrompt) == "" {
+		writeError(w, http.StatusBadGateway, "AI 精修人设失败: "+err.Error())
+		return
+	}
+	if req.Apply && existing != nil {
+		existing.SystemPrompt = forgedPrompt
+		if strings.TrimSpace(forgedTraits) != "" {
+			existing.Traits = forgedTraits
+		}
+		existing.Model = "auto:paid"
+		existing.AllowPaidFallback = true
+		existing.EnableThinking = true
+		existing.AllowedTools = "[]"
+		_ = s.store.SaveBot(*existing)
+		s.publishAssistantEvent("bots")
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"system_prompt": forgedPrompt,
+		"traits":        forgedTraits,
+		"applied":       req.Apply && existing != nil,
+	})
 }

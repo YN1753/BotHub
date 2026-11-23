@@ -420,17 +420,15 @@ export function useAppStore() {
 
     const out: SelectOption[] = [
       {
+        value: 'auto:paid',
+        label: paidReady > 0 ? `自动 · 付费主力池 (${paidReady} 可用)` : '自动 · 付费主力池 (未配置)',
+      },
+      {
         value: 'auto:free',
         label: freeReady > 0 ? `自动 · 免费模型池 (${freeReady} 可用)` : '自动 · 免费模型池 (未配置)',
       },
     ]
-    if (paidReady > 0 || paidOpts.length > 0) {
-      out.push({
-        value: 'auto:paid',
-        label: `自动 · 付费模型池 (${paidReady} 可用)`,
-      })
-    }
-    return [...out, ...freeOpts, ...paidOpts]
+    return [...out, ...paidOpts, ...freeOpts]
   })
 
   async function checkAuth() {

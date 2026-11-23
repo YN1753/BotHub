@@ -89,7 +89,7 @@ data class TaskItem(
     val nextRunAt: String,
     val lastSummary: String,
     val model: String = "",
-    val allowPaidFallback: Boolean = false,
+    val allowPaidFallback: Boolean = true,
     val maxPaidCallsPerDay: Int = 0,
     val botId: String = "",
     val description: String = "",
@@ -413,7 +413,7 @@ data class BotItem(
     val groupMode: String = "smart",
     val announcement: String = "",
     val updatedAt: String = "",
-    val allowPaidFallback: Boolean = false,
+    val allowPaidFallback: Boolean = true,
     val allowedTools: List<String> = emptyList(),
     val skillIds: List<String> = emptyList()
 ) {

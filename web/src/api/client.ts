@@ -288,6 +288,23 @@ export const BotHubApi = {
   // Persistent Bots
   createBot: (payload: Partial<Bot>) =>
     apiRequest<{ ok: boolean; bot: Bot }>('/api/v2/bots', { method: 'POST', body: JSON.stringify(payload) }),
+  forgeBotPrompt: (payload: {
+    bot_id?: string
+    name: string
+    role_title?: string
+    bot_mode?: string
+    traits?: string
+    system_prompt?: string
+    apply?: boolean
+  }) =>
+    apiRequest<{ ok: boolean; system_prompt: string; traits?: string; applied?: boolean }>(
+      '/api/v2/bots/forge-prompt',
+      {
+        method: 'POST',
+        timeoutMs: 50_000,
+        body: JSON.stringify(payload),
+      }
+    ),
   updateBot: (id: string, payload: Partial<Bot>) =>
     apiRequest<{ ok: boolean; bot: Bot }>(`/api/v2/bots/${encodeURIComponent(id)}`, {
       method: 'POST',

@@ -79,6 +79,7 @@ func main() {
 	}
 	registry.SetLightSummarizer(modules.LightSummarizerFunc(srvHandler.Agent().CallLightModel))
 	srvHandler.Agent().StartAutoDreamLoop(maintCtx)
+	srvHandler.Agent().AutoUpgradeExistingThinBotsOnce(maintCtx)
 
 	if err := sched.Start(); err != nil {
 		log.Fatalf("[bothub] failed to start scheduler: %v", err)

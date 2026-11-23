@@ -68,7 +68,7 @@ export function useBotChatStream(options: {
     const activeThreadSnapshot = store.state.activeThreadId || ''
     const quote = replyTarget.value
     const notifQuote = store.state.pendingNotificationQuote
-    const effectiveModel = (turnOpts?.overrideModel || selectedModel.value || 'auto:free').trim()
+    const effectiveModel = (turnOpts?.overrideModel || selectedModel.value || 'auto:paid').trim()
     lastPrompt.value = msg
     if (!overrideText) {
       inputPrompt.value = ''

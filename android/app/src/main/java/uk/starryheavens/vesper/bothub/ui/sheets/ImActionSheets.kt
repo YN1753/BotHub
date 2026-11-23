@@ -929,7 +929,7 @@ fun CreateFriendSheet(
     var roleTitle by remember { mutableStateOf("") }
     var traits by remember { mutableStateOf("") }
     var systemPrompt by remember { mutableStateOf("") }
-    var allowPaidFallback by remember { mutableStateOf(false) }
+    var allowPaidFallback by remember { mutableStateOf(true) }
     var selectedSkillIds by remember { mutableStateOf<List<String>>(emptyList()) }
 
     ModalBottomSheet(
@@ -1040,13 +1040,13 @@ fun CreateFriendSheet(
             ) {
                 Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                     Text(
-                        text = "允许该 Bot 付费兜底",
+                        text = "允许该 Bot 调用付费主力池",
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.Medium,
                         color = theme.textPrimary
                     )
                     Text(
-                        text = "默认关闭（仅免费模型池）",
+                        text = "默认开启（优先付费主力模型池）",
                         fontSize = 11.5.sp,
                         color = theme.textSecondary
                     )
@@ -1064,16 +1064,13 @@ fun CreateFriendSheet(
                 onClick = {
                     val cleanName = name.trim()
                     if (cleanName.isNotEmpty()) {
-                        val prompt = systemPrompt.trim().ifEmpty {
-                            "你是用户的专属 AI 好友「$cleanName」（${roleTitle.ifBlank { "智能伙伴" }}）。${traits.ifBlank { "交流自然真诚、条理清晰" }}。严禁使用任何 Emoji。"
-                        }
                         onSubmit(
                             cleanName,
                             roleTitle.trim().ifEmpty { "AI 好友" },
                             selectedAvatar,
                             selectedMode,
                             traits.trim(),
-                            prompt,
+                            systemPrompt.trim(),
                             allowPaidFallback,
                             emptyList(),
                             selectedSkillIds
@@ -1815,8 +1812,8 @@ internal fun resolveModelOptionDisplayName(
             }
     }
     return when {
-        clean.isEmpty() || clean == "auto:free" || clean == "free-pool" -> "自动 · 免费池"
-        clean == "auto:paid" || clean == "paid-pool" -> "自动 · 付费池"
+        clean.isEmpty() || clean == "auto:paid" || clean == "paid-pool" -> "自动 · 付费池"
+        clean == "auto:free" || clean == "free-pool" -> "自动 · 免费池"
         clean.contains("::") -> clean.substringAfter("::")
         else -> clean
     }
@@ -1839,6 +1836,14 @@ fun ModelPickerSheet(
         modelOptions.ifEmpty {
             listOf(
                 ModelOptionItem(
+                    id = "auto:paid",
+                    label = "自动 · 付费主力池",
+                    tier = "auto",
+                    provider = "paid-pool",
+                    model = "auto:paid",
+                    available = true
+                ),
+                ModelOptionItem(
                     id = "auto:free",
                     label = "自动 · 免费模型池",
                     tier = "auto",
@@ -1852,8 +1857,8 @@ fun ModelPickerSheet(
     val sections = remember(effectiveOptions) {
         listOf(
             "自动池路由" to effectiveOptions.filter { it.tier == "auto" },
-            "免费模型池" to effectiveOptions.filter { it.tier == "free" },
-            "付费模型池" to effectiveOptions.filter { it.tier == "paid" }
+            "付费主力池" to effectiveOptions.filter { it.tier == "paid" },
+            "免费模型池" to effectiveOptions.filter { it.tier == "free" }
         ).filter { it.second.isNotEmpty() }
     }
 
@@ -1904,7 +1909,8 @@ fun ModelPickerSheet(
                     items(itemsList, key = { it.id }) { opt ->
                         val selected = activeModel == opt.id ||
                             (activeModel == "free-pool" && opt.id == "auto:free") ||
-                            (activeModel.isBlank() && opt.id == "auto:free")
+                            (activeModel == "paid-pool" && opt.id == "auto:paid") ||
+                            (activeModel.isBlank() && opt.id == "auto:paid")
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

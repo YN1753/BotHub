@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -50,6 +51,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -1460,7 +1462,7 @@ private fun TaskEditorSheet(
         mutableStateOf(fromParams.ifBlank { task?.description.orEmpty() })
     }
     var model by remember(task) { mutableStateOf(task?.model.orEmpty()) }
-    var allowPaidFallback by remember(task) { mutableStateOf(task?.allowPaidFallback ?: false) }
+    var allowPaidFallback by remember(task) { mutableStateOf(task?.allowPaidFallback ?: true) }
     var maxPaidCallsText by remember(task) {
         val v = task?.maxPaidCallsPerDay ?: 0
         mutableStateOf(if (v > 0) v.toString() else "0")
@@ -1696,8 +1698,8 @@ private fun TaskEditorSheet(
                 ) {
                     listOf(
                         "" to "跟随负责 Bot",
-                        "auto:free" to "免费模型池 (auto:free)",
-                        "auto:paid" to "付费模型池 (auto:paid)"
+                        "auto:paid" to "付费主力池 (auto:paid)",
+                        "auto:free" to "免费模型池 (auto:free)"
                     ).forEach { (mid, label) ->
                         TactileSecondaryButton(
                             text = label,
@@ -1736,7 +1738,7 @@ private fun TaskEditorSheet(
                                 color = theme.textPrimary
                             )
                             Text(
-                                text = if (allowPaidFallback) "已开启：免费池不可用或指定付费模型时允许付费调用" else "默认关闭：严格锁定零成本免费池，防止后台静默扣费",
+                                text = if (allowPaidFallback) "默认开启：优先使用付费主力池保障执行质量" else "已关闭：严格锁定零成本免费池，拦截付费调用",
                                 fontSize = 11.sp,
                                 color = theme.textMuted
                             )
@@ -1842,7 +1844,7 @@ private fun TaskEditorSheet(
 
     if (showModelPicker) {
         ModelPickerSheet(
-            activeModel = model.ifBlank { "auto:free" },
+            activeModel = model.ifBlank { "auto:paid" },
             modelOptions = modelOptions,
             onSelect = { chosen ->
                 model = chosen
@@ -2142,6 +2144,102 @@ private fun NoteEditorSheet(
     }
 }
 
+private data class AssetCurrencySpec(
+    val code: String,
+    val chipLabel: String,
+    val fullLabel: String,
+    val prefix: String
+)
+
+private val ASSET_CURRENCY_SPECS = listOf(
+    AssetCurrencySpec("CNY", "CNY ¥", "人民币 (CNY ¥)", "¥"),
+    AssetCurrencySpec("USD", "USD $", "美元 (USD $)", "$"),
+    AssetCurrencySpec("EUR", "EUR €", "欧元 (EUR €)", "€"),
+    AssetCurrencySpec("HKD", "HKD HK$", "港元 (HKD HK$)", "HK$"),
+    AssetCurrencySpec("JPY", "JPY ¥", "日元 (JPY)", "JPY "),
+    AssetCurrencySpec("GBP", "GBP £", "英镑 (GBP £)", "£"),
+    AssetCurrencySpec("FREE", "免费", "免费 / 赠金", "免费")
+)
+
+private val ASSET_BILLING_CYCLES = listOf(
+    "年" to "年付",
+    "月" to "月付",
+    "季" to "季付",
+    "一次性" to "一次性"
+)
+
+private data class ParsedAssetPrice(
+    val currency: String,
+    val amount: String,
+    val cycle: String
+)
+
+private fun parseAssetStructuredPrice(raw: String?): ParsedAssetPrice {
+    val txt = raw.orEmpty().trim()
+    val cycle = when {
+        txt.contains("月") -> "月"
+        txt.contains("季") -> "季"
+        txt.contains("一次") || txt.contains("永久") -> "一次性"
+        else -> "年"
+    }
+    val moneyPart = txt.substringBefore("/").trim()
+    if (
+        moneyPart.isEmpty() ||
+        moneyPart.contains("免费") ||
+        moneyPart.contains("0元") ||
+        moneyPart.equals("free", ignoreCase = true)
+    ) {
+        val isExplicitFree = moneyPart.contains("免费") || moneyPart.equals("free", ignoreCase = true)
+        return ParsedAssetPrice(
+            currency = if (isExplicitFree) "FREE" else "CNY",
+            amount = "",
+            cycle = cycle
+        )
+    }
+
+    val upper = moneyPart.uppercase(Locale.ROOT)
+    val currency = when {
+        upper.contains("HK$") || upper.contains("HKD") -> "HKD"
+        upper.contains("JPY") -> "JPY"
+        upper.contains("GBP") || moneyPart.contains("£") -> "GBP"
+        upper.contains("EUR") || moneyPart.contains("€") -> "EUR"
+        upper.contains("USD") || moneyPart.contains("$") -> "USD"
+        upper.contains("CNY") || moneyPart.contains("¥") || moneyPart.contains("￥") || moneyPart.contains("元") -> "CNY"
+        else -> "CNY"
+    }
+    val numMatch = Regex("""\d+(?:\.\d+)?""").find(moneyPart)?.value.orEmpty()
+    return ParsedAssetPrice(currency = currency, amount = numMatch, cycle = cycle)
+}
+
+private fun formatAssetStructuredPrice(currency: String, amount: String, cycle: String): String {
+    if (currency == "FREE") {
+        return if (cycle == "一次性") "免费 (一次性)" else "免费 / $cycle"
+    }
+    val cleanNum = amount.trim()
+    if (cleanNum.isEmpty()) {
+        return ""
+    }
+    val prefix = ASSET_CURRENCY_SPECS.firstOrNull { it.code == currency }?.prefix ?: "¥"
+    val numText = "$prefix$cleanNum"
+    return if (cycle == "一次性") "$numText (一次性)" else "$numText / $cycle"
+}
+
+private fun sanitizeAssetAmountInput(raw: String): String {
+    val out = StringBuilder()
+    var seenDot = false
+    for (ch in raw) {
+        when {
+            ch.isDigit() -> out.append(ch)
+            ch == '.' && !seenDot -> {
+                if (out.isEmpty()) out.append('0')
+                out.append('.')
+                seenDot = true
+            }
+        }
+    }
+    return out.toString()
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun AssetEditorSheet(
@@ -2164,11 +2262,14 @@ private fun AssetEditorSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val defaultCat = availableCategories.firstOrNull()?.id ?: "general"
     val defaultDate = remember { LocalDate.now().plusYears(1).toString() }
+    val initialPrice = remember(asset) { parseAssetStructuredPrice(asset?.price) }
 
     var name by remember(asset) { mutableStateOf(asset?.name.orEmpty()) }
     var category by remember(asset) { mutableStateOf(asset?.category?.ifBlank { defaultCat } ?: defaultCat) }
     var spec by remember(asset) { mutableStateOf(asset?.spec.orEmpty()) }
-    var price by remember(asset) { mutableStateOf(asset?.price.orEmpty()) }
+    var currency by remember(asset) { mutableStateOf(initialPrice.currency) }
+    var amountNum by remember(asset) { mutableStateOf(initialPrice.amount) }
+    var billingCycle by remember(asset) { mutableStateOf(initialPrice.cycle) }
     var dueDate by remember(asset) {
         val raw = asset?.dueDate?.take(10).orEmpty()
         mutableStateOf(if (asset == null) defaultDate else raw)
@@ -2177,6 +2278,13 @@ private fun AssetEditorSheet(
         mutableStateOf(asset?.dueDate?.startsWith("2099") == true)
     }
     var autoRenew by remember(asset) { mutableStateOf(asset?.autoRenew ?: false) }
+
+    val formattedPricePreview = remember(currency, amountNum, billingCycle) {
+        formatAssetStructuredPrice(currency, amountNum, billingCycle)
+    }
+    val selectedCurrencySpec = remember(currency) {
+        ASSET_CURRENCY_SPECS.firstOrNull { it.code == currency } ?: ASSET_CURRENCY_SPECS.first()
+    }
 
     var showCalendarDialog by remember { mutableStateOf(false) }
     var showCategoryManager by remember { mutableStateOf(false) }
@@ -2402,65 +2510,170 @@ private fun AssetEditorSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.Bottom
+            // Structured Pricing (aligned with Web AssetModal: currency + numeric amount + billing cycle)
+            Surface(
+                shape = RoundedCornerShape(15.dp),
+                color = theme.cardTop,
+                border = BorderStroke(1.dp, theme.rimSubtle),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                ObsidianGlassInput(
-                    value = price,
-                    onValueChange = { price = it },
-                    label = "费用 (可选)",
-                    placeholder = "例如：¥99 / 年",
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-
-                // Theme-matched Calendar Date Trigger
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.weight(1.1f)
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "到期日 (日历选择)",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = theme.textMuted
-                    )
-                    Surface(
-                        onClick = { showCalendarDialog = true },
-                        shape = RoundedCornerShape(14.dp),
-                        color = theme.inputTop,
-                        border = BorderStroke(1.dp, theme.rimSubtle),
-                        modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 13.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Text(
+                            text = "费用与计费周期",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = theme.textPrimary
+                        )
+                        if (formattedPricePreview.isNotEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = theme.accent.copy(alpha = 0.14f),
+                                border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.35f))
+                            ) {
+                                Text(
+                                    text = formattedPricePreview,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = theme.accent,
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
+                                )
+                            }
+                        } else {
                             Text(
-                                text = when {
-                                    isPermanent -> "长期有效"
-                                    dueDate.isNotBlank() -> dueDate
-                                    else -> "选择日期"
-                                },
-                                fontFamily = if (!isPermanent && dueDate.isNotBlank()) FontFamily.Monospace else FontFamily.Default,
-                                fontSize = 13.5.sp,
-                                color = if (!isPermanent && dueDate.isBlank()) theme.textMuted else theme.textPrimary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Icon(
-                                imageVector = Icons.Default.CalendarMonth,
-                                contentDescription = "打开日历选择日期",
-                                tint = theme.accent,
-                                modifier = Modifier.size(18.dp)
+                                text = "可选",
+                                fontSize = 11.sp,
+                                color = theme.textMuted
                             )
                         }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "币种",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = theme.textMuted
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            ASSET_CURRENCY_SPECS.forEach { cur ->
+                                TactileSecondaryButton(
+                                    text = cur.chipLabel,
+                                    accent = currency == cur.code,
+                                    cornerRadius = 9.dp,
+                                    minHeight = 31.dp,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    onClick = {
+                                        currency = cur.code
+                                        if (cur.code == "FREE") {
+                                            amountNum = ""
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    if (currency != "FREE") {
+                        ObsidianGlassInput(
+                            value = amountNum,
+                            onValueChange = { amountNum = sanitizeAssetAmountInput(it) },
+                            label = "金额 · ${selectedCurrencySpec.fullLabel}",
+                            placeholder = "输入数字金额，例如 99 或 12.99",
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Text(
+                            text = "当前已选「免费 / 赠金」，无需填写金额。",
+                            fontSize = 11.5.sp,
+                            color = theme.textMuted
+                        )
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "计费周期",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = theme.textMuted
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            ASSET_BILLING_CYCLES.forEach { (cycleVal, cycleLabel) ->
+                                TactileSecondaryButton(
+                                    text = cycleLabel,
+                                    accent = billingCycle == cycleVal,
+                                    cornerRadius = 9.dp,
+                                    minHeight = 32.dp,
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                    onClick = { billingCycle = cycleVal },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Theme-matched Calendar Date Trigger
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "到期日 (日历选择)",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = theme.textMuted
+                )
+                Surface(
+                    onClick = { showCalendarDialog = true },
+                    shape = RoundedCornerShape(14.dp),
+                    color = theme.inputTop,
+                    border = BorderStroke(1.dp, theme.rimSubtle),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 13.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = when {
+                                isPermanent -> "长期有效 / 免续费"
+                                dueDate.isNotBlank() -> dueDate
+                                else -> "选择日期"
+                            },
+                            fontFamily = if (!isPermanent && dueDate.isNotBlank()) FontFamily.Monospace else FontFamily.Default,
+                            fontSize = 13.5.sp,
+                            color = if (!isPermanent && dueDate.isBlank()) theme.textMuted else theme.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.Default.CalendarMonth,
+                            contentDescription = "打开日历选择日期",
+                            tint = theme.accent,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
             }
@@ -2543,7 +2756,7 @@ private fun AssetEditorSheet(
                                 name.trim(),
                                 category.ifBlank { "general" },
                                 spec.trim(),
-                                price.trim(),
+                                formatAssetStructuredPrice(currency, amountNum, billingCycle),
                                 if (isPermanent) "2099-12-31" else dueDate.trim().ifEmpty { "2099-12-31" },
                                 autoRenew
                             )

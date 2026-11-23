@@ -88,7 +88,7 @@ object JsonMappers {
     }
 
     fun parseBot(b: JSONObject): BotItem {
-        val rawModel = b.optString("model", "").ifBlank { "auto:free" }
+        val rawModel = b.optString("model", "").ifBlank { "auto:paid" }
         return BotItem(
             id = b.optString("id"),
             name = b.optString("name"),
@@ -109,7 +109,7 @@ object JsonMappers {
             groupMode = b.optString("group_mode", "smart"),
             announcement = b.optString("announcement", ""),
             updatedAt = b.optString("updated_at", ""),
-            allowPaidFallback = b.optBoolean("allow_paid_fallback", false),
+            allowPaidFallback = b.optBoolean("allow_paid_fallback", true),
             allowedTools = optStringList(b, "allowed_tools"),
             skillIds = optStringList(b, "skill_ids")
         )
@@ -686,7 +686,7 @@ object JsonMappers {
                         nextRunAt = t.optString("next_run_at", "--"),
                         lastSummary = lastRun?.optString("summary")?.ifEmpty { "等待执行" } ?: "等待执行",
                         model = t.optString("model", ""),
-                        allowPaidFallback = t.optBoolean("allow_paid_fallback", false),
+                        allowPaidFallback = t.optBoolean("allow_paid_fallback", true),
                         maxPaidCallsPerDay = t.optInt("max_paid_calls_per_day", 0),
                         botId = t.optString("bot_id", ""),
                         description = t.optString("description", ""),

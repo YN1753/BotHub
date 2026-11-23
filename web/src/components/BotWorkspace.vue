@@ -249,7 +249,7 @@ watch(
   bot,
   (b) => {
     if (!b) return
-    const normModel = !b.model || b.model === 'free-pool' ? 'auto:free' : b.model
+    const normModel = !b.model ? 'auto:paid' : b.model === 'free-pool' ? 'auto:free' : b.model
     selectedModel.value = normModel
     enableThinking.value = b.enable_thinking !== false
     announcementDismissed.value = false

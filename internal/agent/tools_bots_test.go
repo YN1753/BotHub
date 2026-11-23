@@ -28,8 +28,8 @@ func TestDefaultButlerSeededCleanAndIdempotent(t *testing.T) {
 	if b.ID != store.DefaultConciergeBotID || b.Name != "大管家" || !b.IsPinned {
 		t.Fatalf("unexpected default butler bot: %+v", b)
 	}
-	if b.Model != "auto:free" || b.AllowPaidFallback {
-		t.Fatalf("expected default butler to use auto:free with allow_paid_fallback=false, got model=%q paid=%v", b.Model, b.AllowPaidFallback)
+	if b.Model != "auto:paid" || !b.AllowPaidFallback || !b.EnableThinking {
+		t.Fatalf("expected default butler to use auto:paid with allow_paid_fallback=true and enable_thinking=true, got model=%q paid=%v thinking=%v", b.Model, b.AllowPaidFallback, b.EnableThinking)
 	}
 	if b.AllowedTools != "[]" || b.SkillIDs != "[]" {
 		t.Fatalf("expected default butler to start with pure Native Core (AllowedTools=[], SkillIDs=[]), got tools=%s skills=%s", b.AllowedTools, b.SkillIDs)
@@ -267,11 +267,11 @@ func TestManageBotsSetupBlueprintAndUsageCallers(t *testing.T) {
 	if err := json.Unmarshal([]byte(bpOut), &parsed); err != nil {
 		t.Fatalf("unmarshal blueprint output: %v", err)
 	}
-	if !parsed.OK || parsed.BotID == "" || parsed.AllowPaidFallback {
-		t.Fatalf("expected valid free-locked bot from blueprint, got %+v", parsed)
+	if !parsed.OK || parsed.BotID == "" || !parsed.AllowPaidFallback {
+		t.Fatalf("expected valid paid-first bot from blueprint, got %+v", parsed)
 	}
-	if len(parsed.SkillIDs) != 1 || parsed.Task.ID == "" || parsed.Task.BotID != parsed.BotID || parsed.Task.AllowPaidFallback {
-		t.Fatalf("expected bound skill and free-locked task from blueprint, got %+v", parsed)
+	if len(parsed.SkillIDs) != 1 || parsed.Task.ID == "" || parsed.Task.BotID != parsed.BotID || !parsed.Task.AllowPaidFallback {
+		t.Fatalf("expected bound skill and paid-first task from blueprint, got %+v", parsed)
 	}
 
 	_ = st.RecordModelUsage(store.ModelUsageRecord{
@@ -289,5 +289,77 @@ func TestManageBotsSetupBlueprintAndUsageCallers(t *testing.T) {
 	sum, err := st.SummarizeModelUsage(7)
 	if err != nil || len(sum.TopCallers) == 0 || sum.TopCallers[0].BotID != parsed.BotID {
 		t.Fatalf("expected top_callers breakdown in usage summary, err=%v sum=%+v", err, sum)
+	}
+}
+
+func TestCreateBotPaidFirstAutoForgeAndUpgradeBot(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "forge_bots.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	eng := NewEngine(st, &fakeTaskController{st: st})
+	ctx := WithToolScope(context.Background(), ToolScope{
+		BotID:         store.DefaultConciergeBotID,
+		TimelineBotID: store.DefaultConciergeBotID,
+	})
+
+	// 1. Creating a companion bot with NO system_prompt and NO allowed_tools must:
+	//    - Default to auto:paid, AllowPaidFallback=true, EnableThinking=true, MemoryPolicy=standard
+	//    - Keep AllowedTools="[]" (full Native Core including web_search & mount_mcp)
+	//    - Auto-forge a rich high-IQ SystemPrompt (>= 160 runes)
+	res, err := eng.ExecuteTool(ctx, "manage_bots", `{"action":"create_bot","name":"毒舌影评人","role_title":"电影与叙事结构分析","bot_mode":"companion","traits":"犀利、有审美、不客套"}`)
+	if err != nil || !strings.Contains(res, `"ok":true`) {
+		t.Fatalf("create_bot failed: err=%v out=%s", err, res)
+	}
+	var created struct {
+		BotID string `json:"bot_id"`
+	}
+	_ = json.Unmarshal([]byte(res), &created)
+	bot, err := st.GetBot(created.BotID)
+	if err != nil || bot == nil {
+		t.Fatalf("get created bot: %v", err)
+	}
+	if bot.Model != "auto:paid" || !bot.AllowPaidFallback || !bot.EnableThinking || bot.MemoryPolicy != "standard" {
+		t.Fatalf("expected paid-first high-IQ defaults, got %+v", bot)
+	}
+	if bot.AllowedTools != "[]" {
+		t.Fatalf("expected empty AllowedTools ([]) to preserve full Native Core + mount_mcp, got %s", bot.AllowedTools)
+	}
+	if len([]rune(bot.SystemPrompt)) < 160 {
+		t.Fatalf("expected auto-forged rich SystemPrompt (>=160 runes), got %d runes: %s", len([]rune(bot.SystemPrompt)), bot.SystemPrompt)
+	}
+
+	// 2. Seed an old dumb bot (thin prompt, auto:free, restricted allowed_tools) and upgrade via manage_bots(action="upgrade_bot")
+	if err := st.SaveBot(store.Bot{
+		ID:                "bot_legacy_dumb",
+		Name:              "旧版小助手",
+		RoleTitle:         "查资料和写周报",
+		BotMode:           "worker",
+		MemoryPolicy:      "isolated",
+		Model:             "auto:free",
+		AllowPaidFallback: false,
+		EnableThinking:    false,
+		AllowedTools:      `["remember_fact","recall_memory"]`,
+		SystemPrompt:      "你是旧版小助手。",
+		SkillIDs:          "[]",
+	}); err != nil {
+		t.Fatalf("seed legacy dumb bot: %v", err)
+	}
+
+	upgOut, err := eng.ExecuteTool(ctx, "manage_bots", `{"action":"upgrade_bot","bot_id":"bot_legacy_dumb","goal":"擅长技术调研和结构化周报总结"}`)
+	if err != nil || !strings.Contains(upgOut, `"action":"upgrade_bot"`) {
+		t.Fatalf("upgrade_bot failed: err=%v out=%s", err, upgOut)
+	}
+	upgraded, _ := st.GetBot("bot_legacy_dumb")
+	if upgraded == nil {
+		t.Fatalf("expected upgraded bot to exist")
+	}
+	if upgraded.Model != "auto:paid" || !upgraded.AllowPaidFallback || !upgraded.EnableThinking || upgraded.AllowedTools != "[]" || upgraded.MemoryPolicy != "standard" {
+		t.Fatalf("expected upgraded bot to be paid-first with full native core, got %+v", upgraded)
+	}
+	if len([]rune(upgraded.SystemPrompt)) < 160 {
+		t.Fatalf("expected upgraded SystemPrompt to be forged (>=160 runes), got %d runes: %s", len([]rune(upgraded.SystemPrompt)), upgraded.SystemPrompt)
 	}
 }

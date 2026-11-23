@@ -229,29 +229,29 @@ func (e *Engine) callLightModelInternal(ctx context.Context, systemPrompt, userP
 	}
 
 	_, _, strategies := e.store.GetModelConfig()
-	freeTargets := e.orderPoolTargets(activePoolTargetsByTier(e.store, store.ModelTierFree), store.ModelTierFree, strategies.Free, ModelResolveOptions{})
-	if isConfigTrue(e.store, store.KeyPoolForLight, true) {
-		candidates = append(candidates, freeTargets...)
-	}
-
 	paidTargets := e.orderPoolTargets(activePoolTargetsByTier(e.store, store.ModelTierPaid), store.ModelTierPaid, strategies.Paid, ModelResolveOptions{})
-	// Per-task paid protection: only touch Paid Pool if explicitly allowed on ctx, OR legacy unguarded call with no Free Pool configured
-	wantPaid := (explicitPaid && allowPaid) || (!explicitPaid && len(freeTargets) == 0 && lightKey == "") || (!explicitPaid && len(freeTargets) > 0 && lightKey == "" && isConfigTrue(e.store, store.KeyPoolFallback, true))
-	if wantPaid && len(paidTargets) > 0 {
+	freeTargets := e.orderPoolTargets(activePoolTargetsByTier(e.store, store.ModelTierFree), store.ModelTierFree, strategies.Free, ModelResolveOptions{})
+
+	// Paid-first routing for all intelligent background tasks unless ctx explicitly restricts paid usage
+	allowPaidHere := !explicitPaid || allowPaid
+	if allowPaidHere && len(paidTargets) > 0 {
 		if qErr := e.checkTaskPaidQuota(ctx); qErr != nil {
-			if len(candidates) == 0 {
+			if len(candidates) == 0 && len(freeTargets) == 0 {
 				return "", qErr
 			}
 		} else {
 			candidates = append(candidates, paidTargets...)
 		}
 	}
+	if isConfigTrue(e.store, store.KeyPoolForLight, true) || len(candidates) == 0 {
+		candidates = append(candidates, freeTargets...)
+	}
 
 	if len(candidates) == 0 {
 		if explicitPaid && !allowPaid && len(paidTargets) > 0 {
 			return "", fmt.Errorf("当前任务未开启「允许付费兜底」，且免费模型池暂无可用节点")
 		}
-		return "", fmt.Errorf("未配置免费模型池或可用轻量模型节点")
+		return "", fmt.Errorf("未配置付费/免费模型池或可用轻量模型节点")
 	}
 	candidates = e.health.prioritizeHealthy(candidates)
 
@@ -685,8 +685,6 @@ func (e *Engine) distillMemoryWithScope(scope, botMode, userMsg, assistantReply 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	// Background memory distillation runs silently after chat; default to Free Pool only.
-	ctx = store.WithPaidFallback(ctx, false)
 
 	todayStr := time.Now().In(store.ShanghaiLocation()).Format("2006-01-02")
 	existingMems, _ := e.store.ListScopedMemories([]string{scope}, "", 25)

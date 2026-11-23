@@ -183,6 +183,7 @@ func (s *Server) Handler() http.Handler {
 	// BotHub v2 Persistent Bots (GrokBot Model) & Isolated Multi-Topic Threads
 	mux.HandleFunc("GET /api/v2/bots", s.requireAuth(s.handleListBots))
 	mux.HandleFunc("POST /api/v2/bots", s.requireAuth(s.handleCreateBot))
+	mux.HandleFunc("POST /api/v2/bots/forge-prompt", s.requireAuth(s.handleForgeBotPrompt))
 	mux.HandleFunc("POST /api/v2/bots/adhoc-group", s.requireAuth(s.handleCreateAdhocGroup))
 	mux.HandleFunc("POST /api/v2/bots/{id}", s.requireAuth(s.handleUpdateBot))
 	mux.HandleFunc("POST /api/v2/bots/{id}/members", s.requireAuth(s.handleUpdateGroupMembers))

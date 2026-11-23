@@ -41,14 +41,15 @@ const mode = computed({
 const name = ref('')
 const roleTitle = ref('')
 const avatarStyle = ref('butler:gold')
-const model = ref(store.modelOptions.value[0]?.value || 'auto:free')
-const allowPaidFallback = ref(false)
+const model = ref(store.modelOptions.value[0]?.value || 'auto:paid')
+const allowPaidFallback = ref(true)
 const botMode = ref<BotMode>('hybrid')
-const memoryPolicy = ref<MemoryPolicy>('isolated')
+const memoryPolicy = ref<MemoryPolicy>('standard')
 const traits = ref('')
 const enableThinking = ref(true)
 const systemPrompt = ref('')
 const selectedSkillIds = ref<string[]>([])
+const forgingPrompt = ref(false)
 
 // Group chat state
 const groupName = ref('')
@@ -140,22 +141,15 @@ const availableSpecialistBots = computed(() =>
   store.state.bots.filter((b) => !b.is_group)
 )
 
-function applyBotModeDefaults(nextMode: BotMode) {
-  enableThinking.value = nextMode !== 'companion'
-}
-
-watch(botMode, (next) => {
-  applyBotModeDefaults(next)
-})
-
 watch(
   () => store.state.showCreateBotModal,
   (open) => {
     if (!open) return
     if (!store.modelOptions.value.some((o) => o.value === model.value)) {
-      model.value = store.modelOptions.value[0]?.value || 'auto:free'
+      model.value = store.modelOptions.value[0]?.value || 'auto:paid'
     }
-    allowPaidFallback.value = false
+    allowPaidFallback.value = true
+    enableThinking.value = true
     if (groupMembers.value.length === 0) {
       groupMembers.value = availableSpecialistBots.value.slice(0, 3).map((b) => b.id)
     }
@@ -166,6 +160,36 @@ watch(
   },
   { immediate: true }
 )
+
+async function forgePromptWithAI() {
+  if (forgingPrompt.value) return
+  if (!name.value.trim()) {
+    store.notify('请先填写 Bot 名称，再使用 AI 精修人设')
+    botNameInputRef.value?.focus()
+    return
+  }
+  forgingPrompt.value = true
+  try {
+    const res = await BotHubApi.forgeBotPrompt({
+      name: name.value.trim(),
+      role_title: roleTitle.value.trim(),
+      bot_mode: botMode.value,
+      traits: traits.value.trim(),
+      system_prompt: systemPrompt.value.trim(),
+    })
+    if (res.system_prompt) {
+      systemPrompt.value = res.system_prompt
+    }
+    if (res.traits && res.traits.trim()) {
+      traits.value = res.traits.trim()
+    }
+    store.notify('已用付费主力模型深度精修人设，可继续微调后创建')
+  } catch (err: any) {
+    store.notify(err.message || 'AI 精修人设失败')
+  } finally {
+    forgingPrompt.value = false
+  }
+}
 
 function toggleGroupMember(id: string) {
   const idx = groupMembers.value.indexOf(id)
@@ -202,16 +226,14 @@ async function handleSubmit() {
       const selectedBots = availableSpecialistBots.value.filter((b) =>
         groupMembers.value.includes(b.id)
       )
-      const toolSet = new Set<string>()
       const skillSet = new Set<string>()
-      let derivedModel = groupModel.value || store.modelOptions.value[0]?.value || 'auto:free'
+      let derivedModel = groupModel.value || store.modelOptions.value[0]?.value || 'auto:paid'
       let allCompanion = selectedBots.length > 0
       selectedBots.forEach((b) => {
-        if (!groupModel.value && b.model && derivedModel === (store.modelOptions.value[0]?.value || 'auto:free')) {
+        if (!groupModel.value && b.model && derivedModel === (store.modelOptions.value[0]?.value || 'auto:paid')) {
           derivedModel = b.model
         }
         if (b.bot_mode !== 'companion') allCompanion = false
-        parseJsonStringArray(b.allowed_tools).forEach((t) => toolSet.add(t))
         parseJsonStringArray(b.skill_ids).forEach((s) => skillSet.add(s))
       })
 
@@ -220,15 +242,15 @@ async function handleSubmit() {
         role_title: groupDesc.value.trim() || `多 Bot 协同群 (${groupMembers.value.length} 成员)`,
         avatar_style: groupAvatar.value,
         model: derivedModel,
-        allow_paid_fallback: false,
+        allow_paid_fallback: true,
         bot_mode: allCompanion ? 'companion' : 'hybrid',
-        memory_policy: 'isolated',
-        enable_thinking: !allCompanion,
+        memory_policy: 'standard',
+        enable_thinking: true,
         is_group: true,
         member_ids: JSON.stringify(groupMembers.value),
         group_mode: groupMode.value,
         announcement: groupAnnouncement.value.trim(),
-        allowed_tools: JSON.stringify(Array.from(toolSet)),
+        allowed_tools: '[]',
         skill_ids: JSON.stringify(Array.from(skillSet)),
         system_prompt: groupDesc.value.trim() || '根据群内成员性格与职责自然交流协同。',
       })
@@ -400,8 +422,8 @@ async function handleSubmit() {
               <ToggleSwitch v-model="enableThinking" label="默认开启深度思考推理链" />
               <ToggleSwitch
                 v-model="allowPaidFallback"
-                label="允许付费兜底"
-                description="关闭则严格限免费模型池"
+                label="允许付费主力调用"
+                description="默认开启；关闭则严格限免费模型池"
               />
             </div>
             <div class="sm:col-span-2">
@@ -415,11 +437,21 @@ async function handleSubmit() {
 
           <div class="modal-section flex flex-col gap-3">
             <label class="flex flex-col gap-1.5 text-xs text-fg-sub">
-              <span>灵魂背景与行为准则 (System Prompt)</span>
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <span>灵魂背景与行为准则 (System Prompt)</span>
+                <button
+                  type="button"
+                  :disabled="forgingPrompt"
+                  @click="forgePromptWithAI"
+                  class="px-2.5 py-1 rounded-lg border border-accent-border bg-accent-soft text-accent-fg hover:bg-accent/20 text-xs font-medium cursor-pointer disabled:opacity-50"
+                >
+                  {{ forgingPrompt ? 'AI 精修中...' : 'AI 深度精修人设' }}
+                </button>
+              </div>
               <textarea
                 v-model="systemPrompt"
-                rows="3"
-                placeholder="描写它的过往经历、与你的关系、遇到不同话题时该如何回应..."
+                rows="4"
+                placeholder="填写你的核心诉求或留空由 AI 精修，将自动生成高智商专业人设与行为约束..."
                 class="auto-size-textarea w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent resize-y"
               />
             </label>
@@ -570,7 +602,7 @@ async function handleSubmit() {
       <div class="flex items-center justify-between gap-2 pt-2 border-t border-line shrink-0 flex-wrap">
         <span class="font-mono text-xs text-fg-muted">
           <template v-if="mode === 'bot'">
-            {{ BOT_MODE_TABS.find((t) => t.id === botMode)?.label }} · {{ botMode === 'companion' ? '轻量对话' : '默认全套内置能力' }} · {{ selectedSkillIds.length }} 自定义技能
+            {{ BOT_MODE_TABS.find((t) => t.id === botMode)?.label }} · Native Core 联网+记忆 · {{ selectedSkillIds.length }} 预挂载 MCP
           </template>
           <template v-else>
             已拉起 {{ groupMembers.length }} 位群成员 · {{ groupModeLabel(groupMode) }}

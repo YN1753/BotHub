@@ -556,7 +556,7 @@ class BotHubViewModel(
             activeBotId = botId
             prefs.lastActiveBotId = botId
             bots.find { it.id == botId }?.let { cachedBot ->
-                activeModel = cachedBot.model.ifBlank { "auto:free" }
+                activeModel = cachedBot.model.ifBlank { "auto:paid" }
                 enableThinking = cachedBot.enableThinking
             }
             val nextBots = bots.map { if (it.id == botId && it.unreadCount != 0) it.copy(unreadCount = 0) else it }
@@ -1105,8 +1105,8 @@ class BotHubViewModel(
         botMode: String,
         traits: String,
         systemPrompt: String,
-        model: String = "auto:free",
-        allowPaidFallback: Boolean = false,
+        model: String = "auto:paid",
+        allowPaidFallback: Boolean = true,
         allowedTools: List<String>? = null,
         skillIds: List<String> = emptyList()
     ) {
@@ -1295,7 +1295,7 @@ class BotHubViewModel(
                     botThreads = payload.threads
                     activeThreadId = resolvedThreadId
                     if (target != null) {
-                        activeModel = target.model.ifBlank { "auto:free" }
+                        activeModel = target.model.ifBlank { "auto:paid" }
                         enableThinking = target.enableThinking
                     }
                     if (chatMessages.toList() != mapped) {

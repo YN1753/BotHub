@@ -101,7 +101,7 @@ class BotHubPrefs(context: Context) {
         set(value) = prefs.edit().putString("active_persona", value).apply()
 
     var activeModel: String
-        get() = prefs.getString("active_model", "deepseek-flash") ?: "deepseek-flash"
+        get() = prefs.getString("active_model", "auto:paid") ?: "auto:paid"
         set(value) = prefs.edit().putString("active_model", value).apply()
 
     var realtimeServiceEnabled: Boolean

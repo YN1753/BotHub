@@ -81,8 +81,8 @@ const retryModelChoices = computed(() => {
     }))
   }
   return [
+    { id: 'auto:paid', label: '自动 · 付费主力池', isPaid: true },
     { id: 'auto:free', label: '自动 · 免费模型池', isPaid: false },
-    { id: 'auto:paid', label: '自动 · 付费模型池 (仅本次放行)', isPaid: true },
   ]
 })
 

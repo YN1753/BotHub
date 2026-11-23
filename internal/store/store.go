@@ -499,6 +499,7 @@ CREATE INDEX IF NOT EXISTS idx_model_usage_task_day ON model_usage_logs(task_id,
 	s.migrateStashToolOnce()
 	s.migrateBuiltinToolsDefaultOnce()
 	s.migrateMCPZeroMountOnce()
+	s.migratePaidFirstAndFixBotToolsOnce()
 	s.cleanupNoisyRoutineLogs()
 	return nil
 }
@@ -520,6 +521,31 @@ func (s *Store) migrateMCPZeroMountOnce() {
 	// MCPs are dynamically self-mounted on demand during chat/routines or manually attached by the user, and permanently persisted thereafter.
 	_, _ = s.db.Exec(`UPDATE bots SET allowed_tools = '[]', skill_ids = '[]'`)
 	_ = s.SetConfig("mcp_zero_mount_migrated_v1", "1")
+}
+
+func (s *Store) migratePaidFirstAndFixBotToolsOnce() {
+	if v, _ := s.GetConfig("paid_first_v285_migrated"); v == "1" {
+		return
+	}
+	// 1. Switch existing Bots from Free Pool to Paid Pool (auto:paid), enable thinking & paid fallback,
+	// clear any legacy allowed_tools restriction caused by create_bot so every Bot has full Native Core + mount_mcp,
+	// and default memory_policy to standard so Bots inherit global user context.
+	_, _ = s.db.Exec(`UPDATE bots SET
+		model = CASE WHEN COALESCE(TRIM(model), '') IN ('', 'auto:free', 'free-pool') THEN 'auto:paid' ELSE model END,
+		allow_paid_fallback = 1,
+		enable_thinking = 1,
+		allowed_tools = '[]',
+		memory_policy = 'standard'`)
+	// 2. Switch existing scheduled tasks to Paid Pool default
+	_, _ = s.db.Exec(`UPDATE tasks SET
+		model = CASE WHEN COALESCE(TRIM(model), '') IN ('', 'auto:free', 'free-pool') THEN 'auto:paid' ELSE model END,
+		allow_paid_fallback = 1`)
+	// 3. Refresh concierge prompt if it still has the retired "free pool only" instruction
+	if concierge, _ := s.GetBot(DefaultConciergeBotID); concierge != nil && strings.Contains(concierge.SystemPrompt, "仅走免费池") {
+		concierge.SystemPrompt = DefaultConciergeBot().SystemPrompt
+		_ = s.SaveBot(*concierge)
+	}
+	_ = s.SetConfig("paid_first_v285_migrated", "1")
 }
 
 func (s *Store) cleanupNoisyRoutineLogs() {

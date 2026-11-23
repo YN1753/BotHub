@@ -631,6 +631,18 @@ func (e *Engine) ModelOptionsPayload() []ModelOptionDTO {
 	}
 
 	out := make([]ModelOptionDTO, 0, 2+len(freeOpts)+len(paidOpts))
+	paidDesc := fmt.Sprintf("付费模型池 (%d 可用)", paidReady)
+	if paidReady == 0 {
+		paidDesc = "付费模型池 (未配置)"
+	}
+	out = append(out, ModelOptionDTO{
+		ID:        "auto:paid",
+		Label:     "自动 · " + paidDesc,
+		Tier:      "auto",
+		Provider:  "paid-pool",
+		Model:     "auto:paid",
+		Available: paidReady > 0,
+	})
 	freeDesc := fmt.Sprintf("免费模型池 (%d 可用)", freeReady)
 	if freeReady == 0 {
 		freeDesc = "免费模型池 (未配置)"
@@ -643,18 +655,8 @@ func (e *Engine) ModelOptionsPayload() []ModelOptionDTO {
 		Model:     "auto:free",
 		Available: freeReady > 0,
 	})
-	if paidReady > 0 || len(paidOpts) > 0 {
-		out = append(out, ModelOptionDTO{
-			ID:        "auto:paid",
-			Label:     fmt.Sprintf("自动 · 付费模型池 (%d 可用)", paidReady),
-			Tier:      "auto",
-			Provider:  "paid-pool",
-			Model:     "auto:paid",
-			Available: paidReady > 0,
-		})
-	}
-	out = append(out, freeOpts...)
 	out = append(out, paidOpts...)
+	out = append(out, freeOpts...)
 	return out
 }
 
@@ -730,12 +732,32 @@ func (e *Engine) ResolveChatTargetsWithOptions(ctx context.Context, requestedMod
 			return nil, qErr
 		}
 		if len(paidTargets) > 0 {
-			return paidTargets, nil
+			out := append([]ModelTarget{}, paidTargets...)
+			if len(freeTargets) > 0 {
+				out = append(out, freeTargets...)
+			}
+			return out, nil
+		}
+		if len(freeTargets) > 0 {
+			return freeTargets, nil
+		}
+		onlyLegacyPrimary := len(providers) == 1 && providers[0].ID == "legacy_deepseek" && len(e.store.GetModelPool()) == 0
+		if ((len(providers) == 0 && len(models) == 0) || onlyLegacyPrimary) && primary.APIKey != "" {
+			return []ModelTarget{primary}, nil
 		}
 		return nil, fmt.Errorf("付费模型池暂无可用节点，请先在「设置 -> AI 模型配置」的付费模型池中添加渠道与模型")
 	}
 
 	if reqM == "" {
+		if !(ctxExplicit && !ctxAllowPaid) && len(paidTargets) > 0 {
+			if qErr := e.checkTaskPaidQuota(ctx); qErr == nil {
+				out := append([]ModelTarget{}, paidTargets...)
+				if len(freeTargets) > 0 {
+					out = append(out, freeTargets...)
+				}
+				return out, nil
+			}
+		}
 		if len(freeTargets) > 0 {
 			out := append([]ModelTarget{}, freeTargets...)
 			if allowPaid && len(paidTargets) > 0 && e.checkTaskPaidQuota(ctx) == nil {
@@ -759,7 +781,7 @@ func (e *Engine) ResolveChatTargetsWithOptions(ctx context.Context, requestedMod
 		if len(paidTargets) > 0 {
 			return nil, fmt.Errorf("免费模型池暂无可用节点；若当前任务或对话需要调用付费模型，请开启「允许付费兜底」或改选付费模型")
 		}
-		return nil, fmt.Errorf("尚未配置任何可用模型节点，请先在「设置 -> AI 模型配置」中添加渠道与免费/付费池模型")
+		return nil, fmt.Errorf("尚未配置任何可用模型节点，请先在「设置 -> AI 模型配置」中添加渠道与付费/免费池模型")
 	}
 
 	if strings.HasPrefix(reqM, "pool:") {

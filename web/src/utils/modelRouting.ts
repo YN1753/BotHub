@@ -163,7 +163,7 @@ export function buildRoutePreview(params: {
     allowPaidFallback && maxPaidCallsPerDay > 0 ? ` · 付费上限 ${maxPaidCallsPerDay} 次/日` : ''
   const toolsNote = needTools ? ' · 优先已验证 Tools 节点' : ''
 
-  if (!req || req === 'auto:free' || req === 'free-pool') {
+  if (req === 'auto:free' || req === 'free-pool') {
     const chain = freeList.slice(0, 3).map(fmtModel)
     if (freeList.length > 3) chain.push(`+${freeList.length - 3} 个免费备选`)
 
@@ -199,8 +199,15 @@ export function buildRoutePreview(params: {
     }
   }
 
-  if (req === 'auto:paid' || req === 'paid-pool') {
+  if (!req || req === 'auto:paid' || req === 'paid-pool') {
     if (isTask && !allowPaidFallback) {
+      if (!req && freeList.length > 0) {
+        return {
+          tone: 'free',
+          headline: `未开启付费调用 -> 仅走免费模型池（${strategyLabel(strategies?.free)}${toolsNote}）`,
+          chain: freeList.slice(0, 3).map(fmtModel),
+        }
+      }
       return {
         tone: 'warn',
         headline: '冲突提醒：已选付费池，但未开启「允许该任务调用付费模型」',
@@ -209,6 +216,13 @@ export function buildRoutePreview(params: {
       }
     }
     if (paidList.length === 0) {
+      if (freeList.length > 0) {
+        return {
+          tone: 'free',
+          headline: `付费池为空 -> 自动回退免费模型池（${strategyLabel(strategies?.free)}${toolsNote}）`,
+          chain: freeList.slice(0, 3).map(fmtModel),
+        }
+      }
       return {
         tone: 'warn',
         headline: '付费模型池暂无可用节点',
@@ -216,10 +230,12 @@ export function buildRoutePreview(params: {
         note: '请先在「系统设置 -> AI 大脑设置 -> 付费模型池」添加模型。',
       }
     }
+    const chain = paidList.slice(0, 3).map(fmtModel)
+    if (paidList.length > 3) chain.push(`+${paidList.length - 3} 个付费备选`)
     return {
       tone: 'paid',
-      headline: `直接走付费模型池（${strategyLabel(strategies?.paid)}${quotaNote}）`,
-      chain: paidList.slice(0, 3).map(fmtModel),
+      headline: `付费主力池优先（${strategyLabel(strategies?.paid)}${toolsNote}${quotaNote}）`,
+      chain,
     }
   }
 

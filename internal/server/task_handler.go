@@ -32,15 +32,45 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
-	var req store.Task
-	if !decodeJSON(w, r, 16384, &req) {
+	var raw struct {
+		ID                 string `json:"id"`
+		Name               string `json:"name"`
+		Type               string `json:"type"`
+		BotID              string `json:"bot_id"`
+		Description        string `json:"description"`
+		CronExpr           string `json:"cron_expr"`
+		RunAt              string `json:"run_at"`
+		Model              string `json:"model"`
+		AllowPaidFallback  *bool  `json:"allow_paid_fallback"`
+		MaxPaidCallsPerDay int    `json:"max_paid_calls_per_day"`
+		Enabled            *bool  `json:"enabled"`
+		Params             string `json:"params"`
+	}
+	if !decodeJSON(w, r, 16384, &raw) {
 		return
 	}
-	req.ID = strings.TrimSpace(req.ID)
-	req.Name = strings.TrimSpace(req.Name)
-	req.Type = strings.TrimSpace(req.Type)
-	req.CronExpr = strings.TrimSpace(req.CronExpr)
-	req.RunAt = strings.TrimSpace(req.RunAt)
+	allowPaid := true
+	if raw.AllowPaidFallback != nil {
+		allowPaid = *raw.AllowPaidFallback
+	}
+	enabled := true
+	if raw.Enabled != nil {
+		enabled = *raw.Enabled
+	}
+	req := store.Task{
+		ID:                 strings.TrimSpace(raw.ID),
+		Name:               strings.TrimSpace(raw.Name),
+		Type:               strings.TrimSpace(raw.Type),
+		BotID:              strings.TrimSpace(raw.BotID),
+		Description:        strings.TrimSpace(raw.Description),
+		CronExpr:           strings.TrimSpace(raw.CronExpr),
+		RunAt:              strings.TrimSpace(raw.RunAt),
+		Model:              strings.TrimSpace(raw.Model),
+		AllowPaidFallback:  allowPaid,
+		MaxPaidCallsPerDay: raw.MaxPaidCallsPerDay,
+		Enabled:            enabled,
+		Params:             raw.Params,
+	}
 
 	if req.ID == "" || req.Name == "" || req.Type == "" || (req.CronExpr == "" && req.RunAt == "") {
 		writeError(w, http.StatusBadRequest, "任务 ID、名称、模板类型与 Cron 表达式或单次触发时间(run_at)为必填项")

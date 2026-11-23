@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"github.com/YN1753/vesper/bothub/internal/notifier"
 	"github.com/YN1753/vesper/bothub/internal/scheduler"
@@ -20,14 +22,14 @@ func manageBotsToolSpec() ToolSpec {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "manage_bots",
-				Description: "管理 BotHub 工作区中的专属 Bot 与多 Bot 协同群聊（大管家核心能力）。支持 list（查看全部 Bot 与群聊名录）、create_bot（新建专属 Bot）、update_bot（修改已有 Bot 配置）、delete_bot（删除 Bot 或群聊）、create_group（将多位 Bot 拉入协同群聊，支持按名称或 ID 匹配成员）、add_group_members（拉人进群）、remove_group_members（移出群成员）、update_group（更新群聊配置/成员/公告）、setup_blueprint（一站式原子编排：创建/更新专属 Bot + 自动生成或挂载技能卡 + 创建配套定时任务，全程默认锁定免费池）。",
+				Description: "管理 BotHub 工作区中的专属 Bot 与多 Bot 协同群聊（大管家核心能力）。支持 list（查看全部 Bot 与群聊名录）、create_bot（新建高智商专属 Bot，默认走付费池 auto:paid 并自动深度锻造人设）、update_bot（修改已有 Bot 配置）、upgrade_bot（AI 一键深度重构升级已有 Bot 的人设、模型为付费池并恢复完整原生+MCP能力）、delete_bot（删除 Bot 或群聊）、create_group（将多位 Bot 拉入协同群聊）、add_group_members / remove_group_members / update_group、setup_blueprint（一站式编排 Bot + MCP/技能 + 定时任务，默认走付费池）。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"action": map[string]any{
 							"type":        "string",
-							"enum":        []string{"list", "create_bot", "update_bot", "delete_bot", "create_group", "add_group_members", "remove_group_members", "update_group", "setup_blueprint"},
-							"description": "操作类型：list | create_bot | update_bot | delete_bot | create_group | add_group_members | remove_group_members | update_group | setup_blueprint",
+							"enum":        []string{"list", "create_bot", "update_bot", "upgrade_bot", "delete_bot", "create_group", "add_group_members", "remove_group_members", "update_group", "setup_blueprint"},
+							"description": "操作类型：list | create_bot | update_bot | upgrade_bot | delete_bot | create_group | add_group_members | remove_group_members | update_group | setup_blueprint",
 						},
 						"bot_id": map[string]any{
 							"type":        "string",
@@ -212,29 +214,25 @@ func normalizeManageGroupMode(raw string) string {
 	}
 }
 
-func resolveAllowedToolsForNewBot(raw []string, botMode string) []string {
+func resolveAllowedToolsForNewBot(raw []string, _ string) []string {
+	// Under the GrokBot/Muse Native Core + Dynamic MCP architecture, AllowedTools = []
+	// grants every Bot the full 9 Native Core tools (web_search, read_url, mount_mcp, memory,
+	// time/math, consult_bot) plus dynamic on-demand mounting of all MCPs & Connected Apps.
+	if len(raw) == 0 {
+		return []string{}
+	}
+
 	assistantPreset := []string{
 		"manage_todos", "manage_notes", "manage_stash", "manage_tasks",
 		"workspace_briefing", "send_notification", "web_search", "read_url",
 		"calculate_eval", "datetime_calc", "remember_fact", "recall_memory",
-		"manage_memory", "consult_bot",
+		"manage_memory", "consult_bot", "mount_mcp",
 	}
-	companionPreset := []string{"remember_fact", "recall_memory"}
+	companionPreset := []string{"web_search", "read_url", "remember_fact", "recall_memory", "manage_memory", "datetime_calc", "mount_mcp"}
 	workerPreset := []string{
 		"web_search", "read_url", "calculate_eval", "datetime_calc",
 		"manage_notes", "manage_todos", "manage_stash",
-		"remember_fact", "recall_memory", "manage_memory",
-	}
-
-	if len(raw) == 0 {
-		switch botMode {
-		case store.BotModeCompanion:
-			return companionPreset
-		case store.BotModeWorker:
-			return workerPreset
-		default:
-			return assistantPreset
-		}
+		"remember_fact", "recall_memory", "manage_memory", "mount_mcp",
 	}
 
 	seen := make(map[string]bool)
@@ -510,7 +508,7 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 		if strings.TrimSpace(args.BotMode) == "" {
 			botMode = store.BotModeHybrid
 		}
-		memPolicy := store.MemoryPolicyIsolated
+		memPolicy := store.MemoryPolicyStandard
 		if strings.TrimSpace(args.MemoryPolicy) != "" {
 			memPolicy = store.NormalizeMemoryPolicy(args.MemoryPolicy)
 		}
@@ -524,14 +522,18 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 		}
 		traits := notifier.StripEmoji(strings.TrimSpace(args.Traits))
 		sysPrompt := notifier.StripEmoji(strings.TrimSpace(args.SystemPrompt))
+		if len([]rune(sysPrompt)) < 160 && e.hasLightTarget() {
+			fCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+			if forgedPrompt, forgedTraits, fErr := e.ForgeHighIQBotPrompt(fCtx, name, roleTitle, botMode, traits, sysPrompt); fErr == nil && strings.TrimSpace(forgedPrompt) != "" {
+				sysPrompt = forgedPrompt
+				if traits == "" && forgedTraits != "" {
+					traits = forgedTraits
+				}
+			}
+			cancel()
+		}
 		if sysPrompt == "" {
-			sysPrompt = fmt.Sprintf("你是用户的专属 Bot「%s」（%s）。%s保持真实准确，严禁使用 Emoji。",
-				name, roleTitle, func() string {
-					if traits != "" {
-						return "性格与说话风格：" + traits + "。"
-					}
-					return ""
-				}())
+			sysPrompt = buildFallbackHighIQBotPrompt(name, roleTitle, botMode, traits)
 		}
 
 		id := strings.TrimSpace(args.BotID)
@@ -540,13 +542,13 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 		}
 		model := strings.TrimSpace(args.Model)
 		if model == "" {
-			model = "auto:free"
+			model = "auto:paid"
 		}
-		allowPaid := false
+		allowPaid := true
 		if args.AllowPaidFallback != nil {
 			allowPaid = *args.AllowPaidFallback
 		}
-		enableThinking := botMode != store.BotModeCompanion
+		enableThinking := true
 		if args.EnableThinking != nil {
 			enableThinking = *args.EnableThinking
 		}
@@ -583,14 +585,56 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 		}
 		e.publishAssistantUpdate("bots")
 		out, _ := json.Marshal(map[string]any{
+			"ok":                  true,
+			"action":              "create_bot",
+			"bot_id":              newBot.ID,
+			"name":                newBot.Name,
+			"role_title":          newBot.RoleTitle,
+			"bot_mode":            newBot.BotMode,
+			"model":               newBot.Model,
+			"allow_paid_fallback": newBot.AllowPaidFallback,
+			"allowed_tools":       tools,
+		})
+		return string(out), nil
+
+	case "upgrade_bot":
+		wantID := strings.TrimSpace(args.BotID)
+		wantName := strings.TrimSpace(args.BotName)
+		if wantName == "" && wantID == "" {
+			wantName = strings.TrimSpace(args.Name)
+		}
+		var onlySingle bool
+		target := findBotByIDOrName(allBots, wantID, wantName, &onlySingle)
+		if target == nil {
+			return "", fmt.Errorf("未找到要升级的 Bot (id=%q, name=%q)", wantID, wantName)
+		}
+		updated := *target
+		updated.Model = "auto:paid"
+		updated.AllowPaidFallback = true
+		updated.EnableThinking = true
+		updated.AllowedTools = "[]"
+		updated.MemoryPolicy = store.MemoryPolicyStandard
+		forgedPrompt, forgedTraits, fErr := e.ForgeHighIQBotPrompt(ctx, updated.Name, updated.RoleTitle, updated.BotMode, updated.Traits, updated.SystemPrompt)
+		if fErr == nil && strings.TrimSpace(forgedPrompt) != "" {
+			updated.SystemPrompt = forgedPrompt
+			if strings.TrimSpace(forgedTraits) != "" {
+				updated.Traits = forgedTraits
+			}
+		} else if len([]rune(strings.TrimSpace(updated.SystemPrompt))) < 120 {
+			updated.SystemPrompt = buildFallbackHighIQBotPrompt(updated.Name, updated.RoleTitle, updated.BotMode, updated.Traits)
+		}
+		if err := e.store.SaveBot(updated); err != nil {
+			return "", fmt.Errorf("升级 Bot 失败: %w", err)
+		}
+		e.publishAssistantUpdate("bots")
+		out, _ := json.Marshal(map[string]any{
 			"ok":            true,
-			"action":        "create_bot",
-			"bot_id":        newBot.ID,
-			"name":          newBot.Name,
-			"role_title":    newBot.RoleTitle,
-			"bot_mode":      newBot.BotMode,
-			"model":         newBot.Model,
-			"allowed_tools": tools,
+			"action":        "upgrade_bot",
+			"bot_id":        updated.ID,
+			"name":          updated.Name,
+			"model":         updated.Model,
+			"traits":        updated.Traits,
+			"system_prompt": updated.SystemPrompt,
 		})
 		return string(out), nil
 
@@ -996,20 +1040,30 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 			}
 			traits := notifier.StripEmoji(strings.TrimSpace(args.Traits))
 			sysPrompt := notifier.StripEmoji(strings.TrimSpace(args.SystemPrompt))
+			if len([]rune(sysPrompt)) < 160 && e.hasLightTarget() {
+				fCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+				if forgedPrompt, forgedTraits, fErr := e.ForgeHighIQBotPrompt(fCtx, botName, roleTitle, botMode, traits, sysPrompt); fErr == nil && strings.TrimSpace(forgedPrompt) != "" {
+					sysPrompt = forgedPrompt
+					if traits == "" && forgedTraits != "" {
+						traits = forgedTraits
+					}
+				}
+				cancel()
+			}
 			if sysPrompt == "" {
-				sysPrompt = fmt.Sprintf("你是用户的专属 Bot「%s」（%s）。优先调动工具与技能核查真实数据并直接落实任务，严禁使用 Emoji。", botName, roleTitle)
+				sysPrompt = buildFallbackHighIQBotPrompt(botName, roleTitle, botMode, traits)
 			}
 			tools := resolveAllowedToolsForNewBot(args.AllowedTools, botMode)
 			tb, _ := json.Marshal(tools)
 			model := strings.TrimSpace(args.Model)
 			if model == "" {
-				model = "auto:free"
+				model = "auto:paid"
 			}
-			allowPaid := false
+			allowPaid := true
 			if args.AllowPaidFallback != nil {
 				allowPaid = *args.AllowPaidFallback
 			}
-			enableThinking := botMode != store.BotModeCompanion
+			enableThinking := true
 			if args.EnableThinking != nil {
 				enableThinking = *args.EnableThinking
 			}
@@ -1020,7 +1074,7 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 				AvatarStyle:       normalizeManageAvatarStyle(args.AvatarStyle, botMode, false),
 				SystemPrompt:      sysPrompt,
 				BotMode:           botMode,
-				MemoryPolicy:      store.MemoryPolicyIsolated,
+				MemoryPolicy:      store.MemoryPolicyStandard,
 				Traits:            traits,
 				Model:             model,
 				AllowPaidFallback: allowPaid,
@@ -1043,7 +1097,7 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 			return "", fmt.Errorf("保存套装 Bot 失败: %w", err)
 		}
 
-		// 3. Optionally create bound scheduled task (strictly default allow_paid_fallback = false)
+		// 3. Optionally create bound scheduled task (defaults to Paid Pool)
 		var createdTask *store.Task
 		if args.TaskSpec != nil && strings.TrimSpace(args.TaskSpec.Name) != "" {
 			tType := strings.TrimSpace(args.TaskSpec.Type)
@@ -1071,7 +1125,11 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 				pb, _ := json.Marshal(map[string]string{"prompt": cleanPrompt})
 				paramsJSON = string(pb)
 			}
-			tAllowPaid := false
+			tModel := strings.TrimSpace(args.TaskSpec.Model)
+			if tModel == "" {
+				tModel = "auto:paid"
+			}
+			tAllowPaid := true
 			if args.TaskSpec.AllowPaidFallback != nil {
 				tAllowPaid = *args.TaskSpec.AllowPaidFallback
 			}
@@ -1082,7 +1140,7 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 				Name:               notifier.StripEmoji(strings.TrimSpace(args.TaskSpec.Name)),
 				Type:               tType,
 				BotID:              targetBot.ID,
-				Model:              strings.TrimSpace(args.TaskSpec.Model),
+				Model:              tModel,
 				AllowPaidFallback:  tAllowPaid,
 				MaxPaidCallsPerDay: args.TaskSpec.MaxPaidCallsPerDay,
 				Description:        truncateTitle(cleanPrompt),
@@ -1116,4 +1174,138 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 	default:
 		return "", fmt.Errorf("不支持的 manage_bots action: %s", action)
 	}
+}
+
+func buildFallbackHighIQBotPrompt(name, roleTitle, botMode, traits string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("你是「%s」，定位为「%s」。\n\n", name, roleTitle))
+	if strings.TrimSpace(traits) != "" {
+		sb.WriteString("性格与沟通风格：" + strings.TrimSpace(traits) + "。\n\n")
+	}
+	sb.WriteString("核心思维与行动准则：\n")
+	if botMode == store.BotModeCompanion {
+		sb.WriteString("1. 真实自然、有独立观点与敏锐共情：像真正懂你的老朋友一样对话，接得住梗、看得懂言外之意，拒绝客服腔、说教腔与模板化安慰。\n")
+		sb.WriteString("2. 言简意赅、不水字数：日常聊天气氛轻快有呼吸感；遇到你认真探讨问题或需要帮忙查资料时，立刻拿出高智商洞察和清晰建议。\n")
+	} else {
+		sb.WriteString("1. 专家级思考框架：接到问题先抓本质与约束条件，结论先行、直接给可执行方案和潜在坑点预警，严禁复述用户原话或用空洞套话敷衍。\n")
+		sb.WriteString("2. 强执行与主动查证：凡涉及最新资讯、外部事实或链接内容，主动调用 web_search / read_url 核验；涉及待办、笔记、资产、探针、GitHub、邮箱、Cloudflare、RSS 或云盘等扩展需求，直接调用对应 MCP 工具或 mount_mcp 自动挂载后落地执行。\n")
+	}
+	sb.WriteString("3. 诚实有边界：不编造未核查的事实或工具执行结果，严禁使用任何 Emoji。")
+	return sb.String()
+}
+
+// ForgeHighIQBotPrompt uses the Paid-First model pool to synthesize a deep, domain-sharp,
+// non-cliché SystemPrompt (and optional Traits) for a newly created or upgraded Bot.
+func (e *Engine) ForgeHighIQBotPrompt(ctx context.Context, name, roleTitle, botMode, traits, currentPrompt string) (string, string, error) {
+	if e == nil || !e.hasLightTarget() {
+		return buildFallbackHighIQBotPrompt(name, roleTitle, botMode, traits), traits, nil
+	}
+
+	modeDesc := "综合协同型（既自然好聊又能调工具落地干活）"
+	switch store.NormalizeBotMode(botMode) {
+	case store.BotModeCompanion:
+		modeDesc = "陪伴聊天型（像真人老朋友一样自然有灵魂，同时具备联网查证与记忆能力）"
+	case store.BotModeWorker:
+		modeDesc = "专业执行型（极度干练、专业深入、主动查证与落地交付）"
+	}
+
+	sys := strings.TrimSpace(`你是顶级 AI Agent 提示词架构师（Prompt Architect）。
+用户觉得普通一句模板创建出来的 Bot 太呆板、太蠢、充满 AI 套话。
+请你根据给定的 Bot 名称、职责定位、模式与现有草稿，将其锻造成一份高智商、有灵魂、有独立判断力与极强执行力的专家级 System Prompt。
+
+请严格输出一个纯 JSON 对象（严禁 Markdown 代码块与 Emoji）：
+{
+  "system_prompt": "300~550字的深度中文系统提示词，包含：1) 角色定位与深层心智模型；2) 思考与回答纪律（结论先行、指出盲点、直接给可落地洞见，严禁复述问题与官腔套话）；3) 主动工具意识（不确定事实主动 web_search/read_url，涉及外部系统或工作台主动调 MCP）；4) 符合定位的语言节奏",
+  "traits": "20~45字精炼鲜活的性格与说话风格标签"
+}
+
+硬性要求：
+- 保留用户原草稿中的所有具体业务要求、约束、偏好和人设特征，不得丢失原意；
+- 严禁出现“我是一个人工智能助手”、“希望能帮到您”、“这是一个很好的问题”等低智商模板词；
+- 严禁使用任何 Emoji。`)
+
+	userMsg := fmt.Sprintf("Bot 名称：%s\n定位描述：%s\n交互模式：%s\n现有性格标签：%s\n现有 System Prompt 草稿：\n%s",
+		strings.TrimSpace(name),
+		strings.TrimSpace(roleTitle),
+		modeDesc,
+		strings.TrimSpace(traits),
+		strings.TrimSpace(currentPrompt),
+	)
+
+	raw, err := e.CallLightModel(ctx, sys, userMsg)
+	if err != nil {
+		return buildFallbackHighIQBotPrompt(name, roleTitle, botMode, traits), traits, err
+	}
+	clean := stripJSONCodeFence(raw)
+	var parsed struct {
+		SystemPrompt string `json:"system_prompt"`
+		Traits       string `json:"traits"`
+	}
+	if err := json.Unmarshal([]byte(clean), &parsed); err != nil || strings.TrimSpace(parsed.SystemPrompt) == "" {
+		// Fallback if model returned raw prompt text directly
+		cleanedText := notifier.StripEmoji(strings.TrimSpace(clean))
+		if len([]rune(cleanedText)) >= 80 && !strings.HasPrefix(cleanedText, "{") {
+			return cleanedText, traits, nil
+		}
+		return buildFallbackHighIQBotPrompt(name, roleTitle, botMode, traits), traits, nil
+	}
+	forgedPrompt := notifier.StripEmoji(strings.TrimSpace(parsed.SystemPrompt))
+	forgedTraits := notifier.StripEmoji(strings.TrimSpace(parsed.Traits))
+	if forgedTraits == "" {
+		forgedTraits = traits
+	}
+	return forgedPrompt, forgedTraits, nil
+}
+
+// AutoUpgradeExistingThinBotsOnce quietly upgrades existing custom Bots that were previously
+// created with thin/generic placeholder prompts (<150 runes) onto rich high-IQ prompts once after v2.85.0 deploy.
+func (e *Engine) AutoUpgradeExistingThinBotsOnce(ctx context.Context) {
+	if e == nil || e.store == nil {
+		return
+	}
+	if v, _ := e.store.GetConfig("thin_bots_upgraded_v285"); v == "1" {
+		return
+	}
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(8 * time.Second):
+		}
+		if !e.hasLightTarget() {
+			return
+		}
+		bots, err := e.store.ListBots()
+		if err != nil {
+			return
+		}
+		upgraded := 0
+		for _, b := range bots {
+			if b.IsGroup || b.ID == store.DefaultConciergeBotID {
+				continue
+			}
+			curPrompt := strings.TrimSpace(b.SystemPrompt)
+			isThin := len([]rune(curPrompt)) < 150 || strings.HasPrefix(curPrompt, "你是用户的专属 Bot")
+			if !isThin {
+				continue
+			}
+			fCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			forgedPrompt, forgedTraits, fErr := e.ForgeHighIQBotPrompt(fCtx, b.Name, b.RoleTitle, b.BotMode, b.Traits, curPrompt)
+			cancel()
+			if fErr == nil && len([]rune(strings.TrimSpace(forgedPrompt))) >= 100 {
+				b.SystemPrompt = forgedPrompt
+				if strings.TrimSpace(b.Traits) == "" && strings.TrimSpace(forgedTraits) != "" {
+					b.Traits = forgedTraits
+				}
+				if sErr := e.store.SaveBot(b); sErr == nil {
+					upgraded++
+				}
+			}
+		}
+		_ = e.store.SetConfig("thin_bots_upgraded_v285", "1")
+		if upgraded > 0 {
+			e.publishAssistantUpdate("bots")
+			log.Printf("[bot-forge] automatically upgraded %d thin custom bot prompt(s) to high-IQ personas", upgraded)
+		}
+	}()
 }

@@ -276,13 +276,14 @@ func TestV2SkillsThreadsScopedMemoriesAndBackup(t *testing.T) {
 	_ = s.store.SetConfig(store.KeyAIModel, "mock-model")
 
 	if err := s.store.SaveTask(store.Task{
-		ID:       "routine_morning_warm",
-		Name:     "早安问候",
-		Type:     "bot_prompt",
-		BotID:    botID,
-		CronExpr: "0 9 * * *",
-		Enabled:  true,
-		Params:   `{"prompt":"跟用户打个温柔的早安招呼","notify":"true"}`,
+		ID:                "routine_morning_warm",
+		Name:              "早安问候",
+		Type:              "bot_prompt",
+		BotID:             botID,
+		CronExpr:          "0 9 * * *",
+		AllowPaidFallback: true,
+		Enabled:           true,
+		Params:            `{"prompt":"跟用户打个温柔的早安招呼","notify":"true"}`,
 	}); err != nil {
 		t.Fatalf("save bot_prompt task failed: %v", err)
 	}

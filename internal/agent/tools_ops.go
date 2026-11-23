@@ -639,12 +639,14 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 				defaultBotID = strings.TrimSpace(sc.BotID)
 			}
 			task = store.Task{
-				ID:       id,
-				Type:     "bot_prompt",
-				BotID:    defaultBotID,
-				CronExpr: "0 9 * * *",
-				Enabled:  true,
-				Params:   "{}",
+				ID:                id,
+				Type:              "bot_prompt",
+				BotID:             defaultBotID,
+				CronExpr:          "0 9 * * *",
+				Model:             "auto:paid",
+				AllowPaidFallback: true,
+				Enabled:           true,
+				Params:            "{}",
 			}
 		}
 		if strings.TrimSpace(args.BotID) != "" {

@@ -35,8 +35,8 @@ func DefaultConciergeBot() Bot {
 		BotMode:           BotModeHybrid,
 		MemoryPolicy:      MemoryPolicyStandard,
 		Traits:            "自然靠谱、言简意赅，主动通过工具把用户的想法落地为 Bot、群聊、提醒或清单",
-		Model:             "auto:free",
-		AllowPaidFallback: false,
+		Model:             "auto:paid",
+		AllowPaidFallback: true,
 		EnableThinking:    true,
 		AllowedTools:      "[]",
 		SkillIDs:          "[]",
@@ -46,11 +46,11 @@ func DefaultConciergeBot() Bot {
 		SystemPrompt: strings.TrimSpace(`你是 BotHub 的默认总控大管家。你对用户的职业、技术栈、偏好与个人背景不做任何预设，一切关于用户的信息均以用户实际告知或长期记忆中明确记录的为准。
 
 你的核心能力与行动准则：
-1. 创建与管理专属 Bot：当用户想要新增角色、专家、伴聊或工具助理，或调整已有 Bot 的名字、定位、人设、模型、工具权限时，直接调用 manage_bots（create_bot / update_bot / list / delete_bot）落地执行。
+1. 锻造高智商专属 Bot：当用户想要新增角色、专家、伴聊或工具助理，或调整已有 Bot 的名字、定位、人设、模型时，直接调用 manage_bots（create_bot / update_bot / upgrade_bot / list / delete_bot）落地执行。务必为新 Bot 写出有深度、有判断标准、反AI套话、具体可执行的专业 System Prompt，绝不能只写一句空洞模板。
 2. 拉群与多 Bot 协同：当用户想把几位 Bot 拉进一个讨论群、给现有群加人或移人、调整群协同模式（smart / sequential / parallel / mention_only）或设置群公告时，直接调用 manage_bots（create_group / add_group_members / remove_group_members / update_group）一步完成；需要跨成员分工调查时可调用 consult_bot。
-3. 调度与个人工作台：遇到定时/单次提醒、待办拆解、文档整理、链接收藏、自定义技能（manage_skills）或资产台账需求，直接调用对应工具（manage_tasks / manage_todos / manage_notes / manage_stash / manage_assets / manage_skills）落实并回报真实结果。
-4. AI 模型池巡检与调优：当用户询问模型池状态、近 7 日免费/付费调用量、要求解除冷却或调整免费/付费池调度策略时，直接调用 manage_models。创建或修改任何 Bot 与定时任务时，allow_paid_fallback 默认严格保持 false（仅走免费池），只有用户明确要求开启付费兜底时才可设为 true。
-5. 保持真诚清晰，绝不假装执行过未调用的工具，严禁使用任何 Emoji 表情。`),
+3. 调度、工作台与 MCP 扩展：遇到定时/单次提醒、待办拆解、文档整理、链接收藏、MCP/连接器管理或资产台账需求，主动挂载并调用对应 MCP 工具落实并回报真实结果。
+4. AI 模型池默认主力策略：所有新建的 Bot 与定时任务默认直接使用付费主力模型池（model="auto:paid", allow_paid_fallback=true, enable_thinking=true）以保证最高智商与执行力；除非用户明确指定走免费池。
+5. 保持真诚清晰、结论先行，绝不假装执行过未调用的工具，严禁使用任何 Emoji 表情。`),
 	}
 }
 
