@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/smtp"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -1889,6 +1890,460 @@ func (e *Engine) toolWebDAVConnector(ctx context.Context, argsJSON string) (stri
 }
 
 // ============================================================================
+// 6. Vesper Space Gallery & 5TB Imagebed Connector (vesper_space_connector)
+// ============================================================================
+
+func vesperSpaceConnectorToolSpec() ToolSpec {
+	return ToolSpec{
+		Definition: ToolDefinition{
+			Type: "function",
+			Function: ToolFunction{
+				Name:        "vesper_space_connector",
+				Description: "Vesper Space (space.starryheavens.uk) 个人美术馆与 5TB Google Drive 图床连接器：支持查看画廊统计与最新作品总览(overview)、按分类/可见性/关键词检索或列出作品(list_works)、获取单件作品详情与外链(get_work)、上传图片或抓取网络图片直存 5TB 图床并返回永久直链与 Markdown(upload_work)、修改作品标题/分类/可见性/策展手记(update_work)、删除作品(delete_work)以及查看或删除作品评论(list_comments / delete_comment)。",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"action": map[string]any{
+							"type":        "string",
+							"description": "操作类型：overview | list_works | get_work | upload_work | update_work | delete_work | list_comments | delete_comment",
+						},
+						"work_id": map[string]any{
+							"type":        "string",
+							"description": "作品 ID（如 vs-...，用于 get_work / update_work / delete_work / list_comments）",
+						},
+						"comment_id": map[string]any{
+							"type":        "string",
+							"description": "评论 ID（用于 delete_comment）",
+						},
+						"title": map[string]any{
+							"type":        "string",
+							"description": "作品标题（用于 upload_work / update_work）",
+						},
+						"src": map[string]any{
+							"type":        "string",
+							"description": "图片或视频来源 URL（支持 https:// 网络图片链接、data:image/...;base64,... 数据 URI 或 generative://；用于 upload_work）",
+						},
+						"category": map[string]any{
+							"type":        "string",
+							"description": "画廊分类：Photography (默认) | Motion | Still Life | Travel",
+						},
+						"visibility": map[string]any{
+							"type":        "string",
+							"description": "可见性：public (公开展览，默认) | private (私密归档，仅策展人可见但图床直链可用)",
+						},
+						"persist_to_drive": map[string]any{
+							"type":        "boolean",
+							"description": "是否将外部图片抓取并持久化归档至 5TB Google Drive (/space) 图床（默认 true）",
+						},
+						"artist": map[string]any{
+							"type":        "string",
+							"description": "创作者署名（可选，默认使用连接器配置的 default_artist 或 Curator）",
+						},
+						"year": map[string]any{
+							"type":        "string",
+							"description": "创作年份（可选，默认当前年份）",
+						},
+						"aspect": map[string]any{
+							"type":        "number",
+							"description": "宽高比 width/height（可选，默认 1.0，范围 0.45 ~ 2.4）",
+						},
+						"location": map[string]any{
+							"type":        "string",
+							"description": "拍摄或创作地点（可选）",
+						},
+						"medium": map[string]any{
+							"type":        "string",
+							"description": "媒介或器材信息（可选，如 Leica M11 / Digital / 35mm Film）",
+						},
+						"curator_note": map[string]any{
+							"type":        "string",
+							"description": "策展人手记或感悟（可选）",
+						},
+						"description": map[string]any{
+							"type":        "string",
+							"description": "作品描述（可选）",
+						},
+						"query": map[string]any{
+							"type":        "string",
+							"description": "搜索关键词（用于 list_works 匹配标题、描述、地点、媒介）",
+						},
+						"keep_media": map[string]any{
+							"type":        "boolean",
+							"description": "delete_work 时是否保留底层 AList 云盘中的原始文件（默认 false 一并清理）",
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "list_works 返回条数上限（默认 20）",
+						},
+					},
+					"required": []string{"action"},
+				},
+			},
+		},
+		Timeout:        25 * time.Second,
+		ReadOnly:       false,
+		StatusLabel:    "正在操作 Vesper Space 画廊与图床...",
+		DomainKeywords: []string{"vesper space", "图床", "画廊", "美术馆", "传图", "上传图片", "图片外链", "策展", "作品集", "space.starryheavens.uk"},
+		Execute: func(ctx context.Context, e *Engine, cleanArgs string) (string, error) {
+			return e.toolVesperSpaceConnector(ctx, cleanArgs)
+		},
+	}
+}
+
+func (e *Engine) resolveVesperSpaceConfig() (baseURL, bridgeToken, defaultArtist string, err error) {
+	baseURL = strings.TrimSpace(os.Getenv("VESPER_SPACE_URL"))
+	bridgeToken = strings.TrimSpace(os.Getenv("VESPER_SPACE_BRIDGE_TOKEN"))
+	defaultArtist = strings.TrimSpace(os.Getenv("VESPER_SPACE_ARTIST"))
+
+	if e != nil && e.store != nil {
+		if sk, sErr := e.store.GetSkill(store.BuiltinMCPAppSpaceID); sErr == nil && sk != nil {
+			cfg := sk.HeadersMap()
+			if u := strings.TrimSpace(cfg["base_url"]); u != "" {
+				baseURL = u
+			}
+			if t := strings.TrimSpace(cfg["bridge_token"]); t != "" {
+				bridgeToken = t
+			} else if t2 := strings.TrimSpace(cfg["token"]); t2 != "" {
+				bridgeToken = t2
+			}
+			if a := strings.TrimSpace(cfg["default_artist"]); a != "" {
+				defaultArtist = a
+			}
+			if !sk.Enabled && bridgeToken == "" {
+				return "", "", "", fmt.Errorf("应用连接器「%s」尚未启用或连接，请先在 MCP 中心「应用连接器 -> Vesper Space」中填入 Bridge Token 并启用", sk.Name)
+			}
+		}
+	}
+	if baseURL == "" {
+		baseURL = "https://space.starryheavens.uk"
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	if bridgeToken == "" {
+		return "", "", "", fmt.Errorf("未配置 Vesper Space Bridge Token，请在 MCP 中心「Vesper Space」连接器中填写 bridge_token")
+	}
+	return baseURL, bridgeToken, defaultArtist, nil
+}
+
+func (e *Engine) vesperSpaceAPIRequest(ctx context.Context, method, baseURL, apiPath, bridgeToken string, payload any) (int, []byte, error) {
+	fullURL := strings.TrimRight(baseURL, "/") + apiPath
+	var bodyReader io.Reader
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return 0, nil, err
+		}
+		bodyReader = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, bodyReader)
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Vesper-BotHub-SpaceConnector/2.86")
+	if strings.TrimSpace(bridgeToken) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bridgeToken))
+		req.Header.Set("X-Bridge-Token", strings.TrimSpace(bridgeToken))
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := e.safeFetchClient().Do(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("请求 Vesper Space API 失败: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return resp.StatusCode, raw, fmt.Errorf("Vesper Space API 返回 HTTP %d: %s", resp.StatusCode, truncateRunes(strings.TrimSpace(string(raw)), 240))
+	}
+	return resp.StatusCode, raw, nil
+}
+
+func (e *Engine) toolVesperSpaceConnector(ctx context.Context, argsJSON string) (string, error) {
+	baseURL, bridgeToken, defaultArtist, err := e.resolveVesperSpaceConfig()
+	if err != nil {
+		return "", err
+	}
+
+	var args struct {
+		Action         string  `json:"action"`
+		WorkID         string  `json:"work_id"`
+		ID             string  `json:"id"`
+		CommentID      string  `json:"comment_id"`
+		Title          string  `json:"title"`
+		Src            string  `json:"src"`
+		ImageURL       string  `json:"image_url"`
+		URL            string  `json:"url"`
+		DataURL        string  `json:"data_url"`
+		Base64Data     string  `json:"base64_data"`
+		Category       string  `json:"category"`
+		Visibility     string  `json:"visibility"`
+		PersistToDrive *bool   `json:"persist_to_drive"`
+		Artist         string  `json:"artist"`
+		Year           string  `json:"year"`
+		Aspect         float64 `json:"aspect"`
+		Location       string  `json:"location"`
+		Medium         string  `json:"medium"`
+		CuratorNote    string  `json:"curator_note"`
+		Description    string  `json:"description"`
+		Alt            string  `json:"alt"`
+		Query          string  `json:"query"`
+		KeepMedia      bool    `json:"keep_media"`
+		Limit          int     `json:"limit"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("解析 vesper_space_connector 参数失败: %w", err)
+	}
+
+	action := strings.ToLower(strings.TrimSpace(args.Action))
+	workID := strings.TrimSpace(args.WorkID)
+	if workID == "" {
+		workID = strings.TrimSpace(args.ID)
+	}
+
+	switch action {
+	case "overview", "status", "stats":
+		_, raw, err := e.vesperSpaceAPIRequest(ctx, http.MethodGet, baseURL, "/api/v1/bridge/overview", bridgeToken, nil)
+		if err != nil {
+			return "", err
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			return string(raw), nil
+		}
+		parsed["ok"] = true
+		b, _ := json.Marshal(parsed)
+		return string(b), nil
+
+	case "list_works", "list", "search":
+		q := url.Values{}
+		if c := strings.TrimSpace(args.Category); c != "" {
+			q.Set("category", c)
+		}
+		if v := strings.TrimSpace(args.Visibility); v != "" {
+			q.Set("visibility", v)
+		}
+		if kw := strings.TrimSpace(args.Query); kw != "" {
+			q.Set("q", kw)
+		}
+		limit := args.Limit
+		if limit <= 0 {
+			limit = 20
+		}
+		q.Set("limit", strconv.Itoa(limit))
+		apiPath := "/api/v1/works"
+		if encoded := q.Encode(); encoded != "" {
+			apiPath += "?" + encoded
+		}
+		_, raw, err := e.vesperSpaceAPIRequest(ctx, http.MethodGet, baseURL, apiPath, bridgeToken, nil)
+		if err != nil {
+			return "", err
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			return string(raw), nil
+		}
+		parsed["ok"] = true
+		b, _ := json.Marshal(parsed)
+		return string(b), nil
+
+	case "get_work", "get":
+		if workID == "" {
+			return "", fmt.Errorf("get_work 需要提供 work_id")
+		}
+		_, raw, err := e.vesperSpaceAPIRequest(ctx, http.MethodGet, baseURL, "/api/v1/works/"+url.PathEscape(workID), bridgeToken, nil)
+		if err != nil {
+			return "", err
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			return string(raw), nil
+		}
+		parsed["ok"] = true
+		b, _ := json.Marshal(parsed)
+		return string(b), nil
+
+	case "upload_work", "upload", "create_work", "create":
+		src := strings.TrimSpace(args.Src)
+		if src == "" {
+			src = strings.TrimSpace(args.ImageURL)
+		}
+		if src == "" {
+			src = strings.TrimSpace(args.URL)
+		}
+		if src == "" {
+			src = strings.TrimSpace(args.DataURL)
+		}
+		if src == "" && strings.TrimSpace(args.Base64Data) != "" {
+			b64 := strings.TrimSpace(args.Base64Data)
+			if strings.HasPrefix(b64, "data:") {
+				src = b64
+			} else {
+				src = "data:image/jpeg;base64," + b64
+			}
+		}
+		if src == "" {
+			return "", fmt.Errorf("upload_work 需要提供图片或媒体的 src (支持 https:// 链接或 data:image/...;base64,...)")
+		}
+		persist := true
+		if args.PersistToDrive != nil {
+			persist = *args.PersistToDrive
+		} else if strings.HasPrefix(src, "generative://") || strings.HasPrefix(src, "/api/v1/media/") {
+			persist = false
+		}
+		artist := strings.TrimSpace(args.Artist)
+		if artist == "" {
+			artist = defaultArtist
+		}
+		payload := map[string]any{
+			"src":              src,
+			"persist_to_drive": persist,
+		}
+		if t := strings.TrimSpace(args.Title); t != "" {
+			payload["title"] = t
+		}
+		if artist != "" {
+			payload["artist"] = artist
+		}
+		if y := strings.TrimSpace(args.Year); y != "" {
+			payload["year"] = y
+		}
+		if c := strings.TrimSpace(args.Category); c != "" {
+			payload["category"] = c
+		}
+		if v := strings.TrimSpace(args.Visibility); v != "" {
+			payload["visibility"] = v
+		}
+		if args.Aspect > 0 {
+			payload["aspect"] = args.Aspect
+		}
+		if loc := strings.TrimSpace(args.Location); loc != "" {
+			payload["location"] = loc
+		}
+		if med := strings.TrimSpace(args.Medium); med != "" {
+			payload["medium"] = med
+		}
+		if note := strings.TrimSpace(args.CuratorNote); note != "" {
+			payload["curator_note"] = note
+		}
+		if desc := strings.TrimSpace(args.Description); desc != "" {
+			payload["description"] = desc
+		}
+		if alt := strings.TrimSpace(args.Alt); alt != "" {
+			payload["alt"] = alt
+		}
+		_, raw, err := e.vesperSpaceAPIRequest(ctx, http.MethodPost, baseURL, "/api/v1/works", bridgeToken, payload)
+		if err != nil {
+			return "", err
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			return string(raw), nil
+		}
+		parsed["ok"] = true
+		b, _ := json.Marshal(parsed)
+		return string(b), nil
+
+	case "update_work", "update", "curate":
+		if workID == "" {
+			return "", fmt.Errorf("update_work 需要提供 work_id")
+		}
+		payload := map[string]any{}
+		if t := strings.TrimSpace(args.Title); t != "" {
+			payload["title"] = t
+		}
+		if a := strings.TrimSpace(args.Artist); a != "" {
+			payload["artist"] = a
+		}
+		if y := strings.TrimSpace(args.Year); y != "" {
+			payload["year"] = y
+		}
+		if c := strings.TrimSpace(args.Category); c != "" {
+			payload["category"] = c
+		}
+		if v := strings.TrimSpace(args.Visibility); v != "" {
+			payload["visibility"] = v
+		}
+		if args.Aspect > 0 {
+			payload["aspect"] = args.Aspect
+		}
+		if args.Location != "" {
+			payload["location"] = strings.TrimSpace(args.Location)
+		}
+		if args.Medium != "" {
+			payload["medium"] = strings.TrimSpace(args.Medium)
+		}
+		if args.CuratorNote != "" {
+			payload["curator_note"] = strings.TrimSpace(args.CuratorNote)
+		}
+		if args.Description != "" {
+			payload["description"] = strings.TrimSpace(args.Description)
+		}
+		if args.Alt != "" {
+			payload["alt"] = strings.TrimSpace(args.Alt)
+		}
+		_, raw, err := e.vesperSpaceAPIRequest(ctx, http.MethodPatch, baseURL, "/api/v1/works/"+url.PathEscape(workID), bridgeToken, payload)
+		if err != nil {
+			return "", err
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			return string(raw), nil
+		}
+		parsed["ok"] = true
+		b, _ := json.Marshal(parsed)
+		return string(b), nil
+
+	case "delete_work", "delete":
+		if workID == "" {
+			return "", fmt.Errorf("delete_work 需要提供 work_id")
+		}
+		apiPath := "/api/v1/works/" + url.PathEscape(workID)
+		if args.KeepMedia {
+			apiPath += "?keepMedia=true"
+		}
+		_, raw, err := e.vesperSpaceAPIRequest(ctx, http.MethodDelete, baseURL, apiPath, bridgeToken, nil)
+		if err != nil {
+			return "", err
+		}
+		return string(raw), nil
+
+	case "list_comments":
+		if workID == "" {
+			return "", fmt.Errorf("list_comments 需要提供 work_id")
+		}
+		_, raw, err := e.vesperSpaceAPIRequest(ctx, http.MethodGet, baseURL, "/api/v1/works/"+url.PathEscape(workID)+"/comments", bridgeToken, nil)
+		if err != nil {
+			return "", err
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			return string(raw), nil
+		}
+		parsed["ok"] = true
+		b, _ := json.Marshal(parsed)
+		return string(b), nil
+
+	case "delete_comment":
+		cid := strings.TrimSpace(args.CommentID)
+		if cid == "" {
+			return "", fmt.Errorf("delete_comment 需要提供 comment_id")
+		}
+		_, raw, err := e.vesperSpaceAPIRequest(ctx, http.MethodDelete, baseURL, "/api/v1/comments/"+url.PathEscape(cid), bridgeToken, nil)
+		if err != nil {
+			return "", err
+		}
+		return string(raw), nil
+
+	default:
+		return "", fmt.Errorf("不支持的 vesper_space_connector action: %s（支持 overview / list_works / get_work / upload_work / update_work / delete_work / list_comments / delete_comment）", action)
+	}
+}
+
+// ============================================================================
 // Live Connectivity Probe for All 5 App Connectors (POST /api/v2/skills/{id}/test)
 // ============================================================================
 
@@ -1983,6 +2438,46 @@ func (e *Engine) TestAppConnector(ctx context.Context, sk store.Skill) (string, 
 		}
 		entries := parseWebDAVPropfindXML(raw)
 		return fmt.Sprintf("WebDAV 云盘连接成功：根目录访问正常（共识别到 %d 个文件/目录条目）", len(entries)), nil
+
+	case store.BuiltinMCPAppSpaceID:
+		baseURL := strings.TrimSpace(cfg["base_url"])
+		if baseURL == "" {
+			baseURL = strings.TrimSpace(os.Getenv("VESPER_SPACE_URL"))
+		}
+		if baseURL == "" {
+			baseURL = "https://space.starryheavens.uk"
+		}
+		bridgeToken := strings.TrimSpace(cfg["bridge_token"])
+		if bridgeToken == "" {
+			bridgeToken = strings.TrimSpace(cfg["token"])
+		}
+		if bridgeToken == "" {
+			bridgeToken = strings.TrimSpace(os.Getenv("VESPER_SPACE_BRIDGE_TOKEN"))
+		}
+		if bridgeToken == "" {
+			return "", fmt.Errorf("请先填写 Vesper Space 的 Internal Bridge Token")
+		}
+		_, raw, err := e.vesperSpaceAPIRequest(ctx, http.MethodGet, baseURL, "/api/v1/bridge/overview", bridgeToken, nil)
+		if err != nil {
+			return "", err
+		}
+		var ov struct {
+			Stats struct {
+				TotalWorks    int `json:"totalWorks"`
+				PublicWorks   int `json:"publicWorks"`
+				PrivateWorks  int `json:"privateWorks"`
+				TotalComments int `json:"totalComments"`
+			} `json:"stats"`
+			Storage struct {
+				AlistMountPath string `json:"alistMountPath"`
+			} `json:"storage"`
+		}
+		_ = json.Unmarshal(raw, &ov)
+		mount := ov.Storage.AlistMountPath
+		if mount == "" {
+			mount = "/space"
+		}
+		return fmt.Sprintf("Vesper Space 连接成功：画廊共 %d 件作品（公开 %d / 私密 %d），累计评论 %d 条，5TB 图床挂载点 %s", ov.Stats.TotalWorks, ov.Stats.PublicWorks, ov.Stats.PrivateWorks, ov.Stats.TotalComments, mount), nil
 
 	default:
 		return "连接器就绪", nil

@@ -113,6 +113,7 @@ func init() {
 		cloudflareConnectorToolSpec(),
 		rssConnectorToolSpec(),
 		webdavConnectorToolSpec(),
+		vesperSpaceConnectorToolSpec(),
 	}
 	builtinToolIndex = make(map[string]ToolSpec, len(builtinToolSpecs))
 	for _, sp := range builtinToolSpecs {

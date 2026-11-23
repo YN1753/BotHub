@@ -35,6 +35,7 @@ const TOOL_META: Record<string, { group: string; shortLabel: string }> = {
   cloudflare_connector: { group: 'ops', shortLabel: 'Cloudflare 连接器' },
   rss_connector: { group: 'research', shortLabel: 'RSS 资讯订阅连接器' },
   webdav_connector: { group: 'assistant', shortLabel: 'WebDAV 云盘连接器' },
+  vesper_space_connector: { group: 'assistant', shortLabel: 'Vesper Space 画廊与图床' },
 }
 
 export function formatToolHumanName(name: string, skills: Skill[] = []): string {

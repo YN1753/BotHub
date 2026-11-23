@@ -28,6 +28,7 @@ const APP_CONNECTOR_TABS = [
   { id: 'mcp_app_cloudflare', label: 'Cloudflare', shortDesc: '域名 Zone / DNS 解析 / 清理缓存' },
   { id: 'mcp_app_rss', label: 'RSS 订阅源', shortDesc: '博客与资讯源并发抓取 / 订阅管理' },
   { id: 'mcp_app_webdav', label: 'WebDAV 云盘', shortDesc: '坚果云 / Alist / Nextcloud 文件读写' },
+  { id: 'mcp_app_space', label: 'Vesper Space', shortDesc: '个人画廊 / 5TB 图床直传 / 策展管理' },
 ]
 
 const selectedAppId = ref('mcp_app_github')
@@ -684,6 +685,53 @@ watch(
             </div>
             <p class="text-[11px] text-fg-muted leading-relaxed">
               支持浏览云端目录、读取云盘内的 Markdown/文本文档，以及让 Bot 将整理好的报告或笔记直接写入云盘保存。
+            </p>
+          </div>
+
+          <!-- 1F. Vesper Space Gallery & 5TB Imagebed Connector Form -->
+          <div v-else-if="selectedAppId === 'mcp_app_space'" class="rounded-xl border border-line bg-surface/30 p-3.5 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between">
+              <strong class="text-xs font-semibold text-fg">Vesper Space 个人美术馆与 5TB 图床配置</strong>
+              <span
+                :class="[
+                  'text-[11px] px-2 py-0.5 rounded-full border',
+                  activeAppSkill?.enabled ? 'border-ok-border bg-ok-soft text-ok' : 'border-line text-fg-muted',
+                ]"
+              >
+                {{ activeAppSkill?.enabled ? '已连接启用' : '未连接' }}
+              </span>
+            </div>
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
+              <span>Vesper Space 站点地址 (Base URL)</span>
+              <input
+                v-model="appConfigForm.base_url"
+                type="url"
+                placeholder="https://space.starryheavens.uk"
+                class="min-h-[38px] rounded-xl border border-line bg-canvas px-3 py-1.5 font-mono text-xs text-fg focus:border-accent"
+              />
+            </label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label class="flex flex-col gap-1 text-xs text-fg-sub">
+                <span>Internal Bridge Token (INTERNAL_BRIDGE_TOKEN)</span>
+                <input
+                  v-model="appConfigForm.bridge_token"
+                  type="password"
+                  placeholder="vs_bridge_..."
+                  class="min-h-[38px] rounded-xl border border-line bg-canvas px-3 py-1.5 font-mono text-xs text-fg focus:border-accent"
+                />
+              </label>
+              <label class="flex flex-col gap-1 text-xs text-fg-sub">
+                <span>默认创作者署名 (可选，如 迟暮)</span>
+                <input
+                  v-model="appConfigForm.default_artist"
+                  type="text"
+                  placeholder="迟暮"
+                  class="min-h-[38px] rounded-xl border border-line bg-canvas px-3 py-1.5 text-xs text-fg focus:border-accent"
+                />
+              </label>
+            </div>
+            <p class="text-[11px] text-fg-muted leading-relaxed">
+              支持查询画廊展览统计、检索作品、将网络图片或 Base64 图像一键归档至 5TB Google Drive (/space) 图床并返回永久直链与 Markdown，以及修订策展手记与管理评论。
             </p>
           </div>
 

@@ -728,6 +728,19 @@ func TestDynamicMCPAutoMountAndRemoteMCPProtocol(t *testing.T) {
 			} else if r.Method == http.MethodGet {
 				_, _ = w.Write([]byte("# Cloud Note\nHello WebDAV"))
 			}
+		case strings.HasPrefix(r.URL.Path, "/space/api/v1/bridge/overview"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"service":"vesper-space","stats":{"totalWorks":9,"publicWorks":8,"privateWorks":1,"totalComments":4},"storage":{"alistMountPath":"/space"}}`))
+		case strings.HasPrefix(r.URL.Path, "/space/api/v1/works"):
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"work":{"id":"vs-test-1","title":"Sunset Coast","category":"Travel","visibility":"public"},"imagebed":{"url":"https://space.starryheavens.uk/api/v1/media/2026/11/vs-test-1.jpg","markdown":"![Sunset Coast](https://space.starryheavens.uk/api/v1/media/2026/11/vs-test-1.jpg)","alistPath":"/space/2026/11/vs-test-1.jpg"}}`))
+			} else if r.Method == http.MethodPatch {
+				_, _ = w.Write([]byte(`{"work":{"id":"vs-test-1","title":"Sunset Coast Revised","category":"Travel","visibility":"public","curator_note":"Golden hour"}}`))
+			} else {
+				_, _ = w.Write([]byte(`{"works":[{"id":"vs-test-1","title":"Sunset Coast","category":"Travel"}],"total":1}`))
+			}
 		}
 	}))
 	defer mockAppSrv.Close()
@@ -795,6 +808,32 @@ func TestDynamicMCPAutoMountAndRemoteMCPProtocol(t *testing.T) {
 	davWriteOut, dwErr := eng.ExecuteTool(ctx, "webdav_connector", `{"action":"write_file","path":"/notes.md","content":"# Updated"}`)
 	if dwErr != nil || !strings.Contains(davWriteOut, `"ok":true`) {
 		t.Fatalf("webdav_connector write_file failed: err=%v out=%s", dwErr, davWriteOut)
+	}
+
+	// Vesper Space connector test
+	spSk, _ := st.GetSkill(store.BuiltinMCPAppSpaceID)
+	spSk.Enabled = true
+	spSk.HTTPHeaders = fmt.Sprintf(`{"base_url":%q,"bridge_token":"vs_bridge_secret_token","default_artist":"迟暮"}`, mockAppSrv.URL+"/space")
+	_ = st.SaveSkill(*spSk)
+	maskedSP := spSk.MaskedForPublic()
+	if strings.Contains(maskedSP.HTTPHeaders, "vs_bridge_secret_token") || !strings.Contains(maskedSP.HTTPHeaders, "****") {
+		t.Fatalf("expected bridge_token to be masked in MaskedForPublic, got %s", maskedSP.HTTPHeaders)
+	}
+	mountedSP := eng.autoMountRelevantMCPs(&bot, "帮我把这张图片上传到 Vesper Space 图床并返回 Markdown 外链")
+	if len(mountedSP) == 0 || mountedSP[0].ID != store.BuiltinMCPAppSpaceID {
+		t.Fatalf("expected mcp_app_space to auto-mount on Vesper Space mention, got %+v", mountedSP)
+	}
+	spOvOut, spOvErr := eng.ExecuteTool(ctx, "vesper_space_connector", `{"action":"overview"}`)
+	if spOvErr != nil || !strings.Contains(spOvOut, `"totalWorks":9`) {
+		t.Fatalf("vesper_space_connector overview failed: err=%v out=%s", spOvErr, spOvOut)
+	}
+	spUpOut, spUpErr := eng.ExecuteTool(ctx, "vesper_space_connector", `{"action":"upload_work","title":"Sunset Coast","src":"https://example.com/photo.jpg","category":"Travel"}`)
+	if spUpErr != nil || !strings.Contains(spUpOut, "vs-test-1.jpg") {
+		t.Fatalf("vesper_space_connector upload_work failed: err=%v out=%s", spUpErr, spUpOut)
+	}
+	spPatchOut, spPatchErr := eng.ExecuteTool(ctx, "vesper_space_connector", `{"action":"update_work","work_id":"vs-test-1","title":"Sunset Coast Revised","curator_note":"Golden hour"}`)
+	if spPatchErr != nil || !strings.Contains(spPatchOut, "Sunset Coast Revised") {
+		t.Fatalf("vesper_space_connector update_work failed: err=%v out=%s", spPatchErr, spPatchOut)
 	}
 }
 

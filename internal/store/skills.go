@@ -24,6 +24,7 @@ const (
 	BuiltinMCPAppCloudflareID = "mcp_app_cloudflare"
 	BuiltinMCPAppRSSID        = "mcp_app_rss"
 	BuiltinMCPAppWebDAVID     = "mcp_app_webdav"
+	BuiltinMCPAppSpaceID      = "mcp_app_space"
 )
 
 type SkillParamField struct {
@@ -80,7 +81,7 @@ func (sk Skill) IsAppConnector() bool {
 
 func isSecretHeaderKey(k string) bool {
 	low := strings.ToLower(strings.TrimSpace(k))
-	return low == "token" || low == "password" || low == "api_token" || low == "api_key" || low == "secret" || low == "authorization"
+	return low == "token" || low == "password" || low == "api_token" || low == "api_key" || low == "secret" || low == "authorization" || low == "bridge_token"
 }
 
 func MaskSecretHeadersJSON(rawJSON string) string {
@@ -348,6 +349,21 @@ func BuiltinMCPServers() []Skill {
 			HTTPHeaders: "{}",
 			ParamsSchema: mustMarshalMCPTools([]MCPToolMeta{
 				{Name: "webdav_connector", Description: "WebDAV / Alist 云盘读写连接器：支持 list_files / read_file / write_file / mkdir / delete_file"},
+			}),
+			Enabled: false,
+		},
+		{
+			ID:          BuiltinMCPAppSpaceID,
+			Name:        "Vesper Space 画廊与图床连接器",
+			Slug:        "space",
+			Kind:        SkillKindBuiltinMCP,
+			Description: "连接 Vesper Space (space.starryheavens.uk) 个人美术馆与 5TB Google Drive 图床：查询画廊总览统计、检索/列出作品、上传或抓取网络图片直存 5TB 图床生成外链/Markdown、修订策展手记及管理评论",
+			Instruction: "vesper space,图床,画廊,美术馆,相册,传图,上传图片,图片外链,markdown图片,策展,作品集,space.starryheavens.uk,摄影作品,归档图片",
+			HTTPMethod:  "APP",
+			HTTPURL:     "mcp://app/space",
+			HTTPHeaders: "{}",
+			ParamsSchema: mustMarshalMCPTools([]MCPToolMeta{
+				{Name: "vesper_space_connector", Description: "Vesper Space 画廊与 5TB 图床连接器：支持 overview / list_works / get_work / upload_work / update_work / delete_work / list_comments / delete_comment"},
 			}),
 			Enabled: false,
 		},
