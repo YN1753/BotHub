@@ -405,6 +405,20 @@ export const BotHubApi = {
       method: 'POST',
       body: JSON.stringify({ scope }),
     }),
+  dreamMemories: (scope = 'all') =>
+    apiRequest<{ ok: boolean; report: any }>('/api/agent/memories/dream', {
+      method: 'POST',
+      body: JSON.stringify({ scope }),
+    }),
+  getMemoryMarkdown: (scope = 'all') =>
+    apiRequest<{
+      ok: boolean
+      scope: string
+      count: number
+      markdown: string
+      last_dream_at?: string
+      last_dream_report?: any
+    }>(`/api/agent/memories/markdown?scope=${encodeURIComponent(scope)}`),
 
   // Custom Skills & MCP Servers
   createSkill: (payload: Partial<Skill>) =>

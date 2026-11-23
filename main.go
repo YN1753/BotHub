@@ -78,6 +78,7 @@ func main() {
 		log.Fatalf("[bothub] failed to initialize http server: %v", err)
 	}
 	registry.SetLightSummarizer(modules.LightSummarizerFunc(srvHandler.Agent().CallLightModel))
+	srvHandler.Agent().StartAutoDreamLoop(maintCtx)
 
 	if err := sched.Start(); err != nil {
 		log.Fatalf("[bothub] failed to start scheduler: %v", err)

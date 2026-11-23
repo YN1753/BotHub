@@ -142,6 +142,13 @@ export const BUILTIN_SLASH_SPECS: readonly SlashCommandSpec[] = [
     anyOfTools: ['manage_memory', 'recall_memory'],
   },
   {
+    cmd: '/dream',
+    title: 'AutoDream 睡眠深度整理',
+    desc: '回放近期对话，消歧矛盾记忆、换算绝对日期并重建 MEMORY.md 索引',
+    prompt: '请调用 manage_memory(action="dream") 对当前作用域执行 AutoDream 四阶段深度记忆整理，并简报本次提炼、消歧与清理结果。',
+    anyOfTools: ['manage_memory'],
+  },
+  {
     cmd: '/consolidate',
     title: '清理并合并重复记忆',
     desc: '梳理当前作用域的冗余记忆条目并合并去重',

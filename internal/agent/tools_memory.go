@@ -16,13 +16,13 @@ func rememberFactToolSpec() ToolSpec {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "remember_fact",
-				Description: "将与当前会话相关的用户偏好、关系故事、重要约定或核心事实写入隔离的长期记忆库，默认仅绑定当前 Bot/群聊作用域。",
+				Description: "将不可实时推导的高信噪比长期信息写入隔离记忆库（MEMORY.md）：优先记录纠偏纪律(feedback)、用户画像偏好(user)、长期项目决策(project)或外部参考指针(reference)；文中相对时间必须换算为绝对日期(YYYY-MM-DD)。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"category": map[string]any{
 							"type":        "string",
-							"description": "记忆分类：preference（偏好）/ relation（人际与故事）/ emotion（心情与生活）/ infra（节点与工程）/ schedule（约定）/ insight（洞察）/ general（通用）",
+							"description": "记忆分类（推荐 Claude 4 类）：feedback（用户纠偏与工作纪律）/ user（用户画像与偏好）/ project（长期项目与决策）/ reference（外部参考与指针）；亦兼容旧分类 preference/relation/emotion/infra/schedule/insight/general",
 						},
 						"fact_key": map[string]any{
 							"type":        "string",
@@ -100,14 +100,14 @@ func manageMemoryToolSpec() ToolSpec {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "manage_memory",
-				Description: "对当前 Bot 或群聊作用域内的长期记忆进行整理：更正旧事实(upsert)、置顶或取消置顶(pin)、遗忘过时或错误条目(forget)、合并去重相似记忆(consolidate)、或列出现有记忆键(list)。",
+				Description: "对当前 Bot 或群聊作用域内的长期记忆进行整理：更正旧事实(upsert)、置顶或取消置顶(pin)、遗忘过时或错误条目(forget)、合并去重相似记忆(consolidate)、触发四阶段深度做梦整理(dream，回放近期对话消歧矛盾并绝对化日期)、或列出现有记忆键(list)。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"action": map[string]any{
 							"type":        "string",
-							"enum":        []string{"list", "upsert", "pin", "forget", "consolidate"},
-							"description": "操作类型：list | upsert | pin | forget | consolidate",
+							"enum":        []string{"list", "upsert", "pin", "forget", "consolidate", "dream"},
+							"description": "操作类型：list | upsert | pin | forget | consolidate | dream",
 						},
 						"fact_key": map[string]any{
 							"type":        "string",
@@ -386,6 +386,17 @@ func (e *Engine) toolManageMemory(ctx context.Context, argsJSON string) (string,
 			"ok":     true,
 			"scope":  targetScope,
 			"merged": merged,
+		})
+		return string(out), nil
+
+	case "dream":
+		rep, err := e.RunAutoDream(ctx, targetScope, false)
+		if err != nil {
+			return "", err
+		}
+		out, _ := json.Marshal(map[string]any{
+			"ok":     true,
+			"report": rep,
 		})
 		return string(out), nil
 

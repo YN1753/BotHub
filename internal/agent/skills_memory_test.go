@@ -797,3 +797,93 @@ func TestDynamicMCPAutoMountAndRemoteMCPProtocol(t *testing.T) {
 		t.Fatalf("webdav_connector write_file failed: err=%v out=%s", dwErr, davWriteOut)
 	}
 }
+
+func TestClaudeMemoryTwoZonePromptIndexAndAutoDream(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "claude_memory.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	// Seed memories across Claude's 4 canonical types + legacy categories
+	_ = st.SaveAgentMemoryDetailed("bot:bot_muse", "feedback", "no_emoji_push", "严禁在推送或聊天中使用任何 Emoji", 5, true)
+	_ = st.SaveAgentMemoryDetailed("bot:bot_muse", "user", "stack_pref", "主力后端用 Go，移动端用 Kotlin Compose", 4, false)
+	_ = st.SaveAgentMemoryDetailed("bot:bot_muse", "project", "bothub_v2", "正在演进 BotHub 的 MCP 与连接器体系", 4, false)
+	_ = st.SaveAgentMemoryDetailed("bot:bot_muse", "general", "old_ref_tail", "长尾参考信息：旧文档地址", 2, false)
+
+	allMems, _ := st.ListScopedMemories([]string{"bot:bot_muse"}, "", 20)
+	detailed := allMems[:3] // leave the 4th item as a long-tail index pointer
+
+	bot := store.Bot{
+		ID:           "bot_muse",
+		Name:         "Muse",
+		RoleTitle:    "全能助手",
+		BotMode:      store.BotModeHybrid,
+		SystemPrompt: "你是 Muse。",
+	}
+	prompt := buildBotSystemPromptWithMemoryIndex(&bot, nil, detailed, allMems, nil, "架构讨论", false, "")
+
+	// 1. Two-Zone Prompt Check: Static identity/rules MUST precede Dynamic [当前运行上下文] and [长期记忆索引 (MEMORY.md)]
+	idxPersona := strings.Index(prompt, "[人格定位与交流方式]")
+	idxRuntime := strings.Index(prompt, "[当前运行上下文]")
+	idxMemDoc := strings.Index(prompt, "[长期记忆索引 (MEMORY.md)]")
+	if idxPersona < 0 || idxRuntime < 0 || idxMemDoc < 0 || !(idxPersona < idxRuntime && idxRuntime < idxMemDoc) {
+		t.Fatalf("expected Two-Zone ordering (persona < runtime < MEMORY.md), got indices %d, %d, %d", idxPersona, idxRuntime, idxMemDoc)
+	}
+	// 2. Layered MEMORY.md Check: feedback section before user/project, plus long-tail index pointer
+	if !strings.Contains(prompt, "## 纠偏与工作纪律 (feedback)") || !strings.Contains(prompt, "## 长尾记忆索引") || !strings.Contains(prompt, "`old_ref_tail`") {
+		t.Fatalf("expected layered MEMORY.md sections + tail index, got:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "严禁生硬说出“根据我的记忆库”") {
+		t.Fatalf("expected natural memory integration boundary in prompt")
+	}
+
+	// 3. AutoDream 4-Phase Consolidation with mock LLM resolving a contradiction & normalizing a date
+	dreamLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"upserts\":[{\"category\":\"feedback\",\"fact_key\":\"deploy_style\",\"content\":\"2026-11-23 起每次改完代码直接打包并推送 tag 自动部署\",\"importance\":5,\"pinned\":false}],\"forgets\":[\"old_ref_tail\"],\"summary\":\"提炼了自动发版偏好并清理了 1 条过时参考\"}"}}]}`))
+	}))
+	defer dreamLLM.Close()
+
+	_ = st.SetConfig(store.KeyLightAPIKey, "sk-test-dream")
+	_ = st.SetConfig(store.KeyLightBaseURL, dreamLLM.URL)
+	_ = st.SetConfig(store.KeyLightModel, "test-light")
+	_ = st.SetConfig(store.KeyPoolForLight, "false")
+
+	_, _ = st.AppendAgentMessage(store.AgentMessage{
+		SessionID: "bot:bot_muse",
+		BotID:     "bot_muse",
+		MsgKind:   "chat",
+		Role:      "user",
+		Content:   "以后完成了之后自己打包并推送 tag 就行",
+	})
+	_, _ = st.AppendAgentMessage(store.AgentMessage{
+		SessionID: "bot:bot_muse",
+		BotID:     "bot_muse",
+		MsgKind:   "chat",
+		Role:      "assistant",
+		Content:   "好的，之后完成后都会直接打包并推送 tag。",
+	})
+
+	eng := NewEngine(st, nil)
+	eng.allowLocalhostForTest = true
+	ctx := WithToolScope(context.Background(), ToolScope{BotID: "bot_muse", TimelineBotID: "bot_muse"})
+	dreamOut, dErr := eng.ExecuteTool(ctx, "manage_memory", `{"action":"dream"}`)
+	if dErr != nil || !strings.Contains(dreamOut, `"upserted":1`) || !strings.Contains(dreamOut, `"forgotten":1`) {
+		t.Fatalf("manage_memory(dream) failed: err=%v out=%s", dErr, dreamOut)
+	}
+
+	afterMems, _ := st.ListScopedMemories([]string{"bot:bot_muse"}, "", 20)
+	hasDeployStyle, hasOldTail := false, false
+	for _, m := range afterMems {
+		if m.FactKey == "deploy_style" && m.Category == "feedback" {
+			hasDeployStyle = true
+		}
+		if m.FactKey == "old_ref_tail" {
+			hasOldTail = true
+		}
+	}
+	if !hasDeployStyle || hasOldTail {
+		t.Fatalf("expected AutoDream to upsert deploy_style(feedback) and forget old_ref_tail, got %+v", afterMems)
+	}
+}

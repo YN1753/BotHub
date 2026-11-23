@@ -173,23 +173,24 @@ func (e *Engine) buildWorkingContextBlock(bot *store.Bot, tools []ToolDefinition
 }
 
 func buildBotSystemPrompt(bot *store.Bot, attachedSkills []store.Skill, memories []store.AgentMemory, peerBots []store.Bot, threadTitle string, inGroup bool) string {
-	return buildBotSystemPromptWithContext(bot, attachedSkills, memories, peerBots, threadTitle, inGroup, "")
+	return buildBotSystemPromptWithMemoryIndex(bot, attachedSkills, memories, memories, peerBots, threadTitle, inGroup, "")
 }
 
 func buildBotSystemPromptWithContext(bot *store.Bot, attachedSkills []store.Skill, memories []store.AgentMemory, peerBots []store.Bot, threadTitle string, inGroup bool, workingContext string) string {
+	return buildBotSystemPromptWithMemoryIndex(bot, attachedSkills, memories, memories, peerBots, threadTitle, inGroup, workingContext)
+}
+
+// buildBotSystemPromptWithMemoryIndex implements Anthropic/Claude's Two-Zone Prompt Architecture:
+// Zone 1 (Static Cacheable Prefix): Persona, behavioral rules, native tool declarations, and memory discipline.
+// Zone 2 (Dynamic Per-Turn Injection): Current timestamp/thread, live workspace snapshot, unmounted MCP index, and layered MEMORY.md.
+func buildBotSystemPromptWithMemoryIndex(bot *store.Bot, attachedSkills []store.Skill, memories []store.AgentMemory, allScopeMemories []store.AgentMemory, peerBots []store.Bot, threadTitle string, inGroup bool, workingContext string) string {
 	var sb strings.Builder
+
+	// === ZONE 1: STATIC CACHEABLE PREFIX ===
 	if prompt := strings.TrimSpace(bot.SystemPrompt); prompt != "" {
 		sb.WriteString(prompt)
 		sb.WriteString("\n\n")
 	}
-
-	now := time.Now().In(store.ShanghaiLocation())
-	sb.WriteString("[当前运行上下文]\n")
-	sb.WriteString(fmt.Sprintf("- 当前时间：%s (%s Asia/Shanghai)\n", now.Format("2006-01-02 15:04"), weekdayCN(now.Weekday())))
-	if strings.TrimSpace(threadTitle) != "" {
-		sb.WriteString(fmt.Sprintf("- 当前话题：%s\n", strings.TrimSpace(threadTitle)))
-	}
-	sb.WriteString("\n")
 
 	mode := store.NormalizeBotMode(bot.BotMode)
 	sb.WriteString("[人格定位与交流方式]\n")
@@ -201,13 +202,13 @@ func buildBotSystemPromptWithContext(bot *store.Bot, attachedSkills []store.Skil
 	switch mode {
 	case store.BotModeCompanion:
 		sb.WriteString("- 互动准则：你是一个真实、有温度、有自己性格特点的聊天伙伴。像老朋友或正常人类那样自然说话——有情绪共鸣、懂得接梗和轻松吐槽，回复节奏像真人日常聊天，不要端着公文腔、不要强行分条说教或推销建议。\n")
-		sb.WriteString("- 记忆自然化：你记住过往细节是为了像真朋友一样自然延续话题，不要机械背诵记忆条目标题。\n")
 	case store.BotModeWorker:
 		sb.WriteString("- 工作准则：你是干练务实的专业执行者。涉及实时状态、资产、待办、文档、任务或外部技能时，优先调用手头工具查证或直接落地执行，先给明确结论与可验证结果，绝不编造数据。\n")
 	default:
 		sb.WriteString("- 互动与执行准则：日常对话自然真诚、像真人般有温度；当用户交代要办的事、提醒、链接收藏、闪念记录、资料检索或产出长文档时，像靠谱的个人助手一样主动调用已挂载的 MCP 工具或调用 mount_mcp 动态挂载对应 MCP 服务直接帮你落地。\n")
 	}
 	sb.WriteString("- 原生联网与核心能力声明：你天生内置实时联网搜索工具 web_search、网页抓取工具 read_url、长期记忆与时间推算能力。任何时候只要需要今日资讯、实时动态、外部事实或网址正文，必须直接调用 web_search 或 read_url 获取实时内容，严禁声称自己“没有联网方式”、“无法访问互联网”或“没有实时搜索能力”。\n")
+	sb.WriteString("- 记忆自然融入与写入纪律：下方 MEMORY.md 是你在过往相处中自然记住的经历、纠偏纪律与默契。请像真人老同事/老朋友一样顺手应用这些细节，严禁生硬说出“根据我的记忆库”、“我的用户档案显示”或“系统记录了你的数据”等机械话术。调用 remember_fact 写入新记忆时，仅记录无法实时查证的长期偏好(user)、纠偏纪律(feedback)、项目决策(project)或外部参考(reference)，并将相对时间换算为绝对日期(YYYY-MM-DD)。\n")
 
 	if botHasStructuredDisplayTool(bot) {
 		sb.WriteString("- 结构化展示准则：当本轮调用了 manage_assets、query_nezha_nodes、manage_todos、manage_tasks 或 workspace_briefing 等结构化查询工具时，客户端界面已自动将工具返回的 JSON 渲染为高密度可视化卡片。请勿再将每条数据的 ID、状态、费用、配置等字段逐行机械复述为超长单列清单；正文仅需精炼总结核心数字、到期/健康异常风险与可直接执行的建议。\n")
@@ -217,6 +218,27 @@ func buildBotSystemPromptWithContext(bot *store.Bot, attachedSkills []store.Skil
 		sb.WriteString("- 群聊协作规范：你正与其他成员同在一个协同群聊里。自然接续前序成员或用户的上下文，重点给出你独特视角的补充或行动，避免重复已经说过的客套话。\n")
 	}
 	sb.WriteString("- 格式约束：严禁使用任何 Emoji 表情或装饰性特殊符号。\n")
+
+	var promptSkills []store.Skill
+	for _, sk := range attachedSkills {
+		if sk.Enabled && sk.Kind == "prompt" && strings.TrimSpace(sk.Instruction) != "" {
+			promptSkills = append(promptSkills, sk)
+		}
+	}
+	if len(promptSkills) > 0 {
+		sb.WriteString("\n[已装备专属技能规范]\n")
+		for _, sk := range promptSkills {
+			sb.WriteString(fmt.Sprintf("- 技能「%s」: %s\n", sk.Name, strings.TrimSpace(sk.Instruction)))
+		}
+	}
+
+	// === ZONE 2: DYNAMIC RUNTIME CONTEXT ===
+	now := time.Now().In(store.ShanghaiLocation())
+	sb.WriteString("\n[当前运行上下文]\n")
+	sb.WriteString(fmt.Sprintf("- 当前时间：%s (%s Asia/Shanghai)\n", now.Format("2006-01-02 15:04"), weekdayCN(now.Weekday())))
+	if strings.TrimSpace(threadTitle) != "" {
+		sb.WriteString(fmt.Sprintf("- 当前话题：%s\n", strings.TrimSpace(threadTitle)))
+	}
 
 	if len(peerBots) > 0 {
 		var soloPeers, groupPeers []store.Bot
@@ -241,33 +263,18 @@ func buildBotSystemPromptWithContext(bot *store.Bot, attachedSkills []store.Skil
 		}
 	}
 
-	var promptSkills []store.Skill
-	for _, sk := range attachedSkills {
-		if sk.Enabled && sk.Kind == "prompt" && strings.TrimSpace(sk.Instruction) != "" {
-			promptSkills = append(promptSkills, sk)
-		}
-	}
-	if len(promptSkills) > 0 {
-		sb.WriteString("\n[已装备专属技能规范]\n")
-		for _, sk := range promptSkills {
-			sb.WriteString(fmt.Sprintf("- 技能「%s」: %s\n", sk.Name, strings.TrimSpace(sk.Instruction)))
-		}
-	}
-
 	if workingContext != "" {
 		sb.WriteString("\n")
 		sb.WriteString(workingContext)
 		sb.WriteString("\n")
 	}
 
-	if len(memories) > 0 {
-		sb.WriteString("\n[关于此段关系/作用域的长期记忆]\n")
-		for _, m := range memories {
-			pinTag := ""
-			if m.Pinned {
-				pinTag = "[置顶] "
-			}
-			sb.WriteString(fmt.Sprintf("- %s(%s) %s: %s\n", pinTag, m.Category, m.FactKey, m.Content))
+	if len(memories) > 0 || len(allScopeMemories) > 0 {
+		memBlock := RenderMemoryIndexMarkdown(memories, allScopeMemories, bot.Name, false)
+		if memBlock != "" {
+			sb.WriteString("\n[长期记忆索引 (MEMORY.md)]\n")
+			sb.WriteString(memBlock)
+			sb.WriteString("\n")
 		}
 	}
 	return sb.String()

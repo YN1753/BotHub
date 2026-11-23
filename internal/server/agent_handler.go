@@ -333,3 +333,59 @@ func (s *Server) handleConsolidateAgentMemories(w http.ResponseWriter, r *http.R
 		"merged": merged,
 	})
 }
+
+func (s *Server) handleDreamAgentMemories(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Scope string `json:"scope"`
+	}
+	_ = decodeOptionalJSON(w, r, 4096, &req)
+	scope := strings.TrimSpace(req.Scope)
+	if scope == "" {
+		scope = "all"
+	}
+	if s.agent == nil {
+		writeError(w, http.StatusServiceUnavailable, "Agent 引擎未初始化")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	rep, err := s.agent.RunAutoDream(ctx, scope, false)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "AutoDream 记忆整理失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"report": rep,
+	})
+}
+
+func (s *Server) handleGetMemoryMarkdown(w http.ResponseWriter, r *http.Request) {
+	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+	var scopes []string
+	label := "全部作用域"
+	if scope != "" && !strings.EqualFold(scope, "all") {
+		scopes = []string{scope}
+		label = scope
+	}
+	mems, err := s.store.ListScopedMemories(scopes, "", 160)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "读取 MEMORY.md 视图失败: "+err.Error())
+		return
+	}
+	md := agent.RenderMemoryIndexMarkdown(mems, mems, label, true)
+	lastDreamAt, _ := s.store.GetConfig(agent.ConfigKeyLastAutoDreamAt)
+	lastDreamRaw, _ := s.store.GetConfig(agent.ConfigKeyLastAutoDreamReport)
+	var lastDreamReport map[string]any
+	if strings.TrimSpace(lastDreamRaw) != "" {
+		_ = json.Unmarshal([]byte(lastDreamRaw), &lastDreamReport)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                true,
+		"scope":             label,
+		"count":             len(mems),
+		"markdown":          md,
+		"last_dream_at":     lastDreamAt,
+		"last_dream_report": lastDreamReport,
+	})
+}

@@ -721,6 +721,69 @@ func (s *Store) DeleteAgentMemory(id int64) error {
 	return err
 }
 
+// ListRecentChatTranscriptForScope returns recent user/assistant dialogue turns for AutoDream signal gathering.
+func (s *Store) ListRecentChatTranscriptForScope(scope string, since string, limit int) ([]AgentMessage, error) {
+	if limit <= 0 || limit > 80 {
+		limit = 36
+	}
+	sc := strings.TrimSpace(scope)
+	var rows *sql.Rows
+	var err error
+	if strings.HasPrefix(sc, "bot:") {
+		botID := strings.TrimPrefix(sc, "bot:")
+		if strings.TrimSpace(since) != "" {
+			rows, err = s.db.Query(`SELECT id, bot_id, role, content, created_at
+				FROM agent_messages
+				WHERE bot_id = ? AND role IN ('user', 'assistant') AND COALESCE(msg_kind, 'chat') = 'chat' AND created_at > ?
+				ORDER BY id DESC LIMIT ?`, botID, strings.TrimSpace(since), limit)
+		} else {
+			rows, err = s.db.Query(`SELECT id, bot_id, role, content, created_at
+				FROM agent_messages
+				WHERE bot_id = ? AND role IN ('user', 'assistant') AND COALESCE(msg_kind, 'chat') = 'chat'
+				ORDER BY id DESC LIMIT ?`, botID, limit)
+		}
+	} else {
+		if strings.TrimSpace(since) != "" {
+			rows, err = s.db.Query(`SELECT id, bot_id, role, content, created_at
+				FROM agent_messages
+				WHERE role IN ('user', 'assistant') AND COALESCE(msg_kind, 'chat') = 'chat' AND created_at > ?
+				ORDER BY id DESC LIMIT ?`, strings.TrimSpace(since), limit)
+		} else {
+			rows, err = s.db.Query(`SELECT id, bot_id, role, content, created_at
+				FROM agent_messages
+				WHERE role IN ('user', 'assistant') AND COALESCE(msg_kind, 'chat') = 'chat'
+				ORDER BY id DESC LIMIT ?`, limit)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []AgentMessage
+	for rows.Next() {
+		var m AgentMessage
+		if rows.Scan(&m.ID, &m.BotID, &m.Role, &m.Content, &m.CreatedAt) == nil {
+			list = append(list, m)
+		}
+	}
+	// Reverse to chronological order
+	for i, j := 0, len(list)-1; i < j; i, j = i+1, j-1 {
+		list[i], list[j] = list[j], list[i]
+	}
+	return list, rows.Err()
+}
+
+func (s *Store) CountUserMessagesSince(since string) int {
+	var count int
+	if strings.TrimSpace(since) == "" {
+		_ = s.db.QueryRow(`SELECT COUNT(*) FROM agent_messages WHERE role = 'user' AND COALESCE(msg_kind, 'chat') = 'chat'`).Scan(&count)
+		return count
+	}
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM agent_messages WHERE role = 'user' AND COALESCE(msg_kind, 'chat') = 'chat' AND created_at > ?`, strings.TrimSpace(since)).Scan(&count)
+	return count
+}
+
 // Per-Bot Execution Audit Logs (strictly scoped by bot_id)
 
 func (s *Store) RecordBotExecution(entry BotExecutionLog) {

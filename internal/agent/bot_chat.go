@@ -272,7 +272,7 @@ func (e *Engine) runSingleBotTurn(
 		memScopes = append(memScopes, "global")
 	}
 	rawMemories, _ := e.store.ListScopedMemories(memScopes, "", 80)
-	memories := selectRelevantMemories(rawMemories, userMsg, 24)
+	memories := selectRelevantMemories(rawMemories, userMsg, 16)
 	if len(memories) > 0 {
 		recalledIDs := make([]int64, 0, len(memories))
 		for _, m := range memories {
@@ -314,7 +314,7 @@ func (e *Engine) runSingleBotTurn(
 			workingCtx = unmountedDir
 		}
 	}
-	sysPrompt := buildBotSystemPromptWithContext(actingBot, attachedSkills, memories, peerBots, threadTitle, timelineBotID != actingBot.ID, workingCtx)
+	sysPrompt := buildBotSystemPromptWithMemoryIndex(actingBot, attachedSkills, memories, rawMemories, peerBots, threadTitle, timelineBotID != actingBot.ID, workingCtx)
 
 	var botNameMap map[string]string
 	if timelineBotID != actingBot.ID && len(allBots) > 0 {

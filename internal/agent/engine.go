@@ -672,7 +672,7 @@ func normalizeDistilledFactKey(raw string) string {
 
 func normalizeDistilledCategory(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "preference", "relation", "emotion", "insight", "infra", "schedule", "general":
+	case "feedback", "user", "project", "reference", "preference", "relation", "emotion", "insight", "infra", "schedule", "general":
 		return strings.ToLower(strings.TrimSpace(raw))
 	default:
 		return "general"
@@ -688,25 +688,41 @@ func (e *Engine) distillMemoryWithScope(scope, botMode, userMsg, assistantReply 
 	// Background memory distillation runs silently after chat; default to Free Pool only.
 	ctx = store.WithPaidFallback(ctx, false)
 
+	todayStr := time.Now().In(store.ShanghaiLocation()).Format("2006-01-02")
 	existingMems, _ := e.store.ListScopedMemories([]string{scope}, "", 25)
 	var existingKeysHint string
 	if len(existingMems) > 0 {
 		pairs := make([]string, 0, len(existingMems))
 		for _, m := range existingMems {
-			pairs = append(pairs, fmt.Sprintf("%s=%s", m.FactKey, truncateTitle(m.Content)))
+			pairs = append(pairs, fmt.Sprintf("%s [%s]=%s", m.FactKey, CanonicalMemoryBucket(m.Category), truncateTitle(m.Content)))
 		}
-		existingKeysHint = "\n当前作用域已有记忆键（若讨论同一主题请沿用对应 fact_key 更新，不要重复造同义新键）：\n- " + strings.Join(pairs, "\n- ")
+		existingKeysHint = "\n当前作用域已有记忆键（若讨论同一主题请沿用对应 fact_key 覆盖更新，不要重复造同义新键）：\n- " + strings.Join(pairs, "\n- ")
 	}
 
 	var sys string
 	if botMode == store.BotModeCompanion {
-		sys = `你是专属陪伴助手的情境记忆提炼器。从这一轮自然对话中，判断是否包含值得长期记住的个人点滴（用户最近的心情、喜好禁忌、重要事件、人际关系、聊天约定或生活习惯）或明确否定了旧习惯。
-如果有且值得写入或更新，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"action":"upsert","category":"preference|relation|emotion|general","fact_key":"简短英文蛇形键名","content":"自然具体的中文记忆描述","importance":4,"pinned":false}。若用户明确推翻/要求忘掉已有记忆，设置 "action":"forget" 并填对应 fact_key。importance 为 1-5，非常重要的人生节点或核心喜好 pinned 设 true。
-如果只是毫无保留价值的日常寒暄（如“在吗”“你好”），输出：{"save":false}。严禁包含任何 Emoji。` + existingKeysHint
+		sys = fmt.Sprintf(`你是借鉴 Claude 记忆架构的专属陪伴情境记忆提炼器（当前绝对日期：%s）。
+请判断最新一轮对话是否包含值得长期跨会话保留的高价值信息（用户纠偏纪律、核心偏好习惯、重要人生/生活事件、人际关系或明确推翻旧记忆）。
+严格遵守 3 条写入纪律：
+1. 仅记录无法靠工具实时查证的稳定信息，过滤日常寒暄与一次性闲聊；
+2. 必须通过“删掉这条是否会实质改变未来对话表现”测试，每条精简在 140 字以内；
+3. 文中涉及“今天/明天/昨天/下周”等相对时间必须换算为基于 %s 的绝对日期（YYYY-MM-DD）。
+若有值得写入或更新的内容，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"action":"upsert","category":"feedback|user|project|reference","fact_key":"简短英文蛇形键名","content":"自然具体的中文记忆描述","importance":4,"pinned":false}。
+若用户明确推翻/要求忘掉已有记忆，设置 "action":"forget" 并填对应 fact_key。核心纠偏纪律(feedback)或关键喜好 importance 设为 4-5。
+若无长期保留价值，输出：{"save":false}。严禁包含任何 Emoji。`, todayStr, todayStr) + existingKeysHint
 	} else {
-		sys = `你是长期记忆提炼器。从用户和助手的最新一轮对话中判断是否包含值得长期跨会话记住的稳定事实（如架构约定、偏好风格、重要项目背景、常用主机的非敏感约束）或明确废止了旧约定。
-如果有，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"action":"upsert","category":"infra|preference|schedule|insight|general","fact_key":"英文蛇形键名","content":"简洁中文事实","importance":3,"pinned":false}。若用户明确表示废止/取消某条已有记忆，可设 "action":"forget" 并填对应 fact_key。importance 为 1-5。
-如果只是一次性闲聊或常规流水查询，输出：{"save":false}。严禁包含任何 Emoji。` + existingKeysHint
+		sys = fmt.Sprintf(`你是借鉴 Claude 记忆架构的高信噪比长期记忆提炼器（当前绝对日期：%s）。
+请判断最新一轮对话是否包含值得跨会话长期保留的四类核心记忆之一：
+- feedback: 用户明确纠正你的行为、要求“不要做什么 / 以后必须怎么做”的工作流或表达纪律（最高价值！）
+- user: 用户的稳定背景、技术栈、长期偏好与工作习惯
+- project: 正在推进的长期项目、架构决策与原因（Why）
+- reference: 常用外部系统、项目仓库或非敏感资源指针
+严格遵守 3 条写入纪律：
+1. 严禁记录随时可用工具实时查到的动态数据（如某条待办、某刻节点 CPU/负载、临时网页检索结果）；
+2. 相对时间（今天/明天/下周/昨天）必须换算为基于 %s 的绝对日期（YYYY-MM-DD）；
+3. 遵循“如果删除这条记忆，未来回答是否会有实质差异”精简测试，每条 <=140 字。
+如果有，输出纯 JSON 对象（不要 Markdown 代码块）：{"save":true,"action":"upsert","category":"feedback|user|project|reference","fact_key":"英文蛇形键名","content":"精炼中文记忆","importance":4,"pinned":false}。若用户明确废止/推翻旧记忆，设 "action":"forget" 并填对应 fact_key。
+若无长期保留价值，输出：{"save":false}。严禁包含任何 Emoji。`, todayStr, todayStr) + existingKeysHint
 	}
 
 	prompt := fmt.Sprintf("用户：%s\n回应：%s", userMsg, assistantReply)

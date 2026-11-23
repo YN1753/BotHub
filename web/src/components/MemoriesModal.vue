@@ -13,10 +13,10 @@ import SegmentedTabs from './SegmentedTabs.vue'
 const store = useAppStore()
 const listRef = ref<HTMLElement | null>(null)
 const scope = ref('global')
-const category = ref('preference')
+const category = ref('feedback')
 const factKey = ref('')
 const content = ref('')
-const importance = ref(3)
+const importance = ref(4)
 const pinned = ref(false)
 const searchQuery = ref('')
 const filterCat = ref('all')
@@ -27,7 +27,19 @@ const unrecalledOnly = ref(false)
 const sortBy = ref<'weight' | 'recent' | 'recalled'>('weight')
 const pruning = ref(false)
 const consolidating = ref(false)
+const dreaming = ref(false)
 const saving = ref(false)
+const viewMode = ref<'cards' | 'markdown'>('cards')
+const memoryMarkdown = ref('')
+const loadingMarkdown = ref(false)
+const lastDreamReport = ref<{
+  ran_at?: string
+  summary?: string
+  upserted?: number
+  forgotten?: number
+  merged_duplicates?: number
+  pruned_cold?: number
+} | null>(null)
 
 // Inline edit state
 const editingMemId = ref<number | null>(null)
@@ -51,11 +63,14 @@ const memoryStats = computed(() => {
 })
 
 const CAT_OPTIONS = [
-  { value: 'preference', label: '偏好与习惯 (preference)' },
-  { value: 'insight', label: '交互洞察与约定 (insight)' },
-  { value: 'infra', label: '环境与节点事实 (infra)' },
-  { value: 'schedule', label: '日程与约定 (schedule)' },
-  { value: 'general', label: '通用背景 (general)' },
+  { value: 'feedback', label: '纠偏与工作纪律 (feedback)' },
+  { value: 'user', label: '用户画像与偏好 (user)' },
+  { value: 'project', label: '长期项目与决策 (project)' },
+  { value: 'reference', label: '外部参考与指针 (reference)' },
+  { value: 'preference', label: '旧分类: 偏好 (preference)' },
+  { value: 'insight', label: '旧分类: 洞察 (insight)' },
+  { value: 'infra', label: '旧分类: 基础设施 (infra)' },
+  { value: 'general', label: '旧分类: 通用 (general)' },
 ]
 
 const IMPORTANCE_OPTIONS = [
@@ -81,11 +96,19 @@ const filterScopeOptions = computed(() => [
 
 const FILTER_TABS = [
   { id: 'all', label: '全部' },
-  { id: 'preference', label: 'preference' },
-  { id: 'insight', label: 'insight' },
-  { id: 'infra', label: 'infra' },
-  { id: 'general', label: 'general' },
+  { id: 'feedback', label: '纠偏 feedback' },
+  { id: 'user', label: '画像 user' },
+  { id: 'project', label: '项目 project' },
+  { id: 'reference', label: '参考 reference' },
 ]
+
+function canonicalMemoryBucket(cat: string): string {
+  const c = (cat || '').toLowerCase().trim()
+  if (c === 'feedback' || c === 'insight') return 'feedback'
+  if (c === 'user' || c === 'preference' || c === 'relation' || c === 'emotion') return 'user'
+  if (c === 'project' || c === 'schedule' || c === 'infra') return 'project'
+  return 'reference'
+}
 
 const SORT_OPTIONS = [
   { value: 'weight', label: '按权重置顶优先' },
@@ -106,7 +129,7 @@ const filteredMemories = computed(() => {
   const list = store.state.memories.filter((m) => {
     const mScope = m.scope || 'global'
     if (filterScope.value !== 'all' && mScope !== filterScope.value) return false
-    if (filterCat.value !== 'all' && m.category !== filterCat.value) return false
+    if (filterCat.value !== 'all' && canonicalMemoryBucket(m.category) !== filterCat.value) return false
     if (pinnedOnly.value && !m.pinned) return false
     if (coreOnly.value && (m.importance || 3) < 4) return false
     if (unrecalledOnly.value && (m.recall_count || 0) > 0) return false
@@ -365,6 +388,55 @@ async function handleConsolidateScope() {
   }
 }
 
+async function loadMemoryMarkdownView() {
+  loadingMarkdown.value = true
+  try {
+    const scopeTarget = filterScope.value === 'all' ? 'all' : filterScope.value
+    const res = await BotHubApi.getMemoryMarkdown(scopeTarget)
+    memoryMarkdown.value = res.markdown || ''
+    if (res.last_dream_report) {
+      lastDreamReport.value = res.last_dream_report
+    }
+  } catch (err: any) {
+    store.notify(err.message || '加载 MEMORY.md 索引视图失败')
+  } finally {
+    loadingMarkdown.value = false
+  }
+}
+
+async function handleRunAutoDream() {
+  if (dreaming.value) return
+  dreaming.value = true
+  try {
+    const scopeTarget = filterScope.value === 'all' ? 'all' : filterScope.value
+    const res = await BotHubApi.dreamMemories(scopeTarget)
+    const rep = res.report
+    if (rep) {
+      lastDreamReport.value = rep
+      if (rep.memory_markdown) {
+        memoryMarkdown.value = rep.memory_markdown
+      }
+      store.notify(rep.summary || 'AutoDream 睡眠深度整理完成')
+    } else {
+      store.notify('AutoDream 睡眠深度整理完成')
+    }
+    await Promise.all([store.loadDashboard(false), store.refreshActiveBot()])
+  } catch (err: any) {
+    store.notify(err.message || 'AutoDream 整理失败')
+  } finally {
+    dreaming.value = false
+  }
+}
+
+watch(
+  () => [viewMode.value, filterScope.value, store.state.showMemoriesModal],
+  ([mode, , open]) => {
+    if (open && mode === 'markdown') {
+      void loadMemoryMarkdownView()
+    }
+  }
+)
+
 watch(
   () => store.state.showMemoriesModal,
   (open) => {
@@ -375,6 +447,7 @@ watch(
       scope.value = defScope
       filterScope.value = store.state.memoryModalDefaultScope ? defScope : 'all'
       store.state.memoryModalDefaultScope = ''
+      void loadMemoryMarkdownView()
     }
   }
 )
@@ -388,8 +461,8 @@ watch(
 <template>
   <BaseModal
     :open="store.state.showMemoriesModal"
-    title="分域长期记忆库 (Scoped Memory)"
-    subtitle="每个 Bot 与群聊均保有严格隔离的记忆域，支持权重排序、置顶必记与召回统计"
+    title="分域长期记忆库 (MEMORY.md & AutoDream)"
+    subtitle="借鉴 Claude 分层记忆架构：按 feedback / user / project / reference 四类沉淀，支持 MEMORY.md 透明审计与 AutoDream 四阶段睡眠深度整理"
     max-width="3xl"
     @close="closeModal"
   >
@@ -519,6 +592,26 @@ watch(
         </button>
         <button
           type="button"
+          :disabled="dreaming"
+          @click="handleRunAutoDream"
+          class="min-h-[34px] px-3 rounded-xl border border-accent-border bg-accent-soft text-xs font-medium text-accent-fg hover:opacity-90 cursor-pointer disabled:opacity-50"
+        >
+          {{ dreaming ? 'AutoDream 整理中...' : 'AutoDream 睡眠整理' }}
+        </button>
+        <button
+          type="button"
+          @click="viewMode = viewMode === 'markdown' ? 'cards' : 'markdown'"
+          :class="[
+            'min-h-[34px] px-3 rounded-xl border text-xs cursor-pointer transition-colors',
+            viewMode === 'markdown'
+              ? 'border-ok-border bg-ok-soft text-ok'
+              : 'border-line text-fg-sub hover:text-fg'
+          ]"
+        >
+          {{ viewMode === 'markdown' ? '返回卡片视图' : 'MEMORY.md 视图' }}
+        </button>
+        <button
+          type="button"
           :disabled="consolidating"
           @click="handleConsolidateScope"
           class="min-h-[34px] px-3 rounded-xl border border-info-border text-xs text-info hover:bg-info-soft cursor-pointer disabled:opacity-50"
@@ -596,7 +689,57 @@ watch(
       </div>
     </div>
 
-    <div ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
+    <div
+      v-if="lastDreamReport?.summary"
+      class="rounded-xl border border-accent-border bg-accent-soft/60 px-3.5 py-2 text-xs flex flex-wrap items-center justify-between gap-2 shrink-0"
+    >
+      <div class="flex flex-col gap-0.5 min-w-0">
+        <span class="font-semibold text-accent-fg">
+          上次 AutoDream 整理 ({{ lastDreamReport.ran_at || '刚刚' }})
+        </span>
+        <span class="text-fg-sub leading-relaxed">{{ lastDreamReport.summary }}</span>
+      </div>
+      <span class="font-mono text-[11px] text-fg-muted shrink-0">
+        +{{ lastDreamReport.upserted || 0 }} 提炼 / -{{ lastDreamReport.forgotten || 0 }} 消歧清理 / {{ lastDreamReport.merged_duplicates || 0 }} 合并
+      </span>
+    </div>
+
+    <!-- Transparent MEMORY.md Index Audit View -->
+    <div
+      v-if="viewMode === 'markdown'"
+      class="flex-1 min-h-0 overflow-y-auto rounded-xl border border-line bg-canvas p-4 flex flex-col gap-3"
+    >
+      <div class="flex items-center justify-between gap-2 flex-wrap border-b border-line pb-2">
+        <span class="text-xs font-semibold font-mono text-fg">
+          MEMORY.md 实时索引快照（Bot 实际注入的 Markdown 记忆视图）
+        </span>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            @click="copyMemoryContent(memoryMarkdown)"
+            class="px-2.5 py-1 rounded-lg border border-line text-xs text-fg-sub hover:text-fg cursor-pointer"
+          >
+            复制全文
+          </button>
+          <button
+            type="button"
+            @click="loadMemoryMarkdownView"
+            class="px-2.5 py-1 rounded-lg border border-info-border text-xs text-info hover:bg-info-soft cursor-pointer"
+          >
+            刷新
+          </button>
+        </div>
+      </div>
+      <div v-if="loadingMarkdown" class="py-8 text-center text-xs text-fg-muted">
+        正在生成 MEMORY.md 视图...
+      </div>
+      <pre
+        v-else
+        class="text-xs font-mono text-fg-sub whitespace-pre-wrap leading-relaxed select-text"
+      >{{ memoryMarkdown }}</pre>
+    </div>
+
+    <div v-else ref="listRef" class="stagger-list flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5 pr-1">
       <div v-if="filteredMemories.length === 0" class="py-10 text-center flex flex-col items-center gap-2 text-sm text-fg-muted">
         <span>{{ store.state.memories.length ? '当前筛选下无记忆条目' : '尚未写入长期记忆条目' }}</span>
         <button

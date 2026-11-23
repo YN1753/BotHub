@@ -155,6 +155,7 @@ private val BUILTIN_SLASH_SPECS = listOf(
     SlashCommandItem("/consult", "协调成员协办", "调用其他专精 Bot 协助完成子任务并汇总", prompt = "请协调工作区里最合适的专业成员共同处理：", anyOfTools = setOf("consult_bot")),
     SlashCommandItem("/calc", "精确表达式计算", "使用高精度计算引擎核算费用或比例", prompt = "请调用 calculate_eval 精确计算：", anyOfTools = setOf("calculate_eval")),
     SlashCommandItem("/memories", "回忆关键信息", "检索与当前会话相关的历史重要记忆", prompt = "请先检索我们的历史记忆，梳理目前你记住的关键事实与约定。", anyOfTools = setOf("manage_memory", "recall_memory")),
+    SlashCommandItem("/dream", "AutoDream 深度整理记忆", "回放近期对话、消歧矛盾记忆并重建 MEMORY.md 索引", prompt = "请调用 manage_memory(action=\"dream\") 执行 AutoDream 四阶段深度记忆整理，并简报本次提炼与清理结果。", anyOfTools = setOf("manage_memory")),
     SlashCommandItem("/thread", "新建独立话题", "在当前会话内开启一条干净的新话题线", action = "new_thread"),
     SlashCommandItem("/summarize", "提炼话题存记忆", "提炼当前话题核心结论并沉淀到专属记忆库", action = "summarize_thread"),
     SlashCommandItem("/clear", "清空当前对话", "清空当前话题聊天时间线", action = "clear_timeline")
