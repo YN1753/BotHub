@@ -1,6 +1,5 @@
 package uk.starryheavens.vesper.bothub.ui.sheets
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,9 +14,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -27,15 +28,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -50,7 +51,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -65,36 +65,41 @@ import uk.starryheavens.vesper.bothub.ui.GROKBOT_COLOR_OPTIONS
 import uk.starryheavens.vesper.bothub.ui.GROKBOT_SHAPE_OPTIONS
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.parseBotAvatarParts
-import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
-import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
-import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
-import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
-import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
-import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
-import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
-import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.components.BotAvatar
+import uk.starryheavens.vesper.bothub.ui.components.VesperButtonTone
+import uk.starryheavens.vesper.bothub.ui.components.VesperCard
+import uk.starryheavens.vesper.bothub.ui.components.VesperDivider
+import uk.starryheavens.vesper.bothub.ui.components.VesperEmptyState
+import uk.starryheavens.vesper.bothub.ui.components.VesperFilterChip
+import uk.starryheavens.vesper.bothub.ui.components.VesperIconButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperPrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSectionHeader
+import uk.starryheavens.vesper.bothub.ui.components.VesperSegmentedTabs
+import uk.starryheavens.vesper.bothub.ui.components.VesperSheetDragHandle
+import uk.starryheavens.vesper.bothub.ui.components.VesperSwitch
+import uk.starryheavens.vesper.bothub.ui.components.VesperTag
+import uk.starryheavens.vesper.bothub.ui.components.VesperTextField
+import uk.starryheavens.vesper.bothub.ui.components.vesperPressable
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BuiltinAndCustomSkillsBlock(
-    botMode: String,
+    @Suppress("UNUSED_PARAMETER") botMode: String,
     selectedSkillIds: List<String>,
     availableSkills: List<SkillItemUi>,
     onToggleSkill: (String) -> Unit
 ) {
     val theme = BotHubThemeTokens
-    val isCompanion = botMode.equals("companion", ignoreCase = true)
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SpecularGlassCard(
-            cornerRadius = 12.dp,
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        VesperCard(
+            cornerRadius = 14.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -103,32 +108,24 @@ private fun BuiltinAndCustomSkillsBlock(
                 ) {
                     Text(
                         text = "Agent 原生认知底座",
-                        fontSize = 12.sp,
+                        fontSize = 12.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = theme.textPrimary
                     )
-                    Text(
-                        text = "全员永久内置",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFF10B981)
-                    )
+                    VesperTag(text = "全员内置", toneColor = theme.success)
                 }
                 Text(
-                    text = "实时多源联网搜索、网页正文读取、长期记忆、时间计算与多 Bot 协同已对所有模式默认内置；业务模块与外部工具通过下方 MCP 服务按需挂载（在对话中提及相关需求时也会自动发现并永久挂载）。",
+                    text = "实时多源联网搜索、网页正文读取、长期记忆、时间计算与多 Bot 协同已默认内置；外部扩展与 MCP 服务可在下方按需挂载。",
                     fontSize = 11.5.sp,
-                    lineHeight = 16.sp,
+                    lineHeight = 16.5.sp,
                     color = theme.textMuted
                 )
             }
         }
 
         if (availableSkills.isNotEmpty()) {
-            Text(
-                text = "已挂载 MCP 服务与扩展 (${selectedSkillIds.size}/${availableSkills.size} · 支持聊天自动挂载)",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = theme.textMuted
+            VesperSectionHeader(
+                title = "已挂载 MCP 服务与扩展 (${selectedSkillIds.size}/${availableSkills.size})"
             )
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -136,12 +133,9 @@ private fun BuiltinAndCustomSkillsBlock(
             ) {
                 availableSkills.forEach { sk ->
                     val checked = sk.id in selectedSkillIds
-                    TactileSecondaryButton(
-                        text = sk.name,
-                        accent = checked,
-                        cornerRadius = 9.dp,
-                        minHeight = 29.dp,
-                        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp),
+                    VesperFilterChip(
+                        label = sk.name,
+                        selected = checked,
                         onClick = { onToggleSkill(sk.id) }
                     )
                 }
@@ -175,29 +169,28 @@ fun BotProfileSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = theme.sheetBg,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = theme.surfaceSheet,
         scrimColor = theme.scrim,
         tonalElevation = 0.dp,
-        dragHandle = { ObsidianSheetDragHandle() }
+        dragHandle = { VesperSheetDragHandle() }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                SpiritSquircleAvatar(
+                BotAvatar(
                     bot = bot,
                     allBots = allBots,
                     containerSize = 62.dp,
-                    cornerRadius = 18.dp,
                     showPresenceDot = true,
                     interactive = true
                 )
@@ -220,18 +213,13 @@ fun BotProfileSheet(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
-                        CrispTagPill(
-                            text = if (bot.isGroup) bot.groupModeLabel() else bot.modeBadgeLabel(),
-                            bgColor = theme.accent.copy(alpha = 0.16f),
-                            borderColor = theme.accent.copy(alpha = 0.36f),
-                            textColor = if (theme.isLight) theme.accentDeep else theme.accentLight
-                        )
+                        VesperTag(text = if (bot.isGroup) bot.groupModeLabel() else bot.modeBadgeLabel())
                     }
 
-                    val subtitle = bot.roleTitle.ifBlank { if (bot.isGroup) "群聊" else "AI 好友" }
+                    val subtitle = bot.roleTitle.ifBlank { if (bot.isGroup) "多智能体协同群" else "AI 好友" }
                     Text(
                         text = subtitle,
-                        fontSize = 12.5.sp,
+                        fontSize = 13.sp,
                         color = theme.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -240,28 +228,26 @@ fun BotProfileSheet(
             }
 
             if (bot.traits.isNotBlank() || (bot.isGroup && members.isNotEmpty())) {
-                SpecularGlassCard(
-                    cornerRadius = 18.dp,
+                VesperCard(
+                    cornerRadius = 16.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
                         modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp),
-                        verticalArrangement = Arrangement.spacedBy(9.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         if (bot.traits.isNotBlank()) {
-                            ProfileFieldRow(
-                                label = "简介",
-                                value = bot.traits
-                            )
+                            ProfileFieldRow(label = "简介", value = bot.traits)
                         }
                         if (bot.traits.isNotBlank() && bot.isGroup && members.isNotEmpty()) {
-                            HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
+                            VesperDivider()
                         }
                         if (bot.isGroup && members.isNotEmpty()) {
-                            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
                                     text = "成员 (${members.size})",
-                                    fontSize = 11.5.sp,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
                                     color = theme.textSecondary,
                                     maxLines = 1,
                                     softWrap = false
@@ -272,21 +258,20 @@ fun BotProfileSheet(
                                             horizontalAlignment = Alignment.CenterHorizontally,
                                             verticalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
-                                            SpiritSquircleAvatar(
+                                            BotAvatar(
                                                 bot = m,
                                                 allBots = allBots,
-                                                containerSize = 40.dp,
-                                                cornerRadius = 12.dp
+                                                containerSize = 40.dp
                                             )
                                             Text(
                                                 text = m.name,
-                                                fontSize = 10.5.sp,
+                                                fontSize = 11.sp,
                                                 color = theme.textPrimary,
                                                 textAlign = TextAlign.Center,
                                                 maxLines = 1,
                                                 softWrap = false,
                                                 overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.width(50.dp)
+                                                modifier = Modifier.width(52.dp)
                                             )
                                         }
                                     }
@@ -297,7 +282,7 @@ fun BotProfileSheet(
                 }
             }
 
-            SpecularGlassCard(
+            VesperCard(
                 cornerRadius = 16.dp,
                 onClick = onTogglePin,
                 modifier = Modifier.fillMaxWidth()
@@ -305,26 +290,27 @@ fun BotProfileSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 15.dp, vertical = 11.dp),
+                        .sizeIn(minHeight = 56.dp)
+                        .padding(start = 15.dp, end = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "置顶聊天",
-                        fontSize = 14.sp,
+                        fontSize = 14.5.sp,
                         fontWeight = FontWeight.Medium,
                         color = theme.textPrimary,
                         maxLines = 1,
                         softWrap = false
                     )
-                    TactileToggle(
+                    VesperSwitch(
                         checked = bot.isPinned,
                         onCheckedChange = { onTogglePin() }
                     )
                 }
             }
 
-            TactilePrimaryButton(
+            VesperPrimaryButton(
                 text = if (bot.isGroup) "进入群聊" else "发消息",
                 leadingIcon = Icons.Default.ChatBubble,
                 minHeight = 48.dp,
@@ -337,32 +323,36 @@ fun BotProfileSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (!bot.isGroup) {
-                    TactileSecondaryButton(
+                    VesperSecondaryButton(
                         text = "发起群聊",
-                        minHeight = 42.dp,
+                        minHeight = 44.dp,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                         onClick = onStartGroupWithBot,
                         modifier = Modifier.weight(1f)
                     )
-                    TactileSecondaryButton(
+                    VesperSecondaryButton(
                         text = "长期记忆",
-                        minHeight = 42.dp,
+                        minHeight = 44.dp,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                         onClick = onOpenMemories,
                         modifier = Modifier.weight(1f)
                     )
                 }
-                TactileSecondaryButton(
+                VesperSecondaryButton(
                     text = "编辑资料",
-                    minHeight = 42.dp,
+                    minHeight = 44.dp,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                     onClick = onEditBot,
                     modifier = Modifier.weight(1f)
                 )
                 if (!bot.isBuiltin) {
-                    TactileSecondaryButton(
-                        text = if (bot.isGroup) "解散群聊" else "删除好友",
-                        danger = true,
-                        minHeight = 42.dp,
+                    VesperSecondaryButton(
+                        text = if (bot.isGroup) "解散" else "删除",
+                        tone = VesperButtonTone.DANGER,
+                        minHeight = 44.dp,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                         onClick = onDeleteBot,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(0.85f)
                     )
                 }
             }
@@ -394,66 +384,62 @@ fun BotMemoriesSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = theme.sheetBg,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = theme.surfaceSheet,
         scrimColor = theme.scrim,
         tonalElevation = 0.dp,
-        dragHandle = { ObsidianSheetDragHandle() }
+        dragHandle = { VesperSheetDragHandle() }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 18.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
                     Text(
                         text = "${bot.name} · 长期记忆库",
-                        fontSize = 17.5.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = theme.textPrimary
                     )
                     Text(
                         text = "共 ${memories.size} 条记忆（含本 Bot 专属与全局共享记忆）",
-                        fontSize = 11.5.sp,
+                        fontSize = 12.sp,
                         color = theme.textMuted
                     )
                 }
-                TactileSecondaryButton(
-                    text = if (showAddForm) "收起" else "+ 新增",
-                    accent = true,
+                VesperSecondaryButton(
+                    text = if (showAddForm) "收起" else "新增",
+                    leadingIcon = if (showAddForm) null else Icons.Default.Add,
+                    tone = VesperButtonTone.ACCENT,
                     cornerRadius = 999.dp,
-                    minHeight = 32.dp,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                    minHeight = 38.dp,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     onClick = { showAddForm = !showAddForm }
                 )
             }
 
             if (showAddForm) {
-                SpecularGlassCard(cornerRadius = 15.dp, modifier = Modifier.fillMaxWidth()) {
+                VesperCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
                     Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("preference" to "偏好", "fact" to "事实", "project" to "项目").forEach { (cid, lbl) ->
-                                TactileSecondaryButton(
-                                    text = lbl,
-                                    accent = category == cid,
-                                    cornerRadius = 9.dp,
-                                    minHeight = 28.dp,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 3.dp),
-                                    onClick = { category = cid }
-                                )
-                            }
-                        }
-                        ObsidianGlassInput(
+                        val cats = listOf("preference" to "偏好", "fact" to "事实", "project" to "项目")
+                        VesperSegmentedTabs(
+                            options = cats.map { it.second },
+                            selectedIndex = cats.indexOfFirst { it.first == category }.coerceAtLeast(0),
+                            onSelect = { idx -> category = cats[idx].first }
+                        )
+                        VesperTextField(
                             value = factKey,
                             onValueChange = { factKey = it },
                             label = "记忆主题标签",
@@ -461,7 +447,7 @@ fun BotMemoriesSheet(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        ObsidianGlassInput(
+                        VesperTextField(
                             value = content,
                             onValueChange = { content = it },
                             label = "记忆内容",
@@ -471,17 +457,20 @@ fun BotMemoriesSheet(
                             modifier = Modifier.fillMaxWidth()
                         )
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .sizeIn(minHeight = 48.dp)
+                                .clickable { pinned = !pinned },
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("置顶长期注入", fontSize = 12.5.sp, color = theme.textSecondary)
-                            TactileToggle(checked = pinned, onCheckedChange = { pinned = it })
+                            Text("置顶长期注入", fontSize = 13.5.sp, color = theme.textPrimary)
+                            VesperSwitch(checked = pinned, onCheckedChange = { pinned = it })
                         }
-                        TactilePrimaryButton(
+                        VesperPrimaryButton(
                             text = "写入记忆",
                             enabled = content.isNotBlank(),
-                            minHeight = 40.dp,
+                            minHeight = 46.dp,
                             onClick = {
                                 onCreateMemory(category, factKey.ifBlank { "note" }, content.trim(), pinned)
                                 factKey = ""
@@ -505,28 +494,25 @@ fun BotMemoriesSheet(
                     item {
                         Text(
                             text = "正在加载长期记忆...",
-                            fontSize = 12.5.sp,
+                            fontSize = 13.sp,
                             color = theme.textMuted,
                             modifier = Modifier.padding(vertical = 16.dp)
                         )
                     }
                 } else if (memories.isEmpty()) {
                     item {
-                        SpecularGlassCard(cornerRadius = 15.dp, modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = "暂无长期记忆。对话中可通过「提炼记忆」自动沉淀，或点击右上角「+ 新增」写入。",
-                                fontSize = 12.5.sp,
-                                color = theme.textMuted,
-                                modifier = Modifier.padding(14.dp)
-                            )
-                        }
+                        VesperEmptyState(
+                            icon = Icons.Outlined.Psychology,
+                            title = "暂无长期记忆",
+                            subtitle = "对话中可通过「提炼记忆」自动沉淀，或点击右上角「新增」手动写入"
+                        )
                     }
                 }
                 items(memories, key = { it.id }) { mem ->
-                    SpecularGlassCard(cornerRadius = 15.dp, modifier = Modifier.fillMaxWidth()) {
+                    VesperCard(cornerRadius = 14.dp, modifier = Modifier.fillMaxWidth()) {
                         Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                            modifier = Modifier.padding(start = 13.dp, end = 4.dp, top = 8.dp, bottom = 11.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -538,15 +524,15 @@ fun BotMemoriesSheet(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    CrispTagPill(
+                                    VesperTag(
                                         text = if (mem.scope == "global") "全局" else "专属",
-                                        bgColor = theme.inputTop,
-                                        borderColor = theme.rimSubtle,
+                                        bgColor = theme.surfaceInput,
+                                        borderColor = theme.border,
                                         textColor = theme.textSecondary
                                     )
                                     Text(
                                         text = mem.factKey.ifBlank { mem.category },
-                                        fontSize = 12.5.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         fontFamily = FontFamily.Monospace,
                                         color = theme.textPrimary,
@@ -554,36 +540,37 @@ fun BotMemoriesSheet(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Icon(
-                                        imageVector = if (mem.pinned) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                        contentDescription = "置顶",
-                                        tint = if (mem.pinned) theme.accent else theme.textMuted,
-                                        modifier = Modifier
-                                            .size(18.dp)
-                                            .clickable { onTogglePin(mem) }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    VesperIconButton(
+                                        icon = if (mem.pinned) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                        contentDescription = if (mem.pinned) "取消置顶" else "置顶记忆",
+                                        accent = mem.pinned,
+                                        filled = false,
+                                        iconSize = 18.dp,
+                                        onClick = { onTogglePin(mem) }
                                     )
-                                    Icon(
-                                        imageVector = Icons.Default.DeleteOutline,
+                                    VesperIconButton(
+                                        icon = Icons.Default.DeleteOutline,
                                         contentDescription = "删除记忆",
-                                        tint = Color(0xFFF87171),
-                                        modifier = Modifier
-                                            .size(18.dp)
-                                            .clickable { onDeleteMemory(mem) }
+                                        danger = true,
+                                        filled = false,
+                                        iconSize = 18.dp,
+                                        onClick = { onDeleteMemory(mem) }
                                     )
                                 }
                             }
                             Text(
                                 text = mem.content,
-                                fontSize = 12.5.sp,
-                                lineHeight = 18.sp,
-                                color = theme.textSecondary
+                                fontSize = 13.sp,
+                                lineHeight = 19.sp,
+                                color = theme.textSecondary,
+                                modifier = Modifier.padding(end = 9.dp)
                             )
                         }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
         }
     }
 }
@@ -597,16 +584,16 @@ private fun ProfileFieldRow(label: String, value: String) {
     ) {
         Text(
             text = label,
-            fontSize = 12.sp,
-            color = theme.textSecondary,
+            fontSize = 12.5.sp,
+            color = theme.textMuted,
             maxLines = 1,
             softWrap = false,
             modifier = Modifier.width(42.dp)
         )
         Text(
             text = value,
-            fontSize = 13.sp,
-            lineHeight = 19.sp,
+            fontSize = 13.5.sp,
+            lineHeight = 20.sp,
             color = theme.textPrimary,
             modifier = Modifier.weight(1f)
         )
@@ -614,7 +601,7 @@ private fun ProfileFieldRow(label: String, value: String) {
 }
 
 /**
- * 2. Native Edit Friend / Group Profile Sheet (Zero WebView jump!).
+ * 2. Native Edit Friend / Group Profile Sheet.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -656,23 +643,24 @@ fun EditBotSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = theme.sheetBg,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = theme.surfaceSheet,
         scrimColor = theme.scrim,
         tonalElevation = 0.dp,
-        dragHandle = { ObsidianSheetDragHandle() }
+        dragHandle = { VesperSheetDragHandle() }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text(
                 text = if (bot.isGroup) "编辑群资料" else "编辑好友资料",
-                fontSize = 17.5.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = theme.textPrimary
             )
@@ -684,7 +672,7 @@ fun EditBotSheet(
                 )
             }
 
-            ObsidianGlassInput(
+            VesperTextField(
                 value = name,
                 onValueChange = { name = it },
                 label = if (bot.isGroup) "群名称" else "昵称",
@@ -693,53 +681,45 @@ fun EditBotSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            ObsidianGlassInput(
+            VesperTextField(
                 value = roleTitle,
                 onValueChange = { roleTitle = it },
-                label = if (bot.isGroup) "群定位" else "头衔",
+                label = if (bot.isGroup) "群定位" else "角色头衔",
                 placeholder = "简短描述角色",
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
 
             if (bot.isGroup) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    groupModes.forEach { (mid, mLabel) ->
-                        TactileSecondaryButton(
-                            text = mLabel,
-                            accent = groupMode == mid,
-                            cornerRadius = 11.dp,
-                            minHeight = 38.dp,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 7.dp),
-                            onClick = { groupMode = mid },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    VesperSectionHeader(title = "协作模式")
+                    VesperSegmentedTabs(
+                        options = groupModes.map { it.second },
+                        selectedIndex = groupModes.indexOfFirst { it.first == groupMode }.coerceAtLeast(0),
+                        onSelect = { idx -> groupMode = groupModes[idx].first }
+                    )
                 }
 
-                ObsidianGlassInput(
+                VesperTextField(
                     value = announcement,
                     onValueChange = { announcement = it },
-                    label = "群公告 (可选)",
+                    label = "群公告（可选）",
                     placeholder = "输入群公告...",
                     singleLine = false,
                     maxLines = 3,
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                ObsidianGlassInput(
+                VesperTextField(
                     value = traits,
                     onValueChange = { traits = it },
-                    label = "简介与说话风格 (可选)",
+                    label = "简介与说话风格（可选）",
                     placeholder = "例如：言简意赅、自然直率",
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                ObsidianGlassInput(
+                VesperTextField(
                     value = systemPrompt,
                     onValueChange = { systemPrompt = it },
                     label = "系统提示词",
@@ -763,35 +743,41 @@ fun EditBotSheet(
                 )
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { allowPaidFallback = !allowPaidFallback }
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            VesperCard(
+                cornerRadius = 14.dp,
+                onClick = { allowPaidFallback = !allowPaidFallback },
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                    Text(
-                        text = "允许该 Bot 付费兜底",
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = theme.textPrimary
-                    )
-                    Text(
-                        text = "关闭时严格只走免费模型池",
-                        fontSize = 11.5.sp,
-                        color = theme.textSecondary
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .sizeIn(minHeight = 58.dp)
+                        .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+                        Text(
+                            text = "允许该 Bot 付费兜底",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = theme.textPrimary
+                        )
+                        Text(
+                            text = "关闭时严格只走免费模型池",
+                            fontSize = 12.sp,
+                            color = theme.textMuted
+                        )
+                    }
+                    VesperSwitch(
+                        checked = allowPaidFallback,
+                        onCheckedChange = { allowPaidFallback = it }
                     )
                 }
-                TactileToggle(
-                    checked = allowPaidFallback,
-                    onCheckedChange = { allowPaidFallback = it }
-                )
             }
 
-            TactilePrimaryButton(
-                text = "保存",
+            VesperPrimaryButton(
+                text = "保存修改",
                 enabled = name.isNotBlank(),
                 minHeight = 48.dp,
                 onClick = {
@@ -827,120 +813,109 @@ private fun AvatarPickerRow(
     val (curShape, curColor) = remember(selected) { parseBotAvatarParts(selected) }
     val normalizedStyle = "$curShape:$curColor"
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // 8 Unified Color Swatches (1:1 parity with Web BotAvatarPicker)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+    VesperCard(
+        cornerRadius = 16.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            GrokBotAvatar(
-                avatarStyle = normalizedStyle,
-                state = "idle",
-                size = 46.dp,
-                interactive = true,
-                animateIdle = true,
-                seedKey = "picker_preview"
-            )
-            LazyRow(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // 8 Unified Bot Palette Swatches
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(GROKBOT_COLOR_OPTIONS, key = { it.id }) { colorOpt ->
-                    val isSelectedColor = curColor == colorOpt.id
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .tactileClickable(pressedScale = 0.90f, hapticOnTap = true) {
-                                onSelect("$curShape:${colorOpt.id}")
-                            }
-                            .border(
-                                width = if (isSelectedColor) 2.dp else 1.dp,
-                                color = if (isSelectedColor) theme.accent else theme.divider,
-                                shape = CircleShape
-                            )
-                            .padding(3.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(
-                                        colorOpt.palette.shellHi,
-                                        colorOpt.palette.shellMid,
-                                        colorOpt.palette.ring
+                GrokBotAvatar(
+                    avatarStyle = normalizedStyle,
+                    state = "idle",
+                    size = 48.dp,
+                    interactive = true,
+                    animateIdle = true,
+                    seedKey = "picker_preview"
+                )
+                LazyRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    items(GROKBOT_COLOR_OPTIONS, key = { it.id }) { colorOpt ->
+                        val isSelectedColor = curColor == colorOpt.id
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .vesperPressable(pressedScale = 0.90f, hapticOnTap = true) {
+                                    onSelect("$curShape:${colorOpt.id}")
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .border(
+                                        width = if (isSelectedColor) 2.dp else 1.dp,
+                                        color = if (isSelectedColor) theme.accent else theme.border,
+                                        shape = CircleShape
                                     )
-                                ),
-                                CircleShape
+                                    .padding(3.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(
+                                                colorOpt.palette.shellHi,
+                                                colorOpt.palette.shellMid,
+                                                colorOpt.palette.ring
+                                            )
+                                        ),
+                                        CircleShape
+                                    )
                             )
-                    )
+                        }
+                    }
                 }
             }
-        }
 
-        // 6 Unified Monolithic Shapes
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(GROKBOT_SHAPE_OPTIONS, key = { it.id }) { shapeOpt ->
-                val active = curShape == shapeOpt.id
-                val itemStyle = "${shapeOpt.id}:$curColor"
-                val itemShape = RoundedCornerShape(14.dp)
-                Column(
-                    modifier = Modifier
-                        .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                            onSelect(itemStyle)
-                        }
-                        .clip(itemShape)
-                        .background(
-                            Brush.verticalGradient(
-                                if (active) {
-                                    listOf(
-                                        theme.accent.copy(alpha = 0.22f),
-                                        theme.accentDeep.copy(alpha = 0.12f)
-                                    )
-                                } else {
-                                    listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)
-                                }
-                            ),
-                            itemShape
+            // 6 Unified Monolithic Shapes
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(GROKBOT_SHAPE_OPTIONS, key = { it.id }) { shapeOpt ->
+                    val active = curShape == shapeOpt.id
+                    val itemStyle = "${shapeOpt.id}:$curColor"
+                    val itemShape = RoundedCornerShape(12.dp)
+                    Column(
+                        modifier = Modifier
+                            .vesperPressable(pressedScale = 0.94f, hapticOnTap = true) {
+                                onSelect(itemStyle)
+                            }
+                            .clip(itemShape)
+                            .background(if (active) theme.accentSoft else theme.surfaceControl, itemShape)
+                            .border(
+                                width = 1.dp,
+                                color = if (active) theme.accentMuted else theme.border,
+                                shape = itemShape
+                            )
+                            .padding(horizontal = 11.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        GrokBotAvatar(
+                            avatarStyle = itemStyle,
+                            state = if (active) "done" else "idle",
+                            size = 34.dp,
+                            interactive = false,
+                            animateIdle = active,
+                            seedKey = itemStyle
                         )
-                        .border(
-                            BorderStroke(
-                                0.85.dp,
-                                if (active) {
-                                    specularRimBrush(
-                                        theme.accent.copy(alpha = 0.55f),
-                                        theme.accent.copy(alpha = 0.25f),
-                                        Color.Transparent
-                                    )
-                                } else {
-                                    specularRimBrush(theme.rimMid, theme.rimSubtle, Color.Transparent)
-                                }
-                            ),
-                            itemShape
+                        Text(
+                            text = shapeOpt.label,
+                            fontSize = 10.5.sp,
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (active) theme.accentForeground else theme.textSecondary,
+                            maxLines = 1,
+                            softWrap = false
                         )
-                        .padding(horizontal = 11.dp, vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    GrokBotAvatar(
-                        avatarStyle = itemStyle,
-                        state = if (active) "done" else "idle",
-                        size = 34.dp,
-                        interactive = false,
-                        animateIdle = active,
-                        seedKey = itemStyle
-                    )
-                    Text(
-                        text = shapeOpt.label,
-                        fontSize = 10.5.sp,
-                        color = if (active) {
-                            if (theme.isLight) theme.accentDeep else theme.accentLight
-                        } else {
-                            theme.textSecondary
-                        },
-                        maxLines = 1,
-                        softWrap = false
-                    )
+                    }
                 }
             }
         }
@@ -948,7 +923,7 @@ private fun AvatarPickerRow(
 }
 
 /**
- * 3. Native Quick-Add AI Friend Sheet ("添加 AI 好友").
+ * 3. Native Bot Forge Sheet ("添加 AI 好友").
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -987,23 +962,24 @@ fun CreateFriendSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = theme.sheetBg,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = theme.surfaceSheet,
         scrimColor = theme.scrim,
         tonalElevation = 0.dp,
-        dragHandle = { ObsidianSheetDragHandle() }
+        dragHandle = { VesperSheetDragHandle() }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text(
                 text = "添加 AI 好友",
-                fontSize = 17.5.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = theme.textPrimary
             )
@@ -1013,26 +989,16 @@ fun CreateFriendSheet(
                 onSelect = { selectedAvatar = it }
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                modeOptions.forEach { (mid, mLabel) ->
-                    TactileSecondaryButton(
-                        text = mLabel,
-                        accent = selectedMode == mid,
-                        cornerRadius = 11.dp,
-                        minHeight = 38.dp,
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 7.dp),
-                        onClick = {
-                            selectedMode = mid
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                VesperSectionHeader(title = "交互模式")
+                VesperSegmentedTabs(
+                    options = modeOptions.map { it.second },
+                    selectedIndex = modeOptions.indexOfFirst { it.first == selectedMode }.coerceAtLeast(1),
+                    onSelect = { idx -> selectedMode = modeOptions[idx].first }
+                )
             }
 
-            ObsidianGlassInput(
+            VesperTextField(
                 value = name,
                 onValueChange = { name = it },
                 label = "昵称",
@@ -1041,29 +1007,29 @@ fun CreateFriendSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            ObsidianGlassInput(
+            VesperTextField(
                 value = roleTitle,
                 onValueChange = { roleTitle = it },
-                label = "头衔 (可选)",
+                label = "角色头衔（可选）",
                 placeholder = "一句话角色描述",
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            ObsidianGlassInput(
+            VesperTextField(
                 value = traits,
                 onValueChange = { traits = it },
-                label = "说话风格 (可选)",
+                label = "说话风格（可选）",
                 placeholder = "例如：言简意赅、自然直率",
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            ObsidianGlassInput(
+            VesperTextField(
                 value = systemPrompt,
                 onValueChange = { systemPrompt = it },
-                label = "系统提示词 (可选)",
-                placeholder = "补充设定或习惯...",
+                label = "系统提示词（可选）",
+                placeholder = "补充设定或回答偏好...",
                 singleLine = false,
                 maxLines = 3,
                 modifier = Modifier.fillMaxWidth()
@@ -1082,35 +1048,41 @@ fun CreateFriendSheet(
                 }
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { allowPaidFallback = !allowPaidFallback }
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            VesperCard(
+                cornerRadius = 14.dp,
+                onClick = { allowPaidFallback = !allowPaidFallback },
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                    Text(
-                        text = "允许该 Bot 调用付费主力池",
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = theme.textPrimary
-                    )
-                    Text(
-                        text = "默认开启（优先付费主力模型池）",
-                        fontSize = 11.5.sp,
-                        color = theme.textSecondary
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .sizeIn(minHeight = 58.dp)
+                        .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+                        Text(
+                            text = "允许该 Bot 调用付费主力池",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = theme.textPrimary
+                        )
+                        Text(
+                            text = "默认开启（优先使用付费主力模型池）",
+                            fontSize = 12.sp,
+                            color = theme.textMuted
+                        )
+                    }
+                    VesperSwitch(
+                        checked = allowPaidFallback,
+                        onCheckedChange = { allowPaidFallback = it }
                     )
                 }
-                TactileToggle(
-                    checked = allowPaidFallback,
-                    onCheckedChange = { allowPaidFallback = it }
-                )
             }
 
-            TactilePrimaryButton(
-                text = "完成",
+            VesperPrimaryButton(
+                text = "创建 AI 好友",
                 enabled = name.isNotBlank(),
                 minHeight = 48.dp,
                 onClick = {
@@ -1175,15 +1147,16 @@ fun CreateGroupSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = theme.sheetBg,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = theme.surfaceSheet,
         scrimColor = theme.scrim,
         tonalElevation = 0.dp,
-        dragHandle = { ObsidianSheetDragHandle() }
+        dragHandle = { VesperSheetDragHandle() }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1194,20 +1167,20 @@ fun CreateGroupSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "发起群聊",
-                    fontSize = 17.5.sp,
+                    text = "发起协同群聊",
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = theme.textPrimary,
                     maxLines = 1,
                     softWrap = false
                 )
 
-                TactilePrimaryButton(
-                    text = "完成 (${selectedIds.size})",
+                VesperPrimaryButton(
+                    text = "创建 (${selectedIds.size})",
                     enabled = selectedIds.size >= 2,
                     cornerRadius = 999.dp,
-                    minHeight = 36.dp,
-                    contentPadding = PaddingValues(horizontal = 15.dp, vertical = 6.dp),
+                    minHeight = 40.dp,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 7.dp),
                     onClick = {
                         if (selectedIds.size >= 2) {
                             onSubmit(sourceBotId, selectedIds.toList(), groupName, groupMode, carryContext)
@@ -1216,46 +1189,36 @@ fun CreateGroupSheet(
                 )
             }
 
-            ObsidianGlassInput(
+            VesperTextField(
                 value = groupName,
                 onValueChange = { groupName = it },
-                placeholder = "群名称 (可选)",
+                placeholder = "群名称（可选，留空自动命名）",
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                modes.forEach { (mid, mLabel) ->
-                    TactileSecondaryButton(
-                        text = mLabel,
-                        accent = groupMode == mid,
-                        cornerRadius = 11.dp,
-                        minHeight = 38.dp,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 7.dp),
-                        onClick = { groupMode = mid },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
+            VesperSegmentedTabs(
+                options = modes.map { it.second },
+                selectedIndex = modes.indexOfFirst { it.first == groupMode }.coerceAtLeast(0),
+                onSelect = { idx -> groupMode = modes[idx].first }
+            )
 
             if (sourceBotId.isNotBlank()) {
-                SpecularGlassCard(
-                    cornerRadius = 15.dp,
+                VesperCard(
+                    cornerRadius = 14.dp,
                     onClick = { carryContext = !carryContext },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .sizeIn(minHeight = 54.dp)
+                            .padding(start = 14.dp, end = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "同步最近单聊记录",
+                            text = "同步最近单聊上下文",
                             fontSize = 13.5.sp,
                             color = theme.textPrimary,
                             maxLines = 1,
@@ -1264,7 +1227,7 @@ fun CreateGroupSheet(
                                 .weight(1f)
                                 .padding(end = 10.dp)
                         )
-                        TactileToggle(
+                        VesperSwitch(
                             checked = carryContext,
                             onCheckedChange = { carryContext = it }
                         )
@@ -1282,86 +1245,108 @@ fun CreateGroupSheet(
                 items(candidates, key = { it.id }) { friend ->
                     val checked = selectedIds.contains(friend.id)
                     val locked = friend.id == sourceBotId
-                    SpecularGlassCard(
-                        cornerRadius = 15.dp,
-                        accentTint = if (checked) theme.accent else null,
-                        onClick = {
+                    MemberSelectableRow(
+                        friend = friend,
+                        allBots = allBots,
+                        checked = checked,
+                        locked = locked,
+                        onToggle = {
                             if (!locked) {
                                 if (checked) selectedIds.remove(friend.id) else selectedIds.add(friend.id)
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (checked) {
-                                            Brush.verticalGradient(listOf(theme.accentLight, theme.accentDeep))
-                                        } else {
-                                            Brush.verticalGradient(listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom))
-                                        },
-                                        CircleShape
-                                    )
-                                    .border(
-                                        0.8.dp,
-                                        if (checked) theme.accent.copy(alpha = 0.55f) else theme.rimMid,
-                                        CircleShape
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (checked) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = theme.onAccent,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
-
-                            SpiritSquircleAvatar(
-                                bot = friend,
-                                allBots = allBots,
-                                containerSize = 40.dp,
-                                cornerRadius = 12.dp
-                            )
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = friend.name,
-                                    fontSize = 14.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = theme.textPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                if (friend.roleTitle.isNotBlank()) {
-                                    Text(
-                                        text = friend.roleTitle,
-                                        fontSize = 11.5.sp,
-                                        color = theme.textSecondary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
                         }
-                    }
+                    )
                 }
             }
         }
     }
 }
 
+@Composable
+private fun MemberSelectableRow(
+    friend: BotItem,
+    allBots: List<BotItem>,
+    checked: Boolean,
+    locked: Boolean = false,
+    onToggle: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    VesperCard(
+        cornerRadius = 14.dp,
+        accentTone = if (checked) theme.accent else null,
+        onClick = onToggle,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sizeIn(minHeight = 60.dp)
+                .padding(horizontal = 13.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(if (checked) theme.accent else theme.surfaceControl, CircleShape)
+                    .border(
+                        1.dp,
+                        if (checked) theme.accent else theme.borderStrong,
+                        CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (checked) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = theme.onAccent,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+
+            BotAvatar(
+                bot = friend,
+                allBots = allBots,
+                containerSize = 40.dp
+            )
+
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = friend.name,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = theme.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (friend.roleTitle.isNotBlank()) {
+                    Text(
+                        text = friend.roleTitle,
+                        fontSize = 12.sp,
+                        color = theme.textMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            if (locked) {
+                VesperTag(
+                    text = "发起人",
+                    bgColor = theme.surfaceInput,
+                    borderColor = theme.border,
+                    textColor = theme.textMuted
+                )
+            }
+        }
+    }
+}
+
 /**
- * 5. WeChat "聊天详情 (···)" Drawer inside ChatRoomScreen.
+ * 5. Chat Room Info Drawer ("聊天详情").
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1398,11 +1383,11 @@ fun ChatInfoSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = theme.sheetBg,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = theme.surfaceSheet,
         scrimColor = theme.scrim,
         tonalElevation = 0.dp,
-        dragHandle = { ObsidianSheetDragHandle() }
+        dragHandle = { VesperSheetDragHandle() }
     ) {
         Column(
             modifier = Modifier
@@ -1410,17 +1395,17 @@ fun ChatInfoSheet(
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text(
                 text = if (isGroup) "群聊详情 (${members.size})" else "聊天详情",
-                fontSize = 17.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = theme.textPrimary
             )
 
-            SpecularGlassCard(
-                cornerRadius = 18.dp,
+            VesperCard(
+                cornerRadius = 16.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 LazyRow(
@@ -1431,16 +1416,15 @@ fun ChatInfoSheet(
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(5.dp),
-                            modifier = Modifier.tactileClickable(pressedScale = 0.93f) {
+                            modifier = Modifier.vesperPressable(pressedScale = 0.93f) {
                                 onDismiss()
                                 onOpenMemberProfile(m)
                             }
                         ) {
-                            SpiritSquircleAvatar(
+                            BotAvatar(
                                 bot = m,
                                 allBots = allBots,
-                                containerSize = 48.dp,
-                                cornerRadius = 14.dp
+                                containerSize = 48.dp
                             )
                             Text(
                                 text = m.name,
@@ -1460,7 +1444,7 @@ fun ChatInfoSheet(
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(5.dp),
-                            modifier = Modifier.tactileClickable(pressedScale = 0.93f) {
+                            modifier = Modifier.vesperPressable(pressedScale = 0.93f) {
                                 onDismiss()
                                 onInviteToGroup()
                             }
@@ -1469,22 +1453,13 @@ fun ChatInfoSheet(
                                 modifier = Modifier
                                     .size(48.dp)
                                     .clip(plusShape)
-                                    .background(
-                                        Brush.verticalGradient(listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)),
-                                        plusShape
-                                    )
-                                    .border(
-                                        BorderStroke(
-                                            0.85.dp,
-                                            specularRimBrush(theme.rimHighlight, theme.rimSubtle, Color.Transparent)
-                                        ),
-                                        plusShape
-                                    ),
+                                    .background(theme.surfaceControl, plusShape)
+                                    .border(1.dp, theme.border, plusShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Add,
-                                    contentDescription = "发起群聊",
+                                    contentDescription = if (isGroup) "管理群成员" else "拉人建群",
                                     tint = theme.textSecondary,
                                     modifier = Modifier.size(22.dp)
                                 )
@@ -1501,89 +1476,81 @@ fun ChatInfoSheet(
                 }
             }
 
-            SpecularGlassCard(
-                cornerRadius = 18.dp,
+            VesperCard(
+                cornerRadius = 16.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .sizeIn(minHeight = 54.dp)
                             .clickable {
                                 onDismiss()
                                 onSearchInChat()
                             }
-                            .padding(horizontal = 15.dp, vertical = 13.dp),
+                            .padding(horizontal = 15.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("查找聊天内容", fontSize = 14.sp, color = theme.textPrimary)
+                        Text("查找聊天内容", fontSize = 14.5.sp, color = theme.textPrimary)
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = null,
-                            tint = theme.accent,
-                            modifier = Modifier.size(16.dp)
+                            tint = theme.textMuted,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
-                    HorizontalDivider(
-                        thickness = 0.5.dp,
-                        color = theme.divider,
-                        modifier = Modifier.padding(horizontal = 15.dp)
-                    )
+                    VesperDivider(startIndent = 15.dp, endIndent = 15.dp)
 
                     if (activeBot != null) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .sizeIn(minHeight = 54.dp)
                                 .clickable { onTogglePin() }
-                                .padding(horizontal = 15.dp, vertical = 12.dp),
+                                .padding(start = 15.dp, end = 6.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("置顶聊天", fontSize = 14.sp, color = theme.textPrimary)
-                            TactileToggle(
+                            Text("置顶聊天", fontSize = 14.5.sp, color = theme.textPrimary)
+                            VesperSwitch(
                                 checked = activeBot.isPinned,
                                 onCheckedChange = { onTogglePin() }
                             )
                         }
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = theme.divider,
-                            modifier = Modifier.padding(horizontal = 15.dp)
-                        )
+                        VesperDivider(startIndent = 15.dp, endIndent = 15.dp)
                     }
 
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .sizeIn(minHeight = 54.dp)
                             .clickable { onThinkingChange(!enableThinking) }
-                            .padding(horizontal = 15.dp, vertical = 12.dp),
+                            .padding(start = 15.dp, end = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("深度思考", fontSize = 14.sp, color = theme.textPrimary)
-                        TactileToggle(
+                        Text("深度思考", fontSize = 14.5.sp, color = theme.textPrimary)
+                        VesperSwitch(
                             checked = enableThinking,
                             onCheckedChange = onThinkingChange
                         )
                     }
 
-                    HorizontalDivider(
-                        thickness = 0.5.dp,
-                        color = theme.divider,
-                        modifier = Modifier.padding(horizontal = 15.dp)
-                    )
+                    VesperDivider(startIndent = 15.dp, endIndent = 15.dp)
 
                     val currentModelLabel = resolveModelOptionDisplayName(activeModel, modelOptions)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .sizeIn(minHeight = 54.dp)
                             .clickable { showModelPicker = true }
-                            .padding(horizontal = 15.dp, vertical = 13.dp),
+                            .padding(horizontal = 15.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("模型切换", fontSize = 14.sp, color = theme.textPrimary)
+                        Text("推理模型", fontSize = 14.5.sp, color = theme.textPrimary)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -1591,88 +1558,80 @@ fun ChatInfoSheet(
                         ) {
                             Text(
                                 text = currentModelLabel,
-                                fontSize = 12.5.sp,
-                                color = if (theme.isLight) theme.accentDeep else theme.accentLight,
+                                fontSize = 13.sp,
+                                color = theme.accentForeground,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Icon(
-                                imageVector = Icons.Default.KeyboardArrowRight,
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                 contentDescription = null,
-                                tint = theme.accent,
-                                modifier = Modifier.size(16.dp)
+                                tint = theme.accentForeground,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
 
                     if (activeBot != null) {
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = theme.divider,
-                            modifier = Modifier.padding(horizontal = 15.dp)
-                        )
+                        VesperDivider(startIndent = 15.dp, endIndent = 15.dp)
 
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .sizeIn(minHeight = 58.dp)
                                 .clickable { onAllowPaidFallbackChange(!activeBot.allowPaidFallback) }
-                                .padding(horizontal = 15.dp, vertical = 12.dp),
+                                .padding(start = 15.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text("允许付费兜底", fontSize = 14.sp, color = theme.textPrimary)
+                            Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+                                Text("允许付费兜底", fontSize = 14.5.sp, color = theme.textPrimary)
                                 Text(
                                     text = "关闭时严格限用免费模型池",
-                                    fontSize = 11.sp,
-                                    color = theme.textSecondary
+                                    fontSize = 11.5.sp,
+                                    color = theme.textMuted
                                 )
                             }
-                            TactileToggle(
+                            VesperSwitch(
                                 checked = activeBot.allowPaidFallback,
                                 onCheckedChange = onAllowPaidFallbackChange
                             )
                         }
-                    }
 
-                    if (activeBot != null) {
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = theme.divider,
-                            modifier = Modifier.padding(horizontal = 15.dp)
-                        )
+                        VesperDivider(startIndent = 15.dp, endIndent = 15.dp)
 
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .sizeIn(minHeight = 54.dp)
                                 .clickable {
                                     onDismiss()
                                     onEditBot()
                                 }
-                                .padding(horizontal = 15.dp, vertical = 13.dp),
+                                .padding(horizontal = 15.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 text = if (isGroup) "编辑群资料" else "编辑好友资料",
-                                fontSize = 14.sp,
+                                fontSize = 14.5.sp,
                                 color = theme.textPrimary
                             )
                             Icon(
-                                imageVector = Icons.Default.KeyboardArrowRight,
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                 contentDescription = null,
                                 tint = theme.textMuted,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
                 }
             }
 
-            TactileSecondaryButton(
+            VesperSecondaryButton(
                 text = "清空聊天记录",
-                danger = true,
-                minHeight = 46.dp,
+                tone = VesperButtonTone.DANGER,
+                minHeight = 48.dp,
                 onClick = {
                     onDismiss()
                     onClearHistory()
@@ -1720,11 +1679,11 @@ fun ManageGroupMembersSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = theme.sheetBg,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = theme.surfaceSheet,
         scrimColor = theme.scrim,
         tonalElevation = 0.dp,
-        dragHandle = { ObsidianSheetDragHandle() }
+        dragHandle = { VesperSheetDragHandle() }
     ) {
         Column(
             modifier = Modifier
@@ -1740,19 +1699,19 @@ fun ManageGroupMembersSheet(
             ) {
                 Text(
                     text = "群成员管理",
-                    fontSize = 17.5.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = theme.textPrimary,
                     maxLines = 1,
                     softWrap = false
                 )
 
-                TactilePrimaryButton(
+                VesperPrimaryButton(
                     text = "保存 (${selectedIds.size})",
                     enabled = selectedIds.isNotEmpty(),
                     cornerRadius = 999.dp,
-                    minHeight = 36.dp,
-                    contentPadding = PaddingValues(horizontal = 15.dp, vertical = 6.dp),
+                    minHeight = 40.dp,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 7.dp),
                     onClick = {
                         if (selectedIds.isNotEmpty()) {
                             onSubmit(selectedIds.toList())
@@ -1770,80 +1729,18 @@ fun ManageGroupMembersSheet(
             ) {
                 items(candidates, key = { "mgr_${it.id}" }) { friend ->
                     val checked = selectedIds.contains(friend.id)
-                    SpecularGlassCard(
-                        cornerRadius = 15.dp,
-                        accentTint = if (checked) theme.accent else null,
-                        onClick = {
+                    MemberSelectableRow(
+                        friend = friend,
+                        allBots = allBots,
+                        checked = checked,
+                        onToggle = {
                             if (checked) {
                                 if (selectedIds.size > 1) selectedIds.remove(friend.id)
                             } else {
                                 selectedIds.add(friend.id)
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (checked) {
-                                            Brush.verticalGradient(listOf(theme.accentLight, theme.accentDeep))
-                                        } else {
-                                            Brush.verticalGradient(listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom))
-                                        },
-                                        CircleShape
-                                    )
-                                    .border(
-                                        0.8.dp,
-                                        if (checked) theme.accent.copy(alpha = 0.55f) else theme.rimMid,
-                                        CircleShape
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (checked) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = theme.onAccent,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
-
-                            SpiritSquircleAvatar(
-                                bot = friend,
-                                allBots = allBots,
-                                containerSize = 40.dp,
-                                cornerRadius = 12.dp
-                            )
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = friend.name,
-                                    fontSize = 14.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = theme.textPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                if (friend.roleTitle.isNotBlank()) {
-                                    Text(
-                                        text = friend.roleTitle,
-                                        fontSize = 11.5.sp,
-                                        color = theme.textSecondary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
                         }
-                    }
+                    )
                 }
             }
         }
@@ -1917,11 +1814,11 @@ fun ModelPickerSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = theme.sheetBg,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = theme.surfaceSheet,
         scrimColor = theme.scrim,
         tonalElevation = 0.dp,
-        dragHandle = { ObsidianSheetDragHandle() }
+        dragHandle = { VesperSheetDragHandle() }
     ) {
         Column(
             modifier = Modifier
@@ -1932,30 +1829,28 @@ fun ModelPickerSheet(
         ) {
             Text(
                 text = "切换推理模型",
-                fontSize = 17.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = theme.textPrimary
             )
             Text(
-                text = "按「自动 / 免费池 / 付费池」实时从服务端配置读取",
+                text = "按自动路由、付费主力池与免费池实时读取服务端配置",
                 fontSize = 12.sp,
-                color = theme.textSecondary
+                color = theme.textMuted
             )
 
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(340.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .height(360.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 sections.forEach { (sectionTitle, itemsList) ->
                     item(key = "hdr_$sectionTitle") {
-                        Text(
-                            text = sectionTitle,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = theme.textMuted,
-                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        VesperSectionHeader(
+                            title = sectionTitle,
+                            count = itemsList.size,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
                         )
                     }
                     items(itemsList, key = { it.id }) { opt ->
@@ -1966,17 +1861,16 @@ fun ModelPickerSheet(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .sizeIn(minHeight = 54.dp)
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (selected) theme.accent.copy(alpha = 0.14f) else theme.cardTop
-                                )
+                                .background(if (selected) theme.accentSoft else theme.surfaceCard)
                                 .border(
-                                    width = if (selected) 1.dp else 0.5.dp,
-                                    color = if (selected) theme.accent else theme.rimSubtle,
+                                    width = if (selected) 1.2.dp else 1.dp,
+                                    color = if (selected) theme.accentMuted else theme.border,
                                     shape = RoundedCornerShape(14.dp)
                                 )
                                 .clickable { onSelect(opt.id) }
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                                .padding(horizontal = 14.dp, vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
@@ -1987,15 +1881,16 @@ fun ModelPickerSheet(
                                     .background(
                                         when {
                                             !opt.available -> theme.textMuted
-                                            opt.tier == "paid" -> theme.accent
-                                            else -> Color(0xFF10B981)
+                                            opt.tier == "paid" -> theme.warning
+                                            opt.tier == "auto" -> theme.accent
+                                            else -> theme.success
                                         }
                                     )
                             )
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(
                                     text = opt.label,
-                                    fontSize = 13.5.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                                     color = theme.textPrimary,
                                     maxLines = 1,
@@ -2004,8 +1899,9 @@ fun ModelPickerSheet(
                                 if (opt.tier != "auto" && opt.provider.isNotBlank()) {
                                     Text(
                                         text = "${opt.provider} · ${opt.id}",
+                                        fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
-                                        color = theme.textSecondary,
+                                        color = theme.textMuted,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -2015,7 +1911,7 @@ fun ModelPickerSheet(
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = "已选中",
-                                    tint = theme.accent,
+                                    tint = theme.accentForeground,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }

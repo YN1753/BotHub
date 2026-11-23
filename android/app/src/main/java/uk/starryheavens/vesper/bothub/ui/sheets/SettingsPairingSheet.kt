@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
@@ -36,15 +37,14 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -61,10 +61,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -87,13 +87,19 @@ import uk.starryheavens.vesper.bothub.ui.ApkUpdater
 import uk.starryheavens.vesper.bothub.ui.BiometricAuthHelper
 import uk.starryheavens.vesper.bothub.ui.OtaUpdateState
 import uk.starryheavens.vesper.bothub.ui.PasskeyOutcome
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
-import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
-import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
-import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
-import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
-import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
+import uk.starryheavens.vesper.bothub.ui.components.VesperButtonTone
+import uk.starryheavens.vesper.bothub.ui.components.VesperCard
+import uk.starryheavens.vesper.bothub.ui.components.VesperDivider
+import uk.starryheavens.vesper.bothub.ui.components.VesperIconButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperPrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSectionHeader
+import uk.starryheavens.vesper.bothub.ui.components.VesperSheetDragHandle
+import uk.starryheavens.vesper.bothub.ui.components.VesperSwitch
+import uk.starryheavens.vesper.bothub.ui.components.VesperTag
+import uk.starryheavens.vesper.bothub.ui.components.VesperTextField
+import uk.starryheavens.vesper.bothub.ui.components.vesperPressable
 import uk.starryheavens.vesper.bothub.ui.theme.BOTHUB_ACCENT_OPTIONS
 import uk.starryheavens.vesper.bothub.ui.theme.BOTHUB_COLOR_MODE_OPTIONS
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
@@ -118,7 +124,7 @@ fun SettingsPairingSheet(
     zeroClickCaptureEnabled: Boolean,
     clipboardBannerEnabled: Boolean = true,
     floatingBallEnabled: Boolean = false,
-    appThemeId: String = "obsidian",
+    appThemeId: String = "dark:blue",
     api: BotHubApiClient,
     onConnected: (String) -> Unit,
     onServerUrlSaved: (String) -> Unit,
@@ -349,34 +355,28 @@ fun SettingsPairingSheet(
         }
     }
 
-    val greenTone = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
-    val indigoTone = if (theme.isLight) Color(0xFF4F46E5) else Color(0xFF818CF8)
-    val amberTone = if (theme.isLight) Color(0xFFD97706) else Color(0xFFFBBF24)
-    val skyTone = if (theme.isLight) Color(0xFF0284C7) else Color(0xFF38BDF8)
-    val roseTone = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFB7185)
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = theme.sheetBg,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = theme.surfaceSheet,
         scrimColor = theme.scrim,
         tonalElevation = 0.dp,
-        dragHandle = { ObsidianSheetDragHandle() }
+        dragHandle = { VesperSheetDragHandle() }
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Top Sheet Header
+            // Sheet Header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 2.dp),
+                    .padding(start = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -392,60 +392,52 @@ fun SettingsPairingSheet(
                         maxLines = 1,
                         softWrap = false
                     )
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(theme.inputTop)
-                            .border(1.dp, theme.divider, RoundedCornerShape(999.dp))
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = "v$localVersionClean",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = theme.textMuted,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                }
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(theme.inputTop, CircleShape)
-                        .border(1.dp, theme.divider, CircleShape)
-                        .tactileClickable(pressedScale = 0.90f, hapticOnTap = true, onClick = onDismiss),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "关闭设置",
-                        tint = theme.textSecondary,
-                        modifier = Modifier.size(18.dp)
+                    VesperTag(
+                        text = "v$localVersionClean",
+                        bgColor = theme.surfaceInput,
+                        borderColor = theme.border,
+                        textColor = theme.textMuted
                     )
                 }
+                VesperIconButton(
+                    icon = Icons.Default.Close,
+                    contentDescription = "关闭设置",
+                    onClick = onDismiss
+                )
             }
 
             if (sheetHint.isNotEmpty()) {
-                SpecularGlassCard(
-                    cornerRadius = 16.dp,
-                    accentTint = theme.accent,
+                VesperCard(
+                    cornerRadius = 14.dp,
+                    accentTone = theme.accent,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = sheetHint,
-                        fontSize = 12.5.sp,
-                        lineHeight = 18.sp,
-                        color = theme.textPrimary,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = theme.accentForeground,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = sheetHint,
+                            fontSize = 12.5.sp,
+                            lineHeight = 18.sp,
+                            color = theme.textPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
 
             if (!isPaired) {
-                SpecularGlassCard(
+                VesperCard(
                     cornerRadius = 16.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -453,7 +445,7 @@ fun SettingsPairingSheet(
                         modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        TactilePrimaryButton(
+                        VesperPrimaryButton(
                             text = "Vesper Auth 登录",
                             enabled = !connecting,
                             minHeight = 48.dp,
@@ -461,39 +453,50 @@ fun SettingsPairingSheet(
                             modifier = Modifier.fillMaxWidth()
                         )
 
-                        TactileSecondaryButton(
+                        VesperSecondaryButton(
                             text = if (connecting) "验证中..." else "通行密钥登录",
                             enabled = !connecting,
-                            minHeight = 46.dp,
+                            minHeight = 48.dp,
                             onClick = { runPasskeyConnect() },
                             modifier = Modifier.fillMaxWidth()
                         )
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = if (showPasswordFallback) "收起密钥登录" else "密钥登录",
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = theme.accent,
+                            Box(
                                 modifier = Modifier
-                                    .clickable { showPasswordFallback = !showPasswordFallback }
-                                    .padding(vertical = 6.dp)
-                            )
-                            Text(
-                                text = if (showCustomUrlField) "收起服务器地址" else "自定义服务器地址",
-                                fontSize = 12.5.sp,
-                                color = theme.textMuted,
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                    .vesperPressable { showPasswordFallback = !showPasswordFallback }
+                                    .padding(horizontal = 4.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Text(
+                                    text = if (showPasswordFallback) "收起密钥登录" else "密钥登录",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = theme.accentForeground
+                                )
+                            }
+                            Box(
                                 modifier = Modifier
-                                    .clickable { showCustomUrlField = !showCustomUrlField }
-                                    .padding(vertical = 6.dp)
-                            )
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                    .vesperPressable { showCustomUrlField = !showCustomUrlField }
+                                    .padding(horizontal = 4.dp),
+                                contentAlignment = Alignment.CenterEnd
+                            ) {
+                                Text(
+                                    text = if (showCustomUrlField) "收起服务器地址" else "自定义服务器地址",
+                                    fontSize = 13.sp,
+                                    color = theme.textMuted
+                                )
+                            }
                         }
 
                         if (showCustomUrlField) {
-                            ObsidianGlassInput(
+                            VesperTextField(
                                 value = urlInput,
                                 onValueChange = { urlInput = it },
                                 label = "服务端地址",
@@ -504,7 +507,7 @@ fun SettingsPairingSheet(
                         }
 
                         if (showPasswordFallback) {
-                            ObsidianGlassInput(
+                            VesperTextField(
                                 value = passwordInput,
                                 onValueChange = { passwordInput = it },
                                 label = "访问密钥",
@@ -513,12 +516,12 @@ fun SettingsPairingSheet(
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            TactilePrimaryButton(
+                            VesperPrimaryButton(
                                 text = if (connecting) "登录中..." else "登录",
                                 enabled = !connecting && passwordInput.isNotBlank(),
-                                minHeight = 46.dp,
+                                minHeight = 48.dp,
                                 onClick = {
-                                    if (passwordInput.isBlank() || connecting) return@TactilePrimaryButton
+                                    if (passwordInput.isBlank() || connecting) return@VesperPrimaryButton
                                     scope.launch {
                                         connecting = true
                                         api.exchangeToken(urlInput, passwordInput).onSuccess {
@@ -543,27 +546,27 @@ fun SettingsPairingSheet(
                     )
                 }
             } else {
-                // 1. Server Status & Quick Actions Hero Card
-                SpecularGlassCard(
+                // 1. Server Status & Quick Actions Card
+                VesperCard(
                     cornerRadius = 16.dp,
-                    accentTint = greenTone,
+                    accentTone = theme.success,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                                .padding(horizontal = 14.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(11.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             SettingsIconBadge(
                                 icon = Icons.Default.Dns,
-                                tint = greenTone
+                                tint = theme.success
                             )
                             Column(
                                 modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 Text(
                                     text = UrlUtils.formatDisplayHost(serverUrl),
@@ -581,7 +584,7 @@ fun SettingsPairingSheet(
                                     Box(
                                         modifier = Modifier
                                             .size(6.dp)
-                                            .background(greenTone, CircleShape)
+                                            .background(theme.success, CircleShape)
                                     )
                                     Text(
                                         text = if (hasNewerRelease) {
@@ -589,8 +592,8 @@ fun SettingsPairingSheet(
                                         } else {
                                             "服务端已配对"
                                         },
-                                        fontSize = 11.5.sp,
-                                        color = if (hasNewerRelease) theme.accent else theme.textMuted,
+                                        fontSize = 12.sp,
+                                        color = if (hasNewerRelease) theme.accentForeground else theme.textMuted,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -598,16 +601,12 @@ fun SettingsPairingSheet(
                             }
                         }
 
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = theme.divider,
-                            modifier = Modifier.padding(horizontal = 14.dp)
-                        )
+                        VesperDivider(startIndent = 14.dp, endIndent = 14.dp)
 
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 9.dp),
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             SettingsQuickActionChip(
@@ -654,7 +653,7 @@ fun SettingsPairingSheet(
                     }
                 }
 
-                // Inline OTA Progress / Update Banner (only shown when update available or active)
+                // Inline OTA Progress / Update Banner
                 if (hasNewerRelease || otaState !is OtaUpdateState.Idle) {
                     InAppOtaStatusCard(
                         otaState = otaState,
@@ -666,7 +665,7 @@ fun SettingsPairingSheet(
 
                 // 2. AI Engine & Model Pool Section
                 SettingsSectionBlock(title = "AI 引擎") {
-                    SpecularGlassCard(
+                    VesperCard(
                         cornerRadius = 16.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -696,23 +695,23 @@ fun SettingsPairingSheet(
                     )
                 }
 
-                // 4. Notifications & Background Push Section (Unified Toggle + Diagnostics + Test)
+                // 4. Notifications & Background Push Section
                 SettingsSectionBlock(title = "通知与后台保活") {
-                    SpecularGlassCard(
+                    VesperCard(
                         cornerRadius = 16.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             SettingsToggleRow(
                                 icon = Icons.Default.Notifications,
-                                iconTint = indigoTone,
+                                iconTint = theme.accent,
                                 title = "后台消息通知",
                                 subtitle = "退至后台时保持实时通道接收新消息提醒",
                                 checked = realtimeServiceEnabled,
                                 onCheckedChange = onRealtimeServiceChanged
                             )
 
-                            SettingsInsetDivider()
+                            VesperDivider(startIndent = 60.dp, endIndent = 14.dp)
 
                             PushDiagnosticsEmbeddedBlock(
                                 realtimeServiceEnabled = realtimeServiceEnabled,
@@ -740,39 +739,39 @@ fun SettingsPairingSheet(
 
                 // 5. Quick Capture & Screen Recognition Section
                 SettingsSectionBlock(title = "快捷收藏与识屏") {
-                    SpecularGlassCard(
+                    VesperCard(
                         cornerRadius = 16.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             SettingsToggleRow(
                                 icon = Icons.Default.Share,
-                                iconTint = greenTone,
+                                iconTint = theme.success,
                                 title = "系统分享直接收藏",
                                 subtitle = "从系统分享面板分享时自动存入收藏匣",
                                 checked = zeroClickCaptureEnabled,
                                 onCheckedChange = onZeroClickChanged
                             )
 
-                            SettingsInsetDivider()
+                            VesperDivider(startIndent = 60.dp, endIndent = 14.dp)
 
                             SettingsToggleRow(
                                 icon = Icons.Default.ContentPaste,
-                                iconTint = skyTone,
+                                iconTint = theme.info,
                                 title = "剪贴板链接自动识别",
                                 subtitle = "复制抖音/小红书/B站等链接后，切回应用顶部提示收藏",
                                 checked = clipboardBannerEnabled,
                                 onCheckedChange = onClipboardBannerChanged
                             )
 
-                            SettingsInsetDivider()
+                            VesperDivider(startIndent = 60.dp, endIndent = 14.dp)
 
                             SettingsToggleRow(
                                 icon = Icons.Default.PictureInPictureAlt,
-                                iconTint = amberTone,
+                                iconTint = theme.warning,
                                 title = "边缘悬浮收藏球",
                                 subtitle = if (overlayPermissionGranted) {
-                                    "切出应用后贴边半透明吸附，点击直接识别当前页面"
+                                    "切出应用后贴边半隐，单击识屏收藏，长按展开菜单，拖至底部关闭"
                                 } else {
                                     "需先开启系统「悬浮窗 / 显示在其他应用上层」权限"
                                 },
@@ -794,11 +793,11 @@ fun SettingsPairingSheet(
                                 }
                             )
 
-                            SettingsInsetDivider()
+                            VesperDivider(startIndent = 60.dp, endIndent = 14.dp)
 
                             SettingsActionRow(
                                 icon = Icons.Default.AccessibilityNew,
-                                iconTint = if (accessibilityGranted) greenTone else theme.accent,
+                                iconTint = if (accessibilityGranted) theme.success else theme.accent,
                                 title = "悬浮球识屏与免弹窗截屏",
                                 subtitle = if (accessibilityGranted) {
                                     "已就绪：点悬浮球自动读取当前页链接、文字并静默截图"
@@ -810,24 +809,10 @@ fun SettingsPairingSheet(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(
-                                                    if (accessibilityGranted) greenTone.copy(alpha = 0.14f)
-                                                    else theme.accent.copy(alpha = 0.14f)
-                                                )
-                                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                                        ) {
-                                            Text(
-                                                text = if (accessibilityGranted) "已开启" else "去授权",
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = if (accessibilityGranted) greenTone
-                                                else if (theme.isLight) theme.accentDeep else theme.accentLight,
-                                                maxLines = 1
-                                            )
-                                        }
+                                        VesperTag(
+                                            text = if (accessibilityGranted) "已开启" else "去授权",
+                                            toneColor = if (accessibilityGranted) theme.success else theme.accent
+                                        )
                                         Icon(
                                             imageVector = Icons.Default.ChevronRight,
                                             contentDescription = null,
@@ -846,13 +831,13 @@ fun SettingsPairingSheet(
 
                 // 6. Security & Account Section
                 SettingsSectionBlock(title = "安全与账号") {
-                    SpecularGlassCard(
+                    VesperCard(
                         cornerRadius = 16.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         SettingsToggleRow(
                             icon = Icons.Default.Fingerprint,
-                            iconTint = indigoTone,
+                            iconTint = theme.accent,
                             title = "生物识别应用锁",
                             subtitle = "每次打开应用时验证面容或指纹",
                             checked = biometricAppLockEnabled,
@@ -877,22 +862,22 @@ fun SettingsPairingSheet(
                         )
                     }
 
-                    SpecularGlassCard(
+                    VesperCard(
                         cornerRadius = 16.dp,
-                        accentTint = roseTone,
+                        accentTone = theme.danger,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         SettingsActionRow(
-                            icon = Icons.Default.Logout,
-                            iconTint = roseTone,
+                            icon = Icons.AutoMirrored.Filled.Logout,
+                            iconTint = theme.danger,
                             title = "退出登录",
-                            titleColor = roseTone,
+                            titleColor = theme.danger,
                             subtitle = "清除本机与当前服务端的连接凭证",
                             trailingContent = {
                                 Icon(
                                     imageVector = Icons.Default.ChevronRight,
                                     contentDescription = "退出登录",
-                                    tint = roseTone.copy(alpha = 0.72f),
+                                    tint = theme.danger.copy(alpha = 0.72f),
                                     modifier = Modifier.size(18.dp)
                                 )
                             },
@@ -902,7 +887,7 @@ fun SettingsPairingSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
@@ -912,20 +897,11 @@ private fun SettingsSectionBlock(
     title: String,
     content: @Composable () -> Unit
 ) {
-    val theme = BotHubThemeTokens
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            text = title,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = theme.textMuted,
-            maxLines = 1,
-            softWrap = false,
-            modifier = Modifier.padding(start = 4.dp)
-        )
+        VesperSectionHeader(title = title)
         content()
     }
 }
@@ -954,16 +930,6 @@ private fun SettingsIconBadge(
 }
 
 @Composable
-private fun SettingsInsetDivider() {
-    val theme = BotHubThemeTokens
-    HorizontalDivider(
-        thickness = 0.5.dp,
-        color = theme.divider,
-        modifier = Modifier.padding(start = 60.dp, end = 14.dp)
-    )
-}
-
-@Composable
 private fun SettingsQuickActionChip(
     icon: ImageVector,
     label: String,
@@ -974,32 +940,23 @@ private fun SettingsQuickActionChip(
 ) {
     val theme = BotHubThemeTokens
     val shape = RoundedCornerShape(11.dp)
-    val bgColor = if (accent) {
-        theme.accent.copy(alpha = if (theme.isLight) 0.14f else 0.18f)
-    } else {
-        theme.inputTop
-    }
-    val borderColor = if (accent) theme.accent.copy(alpha = 0.45f) else theme.divider
-    val fgColor = if (accent) {
-        if (theme.isLight) theme.accentDeep else theme.accentLight
-    } else {
-        theme.textPrimary
-    }
+    val bgColor = if (accent) theme.accentSoft else theme.surfaceControl
+    val borderColor = if (accent) theme.accentMuted else theme.border
+    val fgColor = if (accent) theme.accentForeground else theme.textPrimary
 
     Row(
         modifier = modifier
-            .sizeIn(minHeight = 38.dp)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .vesperPressable(
+                enabled = enabled,
+                pressedScale = 0.96f,
+                hapticOnTap = true,
+                onClick = onClick
+            )
             .clip(shape)
             .background(bgColor, shape)
             .border(1.dp, borderColor, shape)
-            .then(
-                if (enabled) {
-                    Modifier.tactileClickable(pressedScale = 0.96f, hapticOnTap = true, onClick = onClick)
-                } else {
-                    Modifier
-                }
-            )
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1007,14 +964,17 @@ private fun SettingsQuickActionChip(
             imageVector = icon,
             contentDescription = null,
             tint = if (enabled) fgColor else theme.textMuted,
-            modifier = Modifier.size(14.dp)
+            modifier = Modifier.size(15.dp)
         )
         Spacer(modifier = Modifier.width(5.dp))
         Text(
             text = label,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            color = if (enabled) fgColor else theme.textMuted,
+            style = TextStyle(
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (enabled) fgColor else theme.textMuted,
+                platformStyle = NoFontPaddingStyle
+            ),
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis
@@ -1035,9 +995,9 @@ private fun SettingsToggleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .sizeIn(minHeight = 56.dp)
+            .sizeIn(minHeight = 60.dp)
             .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 14.dp, vertical = 11.dp),
+            .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1063,7 +1023,7 @@ private fun SettingsToggleRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        TactileToggle(
+        VesperSwitch(
             checked = checked,
             onCheckedChange = onCheckedChange
         )
@@ -1084,9 +1044,9 @@ private fun SettingsActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .sizeIn(minHeight = 56.dp)
+            .sizeIn(minHeight = 60.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 11.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1126,19 +1086,19 @@ private fun ThemeSelectorCard(
         parseThemePreference(activeThemeId)
     }
 
-    SpecularGlassCard(
+    VesperCard(
         cornerRadius = 16.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(top = 13.dp, bottom = 14.dp),
+            modifier = Modifier.padding(top = 14.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(7.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1162,14 +1122,15 @@ private fun ThemeSelectorCard(
                         softWrap = false
                     )
                 }
-                val segOuterShape = RoundedCornerShape(11.dp)
-                val segTabShape = RoundedCornerShape(8.dp)
+
+                val segOuterShape = RoundedCornerShape(12.dp)
+                val segTabShape = RoundedCornerShape(9.dp)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(segOuterShape)
-                        .background(theme.inputTop, segOuterShape)
-                        .border(1.dp, theme.divider, segOuterShape)
+                        .background(theme.surfaceInput, segOuterShape)
+                        .border(1.dp, theme.border, segOuterShape)
                         .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
@@ -1178,8 +1139,8 @@ private fun ThemeSelectorCard(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .sizeIn(minHeight = 36.dp)
-                                .tactileClickable(pressedScale = 0.96f, hapticOnTap = true) {
+                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                .vesperPressable(pressedScale = 0.96f, hapticOnTap = true) {
                                     if (!selected) {
                                         onSelect(encodeThemePreference(modeOpt.id, activeAccent))
                                     }
@@ -1188,20 +1149,23 @@ private fun ThemeSelectorCard(
                                 .then(
                                     if (selected) {
                                         Modifier
-                                            .background(theme.cardTop, segTabShape)
-                                            .border(1.dp, theme.rimHighlight, segTabShape)
+                                            .background(theme.surfaceCard, segTabShape)
+                                            .border(1.dp, theme.borderStrong, segTabShape)
                                     } else {
                                         Modifier
                                     }
                                 )
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                .padding(horizontal = 8.dp, vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = modeOpt.label,
-                                fontSize = 12.5.sp,
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                color = if (selected) theme.textPrimary else theme.textMuted,
+                                style = TextStyle(
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = if (selected) theme.textPrimary else theme.textMuted,
+                                    platformStyle = NoFontPaddingStyle
+                                ),
                                 maxLines = 1,
                                 softWrap = false
                             )
@@ -1212,7 +1176,7 @@ private fun ThemeSelectorCard(
 
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(7.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
                     text = "主题强调色",
@@ -1231,53 +1195,61 @@ private fun ThemeSelectorCard(
                         val chosen = opt.id == activeAccent
                         val swatchColor = if (theme.isLight) opt.lightSwatch else opt.darkSwatch
                         val pillShape = RoundedCornerShape(10.dp)
-                        Row(
+                        Box(
                             modifier = Modifier
-                                .sizeIn(minHeight = 36.dp)
-                                .tactileClickable(pressedScale = 0.95f, hapticOnTap = true) {
+                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                .vesperPressable(pressedScale = 0.95f, hapticOnTap = true) {
                                     if (!chosen) {
                                         onSelect(encodeThemePreference(activeMode, opt.id))
                                     }
-                                }
-                                .clip(pillShape)
-                                .background(
-                                    if (chosen) {
-                                        swatchColor.copy(alpha = if (theme.isLight) 0.12f else 0.18f)
-                                    } else {
-                                        theme.inputTop
-                                    },
-                                    pillShape
-                                )
-                                .border(
-                                    BorderStroke(
-                                        if (chosen) 1.2.dp else 1.dp,
-                                        if (chosen) swatchColor else theme.divider
-                                    ),
-                                    pillShape
-                                )
-                                .padding(horizontal = 11.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                },
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
+                            Row(
                                 modifier = Modifier
-                                    .size(13.dp)
-                                    .clip(CircleShape)
-                                    .background(swatchColor, CircleShape)
-                                    .border(
-                                        1.dp,
-                                        if (theme.isLight) Color(0x26000000) else Color(0x33FFFFFF),
-                                        CircleShape
+                                    .clip(pillShape)
+                                    .background(
+                                        if (chosen) {
+                                            swatchColor.copy(alpha = if (theme.isLight) 0.12f else 0.18f)
+                                        } else {
+                                            theme.surfaceControl
+                                        },
+                                        pillShape
                                     )
-                            )
-                            Text(
-                                text = opt.label,
-                                fontSize = 12.sp,
-                                fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Medium,
-                                color = if (chosen) theme.textPrimary else theme.textSecondary,
-                                maxLines = 1,
-                                softWrap = false
-                            )
+                                    .border(
+                                        BorderStroke(
+                                            if (chosen) 1.25.dp else 1.dp,
+                                            if (chosen) swatchColor else theme.border
+                                        ),
+                                        pillShape
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(13.dp)
+                                        .clip(CircleShape)
+                                        .background(swatchColor, CircleShape)
+                                        .border(
+                                            1.dp,
+                                            if (theme.isLight) Color(0x26000000) else Color(0x33FFFFFF),
+                                            CircleShape
+                                        )
+                                )
+                                Text(
+                                    text = opt.label,
+                                    style = TextStyle(
+                                        fontSize = 12.sp,
+                                        fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Medium,
+                                        color = if (chosen) theme.textPrimary else theme.textSecondary,
+                                        platformStyle = NoFontPaddingStyle
+                                    ),
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
                         }
                     }
                 }
@@ -1295,14 +1267,14 @@ private fun InAppOtaStatusCard(
 ) {
     val theme = BotHubThemeTokens
     val accent = when (otaState) {
-        is OtaUpdateState.Failed -> Color(0xFFFB7185)
-        is OtaUpdateState.UpToDate -> Color(0xFF10B981)
+        is OtaUpdateState.Failed -> theme.danger
+        is OtaUpdateState.UpToDate -> theme.success
         else -> theme.accent
     }
 
-    SpecularGlassCard(
+    VesperCard(
         cornerRadius = 16.dp,
-        accentTint = accent,
+        accentTone = accent,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -1327,11 +1299,11 @@ private fun InAppOtaStatusCard(
                                 .weight(1f)
                                 .padding(end = 10.dp)
                         )
-                        TactilePrimaryButton(
+                        VesperPrimaryButton(
                             text = "立即更新",
                             cornerRadius = 999.dp,
-                            minHeight = 34.dp,
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 5.dp),
+                            minHeight = 48.dp,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                             onClick = onStartDownload
                         )
                     }
@@ -1387,18 +1359,14 @@ private fun InAppOtaStatusCard(
                             .fillMaxWidth()
                             .height(5.dp)
                             .clip(RoundedCornerShape(999.dp))
-                            .background(theme.inputTop)
+                            .background(theme.surfaceInput)
                     ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth(fraction)
                                 .height(5.dp)
                                 .clip(RoundedCornerShape(999.dp))
-                                .background(
-                                    Brush.horizontalGradient(
-                                        listOf(theme.accentDeep, theme.accent)
-                                    )
-                                )
+                                .background(theme.accent)
                         )
                     }
                 }
@@ -1419,11 +1387,11 @@ private fun InAppOtaStatusCard(
                                 .weight(1f)
                                 .padding(end = 10.dp)
                         )
-                        TactilePrimaryButton(
+                        VesperPrimaryButton(
                             text = "继续安装",
                             cornerRadius = 999.dp,
-                            minHeight = 34.dp,
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 5.dp),
+                            minHeight = 48.dp,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                             onClick = { onInstallFile(otaState.apkFile) }
                         )
                     }
@@ -1441,11 +1409,11 @@ private fun InAppOtaStatusCard(
                             fontWeight = FontWeight.Medium,
                             color = theme.textPrimary
                         )
-                        TactilePrimaryButton(
+                        VesperPrimaryButton(
                             text = "立即安装",
                             cornerRadius = 999.dp,
-                            minHeight = 34.dp,
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 5.dp),
+                            minHeight = 48.dp,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                             onClick = { onInstallFile(otaState.apkFile) }
                         )
                     }
@@ -1460,21 +1428,27 @@ private fun InAppOtaStatusCard(
                         Text(
                             text = "当前已是最新版本 (v${otaState.version})",
                             fontSize = 12.5.sp,
-                            color = Color(0xFF10B981),
+                            color = theme.success,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        Text(
-                            text = "重下覆盖",
-                            fontSize = 11.5.sp,
-                            color = theme.textMuted,
-                            maxLines = 1,
-                            softWrap = false,
+                        Box(
                             modifier = Modifier
-                                .clickable { onStartDownload() }
-                                .padding(vertical = 4.dp, horizontal = 4.dp)
-                        )
+                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                .vesperPressable { onStartDownload() }
+                                .padding(horizontal = 6.dp),
+                            contentAlignment = Alignment.CenterEnd
+                        ) {
+                            Text(
+                                text = "重下覆盖",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = theme.textMuted,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     }
                 }
 
@@ -1487,18 +1461,19 @@ private fun InAppOtaStatusCard(
                         Text(
                             text = "更新失败: ${otaState.message}",
                             fontSize = 12.5.sp,
-                            color = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFDA4AF),
+                            color = theme.danger,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(end = 10.dp)
                         )
-                        TactileSecondaryButton(
+                        VesperSecondaryButton(
                             text = "重试",
+                            tone = VesperButtonTone.DANGER,
                             cornerRadius = 999.dp,
-                            minHeight = 32.dp,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                            minHeight = 48.dp,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                             onClick = onStartDownload
                         )
                     }
@@ -1533,22 +1508,19 @@ private fun PushDiagnosticsEmbeddedBlock(
     onTestPush: () -> Unit
 ) {
     val theme = BotHubThemeTokens
-    val greenTone = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
-    val amberTone = if (theme.isLight) Color(0xFFD97706) else Color(0xFFFBBF24)
-    val redTone = if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185)
 
     val (channelLabel, channelTone, channelClickable) = when {
         !realtimeServiceEnabled -> Triple("未开启", theme.textMuted, false)
-        connectionStatus == PushConnectionStatus.CONNECTED -> Triple("在线", greenTone, false)
-        connectionStatus == PushConnectionStatus.CONNECTING -> Triple("连接中", amberTone, true)
-        else -> Triple("断开 · 重连", amberTone, true)
+        connectionStatus == PushConnectionStatus.CONNECTED -> Triple("在线", theme.success, false)
+        connectionStatus == PushConnectionStatus.CONNECTING -> Triple("连接中", theme.warning, true)
+        else -> Triple("断开 · 重连", theme.warning, true)
     }
 
     val notifLabel = if (notifPermissionGranted) "已开启" else "未授权"
-    val notifTone = if (notifPermissionGranted) greenTone else redTone
+    val notifTone = if (notifPermissionGranted) theme.success else theme.danger
 
     val batteryLabel = if (batteryOptIgnored) "已豁免" else "去设置"
-    val batteryTone = if (batteryOptIgnored) greenTone else amberTone
+    val batteryTone = if (batteryOptIgnored) theme.success else theme.warning
 
     val heartbeatText = if (realtimeServiceEnabled && connectionStatus == PushConnectionStatus.CONNECTED && lastHeartbeatAtMs > 0L) {
         val clock = formatHeartbeatClock(lastHeartbeatAtMs)
@@ -1562,8 +1534,8 @@ private fun PushDiagnosticsEmbeddedBlock(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp)
+            .padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1583,26 +1555,36 @@ private fun PushDiagnosticsEmbeddedBlock(
             )
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(theme.accent.copy(alpha = if (theme.isLight) 0.12f else 0.16f))
-                    .border(1.dp, theme.accent.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
-                    .tactileClickable(pressedScale = 0.94f, hapticOnTap = true, onClick = onTestPush)
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .vesperPressable(pressedScale = 0.94f, hapticOnTap = true, onClick = onTestPush),
+                contentAlignment = Alignment.CenterEnd
             ) {
-                Text(
-                    text = "测试推送",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (theme.isLight) theme.accentDeep else theme.accentLight,
-                    maxLines = 1,
-                    softWrap = false
-                )
+                val pillShape = RoundedCornerShape(999.dp)
+                Box(
+                    modifier = Modifier
+                        .clip(pillShape)
+                        .background(theme.accentSoft, pillShape)
+                        .border(1.dp, theme.accentMuted, pillShape)
+                        .padding(horizontal = 11.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "测试推送",
+                        style = TextStyle(
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = theme.accentForeground,
+                            platformStyle = NoFontPaddingStyle
+                        ),
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
             }
         }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(7.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             PushDiagnosticPill(
                 label = "实时通道",
@@ -1645,22 +1627,23 @@ private fun PushDiagnosticPill(
     val shape = RoundedCornerShape(10.dp)
     Column(
         modifier = modifier
+            .sizeIn(minHeight = 52.dp)
             .clip(shape)
-            .background(theme.inputTop, shape)
+            .background(theme.surfaceInput, shape)
             .border(
                 width = 1.dp,
-                color = if (clickable) tone.copy(alpha = 0.45f) else theme.divider,
+                color = if (clickable) tone.copy(alpha = 0.45f) else theme.border,
                 shape = shape
             )
             .then(
                 if (clickable) {
-                    Modifier.clickable(onClick = onClick)
+                    Modifier.vesperPressable(pressedScale = 0.96f, hapticOnTap = true, onClick = onClick)
                 } else {
                     Modifier
                 }
             )
-            .padding(horizontal = 9.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+            .padding(horizontal = 9.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -1673,9 +1656,12 @@ private fun PushDiagnosticPill(
             )
             Text(
                 text = label,
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = theme.textMuted,
+                style = TextStyle(
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = theme.textMuted,
+                    platformStyle = NoFontPaddingStyle
+                ),
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis
@@ -1683,9 +1669,12 @@ private fun PushDiagnosticPill(
         }
         Text(
             text = status,
-            fontSize = 11.5.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = tone,
+            style = TextStyle(
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = tone,
+                platformStyle = NoFontPaddingStyle
+            ),
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis

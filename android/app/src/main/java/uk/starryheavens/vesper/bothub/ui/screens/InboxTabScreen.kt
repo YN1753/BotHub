@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -19,9 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.MarkEmailRead
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -35,19 +36,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.NotificationItem
 import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
-import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
-import uk.starryheavens.vesper.bothub.ui.components.TactileFilterChip
+import uk.starryheavens.vesper.bothub.ui.components.VesperCard
+import uk.starryheavens.vesper.bothub.ui.components.VesperEmptyState
+import uk.starryheavens.vesper.bothub.ui.components.VesperFilterChip
+import uk.starryheavens.vesper.bothub.ui.components.VesperTag
 import uk.starryheavens.vesper.bothub.ui.components.formatModuleBadge
-import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.components.vesperPressable
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 private fun formatShortTimestamp(raw: String): String {
@@ -72,6 +76,7 @@ fun InboxTabScreen(
     modifier: Modifier = Modifier
 ) {
     val theme = BotHubThemeTokens
+    val haptics = LocalHapticFeedback.current
     var filterMode by remember { mutableStateOf("all") }
 
     val unreadCount = remember(notifications) { notifications.count { it.isUnread } }
@@ -94,12 +99,12 @@ fun InboxTabScreen(
 
     Column(modifier = modifier.fillMaxSize()) {
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             items(filterPills) { (id, label) ->
-                TactileFilterChip(
+                VesperFilterChip(
                     label = label,
                     selected = filterMode == id,
                     onClick = { filterMode = id }
@@ -109,30 +114,17 @@ fun InboxTabScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(9.dp),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 20.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp)
         ) {
             if (filtered.isEmpty()) {
                 item {
-                    SpecularGlassCard(
-                        cornerRadius = 18.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 20.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 28.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = if (filterMode == "unread") "暂无未读通知" else "暂无通知",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = theme.textMuted,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
+                    VesperEmptyState(
+                        icon = Icons.Outlined.NotificationsNone,
+                        title = if (filterMode == "unread") "暂无未读通知" else "暂无服务通知",
+                        subtitle = "定时简报、资产临期提醒与探针告警会实时汇总于此",
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
                 }
             }
 
@@ -146,10 +138,12 @@ fun InboxTabScreen(
                     confirmValueChange = { value ->
                         when (value) {
                             SwipeToDismissBoxValue.StartToEnd -> {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 if (item.isUnread) onMarkOneRead(item)
                                 false
                             }
                             SwipeToDismissBoxValue.EndToStart -> {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onDeleteNotification(item)
                                 true
                             }
@@ -166,8 +160,8 @@ fun InboxTabScreen(
                         val isReadAction = direction == SwipeToDismissBoxValue.StartToEnd && unread
                         val isDeleteAction = direction == SwipeToDismissBoxValue.EndToStart
                         val bgColor = when {
-                            isReadAction -> Color(0xFF10B981)
-                            isDeleteAction -> Color(0xFFE11D48)
+                            isReadAction -> theme.success
+                            isDeleteAction -> theme.danger
                             else -> Color.Transparent
                         }
                         Box(
@@ -218,12 +212,11 @@ fun InboxTabScreen(
                         }
                     }
                 ) {
-                    SpecularGlassCard(
+                    VesperCard(
                         cornerRadius = 16.dp,
-                        topColor = if (unread) theme.cardUnreadTop else theme.cardTop,
-                        bottomColor = if (unread) theme.cardUnreadBottom else theme.cardBottom,
-                        accentTint = when {
-                            unread && isHighPriority -> Color(0xFFFB7185)
+                        elevated = unread,
+                        accentTone = when {
+                            unread && isHighPriority -> theme.danger
                             unread -> badgeColor
                             else -> null
                         },
@@ -232,7 +225,7 @@ fun InboxTabScreen(
                     ) {
                         Column(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -248,30 +241,12 @@ fun InboxTabScreen(
                                             modifier = Modifier
                                                 .size(6.5.dp)
                                                 .background(
-                                                    color = if (isHighPriority) Color(0xFFFB7185) else theme.accent,
+                                                    color = if (isHighPriority) theme.danger else theme.accent,
                                                     shape = CircleShape
                                                 )
                                         )
                                     }
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(badgeColor.copy(alpha = 0.14f))
-                                            .border(0.5.dp, badgeColor.copy(alpha = 0.38f), RoundedCornerShape(6.dp))
-                                            .padding(horizontal = 7.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text = badgeLabel,
-                                            style = TextStyle(
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = badgeColor,
-                                                platformStyle = NoFontPaddingStyle
-                                            ),
-                                            maxLines = 1,
-                                            softWrap = false
-                                        )
-                                    }
+                                    VesperTag(text = badgeLabel, toneColor = badgeColor)
                                 }
 
                                 Text(
@@ -286,19 +261,22 @@ fun InboxTabScreen(
 
                             Text(
                                 text = item.title,
-                                fontSize = 14.5.sp,
+                                fontSize = 15.sp,
+                                lineHeight = 21.sp,
                                 fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Medium,
                                 color = if (unread) theme.textPrimary else theme.textSecondary,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
 
-                            val preview = item.previewText(maxChars = 110)
+                            val preview = remember(item.id, item.summary, item.markdownBody) {
+                                item.previewText(maxChars = 110)
+                            }
                             if (preview.isNotEmpty()) {
                                 Text(
                                     text = preview,
                                     fontSize = 12.5.sp,
-                                    lineHeight = 18.sp,
+                                    lineHeight = 18.5.sp,
                                     color = theme.textMuted,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
@@ -315,115 +293,82 @@ fun InboxTabScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                val chipShape = RoundedCornerShape(8.dp)
-                                Box(
-                                    modifier = Modifier
-                                        .clip(chipShape)
-                                        .background(theme.accent.copy(alpha = 0.14f), chipShape)
-                                        .border(0.6.dp, theme.accent.copy(alpha = 0.42f), chipShape)
-                                        .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                            onDiagnoseWithAi(item)
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text(
-                                        text = "找 TA 追问",
-                                        style = TextStyle(
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = theme.accent,
-                                            platformStyle = NoFontPaddingStyle
-                                        )
-                                    )
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .clip(chipShape)
-                                        .background(theme.inputTop, chipShape)
-                                        .border(0.6.dp, theme.divider, chipShape)
-                                        .tactileClickable(
-                                            enabled = rerollingNotificationId == null,
-                                            pressedScale = 0.94f,
-                                            hapticOnTap = true
-                                        ) {
-                                            onRerollNotification(item)
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text(
-                                        text = if (isRerolling) "重推中..." else "换一条",
-                                        style = TextStyle(
-                                            fontSize = 11.sp,
-                                            color = theme.textSecondary,
-                                            platformStyle = NoFontPaddingStyle
-                                        )
-                                    )
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .clip(chipShape)
-                                        .background(
-                                            if (todoSaved) Color(0x1F10B981) else theme.inputTop,
-                                            chipShape
-                                        )
-                                        .border(
-                                            0.6.dp,
-                                            if (todoSaved) Color(0x4A10B981) else theme.divider,
-                                            chipShape
-                                        )
-                                        .tactileClickable(
-                                            enabled = !todoSaved,
-                                            pressedScale = 0.94f,
-                                            hapticOnTap = true
-                                        ) {
-                                            onConvertToTodo(item)
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text(
-                                        text = if (todoSaved) "已建待办" else "待办",
-                                        style = TextStyle(
-                                            fontSize = 11.sp,
-                                            color = if (todoSaved) Color(0xFF10B981) else theme.textSecondary,
-                                            platformStyle = NoFontPaddingStyle
-                                        )
-                                    )
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .clip(chipShape)
-                                        .background(
-                                            if (noteSaved) Color(0x1F10B981) else theme.inputTop,
-                                            chipShape
-                                        )
-                                        .border(
-                                            0.6.dp,
-                                            if (noteSaved) Color(0x4A10B981) else theme.divider,
-                                            chipShape
-                                        )
-                                        .tactileClickable(
-                                            enabled = !noteSaved,
-                                            pressedScale = 0.94f,
-                                            hapticOnTap = true
-                                        ) {
-                                            onSaveToNote(item)
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text(
-                                        text = if (noteSaved) "已存笔记" else "笔记",
-                                        style = TextStyle(
-                                            fontSize = 11.sp,
-                                            color = if (noteSaved) Color(0xFF10B981) else theme.textSecondary,
-                                            platformStyle = NoFontPaddingStyle
-                                        )
-                                    )
-                                }
+                                NotificationMiniActionChip(
+                                    text = "找 TA 追问",
+                                    accent = true,
+                                    onClick = { onDiagnoseWithAi(item) }
+                                )
+                                NotificationMiniActionChip(
+                                    text = if (isRerolling) "重推中..." else "换一条",
+                                    enabled = rerollingNotificationId == null,
+                                    onClick = { onRerollNotification(item) }
+                                )
+                                NotificationMiniActionChip(
+                                    text = if (todoSaved) "已建待办" else "待办",
+                                    done = todoSaved,
+                                    enabled = !todoSaved,
+                                    onClick = { onConvertToTodo(item) }
+                                )
+                                NotificationMiniActionChip(
+                                    text = if (noteSaved) "已存笔记" else "笔记",
+                                    done = noteSaved,
+                                    enabled = !noteSaved,
+                                    onClick = { onSaveToNote(item) }
+                                )
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NotificationMiniActionChip(
+    text: String,
+    accent: Boolean = false,
+    done: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    val shape = RoundedCornerShape(8.dp)
+    val bgColor = when {
+        done -> theme.success.copy(alpha = 0.14f)
+        accent -> theme.accentSoft
+        else -> theme.surfaceInput
+    }
+    val borderColor = when {
+        done -> theme.success.copy(alpha = 0.36f)
+        accent -> theme.accentMuted
+        else -> theme.border
+    }
+    val fgColor = when {
+        done -> theme.success
+        accent -> theme.accentForeground
+        else -> theme.textSecondary
+    }
+    Box(
+        modifier = Modifier
+            .sizeIn(minHeight = 32.dp)
+            .clip(shape)
+            .background(bgColor, shape)
+            .border(0.8.dp, borderColor, shape)
+            .vesperPressable(enabled = enabled, pressedScale = 0.94f, hapticOnTap = true, onClick = onClick)
+            .padding(horizontal = 9.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = TextStyle(
+                fontSize = 11.5.sp,
+                fontWeight = if (accent || done) FontWeight.SemiBold else FontWeight.Medium,
+                color = fgColor,
+                platformStyle = NoFontPaddingStyle
+            ),
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }

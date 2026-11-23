@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,7 +33,6 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,7 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
@@ -84,7 +83,7 @@ fun parseLocalDateOrNull(raw: String): LocalDate? {
 private fun buildMonthGridCells(month: YearMonth): List<CalendarDayCell> {
     val today = LocalDate.now()
     val firstDay = month.atDay(1)
-    val leading = firstDay.dayOfWeek.value - 1 // Mon=0 .. Sun=6
+    val leading = firstDay.dayOfWeek.value - 1
     val start = firstDay.minusDays(leading.toLong())
     return List(42) { idx ->
         val d = start.plusDays(idx.toLong())
@@ -130,17 +129,14 @@ fun ThemeCalendarDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp),
-            shape = RoundedCornerShape(24.dp),
-            color = theme.sheetBg,
-            border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.42f)),
-            shadowElevation = 24.dp
+            shape = RoundedCornerShape(22.dp),
+            color = theme.surfacePopover,
+            border = BorderStroke(1.dp, theme.borderStrong),
+            shadowElevation = 18.dp
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(listOf(theme.popoverTop, theme.popoverBottom))
-                    )
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -156,12 +152,12 @@ fun ThemeCalendarDialog(
                         Icon(
                             imageVector = Icons.Default.CalendarMonth,
                             contentDescription = null,
-                            tint = theme.accent,
+                            tint = theme.accentForeground,
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
                             text = "选择日期",
-                            fontSize = 15.sp,
+                            fontSize = 15.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = theme.textPrimary
                         )
@@ -177,7 +173,7 @@ fun ThemeCalendarDialog(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = theme.accent
+                        color = theme.accentForeground
                     )
                 }
 
@@ -185,25 +181,27 @@ fun ThemeCalendarDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(theme.inputTop)
-                        .border(1.dp, theme.rimSubtle, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(theme.surfaceInput)
+                        .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 2.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = { currentMonth = currentMonth.minusMonths(1) },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Default.ChevronLeft, contentDescription = "上一月", tint = theme.textPrimary)
-                    }
+                    VesperIconButton(
+                        icon = Icons.Default.ChevronLeft,
+                        contentDescription = "上一月",
+                        filled = false,
+                        iconSize = 20.dp,
+                        onClick = { currentMonth = currentMonth.minusMonths(1) }
+                    )
 
                     Row(
                         modifier = Modifier
+                            .sizeIn(minHeight = 44.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .clickable { showYmGrid = !showYmGrid }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                            .padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
@@ -212,22 +210,23 @@ fun ThemeCalendarDialog(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = theme.accent
+                            color = theme.textPrimary
                         )
                         Icon(
                             imageVector = if (showYmGrid) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                             contentDescription = null,
-                            tint = theme.accent,
+                            tint = theme.accentForeground,
                             modifier = Modifier.size(16.dp)
                         )
                     }
 
-                    IconButton(
-                        onClick = { currentMonth = currentMonth.plusMonths(1) },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Default.ChevronRight, contentDescription = "下一月", tint = theme.textPrimary)
-                    }
+                    VesperIconButton(
+                        icon = Icons.Default.ChevronRight,
+                        contentDescription = "下一月",
+                        filled = false,
+                        iconSize = 20.dp,
+                        onClick = { currentMonth = currentMonth.plusMonths(1) }
+                    )
                 }
 
                 if (showYmGrid) {
@@ -237,12 +236,12 @@ fun ThemeCalendarDialog(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             yearChoices.forEach { yr ->
-                                TactileSecondaryButton(
+                                VesperSecondaryButton(
                                     text = "$yr",
-                                    accent = yr == currentMonth.year,
+                                    tone = if (yr == currentMonth.year) VesperButtonTone.ACCENT else VesperButtonTone.NEUTRAL,
                                     cornerRadius = 10.dp,
-                                    minHeight = 32.dp,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    minHeight = 36.dp,
+                                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp),
                                     onClick = { currentMonth = YearMonth.of(yr, currentMonth.monthValue) }
                                 )
                             }
@@ -252,12 +251,12 @@ fun ThemeCalendarDialog(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             (1..12).forEach { m ->
-                                TactileSecondaryButton(
+                                VesperSecondaryButton(
                                     text = "${m}月",
-                                    accent = m == currentMonth.monthValue,
+                                    tone = if (m == currentMonth.monthValue) VesperButtonTone.ACCENT else VesperButtonTone.NEUTRAL,
                                     cornerRadius = 10.dp,
-                                    minHeight = 32.dp,
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    minHeight = 36.dp,
+                                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp),
                                     onClick = {
                                         currentMonth = YearMonth.of(currentMonth.year, m)
                                         showYmGrid = false
@@ -291,19 +290,19 @@ fun ThemeCalendarDialog(
                                     val isSelected = cell.date == selectedDate
                                     val bgColor = when {
                                         isSelected -> theme.accent
-                                        cell.isToday -> theme.accent.copy(alpha = 0.14f)
+                                        cell.isToday -> theme.accentSoft
                                         else -> Color.Transparent
                                     }
                                     val borderStroke = when {
                                         isSelected -> BorderStroke(1.dp, theme.accent)
-                                        cell.isToday -> BorderStroke(1.dp, theme.accent.copy(alpha = 0.55f))
+                                        cell.isToday -> BorderStroke(1.dp, theme.accentMuted)
                                         else -> null
                                     }
                                     val fgColor = when {
                                         isSelected -> theme.onAccent
-                                        cell.isToday -> theme.accent
+                                        cell.isToday -> theme.accentForeground
                                         cell.inMonth -> theme.textPrimary
-                                        else -> theme.textMuted.copy(alpha = 0.45f)
+                                        else -> theme.textMuted.copy(alpha = 0.42f)
                                     }
 
                                     Box(
@@ -348,40 +347,22 @@ fun ThemeCalendarDialog(
                         selectedDate = d
                         currentMonth = YearMonth.of(d.year, d.monthValue)
                     }
-                    TactileSecondaryButton(
-                        text = "今天",
-                        cornerRadius = 999.dp,
-                        minHeight = 30.dp,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        onClick = { jumpTo(LocalDate.now()) }
-                    )
-                    TactileSecondaryButton(
-                        text = "+1月",
-                        cornerRadius = 999.dp,
-                        minHeight = 30.dp,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        onClick = { jumpTo(selectedDate.plusMonths(1)) }
-                    )
-                    TactileSecondaryButton(
-                        text = "+1季",
-                        cornerRadius = 999.dp,
-                        minHeight = 30.dp,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        onClick = { jumpTo(selectedDate.plusMonths(3)) }
-                    )
-                    TactileSecondaryButton(
-                        text = "+1年",
-                        cornerRadius = 999.dp,
-                        minHeight = 30.dp,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        onClick = { jumpTo(selectedDate.plusYears(1)) }
-                    )
+                    listOf(
+                        "今天" to { jumpTo(LocalDate.now()) },
+                        "+1月" to { jumpTo(selectedDate.plusMonths(1)) },
+                        "+1季" to { jumpTo(selectedDate.plusMonths(3)) },
+                        "+1年" to { jumpTo(selectedDate.plusYears(1)) }
+                    ).forEach { (label, action) ->
+                        VesperFilterChip(
+                            label = label,
+                            selected = false,
+                            onClick = action
+                        )
+                    }
                     if (allowPerpetual && onSelectPerpetual != null) {
-                        TactileSecondaryButton(
-                            text = "长期有效",
-                            cornerRadius = 999.dp,
-                            minHeight = 30.dp,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        VesperFilterChip(
+                            label = "长期有效",
+                            selected = false,
                             onClick = onSelectPerpetual
                         )
                     }
@@ -391,15 +372,15 @@ fun ThemeCalendarDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    TactileSecondaryButton(
+                    VesperSecondaryButton(
                         text = "取消",
-                        minHeight = 42.dp,
+                        minHeight = 48.dp,
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
                     )
-                    TactilePrimaryButton(
+                    VesperPrimaryButton(
                         text = "确定日期",
-                        minHeight = 42.dp,
+                        minHeight = 48.dp,
                         onClick = {
                             onSelectDate(
                                 String.format(

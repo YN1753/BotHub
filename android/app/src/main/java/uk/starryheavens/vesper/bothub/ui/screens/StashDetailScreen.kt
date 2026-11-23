@@ -2,6 +2,7 @@ package uk.starryheavens.vesper.bothub.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,9 +12,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,26 +24,25 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MarkEmailRead
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -52,19 +54,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.StashItemUi
-import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
-import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
-import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
-import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperButtonTone
+import uk.starryheavens.vesper.bothub.ui.components.VesperCard
+import uk.starryheavens.vesper.bothub.ui.components.VesperDivider
+import uk.starryheavens.vesper.bothub.ui.components.VesperIconButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperMenuAction
+import uk.starryheavens.vesper.bothub.ui.components.VesperPopoverMenu
+import uk.starryheavens.vesper.bothub.ui.components.VesperPrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperTag
+import uk.starryheavens.vesper.bothub.ui.components.VesperTextField
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -101,177 +106,126 @@ fun StashDetailScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(theme.bgBase)
+            .background(theme.bgCanvas)
             .imePadding()
     ) {
         // Top Navigation Bar
-        Surface(
-            color = theme.sheetBg,
-            tonalElevation = 0.dp,
-            modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(theme.surfaceBar)
+                .statusBarsPadding()
         ) {
-            Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 10.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onBack() },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回收藏列表",
-                                tint = theme.textPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                    VesperIconButton(
+                        icon = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "返回收藏列表",
+                        filled = false,
+                        iconSize = 21.dp,
+                        onClick = onBack
+                    )
 
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(theme.accent.copy(alpha = 0.14f))
-                                .border(0.5.dp, theme.accent.copy(alpha = 0.34f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = item.shareKind.badgeLabel,
-                                style = TextStyle(
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (theme.isLight) theme.accentDeep else theme.accentLight,
-                                    platformStyle = NoFontPaddingStyle
-                                ),
-                                maxLines = 1
-                            )
-                        }
+                    VesperTag(text = item.shareKind.badgeLabel)
 
-                        if (item.domain.isNotBlank()) {
-                            Text(
-                                text = item.domain,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.5.sp,
-                                color = theme.textMuted,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                        }
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onTogglePin(item) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (item.pinned) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                contentDescription = if (item.pinned) "取消置顶" else "置顶",
-                                tint = if (item.pinned) Color(0xFFF59E0B) else theme.textSecondary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Box {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { menuExpanded = true },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "更多操作",
-                                    tint = theme.textPrimary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("编辑标题与批注") },
-                                    onClick = {
-                                        menuExpanded = false
-                                        editing = true
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(if (item.url.isNotBlank()) "复制原文链接" else "复制内容") },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onCopyText(item.url.ifBlank { item.rawInput })
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("重新 AI 提炼") },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onReprocess(item)
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(if (item.isUnread) "标为已读" else "标为未读") },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onToggleRead(item)
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = "删除收藏",
-                                            color = if (theme.isLight) Color(0xFFBE123C) else Color(0xFFFB7185)
-                                        )
-                                    },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onDelete(item)
-                                    }
-                                )
-                            }
-                        }
+                    if (item.domain.isNotBlank()) {
+                        Text(
+                            text = item.domain,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.5.sp,
+                            color = theme.textMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
                     }
                 }
-                HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    VesperIconButton(
+                        icon = if (item.pinned) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                        contentDescription = if (item.pinned) "取消置顶" else "置顶",
+                        accent = item.pinned,
+                        filled = false,
+                        iconSize = 20.dp,
+                        onClick = { onTogglePin(item) }
+                    )
+
+                    Box {
+                        VesperIconButton(
+                            icon = Icons.Default.MoreVert,
+                            contentDescription = "更多操作",
+                            filled = false,
+                            iconSize = 20.dp,
+                            onClick = { menuExpanded = true }
+                        )
+
+                        VesperPopoverMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            offsetY = 48.dp,
+                            items = listOf(
+                                VesperMenuAction(
+                                    label = "编辑标题与批注",
+                                    icon = Icons.Default.Edit,
+                                    iconTint = theme.accentForeground,
+                                    onClick = { editing = true }
+                                ),
+                                VesperMenuAction(
+                                    label = if (item.url.isNotBlank()) "复制原文链接" else "复制内容",
+                                    icon = Icons.Default.ContentCopy,
+                                    iconTint = theme.info,
+                                    onClick = { onCopyText(item.url.ifBlank { item.rawInput }) }
+                                ),
+                                VesperMenuAction(
+                                    label = "重新 AI 提炼",
+                                    icon = Icons.Default.Refresh,
+                                    iconTint = theme.success,
+                                    onClick = { onReprocess(item) }
+                                ),
+                                VesperMenuAction(
+                                    label = if (item.isUnread) "标为已读" else "标为未读",
+                                    icon = Icons.Default.MarkEmailRead,
+                                    iconTint = theme.textSecondary,
+                                    onClick = { onToggleRead(item) }
+                                ),
+                                VesperMenuAction(
+                                    label = "删除收藏",
+                                    icon = Icons.Default.DeleteOutline,
+                                    danger = true,
+                                    onClick = { onDelete(item) }
+                                )
+                            )
+                        )
+                    }
+                }
             }
+            VesperDivider()
         }
 
-        // Scrollable Reading Content
+        // Scrollable Editorial Reading Content
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Inline Edit Panel
             AnimatedVisibility(visible = editing) {
-                SpecularGlassCard(
-                    cornerRadius = 14.dp,
-                    accentTint = theme.accent,
+                VesperCard(
+                    cornerRadius = 16.dp,
+                    accentTone = theme.accent,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -280,11 +234,11 @@ fun StashDetailScreen(
                     ) {
                         Text(
                             text = "编辑收藏信息",
-                            fontSize = 13.5.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = theme.textPrimary
                         )
-                        ObsidianGlassInput(
+                        VesperTextField(
                             value = editTitle,
                             onValueChange = { editTitle = it },
                             placeholder = "标题",
@@ -292,7 +246,7 @@ fun StashDetailScreen(
                             maxLines = 3,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        ObsidianGlassInput(
+                        VesperTextField(
                             value = editNote,
                             onValueChange = { editNote = it },
                             placeholder = "我的批注或思考...",
@@ -300,7 +254,7 @@ fun StashDetailScreen(
                             maxLines = 4,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        ObsidianGlassInput(
+                        VesperTextField(
                             value = editTags,
                             onValueChange = { editTags = it },
                             placeholder = "标签（逗号分隔，如 AI,架构,Bilibili）",
@@ -309,11 +263,11 @@ fun StashDetailScreen(
                         )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            TactileSecondaryButton(
+                            VesperSecondaryButton(
                                 text = "取消",
-                                minHeight = 38.dp,
+                                minHeight = 44.dp,
                                 onClick = {
                                     editTitle = item.title
                                     editNote = item.userNote
@@ -322,9 +276,9 @@ fun StashDetailScreen(
                                 },
                                 modifier = Modifier.weight(1f)
                             )
-                            TactilePrimaryButton(
+                            VesperPrimaryButton(
                                 text = "保存修改",
-                                minHeight = 38.dp,
+                                minHeight = 44.dp,
                                 onClick = {
                                     onSaveEdit(item, editTitle, editNote, editTags)
                                     editing = false
@@ -337,11 +291,11 @@ fun StashDetailScreen(
             }
 
             // Title & Meta
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = item.title.ifBlank { item.rawInput.take(96) },
-                    fontSize = 20.sp,
-                    lineHeight = 28.sp,
+                    fontSize = 21.sp,
+                    lineHeight = 29.sp,
                     fontWeight = FontWeight.Bold,
                     color = theme.textPrimary
                 )
@@ -355,92 +309,99 @@ fun StashDetailScreen(
                         fontSize = 11.5.sp,
                         color = theme.textMuted
                     )
-                    Text(
+                    VesperTag(
                         text = if (item.isUnread) "未读" else "已读",
-                        fontSize = 11.5.sp,
-                        color = if (item.isUnread) theme.accent else theme.textMuted
+                        bgColor = if (item.isUnread) theme.accentSoft else theme.surfaceInput,
+                        borderColor = if (item.isUnread) theme.accentMuted else theme.border,
+                        textColor = if (item.isUnread) theme.accentForeground else theme.textMuted
                     )
                 }
             }
 
-            // Clickable Source Link Strip
+            // Source Link Strip
             if (item.url.isNotBlank()) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = theme.cardTop,
-                    border = BorderStroke(1.dp, theme.divider),
+                VesperCard(
+                    cornerRadius = 14.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .sizeIn(minHeight = 50.dp)
                             .clickable { onOpenUrl(item) }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                            .padding(start = 13.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.OpenInNew,
+                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
                             contentDescription = "打开链接",
-                            tint = theme.accent,
+                            tint = theme.accentForeground,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             text = item.url,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
-                            color = theme.accent,
+                            color = theme.accentForeground,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onCopyText(item.url) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "复制链接",
-                                tint = theme.textSecondary,
-                                modifier = Modifier.size(15.dp)
-                            )
-                        }
+                        VesperIconButton(
+                            icon = Icons.Default.ContentCopy,
+                            contentDescription = "复制链接",
+                            filled = false,
+                            iconSize = 16.dp,
+                            onClick = { onCopyText(item.url) }
+                        )
                     }
                 }
             }
 
-            // AI TLDR Highlight Card
+            // AI TL;DR Insight Callout
             if (item.aiTldr.isNotBlank()) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = theme.accent.copy(alpha = if (theme.isLight) 0.08f else 0.12f),
-                    border = BorderStroke(1.dp, theme.accent.copy(alpha = 0.24f)),
+                    shape = RoundedCornerShape(14.dp),
+                    color = theme.accentSoft,
+                    border = BorderStroke(1.dp, theme.accentMuted),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(IntrinsicSize.Min)
+                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = "核心结论",
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (theme.isLight) theme.accentDeep else theme.accentLight
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .fillMaxHeight()
+                                .background(theme.accent, RoundedCornerShape(999.dp))
                         )
-                        Text(
-                            text = item.aiTldr,
-                            fontSize = 14.5.sp,
-                            lineHeight = 22.sp,
-                            color = theme.textPrimary
-                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text(
+                                text = "AI 核心结论",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = theme.accentForeground
+                            )
+                            Text(
+                                text = item.aiTldr,
+                                fontSize = 15.sp,
+                                lineHeight = 23.sp,
+                                color = theme.textPrimary
+                            )
+                        }
                     }
                 }
             } else if (item.status == "processing") {
-                SpecularGlassCard(
-                    cornerRadius = 12.dp,
+                VesperCard(
+                    cornerRadius = 14.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
@@ -456,20 +417,18 @@ fun StashDetailScreen(
             if (item.errorMsg.isNotBlank()) {
                 val isHardFailure = item.status == "failed"
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (isHardFailure) {
-                        Color(0xFFE11D48).copy(alpha = if (theme.isLight) 0.08f else 0.14f)
-                    } else {
-                        theme.inputTop
-                    },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isHardFailure) theme.danger.copy(alpha = 0.12f) else theme.surfaceInput,
                     border = BorderStroke(
                         1.dp,
-                        if (isHardFailure) Color(0xFFE11D48).copy(alpha = 0.3f) else theme.divider
+                        if (isHardFailure) theme.danger.copy(alpha = 0.34f) else theme.border
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 13.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -477,75 +436,56 @@ fun StashDetailScreen(
                             text = item.errorMsg,
                             fontSize = 12.sp,
                             lineHeight = 17.sp,
-                            color = if (isHardFailure) {
-                                if (theme.isLight) Color(0xFFBE123C) else Color(0xFFFB7185)
-                            } else {
-                                theme.textMuted
-                            },
+                            color = if (isHardFailure) theme.danger else theme.textMuted,
                             modifier = Modifier.weight(1f)
                         )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onReprocess(item) }
-                                .padding(horizontal = 6.dp, vertical = 4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "重试",
-                                tint = theme.accent,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = "重试",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = theme.accent
-                            )
-                        }
+                        VesperSecondaryButton(
+                            text = "重试",
+                            leadingIcon = Icons.Default.Refresh,
+                            tone = VesperButtonTone.ACCENT,
+                            cornerRadius = 9.dp,
+                            minHeight = 36.dp,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                            onClick = { onReprocess(item) }
+                        )
                     }
                 }
             }
 
-            // Key Points List
+            // Key Points List (Structured Numbered Insights)
             if (item.points.isNotEmpty()) {
-                SpecularGlassCard(
-                    cornerRadius = 14.dp,
+                VesperCard(
+                    cornerRadius = 16.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
-                        verticalArrangement = Arrangement.spacedBy(9.dp)
+                        modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
                             text = "核心干货要点",
                             fontSize = 12.5.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF10B981)
+                            color = theme.success
                         )
-                        item.points.forEach { pt ->
+                        item.points.forEachIndexed { idx, pt ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.Top
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(9.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .width(16.dp)
-                                        .padding(top = 8.dp),
-                                    contentAlignment = Alignment.TopStart
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(5.dp)
-                                            .background(theme.accent, CircleShape)
-                                    )
-                                }
+                                Text(
+                                    text = String.format("%02d", idx + 1),
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = theme.accentForeground,
+                                    modifier = Modifier.padding(top = 3.dp)
+                                )
                                 Text(
                                     text = pt,
                                     fontSize = 14.sp,
-                                    lineHeight = 21.sp,
+                                    lineHeight = 22.sp,
                                     color = theme.textPrimary,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -565,8 +505,8 @@ fun StashDetailScreen(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(999.dp))
-                                .background(theme.inputTop)
-                                .border(0.5.dp, theme.divider, RoundedCornerShape(999.dp))
+                                .background(theme.surfaceInput)
+                                .border(0.75.dp, theme.border, RoundedCornerShape(999.dp))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
@@ -579,14 +519,14 @@ fun StashDetailScreen(
                 }
             }
 
-            // Personal Note Card (always editable with 1 tap)
-            SpecularGlassCard(
-                cornerRadius = 14.dp,
+            // Personal Note Card
+            VesperCard(
+                cornerRadius = 16.dp,
                 onClick = { editing = true },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Row(
@@ -602,25 +542,26 @@ fun StashDetailScreen(
                         )
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "编辑批注",
-                                tint = theme.accent,
+                                tint = theme.accentForeground,
                                 modifier = Modifier.size(13.dp)
                             )
                             Text(
                                 text = if (item.userNote.isBlank()) "添加" else "编辑",
                                 fontSize = 12.sp,
-                                color = theme.accent
+                                fontWeight = FontWeight.Medium,
+                                color = theme.accentForeground
                             )
                         }
                     }
                     Text(
                         text = item.userNote.ifBlank { "点击记录你对这条内容的想法、行动项或疑问..." },
                         fontSize = 13.5.sp,
-                        lineHeight = 20.sp,
+                        lineHeight = 21.sp,
                         color = if (item.userNote.isBlank()) theme.textMuted else theme.textPrimary
                     )
                 }
@@ -631,24 +572,25 @@ fun StashDetailScreen(
                 if (item.kind == "note") item.rawInput else ""
             }
             if (readableExcerpt.isNotBlank()) {
-                SpecularGlassCard(
-                    cornerRadius = 14.dp,
-                    modifier = Modifier.fillMaxWidth()
+                VesperCard(
+                    cornerRadius = 16.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSize()
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { excerptExpanded = !excerptExpanded },
+                                .sizeIn(minHeight = 48.dp)
+                                .clickable { excerptExpanded = !excerptExpanded }
+                                .padding(horizontal = 15.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 text = if (item.kind == "note") "完整正文" else "原文 / 字幕快照",
-                                fontSize = 12.5.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = theme.textSecondary
                             )
@@ -660,11 +602,13 @@ fun StashDetailScreen(
                             )
                         }
                         if (excerptExpanded) {
+                            VesperDivider(startIndent = 15.dp, endIndent = 15.dp)
                             Text(
                                 text = readableExcerpt,
-                                fontSize = 13.5.sp,
-                                lineHeight = 21.sp,
-                                color = theme.textSecondary
+                                fontSize = 14.sp,
+                                lineHeight = 22.5.sp,
+                                color = theme.textSecondary,
+                                modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp)
                             )
                         }
                     }
@@ -674,74 +618,69 @@ fun StashDetailScreen(
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        // Fixed Bottom Action Bar
-        Surface(
-            color = theme.sheetBg,
-            tonalElevation = 0.dp,
-            modifier = Modifier.fillMaxWidth()
+        // Fixed Bottom Action Dock
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(theme.surfaceBar)
+                .navigationBarsPadding()
         ) {
+            VesperDivider()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TactileSecondaryButton(
-                            text = "转为待办",
-                            accent = true,
-                            cornerRadius = 10.dp,
-                            minHeight = 36.dp,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
-                            onClick = { onConvertToTodo(item) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        TactileSecondaryButton(
-                            text = "存为笔记",
-                            cornerRadius = 10.dp,
-                            minHeight = 36.dp,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
-                            onClick = { onConvertToNote(item) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        TactilePrimaryButton(
-                            text = if (item.url.isNotBlank()) "打开原文" else "复制内容",
-                            leadingIcon = if (item.url.isNotBlank()) Icons.Default.OpenInNew else Icons.Default.ContentCopy,
-                            cornerRadius = 11.dp,
-                            minHeight = 42.dp,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            onClick = {
-                                if (item.url.isNotBlank()) {
-                                    onOpenUrl(item)
-                                } else {
-                                    onCopyText(item.rawInput)
-                                }
-                            },
-                            modifier = Modifier.weight(1.05f)
-                        )
-                        TactileSecondaryButton(
-                            text = "发给 AI 聊",
-                            cornerRadius = 11.dp,
-                            minHeight = 42.dp,
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            onClick = { onAskAi(item) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                    VesperSecondaryButton(
+                        text = "转为待办",
+                        tone = VesperButtonTone.ACCENT,
+                        cornerRadius = 11.dp,
+                        minHeight = 42.dp,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
+                        onClick = { onConvertToTodo(item) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    VesperSecondaryButton(
+                        text = "存为笔记",
+                        cornerRadius = 11.dp,
+                        minHeight = 42.dp,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
+                        onClick = { onConvertToNote(item) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    VesperPrimaryButton(
+                        text = if (item.url.isNotBlank()) "打开原文" else "复制内容",
+                        leadingIcon = if (item.url.isNotBlank()) Icons.AutoMirrored.Filled.OpenInNew else Icons.Default.ContentCopy,
+                        cornerRadius = 12.dp,
+                        minHeight = 48.dp,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        onClick = {
+                            if (item.url.isNotBlank()) {
+                                onOpenUrl(item)
+                            } else {
+                                onCopyText(item.rawInput)
+                            }
+                        },
+                        modifier = Modifier.weight(1.05f)
+                    )
+                    VesperSecondaryButton(
+                        text = "发给 AI 聊",
+                        cornerRadius = 12.dp,
+                        minHeight = 48.dp,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        onClick = { onAskAi(item) },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }

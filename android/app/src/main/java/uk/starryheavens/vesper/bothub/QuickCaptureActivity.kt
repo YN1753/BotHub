@@ -1,6 +1,7 @@
 package uk.starryheavens.vesper.bothub
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import android.widget.Toast
@@ -23,6 +24,7 @@ import uk.starryheavens.vesper.bothub.sync.ScreenCaptureHolder
 import uk.starryheavens.vesper.bothub.sync.ScreenCaptureSnapshot
 import uk.starryheavens.vesper.bothub.ui.sheets.QuickCaptureSheet
 import uk.starryheavens.vesper.bothub.ui.theme.VesperBotHubTheme
+import uk.starryheavens.vesper.bothub.ui.theme.resolveBotHubThemeColors
 
 class QuickCaptureActivity : ComponentActivity() {
 
@@ -36,12 +38,22 @@ class QuickCaptureActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        prefs = BotHubPrefs(applicationContext)
+        val nightMask = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        val isLightTheme = resolveBotHubThemeColors(
+            prefs.appThemeId,
+            systemDark = nightMask == Configuration.UI_MODE_NIGHT_YES
+        ).isLight
+        val barStyle = if (isLightTheme) {
+            SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+        } else {
+            SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+        }
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+            statusBarStyle = barStyle,
+            navigationBarStyle = barStyle
         )
 
-        prefs = BotHubPrefs(applicationContext)
         accessibilityEnabledState = ScreenCaptureAccessibilityService.isServiceEnabled(this)
         val api = BotHubApiClient(prefs)
 

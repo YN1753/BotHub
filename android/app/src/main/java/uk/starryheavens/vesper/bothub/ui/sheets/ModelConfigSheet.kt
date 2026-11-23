@@ -3,6 +3,7 @@ package uk.starryheavens.vesper.bothub.ui.sheets
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,14 +16,22 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -38,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,14 +63,22 @@ import uk.starryheavens.vesper.bothub.data.ModelProviderItem
 import uk.starryheavens.vesper.bothub.data.ModelUsageSummaryItem
 import uk.starryheavens.vesper.bothub.data.PoolStrategiesItem
 import uk.starryheavens.vesper.bothub.data.PooledModelItem
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
-import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
-import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
-import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
-import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
-import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
+import uk.starryheavens.vesper.bothub.ui.components.VesperButtonTone
+import uk.starryheavens.vesper.bothub.ui.components.VesperCard
+import uk.starryheavens.vesper.bothub.ui.components.VesperDivider
+import uk.starryheavens.vesper.bothub.ui.components.VesperEmptyState
+import uk.starryheavens.vesper.bothub.ui.components.VesperIconButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperPrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSearchField
+import uk.starryheavens.vesper.bothub.ui.components.VesperSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSheetDragHandle
+import uk.starryheavens.vesper.bothub.ui.components.VesperSwitch
+import uk.starryheavens.vesper.bothub.ui.components.VesperTag
+import uk.starryheavens.vesper.bothub.ui.components.VesperTextField
+import uk.starryheavens.vesper.bothub.ui.components.vesperPressable
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
+import java.util.Locale
 
 private data class PublicProviderPresetItem(
     val key: String,
@@ -92,8 +111,8 @@ private fun cleanBaseUrlAndroid(raw: String): String {
 
 private fun formatTokenShort(tokens: Int): String {
     return when {
-        tokens >= 1_000_000 -> String.format(java.util.Locale.US, "%.2fM", tokens / 1_000_000.0)
-        tokens >= 1_000 -> String.format(java.util.Locale.US, "%.1fK", tokens / 1_000.0)
+        tokens >= 1_000_000 -> String.format(Locale.US, "%.2fM", tokens / 1_000_000.0)
+        tokens >= 1_000 -> String.format(Locale.US, "%.1fK", tokens / 1_000.0)
         else -> tokens.toString()
     }
 }
@@ -226,11 +245,11 @@ fun ModelConfigSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = theme.sheetBg,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = theme.surfaceSheet,
         scrimColor = theme.scrim,
         tonalElevation = 0.dp,
-        dragHandle = { ObsidianSheetDragHandle() }
+        dragHandle = { VesperSheetDragHandle() }
     ) {
         Column(
             modifier = Modifier
@@ -238,12 +257,12 @@ fun ModelConfigSheet(
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Header
+            // Top Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -251,71 +270,80 @@ fun ModelConfigSheet(
                         text = "AI 模型渠道与双池",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = theme.textPrimary
+                        color = theme.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "渠道共享密钥 · 免费池与付费池独立调度",
                         fontSize = 11.5.sp,
-                        color = theme.textMuted
+                        color = theme.textMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                TactilePrimaryButton(
+                VesperPrimaryButton(
                     text = if (saving) "保存中" else "保存",
                     enabled = !saving,
-                    minHeight = 36.dp,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    minHeight = 48.dp,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                     onClick = { saveAll() }
+                )
+                VesperIconButton(
+                    icon = Icons.Default.Close,
+                    contentDescription = "关闭模型配置",
+                    onClick = onDismiss
                 )
             }
 
-            // 7-Day Telemetry Summary Strip
-            SpecularGlassCard(
-                cornerRadius = 16.dp,
-                onClick = {
-                    if (usageSummary.topModels.isNotEmpty() || usageSummary.topCallers.isNotEmpty()) {
-                        showUsageDetail = !showUsageDetail
-                    }
-                },
+            // 7-Day Telemetry Summary Card
+            val hasUsageDetail = usageSummary.topModels.isNotEmpty() || usageSummary.topCallers.isNotEmpty()
+            VesperCard(
+                cornerRadius = 14.dp,
+                onClick = if (hasUsageDetail) {
+                    { showUsageDetail = !showUsageDetail }
+                } else null,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("7日免费池", fontSize = 10.5.sp, color = Color(0xFF34D399))
+                            Text("7日免费池", fontSize = 11.sp, color = theme.success)
                             Text(
                                 text = "${usageSummary.freeCalls}次 · ${formatTokenShort(usageSummary.freeTokens)}",
-                                fontSize = 12.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = FontFamily.Monospace,
                                 color = theme.textPrimary
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("7日付费池", fontSize = 10.5.sp, color = theme.accent)
+                            Text("7日付费池", fontSize = 11.sp, color = theme.accentForeground)
                             Text(
                                 text = "${usageSummary.paidCalls}次 · ${formatTokenShort(usageSummary.paidTokens)}",
-                                fontSize = 12.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = FontFamily.Monospace,
                                 color = theme.textPrimary
                             )
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text("成功率", fontSize = 10.5.sp, color = theme.textMuted)
+                            Text("成功率", fontSize = 11.sp, color = theme.textMuted)
                             val rate = if (usageSummary.totalCalls > 0) {
                                 "${(usageSummary.successCalls * 100) / usageSummary.totalCalls}%"
                             } else "--"
                             Text(
                                 text = rate,
-                                fontSize = 12.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = FontFamily.Monospace,
                                 color = theme.textPrimary
@@ -323,18 +351,35 @@ fun ModelConfigSheet(
                         }
                     }
 
-                    if (usageSummary.topModels.isNotEmpty() || usageSummary.topCallers.isNotEmpty()) {
-                        Text(
-                            text = if (showUsageDetail) "收起按模型/按Bot消耗明细" else "点击展开 7日按模型 / 按Bot与任务明细",
-                            fontSize = 10.5.sp,
-                            color = theme.accent
-                        )
+                    if (hasUsageDetail) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = if (showUsageDetail) "收起按模型/按Bot消耗明细" else "展开 7日按模型 / 按Bot与任务明细",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = theme.accentForeground
+                            )
+                            Icon(
+                                imageVector = if (showUsageDetail) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = theme.accentForeground,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
 
                     if (showUsageDetail) {
                         if (usageSummary.topModels.isNotEmpty()) {
-                            HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
-                            Text("按模型调用排行", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = theme.textSecondary)
+                            VesperDivider()
+                            Text(
+                                text = "按模型调用排行",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = theme.textSecondary
+                            )
                             usageSummary.topModels.take(6).forEach { m ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -342,25 +387,32 @@ fun ModelConfigSheet(
                                 ) {
                                     Text(
                                         text = m.modelId,
-                                        fontSize = 10.5.sp,
+                                        fontSize = 11.sp,
                                         fontFamily = FontFamily.Monospace,
                                         color = theme.textPrimary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(end = 8.dp)
                                     )
                                     Text(
                                         text = "${m.calls}次 · ${formatTokenShort(m.tokens)}",
-                                        fontSize = 10.5.sp,
+                                        fontSize = 11.sp,
                                         fontFamily = FontFamily.Monospace,
-                                        color = if (m.tier == "paid") theme.accent else Color(0xFF34D399)
+                                        color = if (m.tier == "paid") theme.accentForeground else theme.success
                                     )
                                 }
                             }
                         }
                         if (usageSummary.topCallers.isNotEmpty()) {
-                            HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
-                            Text("按 Bot / 任务消耗排行", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = theme.textSecondary)
+                            VesperDivider()
+                            Text(
+                                text = "按 Bot / 任务消耗排行",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = theme.textSecondary
+                            )
                             usageSummary.topCallers.take(6).forEach { c ->
                                 val callerLabel = when {
                                     c.taskId.isNotBlank() -> "任务:${c.taskId}"
@@ -373,17 +425,19 @@ fun ModelConfigSheet(
                                 ) {
                                     Text(
                                         text = callerLabel,
-                                        fontSize = 10.5.sp,
+                                        fontSize = 11.sp,
                                         color = theme.textPrimary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(end = 8.dp)
                                     )
                                     Text(
                                         text = "${c.freeCalls}免/${c.paidCalls}付 · ${formatTokenShort(c.tokens)}",
-                                        fontSize = 10.5.sp,
+                                        fontSize = 11.sp,
                                         fontFamily = FontFamily.Monospace,
-                                        color = if (c.paidCalls > 0) theme.accent else Color(0xFF34D399)
+                                        color = if (c.paidCalls > 0) theme.accentForeground else theme.success
                                     )
                                 }
                             }
@@ -392,51 +446,16 @@ fun ModelConfigSheet(
                 }
             }
 
-            // 3-Tab Segmented Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(theme.inputTop, RoundedCornerShape(14.dp))
-                    .border(0.8.dp, theme.divider, RoundedCornerShape(14.dp))
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                val tabs = listOf(
+            // 3-Tab Segmented Row (48dp touch height)
+            PoolSegmentedControl(
+                options = listOf(
                     "providers" to "渠道 (${draftProviders.size})",
                     "free" to "免费池 (${freeList.size})",
                     "paid" to "付费池 (${paidList.size})"
-                )
-                tabs.forEach { (id, label) ->
-                    val selected = activeTab == id
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (selected) theme.accent.copy(alpha = 0.2f) else Color.Transparent,
-                                RoundedCornerShape(10.dp)
-                            )
-                            .border(
-                                if (selected) 1.dp else 0.dp,
-                                if (selected) theme.accent.copy(alpha = 0.6f) else Color.Transparent,
-                                RoundedCornerShape(10.dp)
-                            )
-                            .tactileClickable { activeTab = id }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = label,
-                            fontSize = 12.sp,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (selected) theme.accent else theme.textSecondary,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                }
-            }
+                ),
+                selectedId = activeTab,
+                onSelect = { activeTab = it }
+            )
 
             // Scrollable Body
             Column(
@@ -447,25 +466,22 @@ fun ModelConfigSheet(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 if (activeTab == "providers") {
-                    // Quick-Add Public Preset Chips
                     Text(
                         text = "快速添加渠道（仅填入公开标准地址）",
                         fontSize = 11.5.sp,
                         fontWeight = FontWeight.Medium,
-                        color = theme.textMuted
+                        color = theme.textMuted,
+                        modifier = Modifier.padding(start = 2.dp)
                     )
                     LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        contentPadding = PaddingValues(vertical = 2.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(ANDROID_PUBLIC_PROVIDER_PRESETS, key = { it.key }) { preset ->
-                            val chipShape = RoundedCornerShape(11.dp)
+                            val chipShape = RoundedCornerShape(10.dp)
                             Box(
                                 modifier = Modifier
-                                    .clip(chipShape)
-                                    .background(theme.inputTop, chipShape)
-                                    .border(0.8.dp, theme.divider, chipShape)
-                                    .tactileClickable {
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                    .vesperPressable(pressedScale = 0.96f, hapticOnTap = true) {
                                         val suffix = (System.currentTimeMillis() % 10000).toString(36)
                                         val newId = "${preset.key}_$suffix"
                                         draftProviders = draftProviders + ModelProviderItem(
@@ -477,87 +493,114 @@ fun ModelConfigSheet(
                                             enabled = true
                                         )
                                         expandedProviderId = newId
-                                    }
-                                    .padding(horizontal = 11.dp, vertical = 7.dp)
+                                    },
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = "+ ${preset.label}",
-                                    fontSize = 12.sp,
-                                    color = theme.textPrimary,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .clip(chipShape)
+                                        .background(theme.surfaceControl, chipShape)
+                                        .border(1.dp, theme.border, chipShape)
+                                        .padding(horizontal = 11.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = null,
+                                        tint = theme.accentForeground,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = preset.label,
+                                        style = TextStyle(
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = theme.textPrimary,
+                                            platformStyle = NoFontPaddingStyle
+                                        ),
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
                             }
                         }
                     }
 
                     if (draftProviders.isEmpty()) {
-                        SpecularGlassCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text("尚未添加模型渠道", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = theme.textPrimary)
-                                Text(
-                                    "点击上方模板填入 API Key 后，可零消耗拉取全量模型并一键分配至免费池或付费池。",
-                                    fontSize = 11.5.sp,
-                                    color = theme.textMuted
-                                )
-                            }
-                        }
+                        VesperEmptyState(
+                            icon = Icons.Default.Dns,
+                            title = "尚未添加模型渠道",
+                            subtitle = "点击上方模板填入 API Key 后，可实测拉取可用模型并一键分配至免费池或付费池。"
+                        )
                     }
 
                     draftProviders.forEach { prov ->
                         val isExpanded = expandedProviderId == prov.id
                         val freeCount = draftModels.count { it.providerId == prov.id && it.tier != "paid" }
                         val paidCount = draftModels.count { it.providerId == prov.id && it.tier == "paid" }
-                        SpecularGlassCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
+
+                        VesperCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .background(
-                                                if (prov.enabled && prov.apiKey.isNotBlank()) Color(0xFF34D399) else theme.textMuted,
-                                                CircleShape
-                                            )
-                                    )
-                                    Column(
+                                    Row(
                                         modifier = Modifier
                                             .weight(1f)
-                                            .tactileClickable {
+                                            .sizeIn(minHeight = 48.dp)
+                                            .vesperPressable {
                                                 expandedProviderId = if (isExpanded) "" else prov.id
-                                            }
+                                            },
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
-                                        Text(
-                                            text = prov.name.ifBlank { prov.id },
-                                            fontSize = 13.5.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = theme.textPrimary,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .background(
+                                                    if (prov.enabled && prov.apiKey.isNotBlank()) theme.success else theme.textMuted,
+                                                    CircleShape
+                                                )
                                         )
-                                        val keyCount = prov.effectiveApiKeys().size
-                                        val keyTag = if (keyCount > 1) " · $keyCount 密钥" else ""
-                                        Text(
-                                            text = "${if (prov.protocol == "gemini") "Gemini" else "OpenAI 兼容"}$keyTag · 免费 $freeCount / 付费 $paidCount",
-                                            fontSize = 11.sp,
-                                            color = theme.textMuted
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Text(
+                                                text = prov.name.ifBlank { prov.id },
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = theme.textPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            val keyCount = prov.effectiveApiKeys().size
+                                            val keyTag = if (keyCount > 1) " · $keyCount 密钥" else ""
+                                            Text(
+                                                text = "${if (prov.protocol == "gemini") "Gemini" else "OpenAI 兼容"}$keyTag · 免费 $freeCount / 付费 $paidCount",
+                                                fontSize = 11.5.sp,
+                                                color = theme.textMuted,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                            contentDescription = if (isExpanded) "收起渠道" else "展开渠道",
+                                            tint = theme.textMuted,
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
-                                    TactileToggle(
+
+                                    VesperSwitch(
                                         checked = prov.enabled,
                                         onCheckedChange = { checked ->
                                             draftProviders = draftProviders.map {
@@ -568,9 +611,9 @@ fun ModelConfigSheet(
                                 }
 
                                 if (isExpanded) {
-                                    HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
+                                    VesperDivider()
 
-                                    ObsidianGlassInput(
+                                    VesperTextField(
                                         value = prov.name,
                                         onValueChange = { v ->
                                             draftProviders = draftProviders.map {
@@ -581,45 +624,20 @@ fun ModelConfigSheet(
                                         placeholder = "例如 OpenRouter / 硅基流动"
                                     )
 
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        listOf("openai" to "OpenAI 兼容", "gemini" to "Google Gemini").forEach { (proto, label) ->
-                                            val active = prov.protocol == proto
-                                            val pillShape = RoundedCornerShape(10.dp)
-                                            Box(
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .clip(pillShape)
-                                                    .background(
-                                                        if (active) theme.accent.copy(alpha = 0.16f) else theme.inputTop,
-                                                        pillShape
-                                                    )
-                                                    .border(
-                                                        1.dp,
-                                                        if (active) theme.accent else theme.divider,
-                                                        pillShape
-                                                    )
-                                                    .tactileClickable {
-                                                        draftProviders = draftProviders.map {
-                                                            if (it.id == prov.id) it.copy(protocol = proto) else it
-                                                        }
-                                                    }
-                                                    .padding(vertical = 7.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = label,
-                                                    fontSize = 11.5.sp,
-                                                    color = if (active) theme.accent else theme.textSecondary,
-                                                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
-                                                )
+                                    PoolSegmentedControl(
+                                        options = listOf(
+                                            "openai" to "OpenAI 兼容",
+                                            "gemini" to "Google Gemini"
+                                        ),
+                                        selectedId = prov.protocol,
+                                        onSelect = { proto ->
+                                            draftProviders = draftProviders.map {
+                                                if (it.id == prov.id) it.copy(protocol = proto) else it
                                             }
                                         }
-                                    }
+                                    )
 
-                                    ObsidianGlassInput(
+                                    VesperTextField(
                                         value = prov.baseUrl,
                                         onValueChange = { v ->
                                             draftProviders = draftProviders.map {
@@ -633,7 +651,7 @@ fun ModelConfigSheet(
                                     val rawKeysText = remember(prov.id, prov.apiKey, prov.apiKeys) {
                                         mutableStateOf(prov.effectiveApiKeys().joinToString("\n"))
                                     }
-                                    ObsidianGlassInput(
+                                    VesperTextField(
                                         value = rawKeysText.value,
                                         onValueChange = { v ->
                                             rawKeysText.value = v
@@ -660,17 +678,17 @@ fun ModelConfigSheet(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        TactileSecondaryButton(
-                                            text = if (fetchingProviderId == prov.id) "实测拉取中..." else "拉取并拦截不可用模型",
-                                            accent = true,
+                                        VesperSecondaryButton(
+                                            text = if (fetchingProviderId == prov.id) "实测拉取中..." else "拉取可用模型",
+                                            tone = VesperButtonTone.ACCENT,
                                             enabled = fetchingProviderId.isEmpty(),
-                                            minHeight = 38.dp,
+                                            minHeight = 48.dp,
                                             onClick = {
                                                 val cleanUrl = cleanBaseUrlAndroid(prov.baseUrl)
                                                 val effKeys = prov.effectiveApiKeys()
                                                 if (cleanUrl.isBlank() || effKeys.isEmpty()) {
                                                     onShowMessage("请先填写 Base URL 与至少一个 API Key")
-                                                    return@TactileSecondaryButton
+                                                    return@VesperSecondaryButton
                                                 }
                                                 fetchingProviderId = prov.id
                                                 scope.launch {
@@ -689,10 +707,10 @@ fun ModelConfigSheet(
                                             },
                                             modifier = Modifier.weight(1f)
                                         )
-                                        TactileSecondaryButton(
+                                        VesperSecondaryButton(
                                             text = "删除渠道",
-                                            danger = true,
-                                            minHeight = 38.dp,
+                                            tone = VesperButtonTone.DANGER,
+                                            minHeight = 48.dp,
                                             onClick = {
                                                 draftProviders = draftProviders.filterNot { it.id == prov.id }
                                                 draftModels = draftModels.filterNot { it.providerId == prov.id }
@@ -702,7 +720,7 @@ fun ModelConfigSheet(
 
                                     // Manual model ID quick-add
                                     val manualVal = manualInputMap[prov.id].orEmpty()
-                                    ObsidianGlassInput(
+                                    VesperTextField(
                                         value = manualVal,
                                         onValueChange = { manualInputMap[prov.id] = it },
                                         label = "手动输入模型 ID",
@@ -712,9 +730,10 @@ fun ModelConfigSheet(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        TactileSecondaryButton(
-                                            text = "+ 加免费池",
-                                            minHeight = 34.dp,
+                                        VesperSecondaryButton(
+                                            text = "加入免费池",
+                                            leadingIcon = Icons.Default.Add,
+                                            minHeight = 48.dp,
                                             onClick = {
                                                 val parts = manualVal.split(",", "，", "\n").map { it.trim() }.filter { it.isNotEmpty() }
                                                 parts.forEach { mid -> assignModelToTier(prov.id, mid, "free") }
@@ -722,9 +741,10 @@ fun ModelConfigSheet(
                                             },
                                             modifier = Modifier.weight(1f)
                                         )
-                                        TactileSecondaryButton(
-                                            text = "+ 加付费池",
-                                            minHeight = 34.dp,
+                                        VesperSecondaryButton(
+                                            text = "加入付费池",
+                                            leadingIcon = Icons.Default.Add,
+                                            minHeight = 48.dp,
                                             onClick = {
                                                 val parts = manualVal.split(",", "，", "\n").map { it.trim() }.filter { it.isNotEmpty() }
                                                 parts.forEach { mid -> assignModelToTier(prov.id, mid, "paid") }
@@ -734,12 +754,12 @@ fun ModelConfigSheet(
                                         )
                                     }
 
-                                    // Searchable Fetched Full Model List
+                                    // Searchable Fetched Model List
                                     val fetched = fetchedModelsMap[prov.id]
                                     if (!fetched.isNullOrEmpty()) {
                                         val query = searchQueryMap[prov.id].orEmpty()
                                         val onlyFreeTag = freeOnlyFilterMap[prov.id] == true
-                                        ObsidianGlassInput(
+                                        VesperSearchField(
                                             value = query,
                                             onValueChange = { searchQueryMap[prov.id] = it },
                                             placeholder = "搜索模型名（共 ${fetched.size} 个）..."
@@ -747,56 +767,34 @@ fun ModelConfigSheet(
                                         val likelyFreeList = fetched.filter { isLikelyFreeModelAndroid(it) }
                                         if (likelyFreeList.isNotEmpty()) {
                                             Row(
-                                                modifier = Modifier.fillMaxWidth(),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .horizontalScroll(rememberScrollState()),
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                val tagShape = RoundedCornerShape(9.dp)
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(tagShape)
-                                                        .background(
-                                                            if (onlyFreeTag) Color(0xFF34D399).copy(alpha = 0.18f) else theme.inputTop,
-                                                            tagShape
-                                                        )
-                                                        .border(
-                                                            0.8.dp,
-                                                            if (onlyFreeTag) Color(0xFF34D399) else theme.divider,
-                                                            tagShape
-                                                        )
-                                                        .tactileClickable { freeOnlyFilterMap[prov.id] = !onlyFreeTag }
-                                                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                                                ) {
-                                                    Text(
-                                                        text = if (onlyFreeTag) "已筛选免费模型 (${likelyFreeList.size})" else "仅看免费模型 (${likelyFreeList.size})",
-                                                        fontSize = 11.sp,
-                                                        color = if (onlyFreeTag) Color(0xFF34D399) else theme.textSecondary
-                                                    )
-                                                }
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(tagShape)
-                                                        .background(Color(0xFF34D399).copy(alpha = 0.14f), tagShape)
-                                                        .border(0.8.dp, Color(0xFF34D399).copy(alpha = 0.45f), tagShape)
-                                                        .tactileClickable {
-                                                            var addedCount = 0
-                                                            likelyFreeList.take(40).forEach { mid ->
-                                                                if (draftModels.none { it.providerId == prov.id && it.modelId == mid }) {
-                                                                    assignModelToTier(prov.id, mid, "free")
-                                                                    addedCount += 1
-                                                                }
+                                                PoolActionPill(
+                                                    text = if (onlyFreeTag) "已筛选免费 (${likelyFreeList.size})" else "仅看免费 (${likelyFreeList.size})",
+                                                    active = onlyFreeTag,
+                                                    toneColor = theme.success,
+                                                    onClick = { freeOnlyFilterMap[prov.id] = !onlyFreeTag }
+                                                )
+                                                PoolActionPill(
+                                                    text = "+ 一键免费加池",
+                                                    active = true,
+                                                    toneColor = theme.success,
+                                                    onClick = {
+                                                        var addedCount = 0
+                                                        likelyFreeList.take(40).forEach { mid ->
+                                                            if (draftModels.none { it.providerId == prov.id && it.modelId == mid }) {
+                                                                assignModelToTier(prov.id, mid, "free")
+                                                                addedCount += 1
                                                             }
-                                                            onShowMessage(
-                                                                if (addedCount > 0) "已将 $addedCount 个免费模型加入免费池" else "免费模型已在池中"
-                                                            )
                                                         }
-                                                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                                                ) {
-                                                    Text(
-                                                        text = "+ 一键免费加池",
-                                                        fontSize = 11.sp,
-                                                        color = Color(0xFF34D399)
-                                                    )
-                                                }
+                                                        onShowMessage(
+                                                            if (addedCount > 0) "已将 $addedCount 个免费模型加入免费池" else "免费模型已在池中"
+                                                        )
+                                                    }
+                                                )
                                             }
                                         }
 
@@ -806,38 +804,41 @@ fun ModelConfigSheet(
                                             qMatch && fMatch
                                         }.take(40)
 
-                                        filtered.forEach { mid ->
-                                            val curTier = draftModels.find { it.providerId == prov.id && it.modelId == mid }?.tier.orEmpty()
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clip(RoundedCornerShape(10.dp))
-                                                    .background(theme.inputTop, RoundedCornerShape(10.dp))
-                                                    .padding(horizontal = 9.dp, vertical = 6.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    text = mid,
-                                                    fontSize = 11.sp,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    color = theme.textPrimary,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                TierAssignPill(
-                                                    label = if (curTier == "free") "已选免费" else "免费",
-                                                    active = curTier == "free",
-                                                    activeColor = Color(0xFF34D399),
-                                                    onClick = { assignModelToTier(prov.id, mid, "free") }
-                                                )
-                                                TierAssignPill(
-                                                    label = if (curTier == "paid") "已选付费" else "付费",
-                                                    active = curTier == "paid",
-                                                    activeColor = theme.accent,
-                                                    onClick = { assignModelToTier(prov.id, mid, "paid") }
-                                                )
+                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            filtered.forEach { mid ->
+                                                val curTier = draftModels.find { it.providerId == prov.id && it.modelId == mid }?.tier.orEmpty()
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .background(theme.surfaceInput, RoundedCornerShape(10.dp))
+                                                        .border(1.dp, theme.border, RoundedCornerShape(10.dp))
+                                                        .padding(start = 10.dp, end = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = mid,
+                                                        fontSize = 11.5.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        color = theme.textPrimary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    TierAssignPill(
+                                                        label = if (curTier == "free") "已选免" else "免费",
+                                                        active = curTier == "free",
+                                                        activeColor = theme.success,
+                                                        onClick = { assignModelToTier(prov.id, mid, "free") }
+                                                    )
+                                                    TierAssignPill(
+                                                        label = if (curTier == "paid") "已选付" else "付费",
+                                                        active = curTier == "paid",
+                                                        activeColor = theme.accent,
+                                                        onClick = { assignModelToTier(prov.id, mid, "paid") }
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -850,70 +851,54 @@ fun ModelConfigSheet(
                     val list = if (tier == "paid") paidList else freeList
                     val curStrategy = if (tier == "paid") draftStrategies.paid else draftStrategies.free
 
-                    // Pool Strategy Selector Card
-                    SpecularGlassCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
+                    // Pool Strategy & Batch Actions Card
+                    VesperCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = if (tier == "paid") "付费池调度策略" else "免费池调度策略",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = theme.textPrimary
-                                )
-                                val anyCooling = list.any { (modelHealth[it.canonicalTargetId]?.cooldownSec ?: 0L) > 0L }
-                                val anyFailedProbe = list.any { it.enabled && probeStatusMap[it.canonicalTargetId]?.first == false }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (anyFailedProbe) {
-                                        Text(
-                                            text = "停用异常",
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFFF87171),
-                                            modifier = Modifier.tactileClickable {
-                                                var disabledCount = 0
-                                                draftModels = draftModels.map { m ->
-                                                    if (m.tier == tier && m.enabled && probeStatusMap[m.canonicalTargetId]?.first == false) {
-                                                        disabledCount += 1
-                                                        m.copy(enabled = false)
-                                                    } else m
-                                                }
-                                                onShowMessage("已停用 $disabledCount 个异常模型，记得点击右上角「保存」")
-                                            }
-                                        )
+                            Text(
+                                text = if (tier == "paid") "付费池调度策略" else "免费池调度策略",
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = theme.textPrimary
+                            )
+
+                            PoolSegmentedControl(
+                                options = listOf(
+                                    "priority" to "按优先级",
+                                    "round_robin" to "轮询均摊",
+                                    "lowest_latency" to "最快延迟"
+                                ),
+                                selectedId = curStrategy,
+                                onSelect = { sid ->
+                                    draftStrategies = if (tier == "paid") {
+                                        draftStrategies.copy(paid = sid)
+                                    } else {
+                                        draftStrategies.copy(free = sid)
                                     }
-                                    if (anyCooling) {
-                                        Text(
-                                            text = "全部解封",
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = theme.accent,
-                                            modifier = Modifier.tactileClickable {
-                                                scope.launch {
-                                                    api.clearModelCooldown("").onSuccess { nextHealth ->
-                                                        onHealthUpdated(nextHealth, null, null)
-                                                        onShowMessage("已解除全部冷却状态")
-                                                    }
-                                                }
-                                            }
-                                        )
-                                    }
+                                }
+                            )
+
+                            val anyCooling = list.any { (modelHealth[it.canonicalTargetId]?.cooldownSec ?: 0L) > 0L }
+                            val anyFailedProbe = list.any { it.enabled && probeStatusMap[it.canonicalTargetId]?.first == false }
+                            if (list.isNotEmpty() || anyCooling || anyFailedProbe) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
                                     if (list.isNotEmpty()) {
-                                        Text(
+                                        PoolActionPill(
                                             text = if (probingBatchTier == tier) "测速中..." else "并发测速",
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFF34D399),
-                                            modifier = Modifier.tactileClickable {
-                                                if (probingBatchTier.isNotEmpty()) return@tactileClickable
+                                            active = true,
+                                            toneColor = theme.success,
+                                            enabled = probingBatchTier.isEmpty(),
+                                            onClick = {
+                                                if (probingBatchTier.isNotEmpty()) return@PoolActionPill
                                                 probingBatchTier = tier
                                                 scope.launch {
                                                     api.testModelBatch(tier = tier, disableFailed = false)
@@ -954,47 +939,36 @@ fun ModelConfigSheet(
                                             }
                                         )
                                     }
-                                }
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                listOf(
-                                    "priority" to "按优先级",
-                                    "round_robin" to "轮询均摊",
-                                    "lowest_latency" to "最快延迟"
-                                ).forEach { (sid, label) ->
-                                    val chosen = curStrategy == sid
-                                    val pillShape = RoundedCornerShape(10.dp)
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(pillShape)
-                                            .background(
-                                                if (chosen) theme.accent.copy(alpha = 0.18f) else theme.inputTop,
-                                                pillShape
-                                            )
-                                            .border(
-                                                1.dp,
-                                                if (chosen) theme.accent else theme.divider,
-                                                pillShape
-                                            )
-                                            .tactileClickable {
-                                                draftStrategies = if (tier == "paid") {
-                                                    draftStrategies.copy(paid = sid)
-                                                } else {
-                                                    draftStrategies.copy(free = sid)
+                                    if (anyCooling) {
+                                        PoolActionPill(
+                                            text = "全部解封",
+                                            active = true,
+                                            toneColor = theme.accent,
+                                            onClick = {
+                                                scope.launch {
+                                                    api.clearModelCooldown("").onSuccess { nextHealth ->
+                                                        onHealthUpdated(nextHealth, null, null)
+                                                        onShowMessage("已解除全部冷却状态")
+                                                    }
                                                 }
                                             }
-                                            .padding(vertical = 7.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = label,
-                                            fontSize = 11.5.sp,
-                                            fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
-                                            color = if (chosen) theme.accent else theme.textSecondary
+                                        )
+                                    }
+                                    if (anyFailedProbe) {
+                                        PoolActionPill(
+                                            text = "停用异常",
+                                            active = true,
+                                            toneColor = theme.danger,
+                                            onClick = {
+                                                var disabledCount = 0
+                                                draftModels = draftModels.map { m ->
+                                                    if (m.tier == tier && m.enabled && probeStatusMap[m.canonicalTargetId]?.first == false) {
+                                                        disabledCount += 1
+                                                        m.copy(enabled = false)
+                                                    } else m
+                                                }
+                                                onShowMessage("已停用 $disabledCount 个异常模型，记得点击右上角「保存」")
+                                            }
                                         )
                                     }
                                 }
@@ -1003,55 +977,64 @@ fun ModelConfigSheet(
                     }
 
                     if (list.isEmpty()) {
-                        SpecularGlassCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = if (tier == "paid") "付费池暂无模型" else "免费池暂无模型",
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = theme.textPrimary
-                                )
-                                TactileSecondaryButton(
+                        VesperEmptyState(
+                            icon = Icons.Default.AutoAwesome,
+                            title = if (tier == "paid") "付费池暂无模型" else "免费池暂无模型",
+                            subtitle = "前往「渠道」页拉取或手动输入模型 ID 后即可一键分配。",
+                            actions = {
+                                VesperSecondaryButton(
                                     text = "去渠道管理添加",
-                                    accent = true,
-                                    minHeight = 36.dp,
+                                    tone = VesperButtonTone.ACCENT,
+                                    minHeight = 48.dp,
                                     onClick = { activeTab = "providers" }
                                 )
                             }
-                        }
+                        )
                     }
 
                     list.forEachIndexed { idx, m ->
                         val prov = providerById[m.providerId]
                         val health = modelHealth[m.canonicalTargetId]
                         val probeNote = probeStatusMap[m.canonicalTargetId]
-                        SpecularGlassCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
+                        val isCooling = (health?.cooldownSec ?: 0L) > 0L
+
+                        VesperCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(7.dp)
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "#${idx + 1} · ${prov?.name ?: m.providerId}",
-                                            fontSize = 11.sp,
-                                            color = theme.textMuted
-                                        )
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            VesperTag(
+                                                text = "#${idx + 1}",
+                                                bgColor = theme.surfaceInput,
+                                                borderColor = theme.border,
+                                                textColor = theme.textSecondary
+                                            )
+                                            Text(
+                                                text = prov?.name ?: m.providerId,
+                                                fontSize = 11.5.sp,
+                                                color = theme.textMuted,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                         Text(
                                             text = m.modelId,
-                                            fontSize = 13.sp,
+                                            fontSize = 13.5.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             fontFamily = FontFamily.Monospace,
                                             color = theme.textPrimary,
@@ -1059,7 +1042,7 @@ fun ModelConfigSheet(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
-                                    TactileToggle(
+                                    VesperSwitch(
                                         checked = m.enabled,
                                         onCheckedChange = { checked ->
                                             draftModels = draftModels.map {
@@ -1071,41 +1054,69 @@ fun ModelConfigSheet(
                                     )
                                 }
 
-                                // Capability & Health Status Line
-                                val statusParts = buildList {
-                                    if (m.supportsTools == true) add("Tools可用")
-                                    else if (m.supportsTools == false) add("无Tools")
-                                    if (m.supportsThinking == true) add("Thinking")
-                                    when {
-                                        (health?.cooldownSec ?: 0L) > 0L -> add("冷却 ${health?.cooldownSec}s")
-                                        (health?.lastLatencyMs ?: 0L) > 0L -> add("正常 ${health?.lastLatencyMs}ms")
-                                        m.lastLatencyMs > 0L -> add("上次 ${m.lastLatencyMs}ms")
+                                // Capability & Health Tag Strip
+                                val hasAnyBadge = m.supportsTools != null ||
+                                    m.supportsThinking == true ||
+                                    isCooling ||
+                                    (health?.lastLatencyMs ?: 0L) > 0L ||
+                                    m.lastLatencyMs > 0L
+
+                                if (hasAnyBadge) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (m.supportsTools == true) {
+                                            VesperTag(text = "Tools可用", toneColor = theme.success)
+                                        } else if (m.supportsTools == false) {
+                                            VesperTag(text = "无Tools", toneColor = theme.textMuted)
+                                        }
+                                        if (m.supportsThinking == true) {
+                                            VesperTag(text = "Thinking", toneColor = theme.info)
+                                        }
+                                        when {
+                                            isCooling -> VesperTag(
+                                                text = "冷却 ${health?.cooldownSec}s",
+                                                toneColor = theme.warning
+                                            )
+                                            (health?.lastLatencyMs ?: 0L) > 0L -> VesperTag(
+                                                text = "正常 ${health?.lastLatencyMs}ms",
+                                                toneColor = theme.success
+                                            )
+                                            m.lastLatencyMs > 0L -> VesperTag(
+                                                text = "上次 ${m.lastLatencyMs}ms",
+                                                toneColor = theme.textSecondary
+                                            )
+                                        }
                                     }
                                 }
-                                if (statusParts.isNotEmpty()) {
-                                    Text(
-                                        text = statusParts.joinToString(" · "),
-                                        fontSize = 11.sp,
-                                        color = if ((health?.cooldownSec ?: 0L) > 0L) theme.accent else Color(0xFF34D399)
-                                    )
-                                }
+
                                 if (probeNote != null) {
                                     Text(
                                         text = probeNote.second,
-                                        fontSize = 11.sp,
-                                        color = if (probeNote.first) Color(0xFF34D399) else Color(0xFFF87171)
+                                        fontSize = 11.5.sp,
+                                        color = if (probeNote.first) theme.success else theme.danger
                                     )
                                 }
 
-                                // Row Actions
+                                VesperDivider()
+
+                                // Row Actions (all >= 48dp touch targets)
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    SmallPoolActionBtn(
+                                    PoolActionPill(
                                         text = if (probingTargetId == m.canonicalTargetId) "测速中" else "测速",
+                                        enabled = probingTargetId.isEmpty(),
                                         onClick = {
-                                            if (prov == null || probingTargetId.isNotEmpty()) return@SmallPoolActionBtn
+                                            if (prov == null || probingTargetId.isNotEmpty()) return@PoolActionPill
                                             probingTargetId = m.canonicalTargetId
                                             scope.launch {
                                                 api.probePooledModel(prov, m.modelId)
@@ -1138,10 +1149,11 @@ fun ModelConfigSheet(
                                             }
                                         }
                                     )
-                                    if ((health?.cooldownSec ?: 0L) > 0L) {
-                                        SmallPoolActionBtn(
+                                    if (isCooling) {
+                                        PoolActionPill(
                                             text = "解封",
-                                            accent = true,
+                                            active = true,
+                                            toneColor = theme.accent,
                                             onClick = {
                                                 scope.launch {
                                                     api.clearModelCooldown(m.canonicalTargetId).onSuccess { nextH ->
@@ -1152,7 +1164,7 @@ fun ModelConfigSheet(
                                             }
                                         )
                                     }
-                                    SmallPoolActionBtn(
+                                    PoolActionPill(
                                         text = if (tier == "paid") "移至免费" else "移至付费",
                                         onClick = {
                                             val otherTier = if (tier == "paid") "free" else "paid"
@@ -1160,15 +1172,23 @@ fun ModelConfigSheet(
                                         }
                                     )
                                     if (idx > 0) {
-                                        SmallPoolActionBtn(text = "↑", onClick = { moveModelPriority(tier, idx, -1) })
+                                        PoolIconActionPill(
+                                            icon = Icons.Default.KeyboardArrowUp,
+                                            contentDescription = "上移优先级",
+                                            onClick = { moveModelPriority(tier, idx, -1) }
+                                        )
                                     }
                                     if (idx < list.lastIndex) {
-                                        SmallPoolActionBtn(text = "↓", onClick = { moveModelPriority(tier, idx, 1) })
+                                        PoolIconActionPill(
+                                            icon = Icons.Default.KeyboardArrowDown,
+                                            contentDescription = "下移优先级",
+                                            onClick = { moveModelPriority(tier, idx, 1) }
+                                        )
                                     }
-                                    Spacer(modifier = Modifier.weight(1f))
-                                    SmallPoolActionBtn(
+                                    PoolActionPill(
                                         text = "移除",
-                                        danger = true,
+                                        active = true,
+                                        toneColor = theme.danger,
                                         onClick = {
                                             draftModels = draftModels.filterNot {
                                                 it.providerId == m.providerId && it.modelId == m.modelId
@@ -1187,6 +1207,63 @@ fun ModelConfigSheet(
 }
 
 @Composable
+private fun PoolSegmentedControl(
+    options: List<Pair<String, String>>,
+    selectedId: String,
+    onSelect: (String) -> Unit
+) {
+    val theme = BotHubThemeTokens
+    val outerShape = RoundedCornerShape(12.dp)
+    val tabShape = RoundedCornerShape(9.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(outerShape)
+            .background(theme.surfaceInput, outerShape)
+            .border(1.dp, theme.border, outerShape)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        options.forEach { (id, label) ->
+            val selected = selectedId == id
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .vesperPressable(pressedScale = 0.97f, hapticOnTap = true) {
+                        if (!selected) onSelect(id)
+                    }
+                    .clip(tabShape)
+                    .then(
+                        if (selected) {
+                            Modifier
+                                .background(theme.surfaceCard, tabShape)
+                                .border(1.dp, theme.borderStrong, tabShape)
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .padding(horizontal = 6.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = label,
+                    style = TextStyle(
+                        fontSize = 12.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (selected) theme.textPrimary else theme.textMuted,
+                        platformStyle = NoFontPaddingStyle
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun TierAssignPill(
     label: String,
     active: Boolean,
@@ -1197,58 +1274,123 @@ private fun TierAssignPill(
     val shape = RoundedCornerShape(8.dp)
     Box(
         modifier = Modifier
-            .clip(shape)
-            .background(
-                if (active) activeColor.copy(alpha = 0.2f) else Color.Transparent,
-                shape
-            )
-            .border(
-                BorderStroke(0.8.dp, if (active) activeColor else theme.divider),
-                shape
-            )
-            .tactileClickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .vesperPressable(pressedScale = 0.94f, hapticOnTap = true, onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = label,
-            fontSize = 10.5.sp,
-            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (active) activeColor else theme.textSecondary,
-            maxLines = 1,
-            softWrap = false
-        )
+        Box(
+            modifier = Modifier
+                .clip(shape)
+                .background(
+                    if (active) activeColor.copy(alpha = if (theme.isLight) 0.14f else 0.20f) else theme.surfaceControl,
+                    shape
+                )
+                .border(
+                    BorderStroke(1.dp, if (active) activeColor else theme.border),
+                    shape
+                )
+                .padding(horizontal = 9.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                style = TextStyle(
+                    fontSize = 11.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                    color = if (active) activeColor else theme.textSecondary,
+                    platformStyle = NoFontPaddingStyle
+                ),
+                maxLines = 1,
+                softWrap = false
+            )
+        }
     }
 }
 
 @Composable
-private fun SmallPoolActionBtn(
+private fun PoolActionPill(
     text: String,
-    accent: Boolean = false,
-    danger: Boolean = false,
+    active: Boolean = false,
+    toneColor: Color = Color.Unspecified,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     val theme = BotHubThemeTokens
-    val shape = RoundedCornerShape(8.dp)
-    val fg = when {
-        danger -> Color(0xFFF87171)
-        accent -> theme.accent
+    val shape = RoundedCornerShape(9.dp)
+    val resolvedTone = if (toneColor != Color.Unspecified) toneColor else theme.accent
+    val bgColor = if (active) {
+        resolvedTone.copy(alpha = if (theme.isLight) 0.11f else 0.16f)
+    } else {
+        theme.surfaceControl
+    }
+    val borderColor = if (active) {
+        resolvedTone.copy(alpha = if (theme.isLight) 0.34f else 0.44f)
+    } else {
+        theme.border
+    }
+    val fgColor = when {
+        !enabled -> theme.textMuted
+        active -> resolvedTone
         else -> theme.textSecondary
     }
+
     Box(
         modifier = Modifier
-            .clip(shape)
-            .background(theme.inputTop, shape)
-            .border(0.8.dp, if (danger) Color(0xFFF87171).copy(alpha = 0.4f) else theme.divider, shape)
-            .tactileClickable { onClick() }
-            .padding(horizontal = 9.dp, vertical = 5.dp)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .vesperPressable(enabled = enabled, pressedScale = 0.95f, hapticOnTap = true, onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = text,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = fg,
-            maxLines = 1,
-            softWrap = false
-        )
+        Box(
+            modifier = Modifier
+                .clip(shape)
+                .background(bgColor, shape)
+                .border(1.dp, borderColor, shape)
+                .padding(horizontal = 11.dp, vertical = 7.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = text,
+                style = TextStyle(
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = fgColor,
+                    platformStyle = NoFontPaddingStyle
+                ),
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+    }
+}
+
+@Composable
+private fun PoolIconActionPill(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    val shape = RoundedCornerShape(9.dp)
+    Box(
+        modifier = Modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .vesperPressable(pressedScale = 0.92f, hapticOnTap = true, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(shape)
+                .background(theme.surfaceControl, shape)
+                .border(1.dp, theme.border, shape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = theme.textSecondary,
+                modifier = Modifier.size(18.dp)
+            )
+        }
     }
 }

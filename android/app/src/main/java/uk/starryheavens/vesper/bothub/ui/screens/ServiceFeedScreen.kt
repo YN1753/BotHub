@@ -1,11 +1,8 @@
 package uk.starryheavens.vesper.bothub.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -27,22 +23,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.NotificationItem
 import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
-import uk.starryheavens.vesper.bothub.ui.components.SpecularHairline
-import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
-import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
-import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.components.VesperButtonTone
+import uk.starryheavens.vesper.bothub.ui.components.VesperDivider
+import uk.starryheavens.vesper.bothub.ui.components.VesperIconButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.vesperPressable
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
 /**
- * Full-Screen Level-2 Official Service Account Feed ("服务通知").
+ * Full-screen Service Notification Feed ("服务通知").
  */
 @Composable
 fun ServiceFeedScreen(
@@ -72,28 +67,26 @@ fun ServiceFeedScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(theme.bgBase)
+            .background(theme.bgCanvas)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(listOf(theme.topBarTop, theme.topBarBottom))
-                )
+                .background(theme.surfaceBar)
                 .statusBarsPadding()
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(
                     modifier = Modifier
-                        .sizeIn(minHeight = 36.dp)
-                        .tactileClickable(pressedScale = 0.94f, onClick = onBack)
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .vesperPressable(pressedScale = 0.94f, onClick = onBack)
+                        .padding(horizontal = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
@@ -127,54 +120,36 @@ fun ServiceFeedScreen(
                 )
 
                 if (unreadCount > 0) {
-                    TactileSecondaryButton(
-                        text = "已读",
+                    VesperSecondaryButton(
+                        text = "全部已读",
                         leadingIcon = Icons.Default.DoneAll,
-                        accent = true,
+                        tone = VesperButtonTone.ACCENT,
                         cornerRadius = 999.dp,
-                        minHeight = 34.dp,
-                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
-                        onClick = onMarkAllRead
+                        minHeight = 36.dp,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        onClick = onMarkAllRead,
+                        modifier = Modifier.padding(end = 6.dp)
                     )
                 } else if (hasReadItems) {
-                    TactileSecondaryButton(
+                    VesperSecondaryButton(
                         text = "清理已读",
                         leadingIcon = Icons.Default.DeleteSweep,
                         cornerRadius = 999.dp,
-                        minHeight = 34.dp,
-                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
-                        onClick = onClearRead
+                        minHeight = 36.dp,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        onClick = onClearRead,
+                        modifier = Modifier.padding(end = 6.dp)
                     )
                 } else {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .tactileClickable(pressedScale = 0.92f, hapticOnTap = true, onClick = onRefresh)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.verticalGradient(listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)),
-                                CircleShape
-                            )
-                            .border(
-                                BorderStroke(
-                                    0.85.dp,
-                                    specularRimBrush(theme.rimHighlight, theme.rimMid, theme.rimSubtle)
-                                ),
-                                CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "刷新通知",
-                            tint = theme.textSecondary,
-                            modifier = Modifier.size(17.dp)
-                        )
-                    }
+                    VesperIconButton(
+                        icon = Icons.Default.Refresh,
+                        contentDescription = "刷新通知",
+                        onClick = onRefresh
+                    )
                 }
             }
 
-            SpecularHairline()
+            VesperDivider()
         }
 
         InboxTabScreen(

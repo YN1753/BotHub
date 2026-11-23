@@ -236,7 +236,7 @@ class ScreenCaptureAccessibilityService : AccessibilityService() {
         val roots = activeAppRoots()
         val matchers: List<(String, String, String) -> Boolean> = when (appLabel) {
             "微信" -> listOf(
-                { txt, desc, vid ->
+                { _, desc, vid ->
                     desc == "更多" || desc == "更多功能按钮" || desc.contains("更多") && desc.length <= 8 ||
                         vid.endsWith(":id/coz") || vid.contains("more")
                 },

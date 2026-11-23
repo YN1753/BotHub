@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -39,7 +40,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,12 +58,13 @@ import uk.starryheavens.vesper.bothub.data.ClientSharePrefetcher
 import uk.starryheavens.vesper.bothub.data.PrefetchedShareMeta
 import uk.starryheavens.vesper.bothub.data.ShareTextParser
 import uk.starryheavens.vesper.bothub.sync.ScreenCaptureSnapshot
-import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
-import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
-import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
-import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
-import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.BotAvatar
+import uk.starryheavens.vesper.bothub.ui.components.VesperCard
+import uk.starryheavens.vesper.bothub.ui.components.VesperPrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSheetDragHandle
+import uk.starryheavens.vesper.bothub.ui.components.VesperTag
+import uk.starryheavens.vesper.bothub.ui.components.VesperTextField
 import uk.starryheavens.vesper.bothub.ui.components.ZeroClickCaptureRow
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
@@ -226,9 +227,9 @@ fun QuickCaptureSheet(
                     indication = null,
                     onClick = {}
                 ),
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-            color = theme.sheetBg,
-            border = BorderStroke(1.dp, theme.divider),
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            color = theme.surfaceSheet,
+            border = BorderStroke(1.dp, theme.border),
             tonalElevation = 0.dp
         ) {
             Column(
@@ -237,16 +238,10 @@ fun QuickCaptureSheet(
                     .verticalScroll(rememberScrollState())
                     .navigationBarsPadding()
                     .imePadding()
-                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .width(36.dp)
-                        .height(4.dp)
-                        .background(theme.textMuted.copy(alpha = 0.36f), RoundedCornerShape(999.dp))
-                        .align(Alignment.CenterHorizontally)
-                )
+                VesperSheetDragHandle()
 
                 val headerBadgeLabel = remember(screenSnapshot, preview.kind) {
                     when {
@@ -267,7 +262,7 @@ fun QuickCaptureSheet(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        SpiritSquircleAvatar(
+                        BotAvatar(
                             bot = null,
                             allBots = emptyList(),
                             avatarStyleOverride = preview.kind.avatarStyle,
@@ -277,14 +272,13 @@ fun QuickCaptureSheet(
                                 noteInput.isNotEmpty() -> "thinking"
                                 else -> "idle"
                             },
-                            containerSize = 36.dp,
-                            cornerRadius = 10.dp,
+                            containerSize = 38.dp,
                             interactive = true,
                             seedKey = "quick_capture"
                         )
                         Text(
                             text = if (screenSnapshot != null) "识屏收藏到 BotHub" else "快速收藏到 BotHub",
-                            fontSize = 16.sp,
+                            fontSize = 16.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = theme.textPrimary,
                             maxLines = 1,
@@ -293,31 +287,13 @@ fun QuickCaptureSheet(
                             modifier = Modifier.weight(1f, fill = false)
                         )
                     }
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(theme.accent.copy(alpha = 0.12f))
-                            .border(1.dp, theme.accent.copy(alpha = 0.30f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = headerBadgeLabel,
-                            style = TextStyle(
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = if (theme.isLight) theme.accentDeep else theme.accentLight,
-                                platformStyle = NoFontPaddingStyle
-                            ),
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
+                    VesperTag(text = headerBadgeLabel)
                 }
 
                 if (savedMsg.isNotEmpty()) {
-                    SpecularGlassCard(
+                    VesperCard(
                         cornerRadius = 12.dp,
-                        accentTint = Color(0xFF10B981),
+                        accentTone = theme.success,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -328,7 +304,7 @@ fun QuickCaptureSheet(
                             Box(
                                 modifier = Modifier
                                     .size(7.dp)
-                                    .background(Color(0xFF10B981), CircleShape)
+                                    .background(theme.success, CircleShape)
                             )
                             Text(
                                 text = savedMsg,
@@ -340,8 +316,8 @@ fun QuickCaptureSheet(
                     }
                 }
 
-                SpecularGlassCard(
-                    cornerRadius = 12.dp,
+                VesperCard(
+                    cornerRadius = 14.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -352,9 +328,9 @@ fun QuickCaptureSheet(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(144.dp)
+                                    .height(148.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .border(1.dp, theme.divider, RoundedCornerShape(10.dp))
+                                    .border(1.dp, theme.border, RoundedCornerShape(10.dp))
                             ) {
                                 Image(
                                     bitmap = screenshotThumb,
@@ -366,19 +342,21 @@ fun QuickCaptureSheet(
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
                                         .padding(8.dp)
-                                        .clip(RoundedCornerShape(8.dp))
+                                        .sizeIn(minHeight = 36.dp)
+                                        .clip(RoundedCornerShape(9.dp))
                                         .background(
-                                            if (attachScreenshot) theme.accent.copy(alpha = 0.90f)
-                                            else Color(0xCC181A20)
+                                            if (attachScreenshot) theme.accent.copy(alpha = 0.92f)
+                                            else Color(0xCC14171F)
                                         )
                                         .clickable { attachScreenshot = !attachScreenshot }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = if (attachScreenshot) "已附带截图供 AI 识图" else "仅文字（点此附带截图）",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Medium,
-                                        color = Color.White,
+                                        color = if (attachScreenshot) theme.onAccent else Color.White,
                                         maxLines = 1
                                     )
                                 }
@@ -390,8 +368,8 @@ fun QuickCaptureSheet(
                             ?: preview.candidateTitle
                         Text(
                             text = displayTitle,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.SemiBold,
                             color = theme.textPrimary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
@@ -405,7 +383,7 @@ fun QuickCaptureSheet(
                                 text = displayUrl,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.5.sp,
-                                color = theme.accent,
+                                color = theme.accentForeground,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -426,27 +404,28 @@ fun QuickCaptureSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(theme.inputTop)
-                            .border(1.dp, theme.divider, RoundedCornerShape(10.dp))
+                            .sizeIn(minHeight = 48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(theme.surfaceInput)
+                            .border(1.dp, theme.border, RoundedCornerShape(12.dp))
                             .clickable { onOpenAccessibilitySettings() }
-                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "开启「悬浮球识屏」后，无需复制链接即可自动识别页面与截图",
-                            fontSize = 11.5.sp,
-                            lineHeight = 16.sp,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
                             color = theme.textSecondary,
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "去开启",
-                            fontSize = 12.sp,
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = theme.accent,
+                            color = theme.accentForeground,
                             maxLines = 1
                         )
                     }
@@ -458,17 +437,17 @@ fun QuickCaptureSheet(
                         fontSize = 13.sp,
                         color = theme.textSecondary
                     )
-                    TactilePrimaryButton(
+                    VesperPrimaryButton(
                         text = "打开 BotHub 一键绑定",
-                        minHeight = 46.dp,
+                        minHeight = 48.dp,
                         onClick = onOpenSetup,
                         modifier = Modifier.fillMaxWidth()
                     )
                 } else {
-                    ObsidianGlassInput(
+                    VesperTextField(
                         value = noteInput,
                         onValueChange = { noteInput = it },
-                        placeholder = "随手批注一句想法或提问 (可选)...",
+                        placeholder = "随手批注一句想法或提问（可选）...",
                         singleLine = false,
                         maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
@@ -491,14 +470,14 @@ fun QuickCaptureSheet(
                         Text(
                             text = errorMsg,
                             fontSize = 12.sp,
-                            color = if (theme.isLight) Color(0xFFBE123C) else Color(0xFFFB7185)
+                            color = theme.danger
                         )
                     }
 
-                    TactilePrimaryButton(
+                    VesperPrimaryButton(
                         text = if (saving) "正在收入收藏匣..." else "收入收藏匣",
                         enabled = !busy,
-                        minHeight = 46.dp,
+                        minHeight = 48.dp,
                         onClick = { submitCapture() },
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -507,24 +486,24 @@ fun QuickCaptureSheet(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        TactileSecondaryButton(
+                        VesperSecondaryButton(
                             text = if (savingTodo) "添加中..." else "转为待办",
                             enabled = !busy,
-                            minHeight = 44.dp,
+                            minHeight = 46.dp,
                             onClick = { submitTodo() },
                             modifier = Modifier.weight(1f)
                         )
 
-                        TactileSecondaryButton(
+                        VesperSecondaryButton(
                             text = "发给 AI 深聊",
                             enabled = !busy,
-                            minHeight = 44.dp,
+                            minHeight = 46.dp,
                             onClick = { onForwardDeepChat(noteInput.trim()) },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(4.dp))
             }
         }
     }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,7 +55,7 @@ import uk.starryheavens.vesper.bothub.data.TodoItemUi
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 import java.util.Locale
 
-private val STRUCTURED_TOOL_NAMES = setOf(
+internal val STRUCTURED_TOOL_NAMES = setOf(
     "manage_assets",
     "query_nezha_nodes",
     "manage_todos",
@@ -121,19 +122,19 @@ private fun StructuredSectionHeader(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.weight(1f, fill = false)
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = tint,
-                modifier = Modifier.size(13.dp)
+                modifier = Modifier.size(14.dp)
             )
             Text(
                 text = title,
                 style = TextStyle(
-                    fontSize = 11.sp,
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = theme.textSecondary,
                     platformStyle = NoFontPaddingStyle
@@ -144,12 +145,7 @@ private fun StructuredSectionHeader(
             )
         }
         if (badge.isNotBlank()) {
-            CrispTagPill(
-                text = badge,
-                bgColor = tint.copy(alpha = 0.14f),
-                borderColor = tint.copy(alpha = 0.34f),
-                textColor = tint
-            )
+            VesperTag(text = badge, toneColor = tint)
         }
     }
 }
@@ -157,9 +153,8 @@ private fun StructuredSectionHeader(
 @Composable
 private fun ManageAssetsStructuredCard(json: JSONObject) {
     val theme = BotHubThemeTokens
-    val accentTint = if (theme.isLight) theme.accentDeep else theme.accentLight
+    val accentTint = theme.accentForeground
 
-    // Summary action: compact single-card overview without repeating 3 KPI boxes + separate currency table rows
     if (json.has("cost_by_currency") || json.has("active_count")) {
         val activeCount = json.optInt("active_count", 0)
         val expiringCount = json.optInt("expiring_30d_count", 0)
@@ -193,9 +188,9 @@ private fun ManageAssetsStructuredCard(json: JSONObject) {
                 .fillMaxWidth()
                 .clip(cardShape)
                 .background(theme.codeBlockBg, cardShape)
-                .border(0.75.dp, theme.rimMid, cardShape)
-                .padding(horizontal = 11.dp, vertical = 9.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+                .border(1.dp, theme.border, cardShape)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             val badgeText = buildString {
                 append("在用 $activeCount")
@@ -217,7 +212,7 @@ private fun ManageAssetsStructuredCard(json: JSONObject) {
                     Text(
                         text = "月均 ${monthlyParts.joinToString(" + ").ifEmpty { "--" }}",
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
+                        fontSize = 12.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = theme.textPrimary
                     )
@@ -225,7 +220,7 @@ private fun ManageAssetsStructuredCard(json: JSONObject) {
                         Text(
                             text = "年均 ${annualParts.joinToString(" + ")}",
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
+                            fontSize = 11.5.sp,
                             color = theme.textSecondary
                         )
                     }
@@ -281,10 +276,10 @@ private fun AssetMicroCard(a: JSONObject) {
 
     val indicatorColor = when {
         isInactive -> theme.textMuted
-        isPerpetual -> if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
-        daysLeft <= 3 -> if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185)
-        daysLeft <= 14 -> if (theme.isLight) Color(0xFFD97706) else Color(0xFFFBBF24)
-        else -> if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
+        isPerpetual -> theme.success
+        daysLeft <= 3 -> theme.danger
+        daysLeft <= 14 -> theme.warning
+        else -> theme.success
     }
 
     val dueFraction = when {
@@ -301,7 +296,7 @@ private fun AssetMicroCard(a: JSONObject) {
             .height(IntrinsicSize.Min)
             .clip(cardShape)
             .background(theme.codeBlockBg, cardShape)
-            .border(0.75.dp, theme.rimMid, cardShape)
+            .border(1.dp, theme.border, cardShape)
     ) {
         Box(
             modifier = Modifier
@@ -312,7 +307,7 @@ private fun AssetMicroCard(a: JSONObject) {
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 10.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             Row(
@@ -322,7 +317,7 @@ private fun AssetMicroCard(a: JSONObject) {
             ) {
                 Text(
                     text = name,
-                    fontSize = 12.5.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = theme.textPrimary,
                     maxLines = 1,
@@ -330,27 +325,17 @@ private fun AssetMicroCard(a: JSONObject) {
                     modifier = Modifier.weight(1f)
                 )
                 if (price.isNotEmpty()) {
-                    CrispTagPill(
-                        text = price.replace(" / ", "/"),
-                        bgColor = theme.accent.copy(alpha = 0.14f),
-                        borderColor = theme.accent.copy(alpha = 0.34f),
-                        textColor = if (theme.isLight) theme.accentDeep else theme.accentLight
-                    )
+                    VesperTag(text = price.replace(" / ", "/"))
                 }
                 if (isInactive || status == "已到期") {
-                    CrispTagPill(
-                        text = status,
-                        bgColor = indicatorColor.copy(alpha = 0.14f),
-                        borderColor = indicatorColor.copy(alpha = 0.34f),
-                        textColor = indicatorColor
-                    )
+                    VesperTag(text = status, toneColor = indicatorColor)
                 }
             }
 
             if (spec.isNotEmpty()) {
                 Text(
                     text = spec,
-                    fontSize = 11.sp,
+                    fontSize = 11.5.sp,
                     color = theme.textMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -405,7 +390,6 @@ private fun AssetMicroCard(a: JSONObject) {
 @Composable
 private fun NezhaNodesStructuredCard(json: JSONObject) {
     val theme = BotHubThemeTokens
-    val onlineGreen = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
     val nezhaArr = json.optJSONArray("nezha_nodes")
     val computeArr = json.optJSONArray("compute_assets")
     val nodes = buildList {
@@ -430,14 +414,14 @@ private fun NezhaNodesStructuredCard(json: JSONObject) {
             icon = Icons.Default.Dns,
             title = if (nodes.isNotEmpty()) "探针节点巡检" else "计算节点台账",
             badge = "${totalCount}台",
-            tint = onlineGreen
+            tint = theme.success
         )
 
         nodes.take(MAX_INLINE_ITEMS).forEach { n ->
             val name = n.optString("name", "").ifBlank { n.optString("id", "节点") }
             val status = n.optString("status", "online").lowercase()
             val isOnline = status == "online" || status == "生效中"
-            val dotColor = if (isOnline) onlineGreen else Color(0xFFF59E0B)
+            val dotColor = if (isOnline) theme.success else theme.warning
             val rawHostInfo = n.optString("host_info", "").trim()
             val hostHighlight = remember(rawHostInfo) { formatHostInfoSummary(rawHostInfo) }
             val lastActive = formatCompactTime(n.optString("last_active", ""))
@@ -448,14 +432,14 @@ private fun NezhaNodesStructuredCard(json: JSONObject) {
                     .fillMaxWidth()
                     .clip(cardShape)
                     .background(theme.codeBlockBg, cardShape)
-                    .border(0.75.dp, theme.rimMid, cardShape)
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .border(1.dp, theme.border, cardShape)
+                    .padding(horizontal = 11.dp, vertical = 9.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
                     Box(
                         modifier = Modifier
@@ -464,7 +448,7 @@ private fun NezhaNodesStructuredCard(json: JSONObject) {
                     )
                     Text(
                         text = name,
-                        fontSize = 12.5.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = theme.textPrimary,
                         maxLines = 1,
@@ -485,7 +469,7 @@ private fun NezhaNodesStructuredCard(json: JSONObject) {
                 if (hostHighlight.isNotEmpty()) {
                     Text(
                         text = hostHighlight,
-                        fontSize = 11.sp,
+                        fontSize = 11.5.sp,
                         color = theme.textSecondary,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
@@ -528,15 +512,12 @@ private fun ManageTodosStructuredCard(
     }
     if (items.isEmpty()) return
 
-    val headerTint = if (theme.isLight) Color(0xFF0284C7) else Color(0xFF38BDF8)
-    val doneGreen = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
-
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         StructuredSectionHeader(
             icon = Icons.Default.TaskAlt,
             title = "待办事项",
             badge = "${items.size}项",
-            tint = headerTint
+            tint = theme.info
         )
         items.take(MAX_INLINE_ITEMS).forEach { td ->
             val id = td.optString("id", "").trim()
@@ -549,12 +530,12 @@ private fun ManageTodosStructuredCard(
             val dueAt = td.optString("due_at", "").trim().take(10)
 
             val prioColor = when (priority) {
-                "high" -> if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185)
-                "medium" -> if (theme.isLight) Color(0xFFD97706) else Color(0xFFFBBF24)
+                "high" -> theme.danger
+                "medium" -> theme.warning
                 else -> theme.textMuted
             }
             val circleColor by animateColorAsState(
-                targetValue = if (isDone) doneGreen else theme.rimHighlight,
+                targetValue = if (isDone) theme.success else theme.borderStrong,
                 animationSpec = tween(150),
                 label = "todoCheckCircle"
             )
@@ -563,25 +544,26 @@ private fun ManageTodosStructuredCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .sizeIn(minHeight = 48.dp)
                     .clip(cardShape)
                     .background(theme.codeBlockBg, cardShape)
-                    .border(0.75.dp, theme.rimMid, cardShape)
+                    .border(1.dp, theme.border, cardShape)
                     .clickable(enabled = id.isNotEmpty()) {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         val nextStatus = if (isDone) "todo" else "done"
                         optimisticStatus[id] = nextStatus
                         onToggleTodo(id, nextStatus)
                     }
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 11.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(19.dp)
+                        .size(20.dp)
                         .clip(CircleShape)
-                        .background(if (isDone) doneGreen else Color.Transparent)
-                        .border(1.4.dp, circleColor, CircleShape),
+                        .background(if (isDone) theme.success else Color.Transparent)
+                        .border(1.5.dp, circleColor, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     if (isDone) {
@@ -602,7 +584,7 @@ private fun ManageTodosStructuredCard(
 
                 Text(
                     text = title,
-                    fontSize = 12.5.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = if (isDone) theme.textMuted else theme.textPrimary,
                     textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
@@ -612,10 +594,10 @@ private fun ManageTodosStructuredCard(
                 )
 
                 if (dueAt.isNotEmpty()) {
-                    CrispTagPill(
+                    VesperTag(
                         text = dueAt,
-                        bgColor = theme.cardTop,
-                        borderColor = theme.rimMid,
+                        bgColor = theme.surfaceCard,
+                        borderColor = theme.border,
                         textColor = theme.textSecondary
                     )
                 }
@@ -643,15 +625,12 @@ private fun ManageTasksStructuredCard(json: JSONObject) {
     }
     if (items.isEmpty()) return
 
-    val accentTint = if (theme.isLight) Color(0xFF7C3AED) else Color(0xFFC084FC)
-    val enabledGreen = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
-
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         StructuredSectionHeader(
             icon = Icons.Default.Schedule,
             title = "定时与调度任务",
             badge = "${items.size}项",
-            tint = accentTint
+            tint = theme.accentForeground
         )
         items.take(MAX_INLINE_ITEMS).forEach { tk ->
             val name = tk.optString("name", "").ifBlank { tk.optString("id", "定时任务") }
@@ -667,8 +646,8 @@ private fun ManageTasksStructuredCard(json: JSONObject) {
                 .ifBlank { tk.optString("description", "").trim() }
 
             val stateColor = when {
-                isRunning -> theme.accent
-                enabled -> enabledGreen
+                isRunning -> theme.accentForeground
+                enabled -> theme.success
                 else -> theme.textMuted
             }
             val stateLabel = when {
@@ -694,8 +673,8 @@ private fun ManageTasksStructuredCard(json: JSONObject) {
                     .fillMaxWidth()
                     .clip(cardShape)
                     .background(theme.codeBlockBg, cardShape)
-                    .border(0.75.dp, theme.rimMid, cardShape)
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .border(1.dp, theme.border, cardShape)
+                    .padding(horizontal = 11.dp, vertical = 9.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Row(
@@ -711,19 +690,14 @@ private fun ManageTasksStructuredCard(json: JSONObject) {
                     )
                     Text(
                         text = name,
-                        fontSize = 12.5.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = theme.textPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
-                    CrispTagPill(
-                        text = stateLabel,
-                        bgColor = stateColor.copy(alpha = 0.14f),
-                        borderColor = stateColor.copy(alpha = 0.34f),
-                        textColor = stateColor
-                    )
+                    VesperTag(text = stateLabel, toneColor = stateColor)
                 }
                 if (scheduleLabel.isNotEmpty()) {
                     Text(
@@ -738,7 +712,7 @@ private fun ManageTasksStructuredCard(json: JSONObject) {
                 if (lastSummary.isNotEmpty()) {
                     Text(
                         text = lastSummary,
-                        fontSize = 11.sp,
+                        fontSize = 11.5.sp,
                         color = theme.textMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -766,23 +740,21 @@ private fun WorkspaceBriefingStructuredCard(json: JSONObject) {
     )
     val hints = json.optJSONArray("focus_hints")
 
-    val accentTint = if (theme.isLight) theme.accentDeep else theme.accentLight
     val cardShape = RoundedCornerShape(12.dp)
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(cardShape)
             .background(theme.codeBlockBg, cardShape)
-            .border(0.75.dp, theme.rimMid, cardShape)
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .border(1.dp, theme.border, cardShape)
+            .padding(11.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
         StructuredSectionHeader(
             icon = Icons.Default.Dashboard,
             title = "今日工作简报",
             badge = listOf(today, weekday).filter { it.isNotEmpty() }.joinToString(" "),
-            tint = accentTint
+            tint = theme.accentForeground
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -791,45 +763,37 @@ private fun WorkspaceBriefingStructuredCard(json: JSONObject) {
             BriefingKpiChip(
                 label = "逾期",
                 value = overdueCount.toString(),
-                accent = if (overdueCount > 0) {
-                    if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185)
-                } else {
-                    theme.textMuted
-                },
+                accent = if (overdueCount > 0) theme.danger else theme.textMuted,
                 modifier = Modifier.weight(1f)
             )
             BriefingKpiChip(
                 label = "今日待办",
                 value = dueTodayCount.toString(),
-                accent = if (theme.isLight) Color(0xFF0284C7) else Color(0xFF38BDF8),
+                accent = theme.info,
                 modifier = Modifier.weight(1f)
             )
             BriefingKpiChip(
                 label = "临期资产",
                 value = expiringCount.toString(),
-                accent = if (expiringCount > 0) {
-                    if (theme.isLight) Color(0xFFD97706) else Color(0xFFFBBF24)
-                } else {
-                    theme.textMuted
-                },
+                accent = if (expiringCount > 0) theme.warning else theme.textMuted,
                 modifier = Modifier.weight(1f)
             )
             BriefingKpiChip(
                 label = "未读通知",
                 value = unreadCount.toString(),
-                accent = if (unreadCount > 0) accentTint else theme.textMuted,
+                accent = if (unreadCount > 0) theme.accentForeground else theme.textMuted,
                 modifier = Modifier.weight(1f)
             )
         }
         if (hints != null && hints.length() > 0) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 val limit = minOf(hints.length(), 2)
                 for (i in 0 until limit) {
                     val hint = hints.optString(i, "").trim()
                     if (hint.isNotEmpty()) {
                         Text(
                             text = hint,
-                            fontSize = 11.sp,
+                            fontSize = 11.5.sp,
                             color = theme.textSecondary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
@@ -853,16 +817,16 @@ private fun BriefingKpiChip(
     Column(
         modifier = modifier
             .clip(shape)
-            .background(theme.cardTop, shape)
-            .border(0.6.dp, accent.copy(alpha = 0.28f), shape)
-            .padding(horizontal = 6.dp, vertical = 6.dp),
+            .background(theme.surfaceCard, shape)
+            .border(0.75.dp, theme.border, shape)
+            .padding(horizontal = 6.dp, vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Text(
             text = value,
             style = TextStyle(
-                fontSize = 14.sp,
+                fontSize = 14.5.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 color = accent,
@@ -874,7 +838,7 @@ private fun BriefingKpiChip(
         Text(
             text = label,
             style = TextStyle(
-                fontSize = 11.sp,
+                fontSize = 10.5.sp,
                 fontWeight = FontWeight.Medium,
                 color = theme.textMuted,
                 platformStyle = NoFontPaddingStyle

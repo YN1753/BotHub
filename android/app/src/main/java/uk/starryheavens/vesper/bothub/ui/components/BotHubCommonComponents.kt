@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -23,10 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
@@ -52,9 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -62,7 +56,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,119 +67,14 @@ fun formatModuleBadge(moduleId: String): Pair<String, Color> {
         "morning" -> "晨报" to Color(0xFFD97706)
         "radar" -> "雷达" to Color(0xFF6366F1)
         "asset_watcher" -> "资产" to Color(0xFFF59E0B)
-        "nezha_webhook" -> "告警" to Color(0xFFF43F5E)
-        "system_test" -> "自检" to Color(0xFF10B981)
+        "nezha_webhook" -> "告警" to Color(0xFFE11D48)
+        "system_test" -> "自检" to Color(0xFF059669)
         else -> moduleId.ifBlank { "通知" } to Color(0xFF64748B)
     }
 }
 
-@Composable
-fun ObsidianSheetDragHandle(modifier: Modifier = Modifier) {
-    val theme = BotHubThemeTokens
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        SpecularHairline()
-        Spacer(modifier = Modifier.height(10.dp))
-        Box(
-            modifier = Modifier
-                .width(38.dp)
-                .height(4.dp)
-                .background(theme.textMuted.copy(alpha = 0.42f), RoundedCornerShape(999.dp))
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-    }
-}
-
-
-@Composable
-fun ObsidianGlassInput(
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    modifier: Modifier = Modifier,
-    label: String = "",
-    singleLine: Boolean = true,
-    maxLines: Int = if (singleLine) 1 else 4,
-    visualTransformation: VisualTransformation = VisualTransformation.None,
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
-) {
-    val theme = BotHubThemeTokens
-    var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(10.dp)
-    val borderColor by animateColorAsState(
-        targetValue = if (focused) theme.accent else theme.divider,
-        animationSpec = tween(160),
-        label = "inputFocusBorder"
-    )
-
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(5.dp)
-    ) {
-        if (label.isNotEmpty()) {
-            Text(
-                text = label,
-                style = TextStyle(
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = if (focused) theme.accent else theme.textMuted,
-                    platformStyle = NoFontPaddingStyle
-                ),
-                maxLines = 1,
-                softWrap = false,
-                modifier = Modifier.padding(start = 2.dp)
-            )
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .sizeIn(minHeight = 44.dp)
-                .clip(shape)
-                .background(theme.inputTop, shape)
-                .border(if (focused) 1.2.dp else 1.dp, borderColor, shape),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = singleLine,
-                maxLines = maxLines,
-                visualTransformation = visualTransformation,
-                keyboardOptions = keyboardOptions,
-                textStyle = TextStyle(
-                    color = theme.textPrimary,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                ),
-                cursorBrush = SolidColor(theme.accent),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
-                    .onFocusChanged { focused = it.isFocused },
-                decorationBox = { inner ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (value.isEmpty()) {
-                            Text(
-                                text = placeholder,
-                                fontSize = 13.5.sp,
-                                color = theme.textMuted,
-                                maxLines = maxLines,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        inner()
-                    }
-                }
-            )
-        }
-    }
-}
-
-
 /**
- * Clean, Theme-Adaptive WeChat / QQ Top Bar.
+ * Clean flagship top bar with strict >= 48dp touch targets and crisp hierarchy.
  */
 @Composable
 fun BotHubTopBar(
@@ -207,11 +95,11 @@ fun BotHubTopBar(
 
     val headerTitle = when (selectedTab) {
         BotHubTab.AGENT -> when {
-            isRefreshing -> "收取中..."
+            isRefreshing -> "同步中..."
             totalUnreadMessages > 0 -> "消息 ($totalUnreadMessages)"
             else -> "消息"
         }
-        BotHubTab.INBOX -> "通讯录"
+        BotHubTab.INBOX -> "好友"
         BotHubTab.STASH -> "收藏"
         BotHubTab.HUB -> "中枢"
     }
@@ -219,21 +107,22 @@ fun BotHubTopBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(theme.topBarTop)
+            .background(theme.surfaceBar)
             .statusBarsPadding()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
                 text = headerTitle,
                 style = TextStyle(
-                    fontSize = 20.sp,
+                    fontSize = 21.sp,
                     fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.3).sp,
                     color = theme.textPrimary,
                     platformStyle = NoFontPaddingStyle
                 ),
@@ -247,50 +136,50 @@ fun BotHubTopBar(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 when (selectedTab) {
                     BotHubTab.AGENT -> {
                         Box {
-                            HeaderIconCircle(
+                            VesperIconButton(
                                 icon = Icons.Default.Add,
                                 contentDescription = "快捷菜单",
                                 accent = showPlusMenu,
                                 onClick = { showPlusMenu = true }
                             )
-                            FloatingGlassPopover(
+                            VesperPopoverMenu(
                                 expanded = showPlusMenu,
                                 onDismissRequest = { showPlusMenu = false },
-                                offsetY = 42.dp,
+                                offsetY = 48.dp,
                                 items = listOf(
-                                    GlassMenuAction(
+                                    VesperMenuAction(
                                         label = "发起群聊",
                                         icon = Icons.Default.GroupAdd,
-                                        iconTint = theme.accent,
+                                        iconTint = theme.accentForeground,
                                         onClick = onCreateGroup
                                     ),
-                                    GlassMenuAction(
+                                    VesperMenuAction(
                                         label = "添加 AI 好友",
                                         icon = Icons.Default.PersonAddAlt1,
-                                        iconTint = Color(0xFF6366F1),
+                                        iconTint = theme.info,
                                         onClick = onCreateFriend
                                     ),
-                                    GlassMenuAction(
+                                    VesperMenuAction(
                                         label = "新建收藏",
                                         icon = Icons.Default.BookmarkBorder,
-                                        iconTint = Color(0xFF10B981),
+                                        iconTint = theme.success,
                                         onClick = onQuickCaptureStash
                                     ),
-                                    GlassMenuAction(
+                                    VesperMenuAction(
                                         label = "通知全部已读",
                                         icon = Icons.Default.DoneAll,
-                                        iconTint = theme.textMuted,
+                                        iconTint = theme.textSecondary,
                                         onClick = onMarkAllRead
                                     ),
-                                    GlassMenuAction(
+                                    VesperMenuAction(
                                         label = "设置与主题",
                                         icon = Icons.Default.Settings,
-                                        iconTint = Color(0xFFF59E0B),
+                                        iconTint = theme.warning,
                                         onClick = onOpenSettings
                                     )
                                 )
@@ -317,12 +206,12 @@ fun BotHubTopBar(
                     }
 
                     BotHubTab.HUB -> {
-                        HeaderIconCircle(
+                        VesperIconButton(
                             icon = Icons.Default.Refresh,
-                            contentDescription = "刷新",
+                            contentDescription = "刷新中枢数据",
                             onClick = onRefresh
                         )
-                        HeaderIconCircle(
+                        VesperIconButton(
                             icon = Icons.Default.Settings,
                             contentDescription = "设置与主题",
                             accent = true,
@@ -333,7 +222,7 @@ fun BotHubTopBar(
             }
         }
 
-        SpecularHairline()
+        VesperDivider()
     }
 }
 
@@ -344,57 +233,26 @@ private fun HeaderPillAction(
     accent: Boolean,
     onClick: () -> Unit
 ) {
-    TactileSecondaryButton(
-        text = label,
-        leadingIcon = icon,
-        accent = accent,
-        cornerRadius = 999.dp,
-        minHeight = 35.dp,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-        onClick = onClick
-    )
-}
-
-@Composable
-private fun HeaderIconCircle(
-    icon: ImageVector,
-    contentDescription: String,
-    accent: Boolean = false,
-    onClick: () -> Unit
-) {
-    val theme = BotHubThemeTokens
-    val shape = CircleShape
-    val fillColor = if (accent) {
-        theme.accent.copy(alpha = if (theme.isLight) 0.10f else 0.16f)
-    } else {
-        theme.secondaryBtnTop
-    }
-    val borderColor = if (accent) {
-        theme.accent.copy(alpha = 0.42f)
-    } else {
-        theme.divider
-    }
-
     Box(
         modifier = Modifier
-            .size(36.dp)
-            .tactileClickable(pressedScale = 0.92f, hapticOnTap = true, onClick = onClick)
-            .clip(shape)
-            .background(fillColor, shape)
-            .border(1.dp, borderColor, shape),
+            .sizeIn(minHeight = 48.dp)
+            .padding(end = 8.dp),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = if (accent) (if (theme.isLight) theme.accentDeep else theme.accentLight) else theme.textPrimary,
-            modifier = Modifier.size(18.dp)
+        VesperSecondaryButton(
+            text = label,
+            leadingIcon = icon,
+            tone = if (accent) VesperButtonTone.ACCENT else VesperButtonTone.NEUTRAL,
+            cornerRadius = 999.dp,
+            minHeight = 36.dp,
+            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 7.dp),
+            onClick = onClick
         )
     }
 }
 
 /**
- * Theme-Adaptive Bottom Navigation Dock.
+ * Clean bottom navigation dock with pill active indicator and edge-to-edge gesture padding.
  */
 @Composable
 fun BotHubBottomBar(
@@ -409,14 +267,14 @@ fun BotHubBottomBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(theme.bottomBarTop)
+            .background(theme.surfaceBar)
             .navigationBarsPadding()
     ) {
-        SpecularHairline()
+        VesperDivider()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 5.dp),
+                .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -434,20 +292,25 @@ fun BotHubBottomBar(
                     BotHubTab.HUB -> if (isSelected) Icons.Default.Dashboard else Icons.Outlined.Dashboard
                 }
                 val fgColor by animateColorAsState(
-                    targetValue = if (isSelected) theme.accent else theme.textMuted,
-                    animationSpec = tween(180),
+                    targetValue = if (isSelected) theme.accentForeground else theme.textMuted,
+                    animationSpec = tween(160),
                     label = "navFgColor"
                 )
+                val pillBg by animateColorAsState(
+                    targetValue = if (isSelected) theme.accentSoft else Color.Transparent,
+                    animationSpec = tween(160),
+                    label = "navPillBg"
+                )
                 val iconScale by animateFloatAsState(
-                    targetValue = if (isSelected) 1.06f else 1f,
-                    animationSpec = spring(dampingRatio = 0.68f, stiffness = 520f),
+                    targetValue = if (isSelected) 1.05f else 1f,
+                    animationSpec = spring(dampingRatio = 0.70f, stiffness = 560f),
                     label = "navIconScale"
                 )
 
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(50.dp)
+                        .height(54.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -466,8 +329,10 @@ fun BotHubBottomBar(
                     ) {
                         Box(
                             modifier = Modifier
-                                .width(42.dp)
-                                .height(23.dp),
+                                .width(52.dp)
+                                .height(28.dp)
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(pillBg),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -475,20 +340,20 @@ fun BotHubBottomBar(
                                 contentDescription = tab.contentDescription,
                                 tint = fgColor,
                                 modifier = Modifier
-                                    .size(21.dp)
+                                    .size(20.dp)
                                     .graphicsLayer {
                                         scaleX = iconScale
                                         scaleY = iconScale
                                     }
                             )
                             if (badgeCount > 0) {
-                                CrispUnreadBadge(
+                                VesperBadge(
                                     count = badgeCount,
-                                    containerColor = if (tab == BotHubTab.AGENT) Color(0xFFF43F5E) else theme.accent,
+                                    containerColor = if (tab == BotHubTab.AGENT) theme.danger else theme.accent,
                                     contentColor = if (tab == BotHubTab.AGENT) Color.White else theme.onAccent,
                                     modifier = Modifier
                                         .align(Alignment.TopEnd)
-                                        .offset(x = 3.dp, y = (-3).dp)
+                                        .offset(x = 2.dp, y = (-2).dp)
                                 )
                             }
                         }
@@ -511,7 +376,6 @@ fun BotHubBottomBar(
     }
 }
 
-
 @Composable
 fun ZeroClickCaptureRow(
     checked: Boolean,
@@ -522,23 +386,23 @@ fun ZeroClickCaptureRow(
     modifier: Modifier = Modifier
 ) {
     val theme = BotHubThemeTokens
-    SpecularGlassCard(
+    VesperCard(
         modifier = modifier.fillMaxWidth(),
-        cornerRadius = 16.dp,
+        cornerRadius = 14.dp,
         onClick = { onCheckedChange(!checked) }
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = if (compact) 10.dp else 12.dp)
-                .sizeIn(minHeight = 46.dp),
+                .sizeIn(minHeight = 56.dp)
+                .padding(start = 14.dp, end = 6.dp, top = if (compact) 4.dp else 6.dp, bottom = if (compact) 4.dp else 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(end = 12.dp),
+                    .padding(end = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
@@ -551,14 +415,14 @@ fun ZeroClickCaptureRow(
                 )
                 Text(
                     text = subtitle,
-                    fontSize = 11.5.sp,
+                    fontSize = 12.sp,
                     lineHeight = 16.sp,
                     color = theme.textMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            TactileToggle(
+            VesperSwitch(
                 checked = checked,
                 onCheckedChange = onCheckedChange
             )

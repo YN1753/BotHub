@@ -4,6 +4,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -39,17 +44,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Psychology
@@ -60,7 +69,6 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -81,6 +89,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
@@ -94,8 +103,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.BotThreadItem
+import uk.starryheavens.vesper.bothub.data.ChatToolTraceUi
 import uk.starryheavens.vesper.bothub.data.ChatTurnUi
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
 import uk.starryheavens.vesper.bothub.data.NotificationItem
@@ -103,20 +114,22 @@ import uk.starryheavens.vesper.bothub.data.SkillItemUi
 import uk.starryheavens.vesper.bothub.data.TodoItemUi
 import uk.starryheavens.vesper.bothub.data.formatHumanToolName
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
+import uk.starryheavens.vesper.bothub.ui.components.BotAvatar
 import uk.starryheavens.vesper.bothub.ui.components.ChatStructuredToolCards
-import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
-import uk.starryheavens.vesper.bothub.ui.components.FloatingGlassPopover
-import uk.starryheavens.vesper.bothub.ui.components.GlassMenuAction
 import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
 import uk.starryheavens.vesper.bothub.ui.components.RichMarkdownText
-import uk.starryheavens.vesper.bothub.ui.components.SpecularGlassCard
-import uk.starryheavens.vesper.bothub.ui.components.SpecularHairline
-import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
-import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
-import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
-import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
+import uk.starryheavens.vesper.bothub.ui.components.VesperButtonTone
+import uk.starryheavens.vesper.bothub.ui.components.VesperCard
+import uk.starryheavens.vesper.bothub.ui.components.VesperDivider
+import uk.starryheavens.vesper.bothub.ui.components.VesperIconButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperMenuAction
+import uk.starryheavens.vesper.bothub.ui.components.VesperPopoverMenu
+import uk.starryheavens.vesper.bothub.ui.components.VesperPrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSheetDragHandle
+import uk.starryheavens.vesper.bothub.ui.components.VesperTag
+import uk.starryheavens.vesper.bothub.ui.components.VesperTextField
+import uk.starryheavens.vesper.bothub.ui.components.vesperPressable
 import uk.starryheavens.vesper.bothub.ui.sheets.ModelPickerSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.resolveModelOptionDisplayName
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
@@ -187,6 +200,33 @@ private fun buildBotSlashCommands(bot: BotItem?, skills: List<SkillItemUi>): Lis
     return out
 }
 
+/**
+ * Extracts a concise, human-readable one-line summary for a tool call step from its arguments & status.
+ */
+internal fun summarizeToolStep(trace: ChatToolTraceUi): String {
+    val rawArgs = trace.arguments.trim()
+    val argSummary = if (rawArgs.startsWith("{")) {
+        runCatching {
+            val obj = JSONObject(rawArgs)
+            val priorityKeys = listOf("query", "q", "url", "action", "title", "name", "expression", "expr", "bot_id", "category", "keyword")
+            val picked = priorityKeys.mapNotNull { key ->
+                val v = obj.optString(key, "").trim()
+                if (v.isNotEmpty()) v else null
+            }
+            picked.take(2).joinToString(" · ")
+        }.getOrDefault("")
+    } else {
+        rawArgs.replace('\n', ' ').take(48)
+    }
+    return argSummary.take(64)
+}
+
+private fun isToolPending(status: String): Boolean =
+    status == "进行中" || status == "执行中" || status.equals("running", ignoreCase = true)
+
+private fun isToolError(status: String): Boolean =
+    status.equals("error", ignoreCase = true) || status.contains("失败") || status.contains("异常")
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ChatRoomScreen(
@@ -249,6 +289,8 @@ fun ChatRoomScreen(
         if (showSearchBar) {
             showSearchBar = false
             searchQuery = ""
+        } else if (showPlusDrawer) {
+            showPlusDrawer = false
         } else {
             onBack()
         }
@@ -315,6 +357,9 @@ fun ChatRoomScreen(
     val lastAssistantTurn = messages.lastOrNull { it.role == "assistant" }
     val lastAssistantId = lastAssistantTurn?.id
     val lastStreamLen = (lastAssistantTurn?.content?.length ?: 0) + (lastAssistantTurn?.reasoning?.length ?: 0)
+    val modelDisplayName = remember(activeModel, modelOptions) {
+        resolveModelOptionDisplayName(activeModel, modelOptions)
+    }
 
     val isNearBottom by remember {
         derivedStateOf {
@@ -328,8 +373,7 @@ fun ChatRoomScreen(
         }
     }
 
-    // 0ms instant jump to latest message on room entry (zero scroll-past-history lag)
-    LaunchedEffect(activeBot?.id) {
+    LaunchedEffect(activeBot?.id, activeThreadId) {
         if (messages.isNotEmpty()) {
             listState.scrollToItem(messages.lastIndex, 200_000)
         }
@@ -377,69 +421,71 @@ fun ChatRoomScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(theme.bgBase)
+            .background(theme.bgCanvas)
             .imePadding()
     ) {
-        // 1. Clean WeChat / QQ IM Chat Header
+        // 1. Clean Top Header Bar
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(theme.topBarTop)
+                .background(theme.surfaceBar)
                 .statusBarsPadding()
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(
                     modifier = Modifier
-                        .sizeIn(minWidth = 64.dp, minHeight = 36.dp)
-                        .tactileClickable(pressedScale = 0.94f, onClick = onBack)
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .vesperPressable(pressedScale = 0.94f, onClick = onBack)
+                        .padding(horizontal = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.ChevronLeft,
-                        contentDescription = "返回",
+                        contentDescription = "返回消息",
                         tint = theme.textPrimary,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(24.dp)
                     )
-                    Text(
-                        text = if (otherUnreadCount > 0) "消息($otherUnreadCount)" else "消息",
-                        style = TextStyle(
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = theme.textPrimary,
-                            platformStyle = NoFontPaddingStyle
-                        ),
-                        maxLines = 1,
-                        softWrap = false
-                    )
+                    if (otherUnreadCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(theme.accentSoft)
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = if (otherUnreadCount > 99) "99+" else otherUnreadCount.toString(),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = theme.accentForeground
+                            )
+                        }
+                    }
                 }
 
                 Column(
                     modifier = Modifier
                         .weight(1f)
+                        .sizeIn(minHeight = 48.dp)
                         .clickable {
                             if (activeBot != null) onOpenBotProfile(activeBot)
                         }
-                        .padding(horizontal = 8.dp),
+                        .padding(horizontal = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = if (isStreaming && !isGroup) {
-                            "对方正在输入..."
-                        } else {
-                            buildString {
-                                append(activeBot?.name ?: "AI 好友")
-                                if (isGroup && groupMembers.isNotEmpty()) {
-                                    append(" (${groupMembers.size})")
-                                }
+                        text = buildString {
+                            append(activeBot?.name ?: "AI 好友")
+                            if (isGroup && groupMembers.isNotEmpty()) {
+                                append(" (${groupMembers.size})")
                             }
                         },
                         style = TextStyle(
@@ -452,78 +498,49 @@ fun ChatRoomScreen(
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (isStreaming && isGroup) {
+                    val subtitleText = when {
+                        isStreaming && isGroup -> "成员协作发言中..."
+                        isStreaming -> "正在生成回复..."
+                        activeBot?.roleTitle?.isNotBlank() == true -> activeBot.roleTitle
+                        else -> ""
+                    }
+                    if (subtitleText.isNotBlank()) {
                         Text(
-                            text = "成员协作发言中...",
+                            text = subtitleText,
                             style = TextStyle(
                                 fontSize = 11.sp,
-                                color = if (theme.isLight) theme.accentDeep else theme.accentLight,
+                                fontWeight = if (isStreaming) FontWeight.Medium else FontWeight.Normal,
+                                color = if (isStreaming) theme.accentForeground else theme.textMuted,
                                 platformStyle = NoFontPaddingStyle
                             ),
                             maxLines = 1,
-                            softWrap = false
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .tactileClickable(pressedScale = 0.92f, hapticOnTap = true) {
-                                showSearchBar = !showSearchBar
-                                if (!showSearchBar) searchQuery = ""
-                            }
-                            .clip(CircleShape)
-                            .background(
-                                if (showSearchBar) {
-                                    theme.accent.copy(alpha = if (theme.isLight) 0.12f else 0.18f)
-                                } else {
-                                    theme.secondaryBtnTop
-                                },
-                                CircleShape
-                            )
-                            .border(
-                                1.dp,
-                                if (showSearchBar) theme.accent.copy(alpha = 0.45f) else theme.divider,
-                                CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "查找聊天内容",
-                            tint = if (showSearchBar) {
-                                if (theme.isLight) theme.accentDeep else theme.accentLight
-                            } else {
-                                theme.textSecondary
-                            },
-                            modifier = Modifier.size(17.dp)
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .tactileClickable(pressedScale = 0.92f, hapticOnTap = true, onClick = onOpenChatInfo)
-                            .clip(CircleShape)
-                            .background(theme.secondaryBtnTop, CircleShape)
-                            .border(1.dp, theme.divider, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreHoriz,
-                            contentDescription = "聊天详情",
-                            tint = theme.textPrimary,
-                            modifier = Modifier.size(19.dp)
-                        )
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    VesperIconButton(
+                        icon = Icons.Default.Search,
+                        contentDescription = "查找聊天内容",
+                        accent = showSearchBar,
+                        filled = showSearchBar,
+                        onClick = {
+                            showSearchBar = !showSearchBar
+                            if (!showSearchBar) searchQuery = ""
+                        }
+                    )
+                    VesperIconButton(
+                        icon = Icons.Default.MoreHoriz,
+                        contentDescription = "聊天详情",
+                        filled = false,
+                        onClick = onOpenChatInfo
+                    )
                 }
             }
 
+            // Expandable In-Chat Search Bar
             AnimatedVisibility(
                 visible = showSearchBar,
                 enter = fadeIn() + expandVertically(),
@@ -533,17 +550,17 @@ fun ChatRoomScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(theme.inputTop)
-                        .border(0.85.dp, theme.accent.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(theme.surfaceInput)
+                        .border(1.dp, theme.accentMuted, RoundedCornerShape(12.dp))
+                        .padding(start = 12.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = null,
-                        tint = theme.accent,
+                        tint = theme.accentForeground,
                         modifier = Modifier.size(16.dp)
                     )
                     BasicTextField(
@@ -555,12 +572,14 @@ fun ChatRoomScreen(
                             fontSize = 13.5.sp
                         ),
                         cursorBrush = SolidColor(theme.accent),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 10.dp),
                         decorationBox = { inner ->
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (searchQuery.isEmpty()) {
                                     Text(
-                                        text = "查找聊天内容...",
+                                        text = "查找聊天记录...",
                                         fontSize = 13.sp,
                                         color = theme.textMuted,
                                         maxLines = 1,
@@ -573,66 +592,73 @@ fun ChatRoomScreen(
                     )
                     if (normalizedSearch.isNotEmpty()) {
                         Text(
-                            text = if (searchMatchIndices.isEmpty()) {
-                                "无匹配"
-                            } else {
-                                "${safeMatchCursor + 1}/${searchMatchIndices.size}"
-                            },
+                            text = if (searchMatchIndices.isEmpty()) "无匹配" else "${safeMatchCursor + 1}/${searchMatchIndices.size}",
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
-                            color = if (searchMatchIndices.isEmpty()) {
-                                if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFDA4AF)
-                            } else {
-                                if (theme.isLight) theme.accentDeep else theme.accentLight
-                            },
+                            color = if (searchMatchIndices.isEmpty()) theme.danger else theme.accentForeground,
                             maxLines = 1,
                             softWrap = false
                         )
                         if (searchMatchIndices.size > 1) {
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowUp,
-                                contentDescription = "上一条",
-                                tint = theme.textSecondary,
+                            Box(
                                 modifier = Modifier
-                                    .size(20.dp)
+                                    .size(36.dp)
                                     .clickable {
                                         activeMatchCursor = if (safeMatchCursor > 0) {
                                             safeMatchCursor - 1
                                         } else {
                                             searchMatchIndices.lastIndex
                                         }
-                                    }
-                            )
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowDown,
-                                contentDescription = "下一条",
-                                tint = theme.textSecondary,
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowUp,
+                                    contentDescription = "上一条",
+                                    tint = theme.textSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Box(
                                 modifier = Modifier
-                                    .size(20.dp)
+                                    .size(36.dp)
                                     .clickable {
                                         activeMatchCursor = (safeMatchCursor + 1) % searchMatchIndices.size
-                                    }
-                            )
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "下一条",
+                                    tint = theme.textSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "关闭搜索",
-                        tint = theme.textMuted,
+                    Box(
                         modifier = Modifier
-                            .size(17.dp)
+                            .size(38.dp)
                             .clickable {
                                 showSearchBar = false
                                 searchQuery = ""
-                            }
-                    )
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "关闭搜索",
+                            tint = theme.textMuted,
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
                 }
             }
 
-            SpecularHairline()
+            VesperDivider()
         }
 
-        // 1b. Multi-Topic Thread Bar (Auto-hidden when only Main Thread exists — matches Web BotThreadBar)
+        // 1b. Multi-Topic Thread Bar (Shown when threads exist)
         if (activeBot != null && botThreads.isNotEmpty()) {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -640,126 +666,101 @@ fun ChatRoomScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(theme.cardTop)
+                    .background(theme.surfaceBar)
             ) {
                 item(key = "__thread_main__") {
-                    val isMainActive = activeThreadId.isBlank()
-                    val pillShape = RoundedCornerShape(999.dp)
-                    Row(
-                        modifier = Modifier
-                            .clip(pillShape)
-                            .background(
-                                if (isMainActive) theme.accent.copy(alpha = 0.18f) else theme.inputTop
-                            )
-                            .border(
-                                0.85.dp,
-                                if (isMainActive) theme.accent.copy(alpha = 0.48f) else theme.rimSubtle,
-                                pillShape
-                            )
-                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                if (!isStreaming && !isMainActive) onSelectThread("")
-                            }
-                            .padding(horizontal = 11.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "主对话",
-                            fontSize = 11.5.sp,
-                            fontWeight = if (isMainActive) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (isMainActive) {
-                                if (theme.isLight) theme.accentDeep else theme.accentLight
-                            } else {
-                                theme.textSecondary
-                            }
-                        )
-                    }
+                    ThreadPill(
+                        label = "主对话",
+                        active = activeThreadId.isBlank(),
+                        canDelete = false,
+                        onSelect = { if (!isStreaming && activeThreadId.isNotBlank()) onSelectThread("") },
+                        onDelete = {}
+                    )
                 }
 
                 items(botThreads, key = { "th_${it.id}" }) { th ->
                     val isActive = activeThreadId == th.id
-                    val pillShape = RoundedCornerShape(999.dp)
+                    ThreadPill(
+                        label = th.title.ifBlank { "新话题" },
+                        active = isActive,
+                        canDelete = isActive && !isStreaming,
+                        onSelect = { if (!isStreaming && !isActive) onSelectThread(th.id) },
+                        onDelete = { onDeleteThread(th.id) }
+                    )
+                }
+
+                item(key = "__thread_add__") {
+                    val shape = RoundedCornerShape(999.dp)
                     Row(
                         modifier = Modifier
-                            .clip(pillShape)
-                            .background(
-                                if (isActive) theme.accent.copy(alpha = 0.18f) else theme.inputTop
-                            )
-                            .border(
-                                0.85.dp,
-                                if (isActive) theme.accent.copy(alpha = 0.48f) else theme.rimSubtle,
-                                pillShape
-                            )
-                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                if (!isStreaming && !isActive) onSelectThread(th.id)
+                            .sizeIn(minHeight = 32.dp)
+                            .clip(shape)
+                            .background(theme.surfaceControl, shape)
+                            .border(1.dp, theme.border, shape)
+                            .vesperPressable(enabled = !isStreaming, pressedScale = 0.94f, hapticOnTap = true) {
+                                onCreateThread("")
                             }
-                            .padding(start = 11.dp, end = if (isActive) 7.dp else 11.dp, top = 4.dp, bottom = 4.dp),
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        Text(
-                            text = th.title.ifBlank { "新话题" },
-                            fontSize = 11.5.sp,
-                            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (isActive) {
-                                if (theme.isLight) theme.accentDeep else theme.accentLight
-                            } else {
-                                theme.textSecondary
-                            },
-                            maxLines = 1
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "新建话题",
+                            tint = theme.textSecondary,
+                            modifier = Modifier.size(13.dp)
                         )
-                        if (isActive && !isStreaming) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "删除话题",
-                                tint = theme.textMuted,
-                                modifier = Modifier
-                                    .size(13.dp)
-                                    .clickable { onDeleteThread(th.id) }
-                            )
-                        }
+                        Text(
+                            text = "新话题",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = theme.textSecondary,
+                            maxLines = 1,
+                            softWrap = false
+                        )
                     }
                 }
             }
-            HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
+            VesperDivider()
         }
 
-        // 2. Pinned Group Announcement Banner
+        // 2. Group Announcement Banner
         if (isGroup && !dismissAnnouncement && !activeBot?.announcement.isNullOrBlank()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(theme.cardTop)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .background(theme.surfaceCard)
+                    .padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                CrispTagPill(
-                    text = "群公告",
-                    bgColor = theme.accent.copy(alpha = 0.18f),
-                    borderColor = theme.accent.copy(alpha = 0.36f),
-                    textColor = if (theme.isLight) theme.accentDeep else theme.accentLight
-                )
+                VesperTag(text = "群公告")
                 Text(
                     text = activeBot?.announcement.orEmpty(),
-                    fontSize = 12.sp,
+                    fontSize = 12.5.sp,
                     color = theme.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "收起公告",
-                    tint = theme.textMuted,
+                Box(
                     modifier = Modifier
-                        .size(16.dp)
-                        .clickable { dismissAnnouncement = true }
-                )
+                        .size(38.dp)
+                        .clickable { dismissAnnouncement = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "收起公告",
+                        tint = theme.textMuted,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
-            HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
+            VesperDivider()
         }
 
-        // 3. IM Message Bubble Stream + Floating Scroll-to-Bottom Pill
+        // 3. Message Stream + Scroll-to-Bottom Pill
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -777,677 +778,201 @@ fun ChatRoomScreen(
                         if (composerFocused) focusManager.clearFocus()
                     },
                 verticalArrangement = Arrangement.spacedBy(14.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp)
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 16.dp)
             ) {
-            // Pure, uncluttered empty chat state (Avatar + Name + Bio only — zero gimmick prompt buttons!)
-            if (messages.isEmpty()) {
-                item(key = "__chat_welcome__") {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp, vertical = 48.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        SpiritSquircleAvatar(
-                            bot = activeBot,
-                            allBots = allBots,
-                            containerSize = 68.dp,
-                            cornerRadius = 20.dp,
-                            interactive = true,
-                            seedKey = activeBot?.id ?: "chat_empty"
-                        )
-                        Text(
-                            text = activeBot?.name ?: "AI 好友",
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = theme.textPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        val desc = activeBot?.traits?.ifBlank { activeBot.roleTitle }.orEmpty()
-                        if (desc.isNotBlank()) {
+                if (messages.isEmpty()) {
+                    item(key = "__chat_welcome__", contentType = "welcome") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 52.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            BotAvatar(
+                                bot = activeBot,
+                                allBots = allBots,
+                                containerSize = 68.dp,
+                                interactive = true,
+                                seedKey = activeBot?.id ?: "chat_empty"
+                            )
                             Text(
-                                text = desc,
-                                fontSize = 12.5.sp,
-                                color = theme.textSecondary,
-                                textAlign = TextAlign.Center,
-                                maxLines = 2,
+                                text = activeBot?.name ?: "AI 好友",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = theme.textPrimary,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            val desc = activeBot?.traits?.ifBlank { activeBot.roleTitle }.orEmpty()
+                            if (desc.isNotBlank()) {
+                                Text(
+                                    text = desc,
+                                    fontSize = 13.sp,
+                                    lineHeight = 19.sp,
+                                    color = theme.textSecondary,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Text(
+                                text = "输入 / 可快速调用当前助手的专属指令与技能",
+                                fontSize = 12.sp,
+                                color = theme.textMuted,
+                                textAlign = TextAlign.Center
+                            )
                         }
-                        Text(
-                            text = "输入 / 可快速调用当前助手的专属指令与技能",
-                            fontSize = 11.5.sp,
-                            color = theme.textMuted,
-                            textAlign = TextAlign.Center
-                        )
                     }
                 }
-            }
 
-            items(messages, key = { it.id }) { msg ->
-                when (msg.role) {
-                    "system" -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
+                items(
+                    items = messages,
+                    key = { it.id },
+                    contentType = { it.role }
+                ) { msg ->
+                    when (msg.role) {
+                        "system" -> {
                             Box(
                                 modifier = Modifier
-                                    .widthIn(max = 310.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(theme.cardTop)
-                                    .padding(horizontal = 12.dp, vertical = 5.dp)
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = msg.content,
-                                    fontSize = 11.5.sp,
-                                    lineHeight = 16.sp,
-                                    color = theme.textSecondary,
-                                    textAlign = TextAlign.Center
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .widthIn(max = 310.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(theme.surfaceCard)
+                                        .border(0.75.dp, theme.border, RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 12.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        text = msg.content,
+                                        fontSize = 11.5.sp,
+                                        lineHeight = 16.sp,
+                                        color = theme.textMuted,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    "user" -> {
-                        var showUserMenu by remember { mutableStateOf(false) }
-                        val isActiveHit = msg.id == activeMatchedTurnId
-                        val isSearchHit = msg.id in matchedTurnIds
-                        val userShape = RoundedCornerShape(
-                            topStart = 14.dp,
-                            topEnd = 4.dp,
-                            bottomStart = 14.dp,
-                            bottomEnd = 14.dp
-                        )
-                        val userHitBorder = when {
-                            isActiveHit -> Modifier.border(1.5.dp, theme.accentLight, userShape)
-                            isSearchHit -> Modifier.border(1.dp, theme.accent.copy(alpha = 0.65f), userShape)
-                            else -> Modifier
-                        }
+                        "user" -> {
+                            var showUserMenu by remember { mutableStateOf(false) }
+                            val isActiveHit = msg.id == activeMatchedTurnId
+                            val isSearchHit = msg.id in matchedTurnIds
+                            val userShape = RoundedCornerShape(
+                                topStart = 18.dp,
+                                topEnd = 5.dp,
+                                bottomStart = 18.dp,
+                                bottomEnd = 18.dp
+                            )
+                            val userHitBorder = when {
+                                isActiveHit -> Modifier.border(2.dp, theme.accentForeground, userShape)
+                                isSearchHit -> Modifier.border(1.dp, theme.accentMuted, userShape)
+                                else -> Modifier
+                            }
 
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.CenterEnd
-                        ) {
                             Box(
-                                modifier = Modifier
-                                    .widthIn(max = 304.dp)
-                                    .clip(userShape)
-                                    .background(theme.userBubbleTop, userShape)
-                                    .then(userHitBorder)
-                                    .combinedClickable(
-                                        onClick = {},
-                                        onLongClick = {
-                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            showUserMenu = true
-                                        }
-                                    )
-                                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.CenterEnd
                             ) {
-                                Text(
-                                    text = msg.content,
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        fontSize = 14.5.sp,
-                                        lineHeight = 21.sp
-                                    ),
-                                    color = theme.userBubbleText
-                                )
-                            }
-
-                            FloatingGlassPopover(
-                                expanded = showUserMenu,
-                                onDismissRequest = { showUserMenu = false },
-                                alignment = Alignment.TopEnd,
-                                offsetY = 38.dp,
-                                items = listOf(
-                                    GlassMenuAction(
-                                        label = "复制",
-                                        icon = Icons.Default.ContentCopy,
-                                        iconTint = if (theme.isLight) theme.accentDeep else theme.accentLight,
-                                        onClick = { onCopyText(msg.content) }
-                                    ),
-                                    GlassMenuAction(
-                                        label = "引用",
-                                        icon = Icons.Default.FormatQuote,
-                                        iconTint = if (theme.isLight) Color(0xFF4F46E5) else Color(0xFFA5B4FC),
-                                        onClick = { quoteTarget = "我" to msg.content }
-                                    ),
-                                    GlassMenuAction(
-                                        label = "转发",
-                                        icon = Icons.Default.Share,
-                                        iconTint = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399),
-                                        onClick = { forwardPayload = "我" to msg.content }
-                                    ),
-                                    GlassMenuAction(
-                                        label = "由此分叉",
-                                        icon = Icons.Default.AutoAwesome,
-                                        iconTint = theme.accent,
-                                        onClick = { onForkFromTurn(msg) }
-                                    ),
-                                    GlassMenuAction(
-                                        label = "删除",
-                                        icon = Icons.Outlined.DeleteOutline,
-                                        iconTint = if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185),
-                                        onClick = { onDeleteTurn(msg) }
-                                    )
-                                )
-                            )
-                        }
-                    }
-
-                    else -> {
-                        var expandReasoning by remember { mutableStateOf(false) }
-                        var showBubbleMenu by remember { mutableStateOf(false) }
-                        val isActiveHit = msg.id == activeMatchedTurnId
-                        val isSearchHit = msg.id in matchedTurnIds
-                        val isLiveTurn = isStreaming && msg.id == lastAssistantId
-                        val isLatestReply = msg.id == lastAssistantId && !isLiveTurn
-                        val avatarLiveState = when {
-                            isLiveTurn && msg.content.isEmpty() -> "thinking"
-                            isLiveTurn -> "working"
-                            else -> "idle"
-                        }
-                        val speakerBot = remember(msg.senderBotId, allBots) {
-                            allBots.find { it.id == msg.senderBotId } ?: activeBot
-                        }
-                        val aiShape = RoundedCornerShape(
-                            topStart = 4.dp,
-                            topEnd = 14.dp,
-                            bottomStart = 14.dp,
-                            bottomEnd = 14.dp
-                        )
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .then(if (!isLiveTurn) Modifier.animateContentSize() else Modifier),
-                            horizontalArrangement = Arrangement.spacedBy(9.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            SpiritSquircleAvatar(
-                                bot = speakerBot,
-                                allBots = allBots,
-                                avatarStyleOverride = msg.avatarStyle,
-                                state = avatarLiveState,
-                                containerSize = 38.dp,
-                                cornerRadius = 12.dp,
-                                seedKey = msg.id,
-                                onClick = {
-                                    if (speakerBot != null) onOpenBotProfile(speakerBot)
-                                },
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
-
-                            Box(modifier = Modifier.weight(1f)) {
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    if (isGroup || msg.msgKind == "routine") {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                            modifier = Modifier.padding(start = 2.dp)
-                                        ) {
-                                            Text(
-                                                text = msg.persona.ifEmpty { speakerBot?.name ?: "AI" },
-                                                fontSize = 11.5.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = theme.textSecondary,
-                                                maxLines = 1,
-                                                softWrap = false,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-                                            if (msg.msgKind == "routine") {
-                                                val warnTint = if (theme.isLight) Color(0xFFB45309) else Color(0xFFFDE68A)
-                                                CrispTagPill(
-                                                    text = "提醒",
-                                                    bgColor = Color(0xFFFBBF24).copy(alpha = 0.16f),
-                                                    borderColor = Color(0xFFFBBF24).copy(alpha = 0.34f),
-                                                    textColor = warnTint
-                                                )
+                                Box(
+                                    modifier = Modifier
+                                        .widthIn(max = 304.dp)
+                                        .clip(userShape)
+                                        .background(theme.userBubble, userShape)
+                                        .then(userHitBorder)
+                                        .combinedClickable(
+                                            onClick = {},
+                                            onLongClick = {
+                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                showUserMenu = true
                                             }
-                                        }
-                                    }
-
-                                    val aiBorderWidth = if (isActiveHit) 1.5.dp else 1.dp
-                                    val aiBorderColor = when {
-                                        isActiveHit -> theme.accentLight
-                                        isSearchHit -> theme.accent.copy(alpha = 0.65f)
-                                        else -> theme.divider
-                                    }
-
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(aiShape)
-                                            .background(theme.aiBubbleTop, aiShape)
-                                            .border(aiBorderWidth, aiBorderColor, aiShape)
-                                            .combinedClickable(
-                                                onClick = {},
-                                                onLongClick = {
-                                                    if (msg.content.isNotEmpty()) {
-                                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                        showBubbleMenu = true
-                                                    }
-                                                }
-                                            )
-                                            .padding(horizontal = 13.dp, vertical = 10.dp),
-                                        verticalArrangement = Arrangement.spacedBy(7.dp)
-                                    ) {
-                                        val visibleTraces = remember(msg.toolTraces) {
-                                            val structuredNames = setOf(
-                                                "manage_assets",
-                                                "query_nezha_nodes",
-                                                "manage_todos",
-                                                "manage_tasks",
-                                                "workspace_briefing"
-                                            )
-                                            msg.toolTraces.filter { tr ->
-                                                val pendingOrErr = tr.status == "进行中" ||
-                                                    tr.status == "执行中" ||
-                                                    tr.status.equals("error", ignoreCase = true) ||
-                                                    tr.status.contains("失败")
-                                                pendingOrErr || tr.name !in structuredNames || tr.result.isBlank()
-                                            }.distinctBy { it.name to it.status }
-                                        }
-                                        if (msg.reasoning.isNotEmpty() || visibleTraces.isNotEmpty() || (msg.toolTraces.isEmpty() && msg.tools.isNotEmpty())) {
-                                            val toolOk = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
-                                            val toolOkText = if (theme.isLight) Color(0xFF065F46) else Color(0xFFA7F3D0)
-                                            val toolPending = if (theme.isLight) Color(0xFFD97706) else Color(0xFFFBBF24)
-                                            val toolPendingText = if (theme.isLight) Color(0xFF92400E) else Color(0xFFFDE68A)
-                                            val toolErr = if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185)
-                                            val toolErrText = if (theme.isLight) Color(0xFFBE123C) else Color(0xFFFDA4AF)
-                                            val reasonTint = if (theme.isLight) theme.accentDeep else theme.accentLight
-
-                                            LazyRow(
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                if (msg.reasoning.isNotEmpty()) {
-                                                    item(key = "__reason_pill__") {
-                                                        val rPillShape = RoundedCornerShape(999.dp)
-                                                        Row(
-                                                            modifier = Modifier
-                                                                .clip(rPillShape)
-                                                                .background(
-                                                                    if (expandReasoning) {
-                                                                        theme.accent.copy(alpha = 0.18f)
-                                                                    } else {
-                                                                        theme.codeBlockBg
-                                                                    },
-                                                                    rPillShape
-                                                                )
-                                                                .border(
-                                                                    0.75.dp,
-                                                                    theme.accent.copy(alpha = if (expandReasoning) 0.52f else 0.28f),
-                                                                    rPillShape
-                                                                )
-                                                                .clickable { expandReasoning = !expandReasoning }
-                                                                .padding(horizontal = 8.dp, vertical = 3.5.dp),
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = Icons.Default.Psychology,
-                                                                contentDescription = null,
-                                                                tint = reasonTint,
-                                                                modifier = Modifier.size(13.dp)
-                                                            )
-                                                            Text(
-                                                                text = "思考 · ${msg.reasoning.length}字",
-                                                                fontSize = 11.sp,
-                                                                fontWeight = FontWeight.Medium,
-                                                                color = reasonTint,
-                                                                maxLines = 1,
-                                                                softWrap = false
-                                                            )
-                                                            Icon(
-                                                                imageVector = if (expandReasoning) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowRight,
-                                                                contentDescription = null,
-                                                                tint = reasonTint,
-                                                                modifier = Modifier.size(13.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-
-                                                if (visibleTraces.isNotEmpty()) {
-                                                    items(visibleTraces, key = { "tr_${it.id}_${it.name}" }) { trace ->
-                                                        val isPending = trace.status == "进行中" || trace.status == "执行中"
-                                                        val isError = trace.status.equals("error", ignoreCase = true) ||
-                                                            trace.status.contains("失败")
-                                                        val dotColor = when {
-                                                            isPending -> toolPending
-                                                            isError -> toolErr
-                                                            else -> toolOk
-                                                        }
-                                                        val labelColor = when {
-                                                            isPending -> toolPendingText
-                                                            isError -> toolErrText
-                                                            else -> toolOkText
-                                                        }
-                                                        val baseLabel = trace.displayName.ifBlank {
-                                                            formatHumanToolName(trace.name)
-                                                        }
-                                                        val pillText = if (isPending) "$baseLabel · 进行中" else baseLabel
-                                                        val tShape = RoundedCornerShape(999.dp)
-                                                        Row(
-                                                            modifier = Modifier
-                                                                .clip(tShape)
-                                                                .background(theme.codeInlineBg, tShape)
-                                                                .border(0.7.dp, dotColor.copy(alpha = 0.28f), tShape)
-                                                                .padding(horizontal = 8.dp, vertical = 3.5.dp),
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                                        ) {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .size(5.dp)
-                                                                    .background(dotColor, CircleShape)
-                                                            )
-                                                            Text(
-                                                                text = pillText,
-                                                                fontSize = 11.sp,
-                                                                color = labelColor,
-                                                                maxLines = 1,
-                                                                softWrap = false
-                                                            )
-                                                        }
-                                                    }
-                                                } else if (msg.toolTraces.isEmpty() && msg.tools.isNotEmpty()) {
-                                                    items(msg.tools) { tLabel ->
-                                                        val isPending = tLabel.contains("进行中") || tLabel.contains("执行中")
-                                                        val dotColor = if (isPending) toolPending else toolOk
-                                                        val labelColor = if (isPending) toolPendingText else toolOkText
-                                                        val tShape = RoundedCornerShape(999.dp)
-                                                        Row(
-                                                            modifier = Modifier
-                                                                .clip(tShape)
-                                                                .background(theme.codeInlineBg, tShape)
-                                                                .border(0.7.dp, dotColor.copy(alpha = 0.28f), tShape)
-                                                                .padding(horizontal = 8.dp, vertical = 3.5.dp),
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                                        ) {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .size(5.dp)
-                                                                    .background(dotColor, CircleShape)
-                                                            )
-                                                            Text(
-                                                                text = tLabel,
-                                                                fontSize = 11.sp,
-                                                                color = labelColor,
-                                                                maxLines = 1,
-                                                                softWrap = false
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        if (msg.reasoning.isNotEmpty()) {
-                                            AnimatedVisibility(
-                                                visible = expandReasoning,
-                                                enter = fadeIn() + expandVertically(),
-                                                exit = fadeOut() + shrinkVertically()
-                                            ) {
-                                                val rShape = RoundedCornerShape(10.dp)
-                                                Column(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .clip(rShape)
-                                                        .background(theme.codeBlockBg, rShape)
-                                                        .border(0.7.dp, theme.accent.copy(alpha = 0.22f), rShape)
-                                                        .padding(horizontal = 10.dp, vertical = 8.dp)
-                                                ) {
-                                                    Text(
-                                                        text = msg.reasoning.replace("<think>", "").replace("</think>", "").trim(),
-                                                        fontSize = 12.sp,
-                                                        lineHeight = 18.sp,
-                                                        color = theme.textSecondary
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        if (msg.toolTraces.isNotEmpty()) {
-                                            ChatStructuredToolCards(
-                                                traces = msg.toolTraces,
-                                                onToggleTodo = onQuickToggleTodo,
-                                                liveTodos = liveTodos
-                                            )
-                                        }
-
-                                        if (msg.content.isNotEmpty()) {
-                                            RichMarkdownText(
-                                                markdown = msg.content,
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                        } else if (isLiveTurn) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                modifier = Modifier.padding(vertical = 2.dp)
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(6.dp)
-                                                        .background(theme.accent, CircleShape)
-                                                )
-                                                Text(
-                                                    text = "正在输入...",
-                                                    fontSize = 12.5.sp,
-                                                    color = theme.textSecondary
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    val hasTurnError = !isLiveTurn && (
-                                        msg.content.startsWith("[请求异常]") ||
-                                            msg.content.contains("\n[中断:")
                                         )
-
-                                    val matchedModelOpt = remember(msg.model, msg.modelTargetId, modelOptions) {
-                                        val cleanTarget = msg.modelTargetId.trim()
-                                        val clean = msg.model.replace(Regex("\\s*\\(已回退\\)$"), "").trim()
-                                        if (cleanTarget.isNotEmpty()) {
-                                            modelOptions.firstOrNull { it.id == cleanTarget }
-                                        } else {
-                                            null
-                                        } ?: if (clean.isEmpty()) {
-                                            null
-                                        } else {
-                                            modelOptions.firstOrNull {
-                                                it.id == clean || it.model == clean || it.id.endsWith("::$clean")
-                                            }
-                                        }
-                                    }
-                                    val isPaidModelUsed = remember(msg.model, msg.modelTier, msg.modelTargetId, matchedModelOpt) {
-                                        msg.modelTier.equals("paid", ignoreCase = true) ||
-                                            msg.modelTargetId == "primary" ||
-                                            msg.modelTargetId == "auto:paid" ||
-                                            msg.model == "auto:paid" ||
-                                            matchedModelOpt?.tier == "paid"
-                                    }
-                                    val shortModelUsed = remember(msg.model, matchedModelOpt) {
-                                        val raw = msg.model.ifBlank { matchedModelOpt?.model?.ifBlank { matchedModelOpt.label }.orEmpty() }
-                                        raw.removePrefix("pool:").substringAfter("::").substringAfterLast("/").take(26)
-                                    }
-
-                                    if (!isLiveTurn && msg.content.isNotEmpty() && (isLatestReply || hasTurnError)) {
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
-                                        ) {
-                                            if (shortModelUsed.isNotBlank()) {
-                                                Box(
-                                                    modifier = Modifier.tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                                        if (!isStreaming) retryingTurn = msg
-                                                    }
-                                                ) {
-                                                    CrispTagPill(
-                                                        text = if (isPaidModelUsed) "付费 · $shortModelUsed" else shortModelUsed,
-                                                        bgColor = if (isPaidModelUsed) Color(0x22F59E0B) else Color(0x1F10B981),
-                                                        borderColor = if (isPaidModelUsed) Color(0x4AF59E0B) else Color(0x4210B981),
-                                                        textColor = if (isPaidModelUsed) Color(0xFFD97706) else Color(0xFF10B981)
-                                                    )
-                                                }
-                                            }
-
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                modifier = Modifier
-                                                    .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                                        if (!isStreaming) retryingTurn = msg
-                                                    }
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Refresh,
-                                                    contentDescription = "换模型重试",
-                                                    tint = theme.accent,
-                                                    modifier = Modifier.size(12.dp)
-                                                )
-                                                Text(
-                                                    text = "换模型重试",
-                                                    fontSize = 11.5.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = theme.accent,
-                                                    maxLines = 1,
-                                                    softWrap = false
-                                                )
-                                            }
-
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                modifier = Modifier
-                                                    .tactileClickable(pressedScale = 0.94f) {
-                                                        onCopyText(msg.content)
-                                                    }
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.ContentCopy,
-                                                    contentDescription = "复制",
-                                                    tint = theme.textMuted,
-                                                    modifier = Modifier.size(12.dp)
-                                                )
-                                                Text(
-                                                    text = "复制",
-                                                    fontSize = 11.5.sp,
-                                                    color = theme.textMuted,
-                                                    maxLines = 1,
-                                                    softWrap = false
-                                                )
-                                            }
-
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                modifier = Modifier
-                                                    .tactileClickable(pressedScale = 0.94f) {
-                                                        val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
-                                                        quoteTarget = sender to msg.content
-                                                    }
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.FormatQuote,
-                                                    contentDescription = "引用",
-                                                    tint = theme.textMuted,
-                                                    modifier = Modifier.size(12.dp)
-                                                )
-                                                Text(
-                                                    text = "引用",
-                                                    fontSize = 11.5.sp,
-                                                    color = theme.textMuted,
-                                                    maxLines = 1,
-                                                    softWrap = false
-                                                )
-                                            }
-                                        }
-                                    }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                                ) {
+                                    Text(
+                                        text = msg.content,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontSize = 14.5.sp,
+                                            lineHeight = 21.5.sp
+                                        ),
+                                        color = theme.userBubbleText
+                                    )
                                 }
 
-                                FloatingGlassPopover(
-                                    expanded = showBubbleMenu,
-                                    onDismissRequest = { showBubbleMenu = false },
-                                    alignment = Alignment.TopStart,
-                                    offsetX = 6.dp,
-                                    offsetY = 28.dp,
+                                VesperPopoverMenu(
+                                    expanded = showUserMenu,
+                                    onDismissRequest = { showUserMenu = false },
+                                    alignment = Alignment.TopEnd,
+                                    offsetY = 38.dp,
                                     items = listOf(
-                                        GlassMenuAction(
-                                            label = "换模型重试",
-                                            icon = Icons.Default.Refresh,
-                                            iconTint = theme.accent,
-                                            onClick = {
-                                                if (!isStreaming) retryingTurn = msg
-                                            }
-                                        ),
-                                        GlassMenuAction(
+                                        VesperMenuAction(
                                             label = "复制",
                                             icon = Icons.Default.ContentCopy,
-                                            iconTint = if (theme.isLight) theme.accentDeep else theme.accentLight,
+                                            iconTint = theme.accentForeground,
                                             onClick = { onCopyText(msg.content) }
                                         ),
-                                        GlassMenuAction(
+                                        VesperMenuAction(
                                             label = "引用",
                                             icon = Icons.Default.FormatQuote,
-                                            iconTint = if (theme.isLight) Color(0xFF4F46E5) else Color(0xFFA5B4FC),
-                                            onClick = {
-                                                val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
-                                                quoteTarget = sender to msg.content
-                                            }
+                                            iconTint = theme.info,
+                                            onClick = { quoteTarget = "我" to msg.content }
                                         ),
-                                        GlassMenuAction(
-                                            label = "转为待办",
-                                            icon = Icons.Default.TaskAlt,
-                                            iconTint = if (theme.isLight) Color(0xFF0284C7) else Color(0xFF38BDF8),
-                                            onClick = { onConvertTurnToTodo(msg) }
-                                        ),
-                                        GlassMenuAction(
-                                            label = "存为笔记",
-                                            icon = Icons.Default.Description,
-                                            iconTint = theme.accent,
-                                            onClick = { onSaveTurnAsNote(msg) }
-                                        ),
-                                        GlassMenuAction(
+                                        VesperMenuAction(
                                             label = "转发",
                                             icon = Icons.Default.Share,
-                                            iconTint = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399),
-                                            onClick = {
-                                                val sender = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
-                                                forwardPayload = sender to msg.content
-                                            }
+                                            iconTint = theme.success,
+                                            onClick = { forwardPayload = "我" to msg.content }
                                         ),
-                                        GlassMenuAction(
+                                        VesperMenuAction(
                                             label = "由此分叉",
                                             icon = Icons.Default.AutoAwesome,
-                                            iconTint = theme.accent,
+                                            iconTint = theme.accentForeground,
                                             onClick = { onForkFromTurn(msg) }
                                         ),
-                                        GlassMenuAction(
+                                        VesperMenuAction(
                                             label = "删除",
                                             icon = Icons.Outlined.DeleteOutline,
-                                            iconTint = if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185),
+                                            danger = true,
                                             onClick = { onDeleteTurn(msg) }
                                         )
                                     )
                                 )
                             }
                         }
+
+                        else -> {
+                            AssistantMessageRow(
+                                msg = msg,
+                                activeBot = activeBot,
+                                allBots = allBots,
+                                modelOptions = modelOptions,
+                                isGroup = isGroup,
+                                isLiveTurn = isStreaming && msg.id == lastAssistantId,
+                                isLatestReply = msg.id == lastAssistantId && !(isStreaming && msg.id == lastAssistantId),
+                                isActiveHit = msg.id == activeMatchedTurnId,
+                                isSearchHit = msg.id in matchedTurnIds,
+                                liveTodos = liveTodos,
+                                onOpenBotProfile = onOpenBotProfile,
+                                onQuickToggleTodo = onQuickToggleTodo,
+                                onRetry = { if (!isStreaming) retryingTurn = msg },
+                                onCopy = { onCopyText(msg.content) },
+                                onQuote = { sender -> quoteTarget = sender to msg.content },
+                                onConvertToTodo = { onConvertTurnToTodo(msg) },
+                                onSaveAsNote = { onSaveTurnAsNote(msg) },
+                                onForward = { sender -> forwardPayload = sender to msg.content },
+                                onFork = { onForkFromTurn(msg) },
+                                onDelete = { onDeleteTurn(msg) }
+                            )
+                        }
                     }
                 }
             }
-            }
 
-            // Floating "回到底部" Glass Pill when scrolled up
+            // Floating Scroll-to-Bottom Pill
             androidx.compose.animation.AnimatedVisibility(
                 visible = !isNearBottom && messages.size > 3,
                 enter = fadeIn(tween(140)) + scaleIn(tween(140), initialScale = 0.88f),
@@ -1459,12 +984,13 @@ fun ChatRoomScreen(
                 val pillShape = RoundedCornerShape(999.dp)
                 Row(
                     modifier = Modifier
+                        .sizeIn(minHeight = 40.dp)
                         .shadow(
                             6.dp,
                             pillShape,
                             ambientColor = Color.Black.copy(alpha = if (theme.isLight) 0.14f else 0.45f)
                         )
-                        .tactileClickable(pressedScale = 0.92f, hapticOnTap = true) {
+                        .vesperPressable(pressedScale = 0.93f, hapticOnTap = true) {
                             scope.launch {
                                 if (messages.isNotEmpty()) {
                                     listState.animateScrollToItem(messages.lastIndex)
@@ -1472,22 +998,22 @@ fun ChatRoomScreen(
                             }
                         }
                         .clip(pillShape)
-                        .background(theme.popoverTop, pillShape)
-                        .border(1.dp, theme.rimHighlight, pillShape)
-                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                        .background(theme.surfacePopover, pillShape)
+                        .border(1.dp, theme.borderStrong, pillShape)
+                        .padding(horizontal = 13.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = "回到底部",
-                        tint = if (theme.isLight) theme.accentDeep else theme.accentLight,
-                        modifier = Modifier.size(15.dp)
+                        tint = theme.accentForeground,
+                        modifier = Modifier.size(16.dp)
                     )
                     Text(
                         text = if (isStreaming) "新回复" else "回到底部",
                         style = TextStyle(
-                            fontSize = 11.5.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = theme.textPrimary,
                             platformStyle = NoFontPaddingStyle
@@ -1502,17 +1028,18 @@ fun ChatRoomScreen(
         // 4. Group Chat "@点名成员" Quick Strip
         if (isGroup && groupMembers.isNotEmpty()) {
             LazyRow(
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(theme.bottomBarTop)
+                    .background(theme.surfaceBar)
             ) {
                 items(groupMembers, key = { "at_${it.id}" }) { member ->
                     val chipShape = RoundedCornerShape(999.dp)
                     Row(
                         modifier = Modifier
-                            .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                            .sizeIn(minHeight = 32.dp)
+                            .vesperPressable(pressedScale = 0.94f, hapticOnTap = true) {
                                 val tag = "@${member.name} "
                                 if (!inputText.contains(tag)) {
                                     val sep = if (inputText.isNotEmpty() && !inputText.endsWith(" ")) " " else ""
@@ -1520,11 +1047,11 @@ fun ChatRoomScreen(
                                 }
                             }
                             .clip(chipShape)
-                            .background(theme.secondaryBtnTop, chipShape)
-                            .border(0.7.dp, theme.rimMid, chipShape)
-                            .padding(start = 5.dp, end = 9.dp, top = 3.dp, bottom = 3.dp),
+                            .background(theme.surfaceControl, chipShape)
+                            .border(1.dp, theme.border, chipShape)
+                            .padding(start = 5.dp, end = 10.dp, top = 4.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         GrokBotAvatar(
                             avatarStyle = member.avatarStyle,
@@ -1535,7 +1062,7 @@ fun ChatRoomScreen(
                         )
                         Text(
                             text = "@${member.name}",
-                            fontSize = 11.sp,
+                            fontSize = 11.5.sp,
                             color = theme.textSecondary,
                             maxLines = 1,
                             softWrap = false
@@ -1545,7 +1072,7 @@ fun ChatRoomScreen(
             }
         }
 
-        // 4b. Dynamic "/" Slash Command Popover (filtered by activeBot.allowedTools & bound skills)
+        // 4b. Dynamic "/" Slash Command Popover
         val allSlashCommands = remember(activeBot?.id, activeBot?.allowedTools, activeBot?.skillIds, availableSkills) {
             buildBotSlashCommands(activeBot, availableSkills)
         }
@@ -1564,19 +1091,19 @@ fun ChatRoomScreen(
 
         AnimatedVisibility(
             visible = matchingSlashCommands.isNotEmpty() && !isStreaming,
-            enter = fadeIn(tween(130)) + expandVertically(tween(150)),
-            exit = fadeOut(tween(110)) + shrinkVertically(tween(130))
+            enter = fadeIn(tween(120)) + expandVertically(tween(140)),
+            exit = fadeOut(tween(100)) + shrinkVertically(tween(120))
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(theme.sheetBg)
+                    .background(theme.surfaceSheet)
             ) {
-                HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
+                VesperDivider()
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .sizeIn(maxHeight = 220.dp),
+                        .sizeIn(maxHeight = 228.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
@@ -1584,8 +1111,9 @@ fun ChatRoomScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .sizeIn(minHeight = 48.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(theme.inputTop.copy(alpha = 0.72f))
+                                .background(theme.surfaceInput)
                                 .clickable {
                                     when (item.action) {
                                         "new_thread" -> {
@@ -1610,12 +1138,14 @@ fun ChatRoomScreen(
                                         }
                                     }
                                 }
-                                .padding(horizontal = 11.dp, vertical = 8.dp),
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(
-                                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -1624,7 +1154,7 @@ fun ChatRoomScreen(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (theme.isLight) theme.accentDeep else theme.accentLight,
+                                    color = theme.accentForeground,
                                     maxLines = 1,
                                     softWrap = false
                                 )
@@ -1651,34 +1181,39 @@ fun ChatRoomScreen(
             }
         }
 
-        // 5. Quoted Reply Preview Strip
+        // 5. Quoted Reply & Notification Preview Strips
         quoteTarget?.let { (sender, snippet) ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(theme.inputTop)
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                    .background(theme.surfaceCard)
+                    .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "$sender: ${snippet.replace('\n', ' ')}",
-                    fontSize = 11.5.sp,
+                    text = "引用 $sender: ${snippet.replace('\n', ' ')}",
+                    fontSize = 12.sp,
                     color = theme.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .weight(1f)
-                        .padding(end = 8.dp)
+                        .padding(end = 6.dp)
                 )
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "取消引用",
-                    tint = theme.textSecondary,
+                Box(
                     modifier = Modifier
-                        .size(16.dp)
-                        .clickable { quoteTarget = null }
-                )
+                        .size(38.dp)
+                        .clickable { quoteTarget = null },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "取消引用",
+                        tint = theme.textMuted,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
 
@@ -1686,7 +1221,7 @@ fun ChatRoomScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(theme.bottomBarTop)
+                    .background(theme.surfaceBar)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -1705,7 +1240,7 @@ fun ChatRoomScreen(
                             text = "引用服务通知 · ${quotedNotification.title}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = theme.accent,
+                            color = theme.accentForeground,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1720,14 +1255,19 @@ fun ChatRoomScreen(
                             )
                         }
                     }
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "取消引用通知",
-                        tint = theme.textSecondary,
+                    Box(
                         modifier = Modifier
-                            .size(18.dp)
-                            .clickable { onDismissQuotedNotification() }
-                    )
+                            .size(38.dp)
+                            .clickable { onDismissQuotedNotification() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "取消引用通知",
+                            tint = theme.textMuted,
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1736,33 +1276,37 @@ fun ChatRoomScreen(
                     val chipShape = RoundedCornerShape(999.dp)
                     Box(
                         modifier = Modifier
+                            .sizeIn(minHeight = 34.dp)
                             .clip(chipShape)
-                            .background(theme.accent.copy(alpha = 0.14f), chipShape)
-                            .border(0.7.dp, theme.accent.copy(alpha = 0.42f), chipShape)
-                            .tactileClickable(enabled = !isStreaming, pressedScale = 0.94f, hapticOnTap = true) {
+                            .background(theme.accentSoft, chipShape)
+                            .border(1.dp, theme.accentMuted, chipShape)
+                            .vesperPressable(enabled = !isStreaming, pressedScale = 0.95f, hapticOnTap = true) {
                                 onSendPrompt("请针对这条服务通知深入展开讲讲，补充关键背景、细节与延伸思考。")
                             }
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "深入展开讲讲",
                             style = TextStyle(
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = theme.accent,
+                                color = theme.accentForeground,
                                 platformStyle = NoFontPaddingStyle
                             )
                         )
                     }
                     Box(
                         modifier = Modifier
+                            .sizeIn(minHeight = 34.dp)
                             .clip(chipShape)
-                            .background(theme.inputTop, chipShape)
-                            .border(0.7.dp, theme.divider, chipShape)
-                            .tactileClickable(enabled = !isStreaming, pressedScale = 0.94f, hapticOnTap = true) {
+                            .background(theme.surfaceControl, chipShape)
+                            .border(1.dp, theme.border, chipShape)
+                            .vesperPressable(enabled = !isStreaming, pressedScale = 0.95f, hapticOnTap = true) {
                                 onSendPrompt("请结合我的个人情况、近期记忆与待办，分析这条服务通知对我有什么直接启发或行动建议。")
                             }
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "结合我的情况分析",
@@ -1777,35 +1321,128 @@ fun ChatRoomScreen(
             }
         }
 
-        // 6. Clean Bottom Composer + 1-Row 4-Tile IM "+" Toolbar
+        // 6. Bottom Composer with Inline Model Switcher Capsule & Thinking Toggle
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(theme.bottomBarTop)
+                .background(theme.surfaceBar)
                 .navigationBarsPadding()
         ) {
-            SpecularHairline()
+            VesperDivider()
 
+            // Quick Model Switcher Capsule + Deep Thinking Toggle Strip
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.Bottom,
+                    .padding(start = 12.dp, end = 12.dp, top = 7.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val inputShape = RoundedCornerShape(18.dp)
+                val capsuleShape = RoundedCornerShape(999.dp)
+                Row(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .sizeIn(minHeight = 32.dp)
+                        .clip(capsuleShape)
+                        .background(theme.surfaceControl, capsuleShape)
+                        .border(1.dp, theme.border, capsuleShape)
+                        .vesperPressable(enabled = !isStreaming, pressedScale = 0.96f, hapticOnTap = true) {
+                            showModelPickerSheet = true
+                        }
+                        .padding(start = 9.dp, end = 7.dp, top = 5.dp, bottom = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = theme.accentForeground,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = modelDisplayName,
+                        style = TextStyle(
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = theme.textPrimary,
+                            platformStyle = NoFontPaddingStyle
+                        ),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = "切换模型",
+                        tint = theme.textMuted,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .sizeIn(minHeight = 32.dp)
+                        .clip(capsuleShape)
+                        .background(if (enableThinking) theme.accentSoft else theme.surfaceControl, capsuleShape)
+                        .border(1.dp, if (enableThinking) theme.accentMuted else theme.border, capsuleShape)
+                        .vesperPressable(pressedScale = 0.95f, hapticOnTap = true) {
+                            onThinkingChange(!enableThinking)
+                        }
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Psychology,
+                        contentDescription = null,
+                        tint = if (enableThinking) theme.accentForeground else theme.textMuted,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = if (enableThinking) "深度思考" else "快答",
+                        style = TextStyle(
+                            fontSize = 11.5.sp,
+                            fontWeight = if (enableThinking) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (enableThinking) theme.accentForeground else theme.textSecondary,
+                            platformStyle = NoFontPaddingStyle
+                        ),
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+
+            // Input Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 6.dp, end = 10.dp, top = 4.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                VesperIconButton(
+                    icon = if (showPlusDrawer) Icons.Default.Close else Icons.Default.Add,
+                    contentDescription = "更多功能",
+                    accent = showPlusDrawer,
+                    visualSize = 38.dp,
+                    iconSize = 20.dp,
+                    onClick = { showPlusDrawer = !showPlusDrawer }
+                )
+
+                val inputShape = RoundedCornerShape(22.dp)
                 val inputBorder by animateColorAsState(
-                    targetValue = if (composerFocused) theme.accent else theme.divider,
-                    animationSpec = tween(150),
+                    targetValue = if (composerFocused) theme.accent else theme.border,
+                    animationSpec = tween(140),
                     label = "composerBorder"
                 )
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .sizeIn(minHeight = 40.dp)
+                        .sizeIn(minHeight = 46.dp)
                         .clip(inputShape)
-                        .background(theme.inputTop, inputShape)
-                        .border(if (composerFocused) 1.2.dp else 1.dp, inputBorder, inputShape),
+                        .background(theme.surfaceInput, inputShape)
+                        .border(if (composerFocused) 1.3.dp else 1.dp, inputBorder, inputShape),
                     contentAlignment = Alignment.CenterStart
                 ) {
                     BasicTextField(
@@ -1820,17 +1457,18 @@ fun ChatRoomScreen(
                         maxLines = 5,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                            .padding(horizontal = 15.dp, vertical = 12.dp)
                             .onFocusChanged { composerFocused = it.isFocused },
                         decorationBox = { inner ->
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (inputText.isEmpty()) {
                                     Text(
                                         text = "发消息或输入 / 调出快捷指令...",
-                                        fontSize = 13.5.sp,
+                                        fontSize = 14.sp,
                                         color = theme.textMuted,
                                         maxLines = 1,
-                                        softWrap = false
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 inner()
@@ -1839,87 +1477,88 @@ fun ChatRoomScreen(
                     )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .tactileClickable(pressedScale = 0.90f, hapticOnTap = true) {
-                            showPlusDrawer = !showPlusDrawer
-                        }
-                        .clip(CircleShape)
-                        .background(
-                            if (showPlusDrawer) {
-                                theme.accent.copy(alpha = if (theme.isLight) 0.12f else 0.18f)
-                            } else {
-                                theme.secondaryBtnTop
-                            },
-                            CircleShape
-                        )
-                        .border(
-                            1.dp,
-                            if (showPlusDrawer) theme.accent.copy(alpha = 0.45f) else theme.divider,
-                            CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (showPlusDrawer) Icons.Default.Close else Icons.Default.Add,
-                        contentDescription = "更多功能",
-                        tint = if (showPlusDrawer) {
-                            if (theme.isLight) theme.accentDeep else theme.accentLight
-                        } else {
-                            theme.textSecondary
-                        },
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
                 if (isStreaming) {
-                    TactileSecondaryButton(
-                        text = "停止",
-                        leadingIcon = Icons.Default.Stop,
-                        danger = true,
-                        cornerRadius = 999.dp,
-                        minHeight = 40.dp,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        onClick = onStop
-                    )
-                } else if (inputText.isNotBlank()) {
-                    TactilePrimaryButton(
-                        text = "发送",
-                        cornerRadius = 999.dp,
-                        minHeight = 40.dp,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                        onClick = { dispatchSend() }
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .vesperPressable(pressedScale = 0.92f, hapticOnTap = true, onClick = onStop),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(theme.danger.copy(alpha = 0.16f))
+                                .border(1.dp, theme.danger.copy(alpha = 0.45f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = "停止生成",
+                                tint = theme.danger,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                    }
+                } else {
+                    val canSend = inputText.isNotBlank()
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .vesperPressable(
+                                enabled = canSend,
+                                pressedScale = 0.92f,
+                                hapticOnTap = true,
+                                onClick = { dispatchSend() }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(if (canSend) theme.accent else theme.surfaceControl)
+                                .then(
+                                    if (canSend) Modifier else Modifier.border(1.dp, theme.border, CircleShape)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowUpward,
+                                contentDescription = "发送消息",
+                                tint = if (canSend) theme.onAccent else theme.textMuted,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
             }
 
-            // Pure 2x3 Native Chat Controls (Model, Thinking, New Thread, Summarize Memory, Group, Clear)
+            // Expandable 2x3 Action Tray
             AnimatedVisibility(
                 visible = showPlusDrawer,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                val modelShortLabel = resolveModelOptionDisplayName(activeModel, modelOptions)
                 val tools = listOf(
                     PlusActionTile(
-                        label = modelShortLabel,
+                        label = modelDisplayName,
                         icon = Icons.Default.AutoAwesome,
-                        accent = if (theme.isLight) Color(0xFF9333EA) else Color(0xFFC084FC)
+                        accent = theme.accentForeground
                     ) {
                         showModelPickerSheet = true
                     },
                     PlusActionTile(
                         label = if (enableThinking) "思考:开" else "思考:关",
                         icon = Icons.Default.Psychology,
-                        accent = if (enableThinking) theme.accent else theme.textSecondary
+                        accent = if (enableThinking) theme.accentForeground else theme.textSecondary
                     ) {
                         onThinkingChange(!enableThinking)
                     },
                     PlusActionTile(
                         label = "新开话题",
                         icon = Icons.Default.Add,
-                        accent = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
+                        accent = theme.success
                     ) {
                         showPlusDrawer = false
                         if (!isStreaming) onCreateThread("")
@@ -1927,7 +1566,7 @@ fun ChatRoomScreen(
                     PlusActionTile(
                         label = "提炼记忆",
                         icon = Icons.Default.Description,
-                        accent = theme.accent
+                        accent = theme.info
                     ) {
                         showPlusDrawer = false
                         if (!isStreaming) onSummarizeThread()
@@ -1935,7 +1574,7 @@ fun ChatRoomScreen(
                     PlusActionTile(
                         label = if (isGroup) "群成员" else "拉人建群",
                         icon = Icons.Default.GroupAdd,
-                        accent = if (theme.isLight) Color(0xFF0284C7) else Color(0xFF38BDF8)
+                        accent = theme.warning
                     ) {
                         showPlusDrawer = false
                         onInviteToGroup()
@@ -1943,7 +1582,7 @@ fun ChatRoomScreen(
                     PlusActionTile(
                         label = "清空记录",
                         icon = Icons.Default.DeleteSweep,
-                        accent = if (theme.isLight) Color(0xFFDC2626) else Color(0xFFFB7185)
+                        accent = theme.danger
                     ) {
                         showPlusDrawer = false
                         onClearHistory()
@@ -1956,7 +1595,7 @@ fun ChatRoomScreen(
                         .padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
+                    VesperDivider()
                     tools.chunked(3).forEach { rowTiles ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -2003,135 +1642,821 @@ fun ChatRoomScreen(
     }
 
     forwardPayload?.let { (senderName, bodyContent) ->
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        var selectedBotId by remember(allBots, activeBot?.id) {
-            mutableStateOf(
-                allBots.firstOrNull { it.id != activeBot?.id }?.id
-                    ?: allBots.firstOrNull()?.id.orEmpty()
+        ForwardMessageSheet(
+            senderName = senderName,
+            bodyContent = bodyContent,
+            activeBotId = activeBot?.id,
+            allBots = allBots,
+            onForward = { targetBot, note, openTarget ->
+                onForwardMessage(targetBot, senderName, bodyContent, note, openTarget)
+                forwardPayload = null
+            },
+            onDismiss = { forwardPayload = null }
+        )
+    }
+}
+
+@Composable
+private fun ThreadPill(
+    label: String,
+    active: Boolean,
+    canDelete: Boolean,
+    onSelect: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    val shape = RoundedCornerShape(999.dp)
+    Row(
+        modifier = Modifier
+            .sizeIn(minHeight = 32.dp)
+            .clip(shape)
+            .background(if (active) theme.accentSoft else theme.surfaceControl, shape)
+            .border(1.dp, if (active) theme.accentMuted else theme.border, shape)
+            .vesperPressable(pressedScale = 0.95f, hapticOnTap = true, onClick = onSelect)
+            .padding(start = 11.dp, end = if (canDelete) 6.dp else 11.dp, top = 5.dp, bottom = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.5.sp,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (active) theme.accentForeground else theme.textSecondary,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (canDelete) {
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onDelete),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "删除话题",
+                    tint = theme.textMuted,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AssistantMessageRow(
+    msg: ChatTurnUi,
+    activeBot: BotItem?,
+    allBots: List<BotItem>,
+    modelOptions: List<ModelOptionItem>,
+    isGroup: Boolean,
+    isLiveTurn: Boolean,
+    isLatestReply: Boolean,
+    isActiveHit: Boolean,
+    isSearchHit: Boolean,
+    liveTodos: List<TodoItemUi>,
+    onOpenBotProfile: (BotItem) -> Unit,
+    onQuickToggleTodo: (String, String) -> Unit,
+    onRetry: () -> Unit,
+    onCopy: () -> Unit,
+    onQuote: (String) -> Unit,
+    onConvertToTodo: () -> Unit,
+    onSaveAsNote: () -> Unit,
+    onForward: (String) -> Unit,
+    onFork: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    val haptics = LocalHapticFeedback.current
+    var expandReasoning by remember { mutableStateOf(false) }
+    var expandTools by remember { mutableStateOf(false) }
+    var showBubbleMenu by remember { mutableStateOf(false) }
+
+    val avatarLiveState = when {
+        isLiveTurn && msg.content.isEmpty() -> "thinking"
+        isLiveTurn -> "working"
+        else -> "idle"
+    }
+    val speakerBot = remember(msg.senderBotId, allBots, activeBot) {
+        allBots.find { it.id == msg.senderBotId } ?: activeBot
+    }
+    val senderName = msg.persona.ifEmpty { speakerBot?.name ?: "AI" }
+    val aiShape = RoundedCornerShape(
+        topStart = 5.dp,
+        topEnd = 16.dp,
+        bottomStart = 16.dp,
+        bottomEnd = 16.dp
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (!isLiveTurn) Modifier.animateContentSize() else Modifier),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        BotAvatar(
+            bot = speakerBot,
+            allBots = allBots,
+            avatarStyleOverride = msg.avatarStyle,
+            state = avatarLiveState,
+            containerSize = 36.dp,
+            seedKey = msg.id,
+            onClick = { if (speakerBot != null) onOpenBotProfile(speakerBot) },
+            modifier = Modifier.padding(top = 2.dp)
+        )
+
+        Box(modifier = Modifier.weight(1f)) {
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                if (isGroup || msg.msgKind == "routine") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(start = 2.dp)
+                    ) {
+                        Text(
+                            text = senderName,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = theme.textSecondary,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (msg.msgKind == "routine") {
+                            VesperTag(text = "定时提醒", toneColor = theme.warning)
+                        }
+                    }
+                }
+
+                val aiBorderWidth = if (isActiveHit) 1.6.dp else 1.dp
+                val aiBorderColor = when {
+                    isActiveHit -> theme.accent
+                    isSearchHit -> theme.accentMuted
+                    else -> theme.border
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(aiShape)
+                        .background(theme.aiBubble, aiShape)
+                        .border(aiBorderWidth, aiBorderColor, aiShape)
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = {
+                                if (msg.content.isNotEmpty()) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showBubbleMenu = true
+                                }
+                            }
+                        )
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    // Collapsible Reasoning Accordion
+                    if (msg.reasoning.isNotEmpty()) {
+                        val boxShape = RoundedCornerShape(10.dp)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(boxShape)
+                                .background(theme.codeBlockBg, boxShape)
+                                .border(0.75.dp, theme.border, boxShape)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .sizeIn(minHeight = 38.dp)
+                                    .clickable { expandReasoning = !expandReasoning }
+                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Psychology,
+                                        contentDescription = null,
+                                        tint = theme.accentForeground,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = if (isLiveTurn && msg.content.isEmpty()) {
+                                            "正在深度思考 · ${msg.reasoning.length}字"
+                                        } else {
+                                            "思考过程 · ${msg.reasoning.length}字"
+                                        },
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = theme.textSecondary,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                                Icon(
+                                    imageVector = if (expandReasoning) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = if (expandReasoning) "收起思考" else "展开思考",
+                                    tint = theme.textMuted,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            AnimatedVisibility(
+                                visible = expandReasoning,
+                                enter = fadeIn() + expandVertically(),
+                                exit = fadeOut() + shrinkVertically()
+                            ) {
+                                Column {
+                                    VesperDivider()
+                                    Text(
+                                        text = msg.reasoning.replace("<think>", "").replace("</think>", "").trim(),
+                                        fontSize = 12.sp,
+                                        lineHeight = 18.5.sp,
+                                        color = theme.textSecondary,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Collapsible Tool Execution Steps Card (uses summarizeToolStep)
+                    if (msg.toolTraces.isNotEmpty() || msg.tools.isNotEmpty()) {
+                        ToolStepsAccordionCard(
+                            traces = msg.toolTraces,
+                            fallbackLabels = msg.tools,
+                            expanded = expandTools,
+                            onToggle = { expandTools = !expandTools }
+                        )
+                    }
+
+                    // Structured Rich Cards
+                    if (msg.toolTraces.isNotEmpty()) {
+                        ChatStructuredToolCards(
+                            traces = msg.toolTraces,
+                            onToggleTodo = onQuickToggleTodo,
+                            liveTodos = liveTodos
+                        )
+                    }
+
+                    // Main Response Body or Live Streaming Pulse
+                    if (msg.content.isNotEmpty()) {
+                        RichMarkdownText(
+                            markdown = msg.content,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (isLiveTurn) {
+                            StreamingPulseRow(label = "正在输出")
+                        }
+                    } else if (isLiveTurn) {
+                        val liveStatusLabel = when {
+                            msg.toolTraces.any { isToolPending(it.status) } -> "正在调用工具"
+                            msg.reasoning.isNotEmpty() -> "正在整理回复"
+                            else -> "正在思考"
+                        }
+                        StreamingPulseRow(label = liveStatusLabel)
+                    }
+                }
+
+                // Inline Action Footer on Latest Reply or Error Turn
+                val hasTurnError = !isLiveTurn && (
+                    msg.content.startsWith("[请求异常]") ||
+                        msg.content.contains("\n[中断:")
+                    )
+
+                val matchedModelOpt = remember(msg.model, msg.modelTargetId, modelOptions) {
+                    val cleanTarget = msg.modelTargetId.trim()
+                    val clean = msg.model.replace(Regex("\\s*\\(已回退\\)$"), "").trim()
+                    if (cleanTarget.isNotEmpty()) {
+                        modelOptions.firstOrNull { it.id == cleanTarget }
+                    } else {
+                        null
+                    } ?: if (clean.isEmpty()) {
+                        null
+                    } else {
+                        modelOptions.firstOrNull {
+                            it.id == clean || it.model == clean || it.id.endsWith("::$clean")
+                        }
+                    }
+                }
+                val isPaidModelUsed = remember(msg.model, msg.modelTier, msg.modelTargetId, matchedModelOpt) {
+                    msg.modelTier.equals("paid", ignoreCase = true) ||
+                        msg.modelTargetId == "primary" ||
+                        msg.modelTargetId == "auto:paid" ||
+                        msg.model == "auto:paid" ||
+                        matchedModelOpt?.tier == "paid"
+                }
+                val shortModelUsed = remember(msg.model, matchedModelOpt) {
+                    val raw = msg.model.ifBlank { matchedModelOpt?.model?.ifBlank { matchedModelOpt.label }.orEmpty() }
+                    raw.removePrefix("pool:").substringAfter("::").substringAfterLast("/").take(24)
+                }
+
+                if (!isLiveTurn && msg.content.isNotEmpty() && (isLatestReply || hasTurnError)) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(start = 2.dp, top = 1.dp)
+                    ) {
+                        if (shortModelUsed.isNotBlank()) {
+                            item(key = "model_pill") {
+                                Box(
+                                    modifier = Modifier
+                                        .sizeIn(minHeight = 32.dp)
+                                        .vesperPressable(pressedScale = 0.94f, hapticOnTap = true, onClick = onRetry),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    VesperTag(
+                                        text = if (isPaidModelUsed) "付费 · $shortModelUsed" else shortModelUsed,
+                                        toneColor = if (isPaidModelUsed) theme.warning else theme.success
+                                    )
+                                }
+                            }
+                        }
+
+                        item(key = "retry_btn") {
+                            InlineBubbleAction(
+                                icon = Icons.Default.Refresh,
+                                label = "换模型重试",
+                                tint = theme.accentForeground,
+                                onClick = onRetry
+                            )
+                        }
+
+                        item(key = "copy_btn") {
+                            InlineBubbleAction(
+                                icon = Icons.Default.ContentCopy,
+                                label = "复制",
+                                tint = theme.textMuted,
+                                onClick = onCopy
+                            )
+                        }
+
+                        item(key = "quote_btn") {
+                            InlineBubbleAction(
+                                icon = Icons.Default.FormatQuote,
+                                label = "引用",
+                                tint = theme.textMuted,
+                                onClick = { onQuote(senderName) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            VesperPopoverMenu(
+                expanded = showBubbleMenu,
+                onDismissRequest = { showBubbleMenu = false },
+                alignment = Alignment.TopStart,
+                offsetX = 6.dp,
+                offsetY = 28.dp,
+                items = listOf(
+                    VesperMenuAction(
+                        label = "换模型重试",
+                        icon = Icons.Default.Refresh,
+                        iconTint = theme.accentForeground,
+                        onClick = onRetry
+                    ),
+                    VesperMenuAction(
+                        label = "复制",
+                        icon = Icons.Default.ContentCopy,
+                        iconTint = theme.accentForeground,
+                        onClick = onCopy
+                    ),
+                    VesperMenuAction(
+                        label = "引用",
+                        icon = Icons.Default.FormatQuote,
+                        iconTint = theme.info,
+                        onClick = { onQuote(senderName) }
+                    ),
+                    VesperMenuAction(
+                        label = "转为待办",
+                        icon = Icons.Default.TaskAlt,
+                        iconTint = theme.info,
+                        onClick = onConvertToTodo
+                    ),
+                    VesperMenuAction(
+                        label = "存为笔记",
+                        icon = Icons.Default.Description,
+                        iconTint = theme.accentForeground,
+                        onClick = onSaveAsNote
+                    ),
+                    VesperMenuAction(
+                        label = "转发",
+                        icon = Icons.Default.Share,
+                        iconTint = theme.success,
+                        onClick = { onForward(senderName) }
+                    ),
+                    VesperMenuAction(
+                        label = "由此分叉",
+                        icon = Icons.Default.AutoAwesome,
+                        iconTint = theme.warning,
+                        onClick = onFork
+                    ),
+                    VesperMenuAction(
+                        label = "删除",
+                        icon = Icons.Outlined.DeleteOutline,
+                        danger = true,
+                        onClick = onDelete
+                    )
+                )
             )
         }
-        var attachNote by remember { mutableStateOf("") }
+    }
+}
 
-        ModalBottomSheet(
-            onDismissRequest = { forwardPayload = null },
-            sheetState = sheetState,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            containerColor = theme.sheetBg,
-            scrimColor = theme.scrim,
-            tonalElevation = 0.dp,
-            dragHandle = { ObsidianSheetDragHandle() }
+@Composable
+private fun ToolStepsAccordionCard(
+    traces: List<ChatToolTraceUi>,
+    fallbackLabels: List<String>,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    val pendingTrace = traces.firstOrNull { isToolPending(it.status) }
+    val hasError = traces.any { isToolError(it.status) }
+    val stepCount = if (traces.isNotEmpty()) traces.size else fallbackLabels.size
+    val statusColor = when {
+        pendingTrace != null -> theme.warning
+        hasError -> theme.danger
+        else -> theme.success
+    }
+    val headerText = remember(traces, fallbackLabels) {
+        when {
+            pendingTrace != null -> {
+                val label = pendingTrace.displayName.ifBlank { formatHumanToolName(pendingTrace.name) }
+                "正在执行 · $label"
+            }
+            traces.isNotEmpty() -> {
+                val names = traces
+                    .map { it.displayName.ifBlank { formatHumanToolName(it.name) } }
+                    .distinct()
+                    .take(2)
+                    .joinToString("、")
+                if (stepCount > 1) "已执行 $stepCount 项工具 · $names" else "已调用工具 · $names"
+            }
+            else -> {
+                val names = fallbackLabels.take(2).joinToString("、")
+                if (fallbackLabels.size > 1) "已执行 ${fallbackLabels.size} 项工具 · $names" else "已调用工具 · $names"
+            }
+        }
+    }
+
+    val boxShape = RoundedCornerShape(10.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(boxShape)
+            .background(theme.codeBlockBg, boxShape)
+            .border(0.75.dp, theme.border, boxShape)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sizeIn(minHeight = 38.dp)
+                .clickable(onClick = onToggle)
+                .padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .background(statusColor, CircleShape)
+                )
+                Icon(
+                    imageVector = Icons.Default.Build,
+                    contentDescription = null,
+                    tint = theme.textMuted,
+                    modifier = Modifier.size(13.dp)
+                )
+                Text(
+                    text = headerText,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = theme.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = if (expanded) "收起工具步骤" else "展开工具步骤",
+                tint = theme.textMuted,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(start = 10.dp, end = 10.dp, bottom = 9.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(
-                    text = "转发消息",
-                    fontSize = 17.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = theme.textPrimary
-                )
-
-                SpecularGlassCard(
-                    cornerRadius = 15.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "$senderName: ${bodyContent.replace('\n', ' ').take(100)}",
-                        fontSize = 12.5.sp,
-                        color = theme.textSecondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                    )
-                }
-
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(allBots, key = { "fwd_${it.id}" }) { candidate ->
-                        val chosen = candidate.id == selectedBotId
-                        Column(
-                            modifier = Modifier
-                                .widthIn(min = 64.dp, max = 76.dp)
-                                .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                                    selectedBotId = candidate.id
-                                }
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (chosen) theme.accent.copy(alpha = 0.16f) else theme.secondaryBtnTop
-                                )
-                                .border(
-                                    0.85.dp,
-                                    if (chosen) theme.accent.copy(alpha = 0.55f) else theme.rimMid,
-                                    RoundedCornerShape(14.dp)
-                                )
-                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                VesperDivider()
+                if (traces.isNotEmpty()) {
+                    traces.forEach { trace ->
+                        val pending = isToolPending(trace.status)
+                        val error = isToolError(trace.status)
+                        val stepTint = when {
+                            pending -> theme.warning
+                            error -> theme.danger
+                            else -> theme.success
+                        }
+                        val stepIcon = when {
+                            error -> Icons.Default.ErrorOutline
+                            else -> Icons.Default.CheckCircleOutline
+                        }
+                        val humanName = trace.displayName.ifBlank { formatHumanToolName(trace.name) }
+                        val stepSummary = remember(trace.id, trace.arguments) { summarizeToolStep(trace) }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)
                         ) {
-                            SpiritSquircleAvatar(
-                                bot = candidate,
-                                allBots = allBots,
-                                containerSize = 40.dp,
-                                cornerRadius = 12.dp
+                            Icon(
+                                imageVector = stepIcon,
+                                contentDescription = null,
+                                tint = stepTint,
+                                modifier = Modifier
+                                    .padding(top = 2.dp)
+                                    .size(13.dp)
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(1.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = humanName,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = theme.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = if (pending) "进行中" else if (error) "失败" else "完成",
+                                        fontSize = 10.5.sp,
+                                        color = stepTint,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                                if (stepSummary.isNotEmpty()) {
+                                    Text(
+                                        text = stepSummary,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 10.5.sp,
+                                        color = theme.textMuted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    fallbackLabels.forEach { label ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .background(theme.success, CircleShape)
                             )
                             Text(
-                                text = candidate.name,
-                                fontSize = 11.sp,
-                                fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (chosen) {
-                                    if (theme.isLight) theme.accentDeep else theme.accentLight
-                                } else {
-                                    theme.textSecondary
-                                },
+                                text = label,
+                                fontSize = 11.5.sp,
+                                color = theme.textSecondary,
                                 maxLines = 1,
-                                softWrap = false,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
                 }
+            }
+        }
+    }
+}
 
-                ObsidianGlassInput(
-                    value = attachNote,
-                    onValueChange = { attachNote = it },
-                    placeholder = "附言 (可选)",
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+@Composable
+private fun StreamingPulseRow(label: String) {
+    val theme = BotHubThemeTokens
+    val transition = rememberInfiniteTransition(label = "streamingPulse")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pulsePhase"
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(top = 2.dp)
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            for (idx in 0..2) {
+                val dist = kotlin.math.abs(phase - idx)
+                val dotAlpha = (1f - (dist.coerceAtMost(1f) * 0.65f)).coerceIn(0.32f, 1f)
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .graphicsLayer { alpha = dotAlpha }
+                        .background(theme.accent, CircleShape)
                 )
+            }
+        }
+        Text(
+            text = label,
+            fontSize = 11.5.sp,
+            color = theme.textMuted
+        )
+    }
+}
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    val targetBot = allBots.find { it.id == selectedBotId }
-                    TactileSecondaryButton(
-                        text = "仅转发",
-                        enabled = targetBot != null,
-                        minHeight = 45.dp,
-                        onClick = {
-                            if (targetBot != null) {
-                                onForwardMessage(targetBot, senderName, bodyContent, attachNote, false)
-                                forwardPayload = null
+@Composable
+private fun InlineBubbleAction(
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .sizeIn(minHeight = 32.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .vesperPressable(pressedScale = 0.94f, hapticOnTap = true, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(13.dp)
+        )
+        Text(
+            text = label,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Medium,
+            color = tint,
+            maxLines = 1,
+            softWrap = false
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ForwardMessageSheet(
+    senderName: String,
+    bodyContent: String,
+    activeBotId: String?,
+    allBots: List<BotItem>,
+    onForward: (targetBot: BotItem, note: String, openTarget: Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var selectedBotId by remember(allBots, activeBotId) {
+        mutableStateOf(
+            allBots.firstOrNull { it.id != activeBotId }?.id
+                ?: allBots.firstOrNull()?.id.orEmpty()
+        )
+    }
+    var attachNote by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = theme.surfaceSheet,
+        scrimColor = theme.scrim,
+        tonalElevation = 0.dp,
+        dragHandle = { VesperSheetDragHandle() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "转发消息",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = theme.textPrimary
+            )
+
+            VesperCard(
+                cornerRadius = 14.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "$senderName: ${bodyContent.replace('\n', ' ').take(100)}",
+                    fontSize = 13.sp,
+                    color = theme.textSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)
+                )
+            }
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(allBots, key = { "fwd_${it.id}" }) { candidate ->
+                    val chosen = candidate.id == selectedBotId
+                    Column(
+                        modifier = Modifier
+                            .widthIn(min = 66.dp, max = 78.dp)
+                            .vesperPressable(pressedScale = 0.94f, hapticOnTap = true) {
+                                selectedBotId = candidate.id
                             }
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    TactilePrimaryButton(
-                        text = "转发并进入",
-                        enabled = targetBot != null,
-                        minHeight = 45.dp,
-                        onClick = {
-                            if (targetBot != null) {
-                                onForwardMessage(targetBot, senderName, bodyContent, attachNote, true)
-                                forwardPayload = null
-                            }
-                        },
-                        modifier = Modifier.weight(1.25f)
-                    )
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (chosen) theme.accentSoft else theme.surfaceControl)
+                            .border(
+                                1.dp,
+                                if (chosen) theme.accentMuted else theme.border,
+                                RoundedCornerShape(14.dp)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 9.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        BotAvatar(
+                            bot = candidate,
+                            allBots = allBots,
+                            containerSize = 40.dp
+                        )
+                        Text(
+                            text = candidate.name,
+                            fontSize = 11.sp,
+                            fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (chosen) theme.accentForeground else theme.textSecondary,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
+            }
+
+            VesperTextField(
+                value = attachNote,
+                onValueChange = { attachNote = it },
+                placeholder = "附言（可选）",
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                val targetBot = allBots.find { it.id == selectedBotId }
+                VesperSecondaryButton(
+                    text = "仅转发",
+                    enabled = targetBot != null,
+                    minHeight = 48.dp,
+                    onClick = { if (targetBot != null) onForward(targetBot, attachNote, false) },
+                    modifier = Modifier.weight(1f)
+                )
+                VesperPrimaryButton(
+                    text = "转发并进入",
+                    enabled = targetBot != null,
+                    minHeight = 48.dp,
+                    onClick = { if (targetBot != null) onForward(targetBot, attachNote, true) },
+                    modifier = Modifier.weight(1.25f)
+                )
             }
         }
     }
@@ -2143,22 +2468,24 @@ private fun PlusTrayItem(
     modifier: Modifier = Modifier
 ) {
     val theme = BotHubThemeTokens
-    val sqShape = RoundedCornerShape(12.dp)
+    val sqShape = RoundedCornerShape(14.dp)
     Column(
-        modifier = modifier.tactileClickable(
-            pressedScale = 0.92f,
-            hapticOnTap = true,
-            onClick = tile.onClick
-        ),
+        modifier = modifier
+            .sizeIn(minHeight = 76.dp)
+            .vesperPressable(
+                pressedScale = 0.94f,
+                hapticOnTap = true,
+                onClick = tile.onClick
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically)
     ) {
         Box(
             modifier = Modifier
                 .size(52.dp)
                 .clip(sqShape)
-                .background(theme.secondaryBtnTop, sqShape)
-                .border(1.dp, theme.divider, sqShape),
+                .background(theme.surfaceControl, sqShape)
+                .border(1.dp, theme.border, sqShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -2171,7 +2498,7 @@ private fun PlusTrayItem(
         Text(
             text = tile.label,
             style = TextStyle(
-                fontSize = 11.sp,
+                fontSize = 11.5.sp,
                 fontWeight = FontWeight.Medium,
                 color = theme.textSecondary,
                 platformStyle = NoFontPaddingStyle

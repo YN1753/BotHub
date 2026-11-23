@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -34,11 +35,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import uk.starryheavens.vesper.bothub.ui.BiometricAuthHelper
+import uk.starryheavens.vesper.bothub.ui.components.BotAvatar
 import uk.starryheavens.vesper.bothub.ui.components.BotHubSnackbarHost
-import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
-import uk.starryheavens.vesper.bothub.ui.components.SpiritSquircleAvatar
-import uk.starryheavens.vesper.bothub.ui.components.TactilePrimaryButton
-import uk.starryheavens.vesper.bothub.ui.components.TactileSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperPrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperTextField
 import uk.starryheavens.vesper.bothub.ui.components.VesperBrandEmblem
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 
@@ -66,7 +67,7 @@ fun BiometricLockScreen(
         BiometricAuthHelper.authenticateLocal(
             activity = act,
             title = "解锁 BotHub",
-            subtitle = "优先无感面容识别，不支持面容自动降级指纹或密码",
+            subtitle = "验证面容或指纹以进入工作区",
             onSuccess = onBiometricUnlocked,
             onFallbackOrCancel = { showPassUnlock = true }
         )
@@ -80,12 +81,13 @@ fun BiometricLockScreen(
     Scaffold(
         modifier = modifier,
         snackbarHost = { BotHubSnackbarHost(snackbarHostState) },
-        containerColor = theme.bgBase
+        containerColor = theme.bgCanvas
     ) { pad ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(pad)
+                .imePadding()
                 .padding(horizontal = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
@@ -93,9 +95,9 @@ fun BiometricLockScreen(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(999.dp))
-                    .background(theme.secondaryBtnTop)
-                    .border(0.8.dp, theme.accent.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
-                    .padding(start = 7.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
+                    .background(theme.surfaceCard)
+                    .border(1.dp, theme.border, RoundedCornerShape(999.dp))
+                    .padding(start = 8.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
@@ -105,18 +107,17 @@ fun BiometricLockScreen(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (theme.isLight) theme.accentDeep else theme.accentLight,
+                    color = theme.accentForeground,
                     letterSpacing = 1.sp
                 )
             }
-            Spacer(modifier = Modifier.height(20.dp))
-            SpiritSquircleAvatar(
+            Spacer(modifier = Modifier.height(22.dp))
+            BotAvatar(
                 bot = null,
                 allBots = emptyList(),
                 avatarStyleOverride = "butler:gold",
                 state = if (unlockBusy) "working" else "thinking",
-                containerSize = 96.dp,
-                cornerRadius = 28.dp,
+                containerSize = 92.dp,
                 interactive = true,
                 seedKey = "biometric_gate"
             )
@@ -129,36 +130,36 @@ fun BiometricLockScreen(
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "请验证面容或指纹",
+                text = "请验证面容或指纹以继续",
                 style = MaterialTheme.typography.bodySmall,
                 color = theme.textMuted,
                 textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(24.dp))
-            TactilePrimaryButton(
+            Spacer(modifier = Modifier.height(26.dp))
+            VesperPrimaryButton(
                 text = "面容或指纹解锁",
                 minHeight = 48.dp,
                 onClick = { triggerBiometricUnlock() },
                 modifier = Modifier.fillMaxWidth()
             )
             if (showPassUnlock) {
-                Spacer(modifier = Modifier.height(14.dp))
-                ObsidianGlassInput(
+                Spacer(modifier = Modifier.height(16.dp))
+                VesperTextField(
                     value = fallbackPass,
                     onValueChange = { fallbackPass = it },
-                    label = "兜底访问密码",
-                    placeholder = "输入控制台访问密钥...",
+                    label = "访问密钥",
+                    placeholder = "输入控制台访问密钥",
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                TactileSecondaryButton(
-                    text = if (unlockBusy) "验证中..." else "使用访问密码进入",
+                Spacer(modifier = Modifier.height(10.dp))
+                VesperSecondaryButton(
+                    text = if (unlockBusy) "验证中..." else "使用访问密钥进入",
                     enabled = !unlockBusy && fallbackPass.isNotBlank(),
                     minHeight = 48.dp,
                     onClick = {
-                        if (fallbackPass.isBlank() || unlockBusy) return@TactileSecondaryButton
+                        if (fallbackPass.isBlank() || unlockBusy) return@VesperSecondaryButton
                         scope.launch {
                             unlockBusy = true
                             onPasswordVerify(fallbackPass).onSuccess {

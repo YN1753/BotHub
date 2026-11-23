@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -88,7 +89,6 @@ private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
             continue
         }
 
-        // Fenced code block
         if (trimmed.startsWith("```")) {
             val lang = trimmed.removePrefix("```").trim()
             val codeBuf = StringBuilder()
@@ -103,7 +103,6 @@ private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
             continue
         }
 
-        // Markdown table (Header | ... \n | --- | --- |)
         if (trimmed.contains('|') && i + 1 < lines.size && isTableSeparatorLine(lines[i + 1].trim())) {
             val headers = splitTableRow(trimmed)
             i += 2
@@ -118,14 +117,12 @@ private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
             }
         }
 
-        // Horizontal rule
         if (trimmed == "---" || trimmed == "***" || trimmed == "___") {
             blocks.add(MdBlock.Divider)
             i++
             continue
         }
 
-        // Heading (# .. ####)
         val headingMatch = HEADING_REGEX.matchEntire(trimmed)
         if (headingMatch != null) {
             val lvl = headingMatch.groupValues[1].length.coerceIn(1, 4)
@@ -134,7 +131,6 @@ private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
             continue
         }
 
-        // Blockquote
         if (trimmed.startsWith(">")) {
             val quoteLines = ArrayList<String>()
             while (i < lines.size && lines[i].trim().startsWith(">")) {
@@ -145,7 +141,6 @@ private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
             continue
         }
 
-        // Unordered list item
         val ulMatch = UL_REGEX.matchEntire(trimmed)
         if (ulMatch != null) {
             blocks.add(MdBlock.BulletItem(isOrdered = false, marker = "", text = ulMatch.groupValues[1].trim()))
@@ -153,7 +148,6 @@ private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
             continue
         }
 
-        // Ordered list item
         val olMatch = OL_REGEX.matchEntire(trimmed)
         if (olMatch != null) {
             blocks.add(
@@ -167,7 +161,6 @@ private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
             continue
         }
 
-        // Paragraph (coalesce consecutive plain lines)
         val paraLines = ArrayList<String>()
         while (i < lines.size) {
             val cur = lines[i]
@@ -240,15 +233,6 @@ private fun parseInlineMarkdownCached(
     return built
 }
 
-/**
- * Order matters:
- * 1. Inline code (`...`)
- * 2. Markdown link `[label](url)` — supports single-level balanced parens inside URLs too
- * 3. Bold `**...**` (recursively parses inner links / code, e.g. `**[repo](https://github.com/...)**`)
- * 4. Italic `*...*`
- * 5. Strikethrough `~~...~~`
- * 6. Bare `https://...` URL
- */
 private val INLINE_TOKEN_REGEX = Regex(
     """(`[^`\n]+`)|(\[[^\]\n]+\]\(https?://(?:[^\s()]|\([^\s()]*\))+\))|(\*\*(?!\s).+?(?<!\s)\*\*)|(\*[^*\n]+\*)|(~~[^~\n]+~~)|(https?://[^\s<>()）"']+)"""
 )
@@ -377,8 +361,8 @@ fun RichMarkdownText(
     val uriHandler = LocalUriHandler.current
     val clipboard = LocalClipboardManager.current
     val codeBg = theme.codeInlineBg
-    val codeFg = if (theme.isLight) theme.accentDeep else theme.accentLight
-    val linkColor = theme.accent
+    val codeFg = theme.accentForeground
+    val linkColor = theme.accentForeground
     val boldColor = theme.textPrimary
 
     Column(
@@ -424,7 +408,7 @@ fun RichMarkdownText(
                         annotated = annotated,
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontSize = 14.5.sp,
-                            lineHeight = 22.sp,
+                            lineHeight = 22.5.sp,
                             color = textColor
                         ),
                         onOpenUrl = { url -> runCatching { uriHandler.openUri(url) } }
@@ -446,8 +430,8 @@ fun RichMarkdownText(
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 13.sp,
-                                    lineHeight = 22.sp,
-                                    color = theme.accent,
+                                    lineHeight = 22.5.sp,
+                                    color = theme.accentForeground,
                                     platformStyle = PlatformTextStyle(includeFontPadding = false)
                                 ),
                                 modifier = Modifier
@@ -455,11 +439,10 @@ fun RichMarkdownText(
                                     .padding(top = 2.dp)
                             )
                         } else {
-                            // Geometric dot immune to custom OEM font vertical padding shifts
                             Box(
                                 modifier = Modifier
                                     .width(16.dp)
-                                    .padding(top = 8.5.dp),
+                                    .padding(top = 9.dp),
                                 contentAlignment = Alignment.TopStart
                             ) {
                                 Box(
@@ -473,7 +456,7 @@ fun RichMarkdownText(
                             annotated = annotated,
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontSize = 14.5.sp,
-                                lineHeight = 22.sp,
+                                lineHeight = 22.5.sp,
                                 color = textColor
                             ),
                             onOpenUrl = { url -> runCatching { uriHandler.openUri(url) } },
@@ -491,7 +474,7 @@ fun RichMarkdownText(
                             .fillMaxWidth()
                             .height(IntrinsicSize.Min)
                             .background(
-                                color = theme.accent.copy(alpha = 0.11f),
+                                color = theme.accentSoft,
                                 shape = RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp)
                             )
                             .padding(end = 12.dp, top = 8.dp, bottom = 8.dp)
@@ -522,25 +505,25 @@ fun RichMarkdownText(
                 is MdBlock.CodeFence -> {
                     var copied by remember { mutableStateOf(false) }
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(12.dp),
                         color = theme.codeBlockBg,
-                        border = BorderStroke(1.dp, theme.divider),
+                        border = BorderStroke(1.dp, theme.border),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(bottom = 6.dp),
+                                    .padding(bottom = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = block.lang.ifEmpty { "code" }.uppercase(),
                                     fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp,
+                                    fontSize = 10.5.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = theme.accent
+                                    color = theme.textMuted
                                 )
                                 Surface(
                                     onClick = {
@@ -548,24 +531,25 @@ fun RichMarkdownText(
                                         copied = true
                                     },
                                     shape = RoundedCornerShape(999.dp),
-                                    color = theme.secondaryBtnTop,
-                                    border = BorderStroke(0.5.dp, theme.divider)
+                                    color = theme.surfaceControl,
+                                    border = BorderStroke(1.dp, theme.border)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         Icon(
-                                            Icons.Default.ContentCopy,
+                                            imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
                                             contentDescription = "复制代码",
-                                            tint = theme.textMuted,
-                                            modifier = Modifier.size(10.dp)
+                                            tint = if (copied) theme.success else theme.textSecondary,
+                                            modifier = Modifier.size(11.dp)
                                         )
                                         Text(
                                             text = if (copied) "已复制" else "复制",
-                                            fontSize = 10.sp,
-                                            color = if (copied) theme.accent else theme.textMuted
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (copied) theme.success else theme.textSecondary
                                         )
                                     }
                                 }
@@ -575,7 +559,7 @@ fun RichMarkdownText(
                                     text = block.code,
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 12.5.sp,
-                                    lineHeight = 18.5.sp,
+                                    lineHeight = 19.sp,
                                     color = theme.codeText
                                 )
                             }
@@ -587,7 +571,7 @@ fun RichMarkdownText(
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = theme.codeBlockBg,
-                        border = BorderStroke(1.dp, theme.divider),
+                        border = BorderStroke(1.dp, theme.border),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -595,13 +579,13 @@ fun RichMarkdownText(
                                 .horizontalScroll(rememberScrollState())
                                 .padding(vertical = 6.dp)
                         ) {
-                            Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                            Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                                 block.headers.forEach { h ->
                                     Text(
                                         text = h,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = theme.accent,
+                                        color = theme.accentForeground,
                                         modifier = Modifier
                                             .widthIn(min = 84.dp, max = 200.dp)
                                             .padding(end = 12.dp)
@@ -609,8 +593,8 @@ fun RichMarkdownText(
                                 }
                             }
                             HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
-                            block.rows.forEach { row ->
-                                Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                            block.rows.forEachIndexed { rowIdx, row ->
+                                Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                                     block.headers.indices.forEach { colIdx ->
                                         val cellText = row.getOrNull(colIdx).orEmpty()
                                         val cellAnnotated = remember(cellText, theme.id) {
@@ -620,7 +604,7 @@ fun RichMarkdownText(
                                             annotated = cellAnnotated,
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 fontSize = 12.sp,
-                                                lineHeight = 17.sp,
+                                                lineHeight = 17.5.sp,
                                                 color = theme.textSecondary
                                             ),
                                             onOpenUrl = { url -> runCatching { uriHandler.openUri(url) } },
@@ -629,6 +613,9 @@ fun RichMarkdownText(
                                                 .padding(end = 12.dp)
                                         )
                                     }
+                                }
+                                if (rowIdx < block.rows.lastIndex) {
+                                    HorizontalDivider(thickness = 0.5.dp, color = theme.divider)
                                 }
                             }
                         }

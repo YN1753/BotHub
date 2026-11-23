@@ -36,12 +36,12 @@ data class BotHubAccentOption(
 )
 
 val BOTHUB_ACCENT_OPTIONS: List<BotHubAccentOption> = listOf(
-    BotHubAccentOption("blue", "经典蓝", Color(0xFF3B82F6), Color(0xFF2563EB)),
+    BotHubAccentOption("blue", "经典蓝", Color(0xFF4F8FF7), Color(0xFF2563EB)),
     BotHubAccentOption("amber", "琥珀金", Color(0xFFE5A45C), Color(0xFFB45309)),
-    BotHubAccentOption("cyan", "青岚", Color(0xFF06B6D4), Color(0xFF0284C7)),
+    BotHubAccentOption("cyan", "青岚", Color(0xFF22C3DC), Color(0xFF0284C7)),
     BotHubAccentOption("emerald", "翠绿", Color(0xFF10B981), Color(0xFF059669)),
-    BotHubAccentOption("violet", "紫晶", Color(0xFF8B5CF6), Color(0xFF7C3AED)),
-    BotHubAccentOption("mono", "曜石黑白", Color(0xFFF4F5F7), Color(0xFF111827))
+    BotHubAccentOption("violet", "紫晶", Color(0xFF9370F8), Color(0xFF7C3AED)),
+    BotHubAccentOption("mono", "曜石黑白", Color(0xFFF3F4F6), Color(0xFF111827))
 )
 
 private val VALID_COLOR_MODES = setOf("dark", "light", "system")
@@ -79,134 +79,150 @@ fun encodeThemePreference(mode: String, accent: String): String {
     return "$safeMode:$safeAccent"
 }
 
+/**
+ * Semantic design tokens for Vesper BotHub.
+ * Layered neutral surfaces + crisp structural borders + purposeful accent and status roles.
+ */
 @Immutable
 data class BotHubThemeColors(
     val id: String,
     val label: String,
     val isLight: Boolean,
-    val bgBase: Color,
-    val auroraPrimary: Color,
-    val auroraSecondary: Color,
-    val topBarTop: Color,
-    val topBarBottom: Color,
-    val bottomBarTop: Color,
-    val bottomBarBottom: Color,
-    val sheetBg: Color,
+    // Surface elevation hierarchy
+    val bgCanvas: Color,
+    val surfaceBar: Color,
+    val surfaceCard: Color,
+    val surfaceCardElevated: Color,
+    val surfaceSheet: Color,
+    val surfacePopover: Color,
+    val surfaceInput: Color,
+    val surfaceControl: Color,
     val scrim: Color,
-    val cardTop: Color,
-    val cardBottom: Color,
-    val cardUnreadTop: Color,
-    val cardUnreadBottom: Color,
-    val popoverTop: Color,
-    val popoverBottom: Color,
-    val inputTop: Color,
-    val inputBottom: Color,
-    val secondaryBtnTop: Color,
-    val secondaryBtnBottom: Color,
-    val userBubbleTop: Color,
-    val userBubbleBottom: Color,
+    // Chat bubbles
+    val userBubble: Color,
     val userBubbleText: Color,
-    val aiBubbleTop: Color,
-    val aiBubbleBottom: Color,
+    val aiBubble: Color,
+    // Brand accent roles
     val accent: Color,
-    val accentLight: Color,
-    val accentDeep: Color,
+    val accentSoft: Color,
+    val accentMuted: Color,
+    val accentForeground: Color,
     val onAccent: Color,
+    // Semantic status palette
+    val success: Color,
+    val warning: Color,
+    val danger: Color,
+    val info: Color,
+    // Typography hierarchy
     val textPrimary: Color,
     val textSecondary: Color,
     val textMuted: Color,
-    val rimHighlight: Color,
-    val rimMid: Color,
-    val rimSubtle: Color,
+    // Outlines and dividers
+    val border: Color,
+    val borderStrong: Color,
     val divider: Color,
+    // Code & technical blocks
     val codeBlockBg: Color,
     val codeInlineBg: Color,
     val codeText: Color
 )
 
-private data class AccentTokens(
+private data class AccentPalette(
     val accent: Color,
-    val accentLight: Color,
-    val accentDeep: Color,
+    val accentSoft: Color,
+    val accentMuted: Color,
+    val accentForeground: Color,
     val onAccent: Color
 )
 
-private fun resolveAccentTokens(accentId: String, isLight: Boolean): AccentTokens {
+private fun resolveAccentPalette(accentId: String, isLight: Boolean): AccentPalette {
     return if (isLight) {
         when (accentId) {
-            "amber" -> AccentTokens(
+            "amber" -> AccentPalette(
                 accent = Color(0xFFB45309),
-                accentLight = Color(0xFFD97706),
-                accentDeep = Color(0xFF92400E),
+                accentSoft = Color(0x16B45309),
+                accentMuted = Color(0x47B45309),
+                accentForeground = Color(0xFF92400E),
                 onAccent = Color(0xFFFFFFFF)
             )
-            "cyan" -> AccentTokens(
+            "cyan" -> AccentPalette(
                 accent = Color(0xFF0284C7),
-                accentLight = Color(0xFF0EA5E9),
-                accentDeep = Color(0xFF0369A1),
+                accentSoft = Color(0x160284C7),
+                accentMuted = Color(0x470284C7),
+                accentForeground = Color(0xFF0369A1),
                 onAccent = Color(0xFFFFFFFF)
             )
-            "emerald" -> AccentTokens(
+            "emerald" -> AccentPalette(
                 accent = Color(0xFF059669),
-                accentLight = Color(0xFF10B981),
-                accentDeep = Color(0xFF047857),
+                accentSoft = Color(0x16059669),
+                accentMuted = Color(0x47059669),
+                accentForeground = Color(0xFF047857),
                 onAccent = Color(0xFFFFFFFF)
             )
-            "violet" -> AccentTokens(
+            "violet" -> AccentPalette(
                 accent = Color(0xFF7C3AED),
-                accentLight = Color(0xFF8B5CF6),
-                accentDeep = Color(0xFF6D28D9),
+                accentSoft = Color(0x167C3AED),
+                accentMuted = Color(0x477C3AED),
+                accentForeground = Color(0xFF6D28D9),
                 onAccent = Color(0xFFFFFFFF)
             )
-            "mono" -> AccentTokens(
+            "mono" -> AccentPalette(
                 accent = Color(0xFF111827),
-                accentLight = Color(0xFF374151),
-                accentDeep = Color(0xFF030712),
+                accentSoft = Color(0x12111827),
+                accentMuted = Color(0x38111827),
+                accentForeground = Color(0xFF111827),
                 onAccent = Color(0xFFFFFFFF)
             )
-            else -> AccentTokens(
+            else -> AccentPalette(
                 accent = Color(0xFF2563EB),
-                accentLight = Color(0xFF3B82F6),
-                accentDeep = Color(0xFF1D4ED8),
+                accentSoft = Color(0x162563EB),
+                accentMuted = Color(0x472563EB),
+                accentForeground = Color(0xFF1D4ED8),
                 onAccent = Color(0xFFFFFFFF)
             )
         }
     } else {
         when (accentId) {
-            "amber" -> AccentTokens(
+            "amber" -> AccentPalette(
                 accent = Color(0xFFE5A45C),
-                accentLight = Color(0xFFFDE0B6),
-                accentDeep = Color(0xFFC8853C),
-                onAccent = Color(0xFF14110E)
+                accentSoft = Color(0x1FE5A45C),
+                accentMuted = Color(0x52E5A45C),
+                accentForeground = Color(0xFFF6C88F),
+                onAccent = Color(0xFF14100C)
             )
-            "cyan" -> AccentTokens(
-                accent = Color(0xFF06B6D4),
-                accentLight = Color(0xFF67E8F9),
-                accentDeep = Color(0xFF0891B2),
+            "cyan" -> AccentPalette(
+                accent = Color(0xFF22C3DC),
+                accentSoft = Color(0x1F22C3DC),
+                accentMuted = Color(0x5222C3DC),
+                accentForeground = Color(0xFF67E8F9),
                 onAccent = Color(0xFF051317)
             )
-            "emerald" -> AccentTokens(
+            "emerald" -> AccentPalette(
                 accent = Color(0xFF10B981),
-                accentLight = Color(0xFF6EE7B7),
-                accentDeep = Color(0xFF059669),
+                accentSoft = Color(0x1F10B981),
+                accentMuted = Color(0x5210B981),
+                accentForeground = Color(0xFF6EE7B7),
                 onAccent = Color(0xFF041610)
             )
-            "violet" -> AccentTokens(
-                accent = Color(0xFF8B5CF6),
-                accentLight = Color(0xFFC4B5FD),
-                accentDeep = Color(0xFF7C3AED),
+            "violet" -> AccentPalette(
+                accent = Color(0xFF9370F8),
+                accentSoft = Color(0x219370F8),
+                accentMuted = Color(0x549370F8),
+                accentForeground = Color(0xFFC4B5FD),
                 onAccent = Color(0xFFFFFFFF)
             )
-            "mono" -> AccentTokens(
-                accent = Color(0xFFF4F5F7),
-                accentLight = Color(0xFFFFFFFF),
-                accentDeep = Color(0xFFD1D5DB),
-                onAccent = Color(0xFF0B0C0E)
+            "mono" -> AccentPalette(
+                accent = Color(0xFFF3F4F6),
+                accentSoft = Color(0x1AF3F4F6),
+                accentMuted = Color(0x40F3F4F6),
+                accentForeground = Color(0xFFF3F4F6),
+                onAccent = Color(0xFF090A0D)
             )
-            else -> AccentTokens(
-                accent = Color(0xFF3B82F6),
-                accentLight = Color(0xFF93C5FD),
-                accentDeep = Color(0xFF2563EB),
+            else -> AccentPalette(
+                accent = Color(0xFF4F8FF7),
+                accentSoft = Color(0x1F4F8FF7),
+                accentMuted = Color(0x524F8FF7),
+                accentForeground = Color(0xFF93C5FD),
                 onAccent = Color(0xFFFFFFFF)
             )
         }
@@ -220,7 +236,7 @@ fun resolveBotHubThemeColors(themeId: String, systemDark: Boolean): BotHubThemeC
         "dark" -> false
         else -> !systemDark
     }
-    val accentTokens = resolveAccentTokens(accentId, isLight)
+    val accent = resolveAccentPalette(accentId, isLight)
     val modeLabel = BOTHUB_COLOR_MODE_OPTIONS.find { it.id == mode }?.label
         ?: if (isLight) "浅色" else "深色"
     val accentLabel = BOTHUB_ACCENT_OPTIONS.find { it.id == accentId }?.label ?: "经典蓝"
@@ -232,95 +248,79 @@ fun resolveBotHubThemeColors(themeId: String, systemDark: Boolean): BotHubThemeC
             id = resolvedId,
             label = resolvedLabel,
             isLight = true,
-            bgBase = Color(0xFFF6F7F9),
-            auroraPrimary = Color.Transparent,
-            auroraSecondary = Color.Transparent,
-            topBarTop = Color(0xFFFFFFFF),
-            topBarBottom = Color(0xFFFFFFFF),
-            bottomBarTop = Color(0xFFFFFFFF),
-            bottomBarBottom = Color(0xFFFFFFFF),
-            sheetBg = Color(0xFFFFFFFF),
-            scrim = Color(0x5C0F172A),
-            cardTop = Color(0xFFFFFFFF),
-            cardBottom = Color(0xFFFFFFFF),
-            cardUnreadTop = Color(0xFFF0F4FF),
-            cardUnreadBottom = Color(0xFFF0F4FF),
-            popoverTop = Color(0xFFFFFFFF),
-            popoverBottom = Color(0xFFFFFFFF),
-            inputTop = Color(0xFFF3F4F6),
-            inputBottom = Color(0xFFF3F4F6),
-            secondaryBtnTop = Color(0xFFFFFFFF),
-            secondaryBtnBottom = Color(0xFFFFFFFF),
-            userBubbleTop = accentTokens.accent,
-            userBubbleBottom = accentTokens.accent,
-            userBubbleText = accentTokens.onAccent,
-            aiBubbleTop = Color(0xFFFFFFFF),
-            aiBubbleBottom = Color(0xFFFFFFFF),
-            accent = accentTokens.accent,
-            accentLight = accentTokens.accentLight,
-            accentDeep = accentTokens.accentDeep,
-            onAccent = accentTokens.onAccent,
-            textPrimary = Color(0xFF111827),
-            textSecondary = Color(0xFF4B5563),
-            textMuted = Color(0xFF6B7280),
-            rimHighlight = Color(0xFFE4E7EC),
-            rimMid = Color(0xFFE4E7EC),
-            rimSubtle = Color(0xFFEAECF0),
-            divider = Color(0xFFE4E7EC),
-            codeBlockBg = Color(0xFFF6F7F9),
-            codeInlineBg = Color(0xFFEEF0F4),
-            codeText = Color(0xFF111827)
+            bgCanvas = Color(0xFFF5F6F8),
+            surfaceBar = Color(0xFFFFFFFF),
+            surfaceCard = Color(0xFFFFFFFF),
+            surfaceCardElevated = Color(0xFFF2F5FA),
+            surfaceSheet = Color(0xFFFFFFFF),
+            surfacePopover = Color(0xFFFFFFFF),
+            surfaceInput = Color(0xFFECEEF2),
+            surfaceControl = Color(0xFFF8F9FB),
+            scrim = Color(0x520F172A),
+            userBubble = accent.accent,
+            userBubbleText = accent.onAccent,
+            aiBubble = Color(0xFFFFFFFF),
+            accent = accent.accent,
+            accentSoft = accent.accentSoft,
+            accentMuted = accent.accentMuted,
+            accentForeground = accent.accentForeground,
+            onAccent = accent.onAccent,
+            success = Color(0xFF059669),
+            warning = Color(0xFFD97706),
+            danger = Color(0xFFDC2626),
+            info = Color(0xFF0284C7),
+            textPrimary = Color(0xFF0F172A),
+            textSecondary = Color(0xFF475569),
+            textMuted = Color(0xFF64748B),
+            border = Color(0xFFE2E6EE),
+            borderStrong = Color(0xFFCBD2DF),
+            divider = Color(0xFFEAEDF2),
+            codeBlockBg = Color(0xFFF1F3F7),
+            codeInlineBg = Color(0xFFE6EAF0),
+            codeText = Color(0xFF1E293B)
         )
     } else {
         BotHubThemeColors(
             id = resolvedId,
             label = resolvedLabel,
             isLight = false,
-            bgBase = Color(0xFF0B0C0E),
-            auroraPrimary = Color.Transparent,
-            auroraSecondary = Color.Transparent,
-            topBarTop = Color(0xFF111317),
-            topBarBottom = Color(0xFF111317),
-            bottomBarTop = Color(0xFF111317),
-            bottomBarBottom = Color(0xFF111317),
-            sheetBg = Color(0xFF111317),
-            scrim = Color(0x99000000),
-            cardTop = Color(0xFF1A1D24),
-            cardBottom = Color(0xFF1A1D24),
-            cardUnreadTop = Color(0xFF20242D),
-            cardUnreadBottom = Color(0xFF20242D),
-            popoverTop = Color(0xFF1E222B),
-            popoverBottom = Color(0xFF1E222B),
-            inputTop = Color(0xFF111317),
-            inputBottom = Color(0xFF111317),
-            secondaryBtnTop = Color(0xFF1A1D24),
-            secondaryBtnBottom = Color(0xFF1A1D24),
-            userBubbleTop = accentTokens.accent,
-            userBubbleBottom = accentTokens.accent,
-            userBubbleText = accentTokens.onAccent,
-            aiBubbleTop = Color(0xFF1A1D24),
-            aiBubbleBottom = Color(0xFF1A1D24),
-            accent = accentTokens.accent,
-            accentLight = accentTokens.accentLight,
-            accentDeep = accentTokens.accentDeep,
-            onAccent = accentTokens.onAccent,
-            textPrimary = Color(0xFFF4F5F7),
-            textSecondary = Color(0xFFB4BCC8),
-            textMuted = Color(0xFF7D8594),
-            rimHighlight = Color(0x24FFFFFF),
-            rimMid = Color(0x18FFFFFF),
-            rimSubtle = Color(0x14FFFFFF),
-            divider = Color(0x18FFFFFF),
-            codeBlockBg = Color(0xFF0E1014),
-            codeInlineBg = Color(0xFF222630),
-            codeText = Color(0xFFE5E7EB)
+            bgCanvas = Color(0xFF090A0D),
+            surfaceBar = Color(0xFF0F1116),
+            surfaceCard = Color(0xFF14171F),
+            surfaceCardElevated = Color(0xFF1B1F2A),
+            surfaceSheet = Color(0xFF11141B),
+            surfacePopover = Color(0xFF1B1F29),
+            surfaceInput = Color(0xFF0E1016),
+            surfaceControl = Color(0xFF191D26),
+            scrim = Color(0xA6000000),
+            userBubble = accent.accent,
+            userBubbleText = accent.onAccent,
+            aiBubble = Color(0xFF14171F),
+            accent = accent.accent,
+            accentSoft = accent.accentSoft,
+            accentMuted = accent.accentMuted,
+            accentForeground = accent.accentForeground,
+            onAccent = accent.onAccent,
+            success = Color(0xFF34D399),
+            warning = Color(0xFFFBBF24),
+            danger = Color(0xFFFB7185),
+            info = Color(0xFF38BDF8),
+            textPrimary = Color(0xFFF3F4F6),
+            textSecondary = Color(0xFFA6B0C0),
+            textMuted = Color(0xFF727C8E),
+            border = Color(0x1EFFFFFF),
+            borderStrong = Color(0x30FFFFFF),
+            divider = Color(0x14FFFFFF),
+            codeBlockBg = Color(0xFF0D0F14),
+            codeInlineBg = Color(0xFF1E232E),
+            codeText = Color(0xFFE2E8F0)
         )
     }
 }
 
-val ObsidianThemeColors: BotHubThemeColors = resolveBotHubThemeColors("dark:amber", true)
+private val DefaultDarkThemeColors: BotHubThemeColors = resolveBotHubThemeColors("dark:blue", true)
 
-val LocalBotHubColors = staticCompositionLocalOf { ObsidianThemeColors }
+val LocalBotHubColors = staticCompositionLocalOf { DefaultDarkThemeColors }
 
 val BotHubThemeTokens: BotHubThemeColors
     @Composable
@@ -330,7 +330,7 @@ val BotHubThemeTokens: BotHubThemeColors
 @Composable
 fun VesperBotHubTheme(
     themeId: String = "dark:blue",
-    dynamicColor: Boolean = false,
+    @Suppress("UNUSED_PARAMETER") dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -340,58 +340,64 @@ fun VesperBotHubTheme(
         lightColorScheme(
             primary = colors.accent,
             onPrimary = colors.onAccent,
-            primaryContainer = colors.userBubbleTop,
-            onPrimaryContainer = colors.userBubbleText,
-            secondary = colors.accentDeep,
-            onSecondary = colors.onAccent,
-            secondaryContainer = colors.inputTop,
+            primaryContainer = colors.accentSoft,
+            onPrimaryContainer = colors.accentForeground,
+            secondary = colors.info,
+            onSecondary = Color.White,
+            secondaryContainer = colors.surfaceInput,
             onSecondaryContainer = colors.textPrimary,
-            background = colors.bgBase,
+            tertiary = colors.success,
+            onTertiary = Color.White,
+            error = colors.danger,
+            onError = Color.White,
+            background = colors.bgCanvas,
             onBackground = colors.textPrimary,
-            surface = colors.sheetBg,
+            surface = colors.surfaceSheet,
             onSurface = colors.textPrimary,
-            surfaceVariant = colors.cardBottom,
+            surfaceVariant = colors.surfaceCard,
             onSurfaceVariant = colors.textSecondary,
-            surfaceContainer = colors.sheetBg,
-            surfaceContainerHigh = colors.popoverTop,
-            surfaceContainerHighest = colors.popoverTop,
-            surfaceContainerLow = colors.cardBottom,
-            surfaceContainerLowest = colors.bgBase,
-            inverseSurface = colors.popoverTop,
+            surfaceContainer = colors.surfaceCard,
+            surfaceContainerHigh = colors.surfacePopover,
+            surfaceContainerHighest = colors.surfaceCardElevated,
+            surfaceContainerLow = colors.surfaceBar,
+            surfaceContainerLowest = colors.bgCanvas,
+            inverseSurface = colors.surfacePopover,
             inverseOnSurface = colors.textPrimary,
             inversePrimary = colors.accent,
-            outline = colors.rimHighlight,
-            outlineVariant = colors.divider,
+            outline = colors.borderStrong,
+            outlineVariant = colors.border,
             scrim = colors.scrim
         )
     } else {
         darkColorScheme(
             primary = colors.accent,
             onPrimary = colors.onAccent,
-            primaryContainer = colors.userBubbleTop,
-            onPrimaryContainer = colors.userBubbleText,
-            secondary = Color(0xFFA5B4FC),
-            onSecondary = Color(0xFF0D142C),
-            secondaryContainer = colors.secondaryBtnTop,
+            primaryContainer = colors.accentSoft,
+            onPrimaryContainer = colors.accentForeground,
+            secondary = colors.info,
+            onSecondary = Color(0xFF061622),
+            secondaryContainer = colors.surfaceControl,
             onSecondaryContainer = colors.textPrimary,
-            tertiary = Color(0xFF34D399),
+            tertiary = colors.success,
             onTertiary = Color(0xFF062119),
-            background = colors.bgBase,
+            error = colors.danger,
+            onError = Color(0xFF28070D),
+            background = colors.bgCanvas,
             onBackground = colors.textPrimary,
-            surface = colors.sheetBg,
+            surface = colors.surfaceSheet,
             onSurface = colors.textPrimary,
-            surfaceVariant = colors.cardTop,
+            surfaceVariant = colors.surfaceCard,
             onSurfaceVariant = colors.textSecondary,
-            surfaceContainer = colors.sheetBg,
-            surfaceContainerHigh = colors.popoverTop,
-            surfaceContainerHighest = colors.popoverTop,
-            surfaceContainerLow = colors.cardBottom,
-            surfaceContainerLowest = colors.bgBase,
-            inverseSurface = colors.popoverTop,
+            surfaceContainer = colors.surfaceCard,
+            surfaceContainerHigh = colors.surfacePopover,
+            surfaceContainerHighest = colors.surfaceCardElevated,
+            surfaceContainerLow = colors.surfaceBar,
+            surfaceContainerLowest = colors.bgCanvas,
+            inverseSurface = colors.surfacePopover,
             inverseOnSurface = colors.textPrimary,
             inversePrimary = colors.accent,
-            outline = colors.rimHighlight,
-            outlineVariant = colors.divider,
+            outline = colors.borderStrong,
+            outlineVariant = colors.border,
             scrim = colors.scrim
         )
     }
