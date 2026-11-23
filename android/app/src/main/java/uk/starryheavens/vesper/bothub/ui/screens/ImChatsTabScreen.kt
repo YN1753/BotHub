@@ -364,7 +364,8 @@ fun ImChatsTabScreen(
                                     state = liveState,
                                     containerSize = 50.dp,
                                     cornerRadius = 15.dp,
-                                    showPresenceDot = true
+                                    showPresenceDot = true,
+                                    animateIdle = true
                                 )
 
                                 if (bot.unreadCount > 0) {

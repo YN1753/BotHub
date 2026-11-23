@@ -61,7 +61,10 @@ import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.MemoryItemUi
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
 import uk.starryheavens.vesper.bothub.data.SkillItemUi
+import uk.starryheavens.vesper.bothub.ui.GROKBOT_COLOR_OPTIONS
+import uk.starryheavens.vesper.bothub.ui.GROKBOT_SHAPE_OPTIONS
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
+import uk.starryheavens.vesper.bothub.ui.parseBotAvatarParts
 import uk.starryheavens.vesper.bothub.ui.components.CrispTagPill
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianGlassInput
 import uk.starryheavens.vesper.bothub.ui.components.ObsidianSheetDragHandle
@@ -73,15 +76,6 @@ import uk.starryheavens.vesper.bothub.ui.components.TactileToggle
 import uk.starryheavens.vesper.bothub.ui.components.specularRimBrush
 import uk.starryheavens.vesper.bothub.ui.components.tactileClickable
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
-
-private val AVATAR_OPTIONS = listOf(
-    "butler:gold" to "暖金",
-    "sentinel:indigo" to "星靛",
-    "radar:emerald" to "翡翠",
-    "swarm:violet" to "紫晶",
-    "scholar:cyan" to "青岚",
-    "critic:rose" to "绯红"
-)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -830,66 +824,124 @@ private fun AvatarPickerRow(
     onSelect: (String) -> Unit
 ) {
     val theme = BotHubThemeTokens
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(AVATAR_OPTIONS) { (styleId, label) ->
-            val active = selected == styleId
-            val itemShape = RoundedCornerShape(15.dp)
-            Column(
-                modifier = Modifier
-                    .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
-                        onSelect(styleId)
-                    }
-                    .clip(itemShape)
-                    .background(
-                        Brush.verticalGradient(
-                            if (active) {
-                                listOf(
-                                    theme.accent.copy(alpha = 0.22f),
-                                    theme.accentDeep.copy(alpha = 0.12f)
-                                )
-                            } else {
-                                listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)
-                            }
-                        ),
-                        itemShape
-                    )
-                    .border(
-                        BorderStroke(
-                            0.85.dp,
-                            if (active) {
-                                specularRimBrush(
-                                    theme.accent.copy(alpha = 0.55f),
-                                    theme.accent.copy(alpha = 0.25f),
-                                    Color.Transparent
-                                )
-                            } else {
-                                specularRimBrush(theme.rimMid, theme.rimSubtle, Color.Transparent)
-                            }
-                        ),
-                        itemShape
-                    )
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+    val (curShape, curColor) = remember(selected) { parseBotAvatarParts(selected) }
+    val normalizedStyle = "$curShape:$curColor"
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 8 Unified Color Swatches (1:1 parity with Web BotAvatarPicker)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            GrokBotAvatar(
+                avatarStyle = normalizedStyle,
+                state = "idle",
+                size = 46.dp,
+                interactive = true,
+                animateIdle = true,
+                seedKey = "picker_preview"
+            )
+            LazyRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                GrokBotAvatar(
-                    avatarStyle = styleId,
-                    state = if (active) "working" else "idle",
-                    size = 36.dp,
-                    interactive = false,
-                    seedKey = styleId
-                )
-                Text(
-                    text = label,
-                    fontSize = 10.5.sp,
-                    color = if (active) {
-                        if (theme.isLight) theme.accentDeep else theme.accentLight
-                    } else {
-                        theme.textSecondary
-                    },
-                    maxLines = 1,
-                    softWrap = false
-                )
+                items(GROKBOT_COLOR_OPTIONS, key = { it.id }) { colorOpt ->
+                    val isSelectedColor = curColor == colorOpt.id
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .tactileClickable(pressedScale = 0.90f, hapticOnTap = true) {
+                                onSelect("$curShape:${colorOpt.id}")
+                            }
+                            .border(
+                                width = if (isSelectedColor) 2.dp else 1.dp,
+                                color = if (isSelectedColor) theme.accent else theme.divider,
+                                shape = CircleShape
+                            )
+                            .padding(3.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(
+                                        colorOpt.palette.shellHi,
+                                        colorOpt.palette.shellMid,
+                                        colorOpt.palette.ring
+                                    )
+                                ),
+                                CircleShape
+                            )
+                    )
+                }
+            }
+        }
+
+        // 6 Unified Monolithic Shapes
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(GROKBOT_SHAPE_OPTIONS, key = { it.id }) { shapeOpt ->
+                val active = curShape == shapeOpt.id
+                val itemStyle = "${shapeOpt.id}:$curColor"
+                val itemShape = RoundedCornerShape(14.dp)
+                Column(
+                    modifier = Modifier
+                        .tactileClickable(pressedScale = 0.94f, hapticOnTap = true) {
+                            onSelect(itemStyle)
+                        }
+                        .clip(itemShape)
+                        .background(
+                            Brush.verticalGradient(
+                                if (active) {
+                                    listOf(
+                                        theme.accent.copy(alpha = 0.22f),
+                                        theme.accentDeep.copy(alpha = 0.12f)
+                                    )
+                                } else {
+                                    listOf(theme.secondaryBtnTop, theme.secondaryBtnBottom)
+                                }
+                            ),
+                            itemShape
+                        )
+                        .border(
+                            BorderStroke(
+                                0.85.dp,
+                                if (active) {
+                                    specularRimBrush(
+                                        theme.accent.copy(alpha = 0.55f),
+                                        theme.accent.copy(alpha = 0.25f),
+                                        Color.Transparent
+                                    )
+                                } else {
+                                    specularRimBrush(theme.rimMid, theme.rimSubtle, Color.Transparent)
+                                }
+                            ),
+                            itemShape
+                        )
+                        .padding(horizontal = 11.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    GrokBotAvatar(
+                        avatarStyle = itemStyle,
+                        state = if (active) "done" else "idle",
+                        size = 34.dp,
+                        interactive = false,
+                        animateIdle = active,
+                        seedKey = itemStyle
+                    )
+                    Text(
+                        text = shapeOpt.label,
+                        fontSize = 10.5.sp,
+                        color = if (active) {
+                            if (theme.isLight) theme.accentDeep else theme.accentLight
+                        } else {
+                            theme.textSecondary
+                        },
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
             }
         }
     }

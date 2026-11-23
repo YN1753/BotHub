@@ -20,16 +20,32 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessibilityNew
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -47,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -332,6 +349,12 @@ fun SettingsPairingSheet(
         }
     }
 
+    val greenTone = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
+    val indigoTone = if (theme.isLight) Color(0xFF4F46E5) else Color(0xFF818CF8)
+    val amberTone = if (theme.isLight) Color(0xFFD97706) else Color(0xFFFBBF24)
+    val skyTone = if (theme.isLight) Color(0xFF0284C7) else Color(0xFF38BDF8)
+    val roseTone = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFB7185)
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -346,197 +369,292 @@ fun SettingsPairingSheet(
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // Top Sheet Header
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = if (isPaired) "设置" else "连接服务端",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = theme.textPrimary,
-                    maxLines = 1,
-                    softWrap = false
-                )
-                Text(
-                    text = "v$localVersionClean",
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    color = theme.textMuted,
-                    maxLines = 1,
-                    softWrap = false
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = if (isPaired) "设置" else "连接服务端",
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = theme.textPrimary,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(theme.inputTop)
+                            .border(1.dp, theme.divider, RoundedCornerShape(999.dp))
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "v$localVersionClean",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = theme.textMuted,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(theme.inputTop, CircleShape)
+                        .border(1.dp, theme.divider, CircleShape)
+                        .tactileClickable(pressedScale = 0.90f, hapticOnTap = true, onClick = onDismiss),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "关闭设置",
+                        tint = theme.textSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
-
-            ThemeSelectorCard(
-                activeThemeId = appThemeId,
-                onSelect = onThemeSelected
-            )
 
             if (sheetHint.isNotEmpty()) {
                 SpecularGlassCard(
-                    cornerRadius = 14.dp,
+                    cornerRadius = 16.dp,
                     accentTint = theme.accent,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = sheetHint,
-                        fontSize = 12.sp,
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp,
                         color = theme.textPrimary,
-                        modifier = Modifier.padding(12.dp)
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)
                     )
                 }
             }
 
             if (!isPaired) {
-                TactilePrimaryButton(
-                    text = "Vesper Auth 登录",
-                    enabled = !connecting,
-                    minHeight = 48.dp,
-                    onClick = { launchVesperAuthOidcPairing() },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                TactileSecondaryButton(
-                    text = if (connecting) "验证中..." else "通行密钥登录",
-                    enabled = !connecting,
-                    minHeight = 46.dp,
-                    onClick = { runPasskeyConnect() },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = if (showPasswordFallback) "收起密钥登录" else "密钥登录",
-                        fontSize = 12.sp,
-                        color = theme.accent,
-                        modifier = Modifier
-                            .clickable { showPasswordFallback = !showPasswordFallback }
-                            .padding(vertical = 4.dp)
-                    )
-                    Text(
-                        text = if (showCustomUrlField) "收起服务器地址" else "服务器地址",
-                        fontSize = 12.sp,
-                        color = theme.textMuted,
-                        modifier = Modifier
-                            .clickable { showCustomUrlField = !showCustomUrlField }
-                            .padding(vertical = 4.dp)
-                    )
-                }
-
-                if (showCustomUrlField) {
-                    ObsidianGlassInput(
-                        value = urlInput,
-                        onValueChange = { urlInput = it },
-                        label = "服务端地址",
-                        placeholder = "https://bot.starryheavens.uk",
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                if (showPasswordFallback) {
-                    ObsidianGlassInput(
-                        value = passwordInput,
-                        onValueChange = { passwordInput = it },
-                        label = "访问密钥",
-                        placeholder = "输入密钥",
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    TactilePrimaryButton(
-                        text = if (connecting) "登录中..." else "登录",
-                        enabled = !connecting && passwordInput.isNotBlank(),
-                        minHeight = 46.dp,
-                        onClick = {
-                            if (passwordInput.isBlank() || connecting) return@TactilePrimaryButton
-                            scope.launch {
-                                connecting = true
-                                api.exchangeToken(urlInput, passwordInput).onSuccess {
-                                    passwordInput = ""
-                                    onConnected("已连接")
-                                }.onFailure { err ->
-                                    sheetHint = err.message ?: "密钥验证失败"
-                                }
-                                connecting = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            } else {
-                // 1. Connected Server Row
                 SpecularGlassCard(
-                    cornerRadius = 17.dp,
-                    accentTint = Color(0xFF34D399),
+                    cornerRadius = 16.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        TactilePrimaryButton(
+                            text = "Vesper Auth 登录",
+                            enabled = !connecting,
+                            minHeight = 48.dp,
+                            onClick = { launchVesperAuthOidcPairing() },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        TactileSecondaryButton(
+                            text = if (connecting) "验证中..." else "通行密钥登录",
+                            enabled = !connecting,
+                            minHeight = 46.dp,
+                            onClick = { runPasskeyConnect() },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(end = 10.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Box(
+                            Text(
+                                text = if (showPasswordFallback) "收起密钥登录" else "密钥登录",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = theme.accent,
                                 modifier = Modifier
-                                    .size(7.dp)
-                                    .background(Color(0xFF34D399), CircleShape)
+                                    .clickable { showPasswordFallback = !showPasswordFallback }
+                                    .padding(vertical = 6.dp)
                             )
                             Text(
-                                text = UrlUtils.formatDisplayHost(serverUrl),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = theme.textPrimary,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
+                                text = if (showCustomUrlField) "收起服务器地址" else "自定义服务器地址",
+                                fontSize = 12.5.sp,
+                                color = theme.textMuted,
+                                modifier = Modifier
+                                    .clickable { showCustomUrlField = !showCustomUrlField }
+                                    .padding(vertical = 6.dp)
                             )
                         }
 
-                        TactileSecondaryButton(
-                            text = if (registeringPasskey) "录入中" else "通行密钥",
-                            accent = true,
-                            cornerRadius = 999.dp,
-                            minHeight = 33.dp,
-                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
-                            onClick = {
-                                val act = activity ?: return@TactileSecondaryButton
-                                if (registeringPasskey) return@TactileSecondaryButton
-                                scope.launch {
-                                    registeringPasskey = true
-                                    sheetHint = ""
-                                    when (val out = BiometricAuthHelper.registerPasskey(act, api)) {
-                                        is PasskeyOutcome.Success -> {
-                                            onShowMessage("已录入通行密钥")
+                        if (showCustomUrlField) {
+                            ObsidianGlassInput(
+                                value = urlInput,
+                                onValueChange = { urlInput = it },
+                                label = "服务端地址",
+                                placeholder = "https://bot.starryheavens.uk",
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        if (showPasswordFallback) {
+                            ObsidianGlassInput(
+                                value = passwordInput,
+                                onValueChange = { passwordInput = it },
+                                label = "访问密钥",
+                                placeholder = "输入密钥",
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            TactilePrimaryButton(
+                                text = if (connecting) "登录中..." else "登录",
+                                enabled = !connecting && passwordInput.isNotBlank(),
+                                minHeight = 46.dp,
+                                onClick = {
+                                    if (passwordInput.isBlank() || connecting) return@TactilePrimaryButton
+                                    scope.launch {
+                                        connecting = true
+                                        api.exchangeToken(urlInput, passwordInput).onSuccess {
+                                            passwordInput = ""
+                                            onConnected("已连接")
+                                        }.onFailure { err ->
+                                            sheetHint = err.message ?: "密钥验证失败"
                                         }
-                                        is PasskeyOutcome.Cancelled -> Unit
-                                        is PasskeyOutcome.Failed -> {
-                                            sheetHint = out.message
-                                        }
+                                        connecting = false
                                     }
-                                    registeringPasskey = false
-                                }
-                            }
-                        )
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                 }
 
-                // 2. Native In-App OTA Update Card (Zero Browser Redirect!)
+                SettingsSectionBlock(title = "外观与主题") {
+                    ThemeSelectorCard(
+                        activeThemeId = appThemeId,
+                        onSelect = onThemeSelected
+                    )
+                }
+            } else {
+                // 1. Server Status & Quick Actions Hero Card
+                SpecularGlassCard(
+                    cornerRadius = 16.dp,
+                    accentTint = greenTone,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(11.dp)
+                        ) {
+                            SettingsIconBadge(
+                                icon = Icons.Default.Dns,
+                                tint = greenTone
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = UrlUtils.formatDisplayHost(serverUrl),
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = theme.textPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .background(greenTone, CircleShape)
+                                    )
+                                    Text(
+                                        text = if (hasNewerRelease) {
+                                            "已连接 · 可更新至 v$remoteVersionClean"
+                                        } else {
+                                            "服务端已配对"
+                                        },
+                                        fontSize = 11.5.sp,
+                                        color = if (hasNewerRelease) theme.accent else theme.textMuted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = theme.divider,
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 9.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            SettingsQuickActionChip(
+                                icon = Icons.Default.Key,
+                                label = if (registeringPasskey) "录入中" else "通行密钥",
+                                accent = false,
+                                enabled = !registeringPasskey,
+                                onClick = {
+                                    val act = activity ?: return@SettingsQuickActionChip
+                                    if (registeringPasskey) return@SettingsQuickActionChip
+                                    scope.launch {
+                                        registeringPasskey = true
+                                        sheetHint = ""
+                                        when (val out = BiometricAuthHelper.registerPasskey(act, api)) {
+                                            is PasskeyOutcome.Success -> onShowMessage("已录入通行密钥")
+                                            is PasskeyOutcome.Cancelled -> Unit
+                                            is PasskeyOutcome.Failed -> sheetHint = out.message
+                                        }
+                                        registeringPasskey = false
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                            SettingsQuickActionChip(
+                                icon = Icons.Default.NetworkCheck,
+                                label = "连接测试",
+                                accent = false,
+                                onClick = { onTestHealth(urlInput) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            SettingsQuickActionChip(
+                                icon = Icons.Default.SystemUpdate,
+                                label = when (otaState) {
+                                    is OtaUpdateState.Downloading -> "下载中"
+                                    is OtaUpdateState.Checking -> "检查中"
+                                    else -> if (hasNewerRelease) "立即更新" else "检查更新"
+                                },
+                                accent = hasNewerRelease,
+                                enabled = otaState !is OtaUpdateState.Downloading && otaState !is OtaUpdateState.Checking,
+                                onClick = { startInAppUpdate(forceDownloadEvenIfSame = false) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                // Inline OTA Progress / Update Banner (only shown when update available or active)
                 if (hasNewerRelease || otaState !is OtaUpdateState.Idle) {
                     InAppOtaStatusCard(
                         otaState = otaState,
@@ -546,15 +664,197 @@ fun SettingsPairingSheet(
                     )
                 }
 
-                // 3. Clean Concise Toggles
-                SpecularGlassCard(
-                    cornerRadius = 18.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                // 2. AI Engine & Model Pool Section
+                SettingsSectionBlock(title = "AI 引擎") {
+                    SpecularGlassCard(
+                        cornerRadius = 16.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        SettingsActionRow(
+                            icon = Icons.Default.AutoAwesome,
+                            iconTint = theme.accent,
+                            title = "AI 模型渠道与双池",
+                            subtitle = "管理付费主力池、免费池、API Key、调度策略与测速",
+                            trailingContent = {
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = "进入配置",
+                                    tint = theme.textMuted,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            onClick = onOpenModelConfig
+                        )
+                    }
+                }
+
+                // 3. Appearance & Theme Section
+                SettingsSectionBlock(title = "外观与主题") {
+                    ThemeSelectorCard(
+                        activeThemeId = appThemeId,
+                        onSelect = onThemeSelected
+                    )
+                }
+
+                // 4. Notifications & Background Push Section (Unified Toggle + Diagnostics + Test)
+                SettingsSectionBlock(title = "通知与后台保活") {
+                    SpecularGlassCard(
+                        cornerRadius = 16.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            SettingsToggleRow(
+                                icon = Icons.Default.Notifications,
+                                iconTint = indigoTone,
+                                title = "后台消息通知",
+                                subtitle = "退至后台时保持实时通道接收新消息提醒",
+                                checked = realtimeServiceEnabled,
+                                onCheckedChange = onRealtimeServiceChanged
+                            )
+
+                            SettingsInsetDivider()
+
+                            PushDiagnosticsEmbeddedBlock(
+                                realtimeServiceEnabled = realtimeServiceEnabled,
+                                connectionStatus = connectionStatus,
+                                lastHeartbeatAtMs = lastHeartbeatAtMs,
+                                notifPermissionGranted = notifPermissionGranted,
+                                batteryOptIgnored = batteryOptIgnored,
+                                onReconnectRealtime = {
+                                    if (realtimeServiceEnabled) {
+                                        RealtimePushService.forceReconnect(context)
+                                        onShowMessage("正在重新连接实时通道")
+                                    }
+                                },
+                                onOpenNotifSettings = {
+                                    NotificationHelper.openSystemNotificationSettings(context)
+                                },
+                                onOpenBatterySettings = {
+                                    openBatteryOptimizationSettings()
+                                },
+                                onTestPush = onTestPush
+                            )
+                        }
+                    }
+                }
+
+                // 5. Quick Capture & Screen Recognition Section
+                SettingsSectionBlock(title = "快捷收藏与识屏") {
+                    SpecularGlassCard(
+                        cornerRadius = 16.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            SettingsToggleRow(
+                                icon = Icons.Default.Share,
+                                iconTint = greenTone,
+                                title = "系统分享直接收藏",
+                                subtitle = "从系统分享面板分享时自动存入收藏匣",
+                                checked = zeroClickCaptureEnabled,
+                                onCheckedChange = onZeroClickChanged
+                            )
+
+                            SettingsInsetDivider()
+
+                            SettingsToggleRow(
+                                icon = Icons.Default.ContentPaste,
+                                iconTint = skyTone,
+                                title = "剪贴板链接自动识别",
+                                subtitle = "复制抖音/小红书/B站等链接后，切回应用顶部提示收藏",
+                                checked = clipboardBannerEnabled,
+                                onCheckedChange = onClipboardBannerChanged
+                            )
+
+                            SettingsInsetDivider()
+
+                            SettingsToggleRow(
+                                icon = Icons.Default.PictureInPictureAlt,
+                                iconTint = amberTone,
+                                title = "边缘悬浮收藏球",
+                                subtitle = if (overlayPermissionGranted) {
+                                    "切出应用后贴边半透明吸附，点击直接识别当前页面"
+                                } else {
+                                    "需先开启系统「悬浮窗 / 显示在其他应用上层」权限"
+                                },
+                                checked = floatingBallEnabled && overlayPermissionGranted,
+                                onCheckedChange = { checked ->
+                                    if (!checked) {
+                                        pendingFloatingBallEnable = false
+                                        onFloatingBallChanged(false)
+                                        onShowMessage("已关闭边缘悬浮收藏球")
+                                    } else if (FloatingCaptureService.canDrawOverlays(context)) {
+                                        overlayPermissionGranted = true
+                                        onFloatingBallChanged(true)
+                                        onShowMessage("边缘悬浮收藏球已开启，切出应用后自动贴边显示")
+                                    } else {
+                                        pendingFloatingBallEnable = true
+                                        sheetHint = "请在系统页面中允许 BotHub 显示悬浮窗，返回后自动开启"
+                                        FloatingCaptureService.openOverlayPermissionSettings(context)
+                                    }
+                                }
+                            )
+
+                            SettingsInsetDivider()
+
+                            SettingsActionRow(
+                                icon = Icons.Default.AccessibilityNew,
+                                iconTint = if (accessibilityGranted) greenTone else theme.accent,
+                                title = "悬浮球识屏与免弹窗截屏",
+                                subtitle = if (accessibilityGranted) {
+                                    "已就绪：点悬浮球自动读取当前页链接、文字并静默截图"
+                                } else {
+                                    "开启无障碍服务后，点悬浮球无需复制即可自动识屏与截屏"
+                                },
+                                trailingContent = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(
+                                                    if (accessibilityGranted) greenTone.copy(alpha = 0.14f)
+                                                    else theme.accent.copy(alpha = 0.14f)
+                                                )
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Text(
+                                                text = if (accessibilityGranted) "已开启" else "去授权",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (accessibilityGranted) greenTone
+                                                else if (theme.isLight) theme.accentDeep else theme.accentLight,
+                                                maxLines = 1
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.ChevronRight,
+                                            contentDescription = null,
+                                            tint = theme.textMuted,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    ScreenCaptureAccessibilityService.openAccessibilitySettings(context)
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // 6. Security & Account Section
+                SettingsSectionBlock(title = "安全与账号") {
+                    SpecularGlassCard(
+                        cornerRadius = 16.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         SettingsToggleRow(
-                            title = "应用锁",
-                            subtitle = "打开应用时验证面容或指纹",
+                            icon = Icons.Default.Fingerprint,
+                            iconTint = indigoTone,
+                            title = "生物识别应用锁",
+                            subtitle = "每次打开应用时验证面容或指纹",
                             checked = biometricAppLockEnabled,
                             onCheckedChange = { checked ->
                                 if (!checked) {
@@ -575,241 +875,244 @@ fun SettingsPairingSheet(
                                 )
                             }
                         )
-
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = theme.divider,
-                            modifier = Modifier.padding(horizontal = 14.dp)
-                        )
-
-                        SettingsToggleRow(
-                            title = "后台消息通知",
-                            subtitle = "退至后台时接收新消息提醒",
-                            checked = realtimeServiceEnabled,
-                            onCheckedChange = onRealtimeServiceChanged
-                        )
-
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = theme.divider,
-                            modifier = Modifier.padding(horizontal = 14.dp)
-                        )
-
-                        SettingsToggleRow(
-                            title = "系统分享直接收藏",
-                            subtitle = "从系统分享面板分享时自动存入收藏",
-                            checked = zeroClickCaptureEnabled,
-                            onCheckedChange = onZeroClickChanged
-                        )
-
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = theme.divider,
-                            modifier = Modifier.padding(horizontal = 14.dp)
-                        )
-
-                        SettingsToggleRow(
-                            title = "切回自动识别剪贴板网址",
-                            subtitle = "复制抖音/小红书/B站等链接后，切回 BotHub 顶部提示收藏",
-                            checked = clipboardBannerEnabled,
-                            onCheckedChange = onClipboardBannerChanged
-                        )
-
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = theme.divider,
-                            modifier = Modifier.padding(horizontal = 14.dp)
-                        )
-
-                        SettingsToggleRow(
-                            title = "边缘悬浮收藏球",
-                            subtitle = if (overlayPermissionGranted) {
-                                "切出应用后贴边半透明吸附，点击直接识别当前页面"
-                            } else {
-                                "需先开启系统「悬浮窗 / 显示在其他应用上层」权限"
-                            },
-                            checked = floatingBallEnabled && overlayPermissionGranted,
-                            onCheckedChange = { checked ->
-                                if (!checked) {
-                                    pendingFloatingBallEnable = false
-                                    onFloatingBallChanged(false)
-                                    onShowMessage("已关闭边缘悬浮收藏球")
-                                } else if (FloatingCaptureService.canDrawOverlays(context)) {
-                                    overlayPermissionGranted = true
-                                    onFloatingBallChanged(true)
-                                    onShowMessage("边缘悬浮收藏球已开启，切出应用后自动贴边显示")
-                                } else {
-                                    pendingFloatingBallEnable = true
-                                    sheetHint = "请在系统页面中允许 BotHub 显示悬浮窗，返回后自动开启"
-                                    FloatingCaptureService.openOverlayPermissionSettings(context)
-                                }
-                            }
-                        )
-
-                        HorizontalDivider(
-                            thickness = 0.5.dp,
-                            color = theme.divider,
-                            modifier = Modifier.padding(horizontal = 14.dp)
-                        )
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .tactileClickable {
-                                    ScreenCaptureAccessibilityService.openAccessibilitySettings(context)
-                                }
-                                .padding(horizontal = 15.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Text(
-                                    text = "悬浮球识屏与免弹窗截屏",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = theme.textPrimary
-                                )
-                                Text(
-                                    text = if (accessibilityGranted) {
-                                        "已就绪：点悬浮球自动读取当前页链接、文字并静默截图"
-                                    } else {
-                                        "开启无障碍服务后，点悬浮球无需复制即可自动识屏与截屏"
-                                    },
-                                    fontSize = 11.5.sp,
-                                    lineHeight = 16.sp,
-                                    color = theme.textMuted
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(
-                                        if (accessibilityGranted) Color(0xFF10B981).copy(alpha = 0.14f)
-                                        else theme.accent.copy(alpha = 0.14f)
-                                    )
-                                    .padding(horizontal = 9.dp, vertical = 5.dp)
-                            ) {
-                                Text(
-                                    text = if (accessibilityGranted) "已开启" else "去授权",
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (accessibilityGranted) Color(0xFF10B981)
-                                    else if (theme.isLight) theme.accentDeep else theme.accentLight,
-                                    maxLines = 1
-                                )
-                            }
-                        }
                     }
-                }
 
-                // 3.2 Push Channel & System Permission Diagnostics Strip
-                PushDiagnosticsCard(
-                    realtimeServiceEnabled = realtimeServiceEnabled,
-                    connectionStatus = connectionStatus,
-                    lastHeartbeatAtMs = lastHeartbeatAtMs,
-                    notifPermissionGranted = notifPermissionGranted,
-                    batteryOptIgnored = batteryOptIgnored,
-                    onReconnectRealtime = {
-                        if (realtimeServiceEnabled) {
-                            RealtimePushService.forceReconnect(context)
-                            onShowMessage("正在重新连接实时通道")
-                        }
-                    },
-                    onOpenNotifSettings = {
-                        NotificationHelper.openSystemNotificationSettings(context)
-                    },
-                    onOpenBatterySettings = {
-                        openBatteryOptimizationSettings()
-                    }
-                )
-
-                // 3.5 AI Model Channels & Dual Pools Entry
-                SpecularGlassCard(
-                    cornerRadius = 18.dp,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onOpenModelConfig
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 15.dp, vertical = 13.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    SpecularGlassCard(
+                        cornerRadius = 16.dp,
+                        accentTint = roseTone,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "AI 模型渠道与双池",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = theme.textPrimary
-                            )
-                            Text(
-                                text = "管理渠道 Key、免费/付费模型池、调度策略与测速",
-                                fontSize = 11.5.sp,
-                                color = theme.textMuted
-                            )
-                        }
-                        Text(
-                            text = "配置 >",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = theme.accent
+                        SettingsActionRow(
+                            icon = Icons.Default.Logout,
+                            iconTint = roseTone,
+                            title = "退出登录",
+                            titleColor = roseTone,
+                            subtitle = "清除本机与当前服务端的连接凭证",
+                            trailingContent = {
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = "退出登录",
+                                    tint = roseTone.copy(alpha = 0.72f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = onUnbindServer
                         )
                     }
-                }
-
-                // 4. Clean Action Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TactileSecondaryButton(
-                        text = "连接测试",
-                        minHeight = 44.dp,
-                        onClick = { onTestHealth(urlInput) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    TactileSecondaryButton(
-                        text = "测试推送",
-                        accent = true,
-                        minHeight = 44.dp,
-                        onClick = onTestPush,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TactileSecondaryButton(
-                        text = when (otaState) {
-                            is OtaUpdateState.Downloading -> "下载中..."
-                            is OtaUpdateState.Checking -> "检查中..."
-                            else -> if (hasNewerRelease) "立即更新" else "检查更新"
-                        },
-                        accent = hasNewerRelease,
-                        enabled = otaState !is OtaUpdateState.Downloading && otaState !is OtaUpdateState.Checking,
-                        minHeight = 44.dp,
-                        onClick = { startInAppUpdate(forceDownloadEvenIfSame = false) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    TactileSecondaryButton(
-                        text = "退出登录",
-                        danger = true,
-                        minHeight = 44.dp,
-                        onClick = onUnbindServer,
-                        modifier = Modifier.weight(1f)
-                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(14.dp))
         }
+    }
+}
+
+@Composable
+private fun SettingsSectionBlock(
+    title: String,
+    content: @Composable () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = title,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = theme.textMuted,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.padding(start = 4.dp)
+        )
+        content()
+    }
+}
+
+@Composable
+private fun SettingsIconBadge(
+    icon: ImageVector,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier = modifier
+            .size(34.dp)
+            .clip(shape)
+            .background(tint.copy(alpha = 0.14f), shape),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+@Composable
+private fun SettingsInsetDivider() {
+    val theme = BotHubThemeTokens
+    HorizontalDivider(
+        thickness = 0.5.dp,
+        color = theme.divider,
+        modifier = Modifier.padding(start = 60.dp, end = 14.dp)
+    )
+}
+
+@Composable
+private fun SettingsQuickActionChip(
+    icon: ImageVector,
+    label: String,
+    accent: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val theme = BotHubThemeTokens
+    val shape = RoundedCornerShape(11.dp)
+    val bgColor = if (accent) {
+        theme.accent.copy(alpha = if (theme.isLight) 0.14f else 0.18f)
+    } else {
+        theme.inputTop
+    }
+    val borderColor = if (accent) theme.accent.copy(alpha = 0.45f) else theme.divider
+    val fgColor = if (accent) {
+        if (theme.isLight) theme.accentDeep else theme.accentLight
+    } else {
+        theme.textPrimary
+    }
+
+    Row(
+        modifier = modifier
+            .sizeIn(minHeight = 38.dp)
+            .clip(shape)
+            .background(bgColor, shape)
+            .border(1.dp, borderColor, shape)
+            .then(
+                if (enabled) {
+                    Modifier.tactileClickable(pressedScale = 0.96f, hapticOnTap = true, onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (enabled) fgColor else theme.textMuted,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(5.dp))
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (enabled) fgColor else theme.textMuted,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun SettingsToggleRow(
+    icon: ImageVector,
+    iconTint: Color,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val theme = BotHubThemeTokens
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .sizeIn(minHeight = 56.dp)
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SettingsIconBadge(icon = icon, tint = iconTint)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = title,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = theme.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                fontSize = 11.5.sp,
+                lineHeight = 16.sp,
+                color = theme.textMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        TactileToggle(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
+    }
+}
+
+@Composable
+private fun SettingsActionRow(
+    icon: ImageVector,
+    iconTint: Color,
+    title: String,
+    subtitle: String,
+    titleColor: Color? = null,
+    trailingContent: @Composable () -> Unit,
+    onClick: () -> Unit
+) {
+    val theme = BotHubThemeTokens
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .sizeIn(minHeight = 56.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SettingsIconBadge(icon = icon, tint = iconTint)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = title,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = titleColor ?: theme.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                fontSize = 11.5.sp,
+                lineHeight = 16.sp,
+                color = theme.textMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        trailingContent()
     }
 }
 
@@ -824,53 +1127,42 @@ private fun ThemeSelectorCard(
     }
 
     SpecularGlassCard(
-        cornerRadius = 12.dp,
+        cornerRadius = 16.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            modifier = Modifier.padding(top = 12.dp, bottom = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(top = 13.dp, bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "外观主题",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = theme.textPrimary,
-                    maxLines = 1,
-                    softWrap = false
-                )
-                Text(
-                    text = theme.label,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = theme.textSecondary,
-                    maxLines = 1,
-                    softWrap = false
-                )
-            }
-
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                Text(
-                    text = "外观模式",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = theme.textMuted,
-                    maxLines = 1,
-                    softWrap = false
-                )
-                val segOuterShape = RoundedCornerShape(10.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "色彩模式",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = theme.textSecondary,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                    Text(
+                        text = theme.label,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = theme.textMuted,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+                val segOuterShape = RoundedCornerShape(11.dp)
                 val segTabShape = RoundedCornerShape(8.dp)
                 Row(
                     modifier = Modifier
@@ -886,7 +1178,7 @@ private fun ThemeSelectorCard(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .sizeIn(minHeight = 34.dp)
+                                .sizeIn(minHeight = 36.dp)
                                 .tactileClickable(pressedScale = 0.96f, hapticOnTap = true) {
                                     if (!selected) {
                                         onSelect(encodeThemePreference(modeOpt.id, activeAccent))
@@ -920,13 +1212,13 @@ private fun ThemeSelectorCard(
 
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 Text(
-                    text = "强调色",
-                    fontSize = 12.sp,
+                    text = "主题强调色",
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.Medium,
-                    color = theme.textMuted,
+                    color = theme.textSecondary,
                     maxLines = 1,
                     softWrap = false,
                     modifier = Modifier.padding(horizontal = 14.dp)
@@ -941,6 +1233,7 @@ private fun ThemeSelectorCard(
                         val pillShape = RoundedCornerShape(10.dp)
                         Row(
                             modifier = Modifier
+                                .sizeIn(minHeight = 36.dp)
                                 .tactileClickable(pressedScale = 0.95f, hapticOnTap = true) {
                                     if (!chosen) {
                                         onSelect(encodeThemePreference(activeMode, opt.id))
@@ -949,7 +1242,7 @@ private fun ThemeSelectorCard(
                                 .clip(pillShape)
                                 .background(
                                     if (chosen) {
-                                        swatchColor.copy(alpha = if (theme.isLight) 0.12f else 0.16f)
+                                        swatchColor.copy(alpha = if (theme.isLight) 0.12f else 0.18f)
                                     } else {
                                         theme.inputTop
                                     },
@@ -1037,8 +1330,8 @@ private fun InAppOtaStatusCard(
                         TactilePrimaryButton(
                             text = "立即更新",
                             cornerRadius = 999.dp,
-                            minHeight = 33.dp,
-                            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 5.dp),
+                            minHeight = 34.dp,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 5.dp),
                             onClick = onStartDownload
                         )
                     }
@@ -1129,8 +1422,8 @@ private fun InAppOtaStatusCard(
                         TactilePrimaryButton(
                             text = "继续安装",
                             cornerRadius = 999.dp,
-                            minHeight = 33.dp,
-                            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 5.dp),
+                            minHeight = 34.dp,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 5.dp),
                             onClick = { onInstallFile(otaState.apkFile) }
                         )
                     }
@@ -1143,7 +1436,7 @@ private fun InAppOtaStatusCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "下载完成",
+                            text = "安装包已就绪",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
                             color = theme.textPrimary
@@ -1151,8 +1444,8 @@ private fun InAppOtaStatusCard(
                         TactilePrimaryButton(
                             text = "立即安装",
                             cornerRadius = 999.dp,
-                            minHeight = 33.dp,
-                            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 5.dp),
+                            minHeight = 34.dp,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 5.dp),
                             onClick = { onInstallFile(otaState.apkFile) }
                         )
                     }
@@ -1178,7 +1471,9 @@ private fun InAppOtaStatusCard(
                             color = theme.textMuted,
                             maxLines = 1,
                             softWrap = false,
-                            modifier = Modifier.clickable { onStartDownload() }
+                            modifier = Modifier
+                                .clickable { onStartDownload() }
+                                .padding(vertical = 4.dp, horizontal = 4.dp)
                         )
                     }
                 }
@@ -1193,7 +1488,7 @@ private fun InAppOtaStatusCard(
                             text = "更新失败: ${otaState.message}",
                             fontSize = 12.5.sp,
                             color = if (theme.isLight) Color(0xFFE11D48) else Color(0xFFFDA4AF),
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .weight(1f)
@@ -1213,52 +1508,6 @@ private fun InAppOtaStatusCard(
     }
 }
 
-@Composable
-private fun SettingsToggleRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    val theme = BotHubThemeTokens
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 15.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(end = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = title,
-                fontSize = 14.5.sp,
-                fontWeight = FontWeight.Medium,
-                color = theme.textPrimary,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = subtitle,
-                fontSize = 11.5.sp,
-                color = theme.textMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        TactileToggle(
-            checked = checked,
-            onCheckedChange = onCheckedChange
-        )
-    }
-}
-
 private val HEARTBEAT_TIME_FORMAT: DateTimeFormatter =
     DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
 
@@ -1272,7 +1521,7 @@ private fun formatHeartbeatClock(epochMs: Long): String {
 }
 
 @Composable
-private fun PushDiagnosticsCard(
+private fun PushDiagnosticsEmbeddedBlock(
     realtimeServiceEnabled: Boolean,
     connectionStatus: PushConnectionStatus,
     lastHeartbeatAtMs: Long,
@@ -1280,7 +1529,8 @@ private fun PushDiagnosticsCard(
     batteryOptIgnored: Boolean,
     onReconnectRealtime: () -> Unit,
     onOpenNotifSettings: () -> Unit,
-    onOpenBatterySettings: () -> Unit
+    onOpenBatterySettings: () -> Unit,
+    onTestPush: () -> Unit
 ) {
     val theme = BotHubThemeTokens
     val greenTone = if (theme.isLight) Color(0xFF059669) else Color(0xFF34D399)
@@ -1294,81 +1544,90 @@ private fun PushDiagnosticsCard(
         else -> Triple("断开 · 重连", amberTone, true)
     }
 
-    val notifLabel = if (notifPermissionGranted) "已开启" else "未授权 · 去开启"
+    val notifLabel = if (notifPermissionGranted) "已开启" else "未授权"
     val notifTone = if (notifPermissionGranted) greenTone else redTone
 
-    val batteryLabel = if (batteryOptIgnored) "已豁免" else "受限 · 去设置"
+    val batteryLabel = if (batteryOptIgnored) "已豁免" else "去设置"
     val batteryTone = if (batteryOptIgnored) greenTone else amberTone
 
     val heartbeatText = if (realtimeServiceEnabled && connectionStatus == PushConnectionStatus.CONNECTED && lastHeartbeatAtMs > 0L) {
         val clock = formatHeartbeatClock(lastHeartbeatAtMs)
-        if (clock.isNotEmpty()) "心跳 $clock" else "实时在线"
+        if (clock.isNotEmpty()) "通道诊断 · 心跳 $clock" else "通道诊断 · 实时在线"
     } else if (!realtimeServiceEnabled) {
-        "后台通道已暂停"
+        "通道诊断 · 后台通道已暂停"
     } else {
-        "点异常项可直达设置"
+        "通道诊断 · 点异常项直达设置"
     }
 
-    SpecularGlassCard(
-        cornerRadius = 16.dp,
-        modifier = Modifier.fillMaxWidth()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Text(
+                text = heartbeatText,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                color = theme.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(theme.accent.copy(alpha = if (theme.isLight) 0.12f else 0.16f))
+                    .border(1.dp, theme.accent.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
+                    .tactileClickable(pressedScale = 0.94f, hapticOnTap = true, onClick = onTestPush)
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = "推送通道诊断",
-                    fontSize = 12.5.sp,
+                    text = "测试推送",
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = theme.textPrimary,
-                    maxLines = 1,
-                    softWrap = false
-                )
-                Text(
-                    text = heartbeatText,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.5.sp,
-                    color = theme.textMuted,
+                    color = if (theme.isLight) theme.accentDeep else theme.accentLight,
                     maxLines = 1,
                     softWrap = false
                 )
             }
+        }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                PushDiagnosticPill(
-                    label = "实时通道",
-                    status = channelLabel,
-                    tone = channelTone,
-                    clickable = channelClickable,
-                    onClick = onReconnectRealtime,
-                    modifier = Modifier.weight(1f)
-                )
-                PushDiagnosticPill(
-                    label = "通知权限",
-                    status = notifLabel,
-                    tone = notifTone,
-                    clickable = !notifPermissionGranted,
-                    onClick = onOpenNotifSettings,
-                    modifier = Modifier.weight(1f)
-                )
-                PushDiagnosticPill(
-                    label = "省电白名单",
-                    status = batteryLabel,
-                    tone = batteryTone,
-                    clickable = !batteryOptIgnored,
-                    onClick = onOpenBatterySettings,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            PushDiagnosticPill(
+                label = "实时通道",
+                status = channelLabel,
+                tone = channelTone,
+                clickable = channelClickable,
+                onClick = onReconnectRealtime,
+                modifier = Modifier.weight(1f)
+            )
+            PushDiagnosticPill(
+                label = "通知权限",
+                status = notifLabel,
+                tone = notifTone,
+                clickable = !notifPermissionGranted,
+                onClick = onOpenNotifSettings,
+                modifier = Modifier.weight(1f)
+            )
+            PushDiagnosticPill(
+                label = "省电白名单",
+                status = batteryLabel,
+                tone = batteryTone,
+                clickable = !batteryOptIgnored,
+                onClick = onOpenBatterySettings,
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }
@@ -1400,7 +1659,7 @@ private fun PushDiagnosticPill(
                     Modifier
                 }
             )
-            .padding(horizontal = 8.dp, vertical = 7.dp),
+            .padding(horizontal = 9.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Row(
@@ -1424,7 +1683,7 @@ private fun PushDiagnosticPill(
         }
         Text(
             text = status,
-            fontSize = 11.sp,
+            fontSize = 11.5.sp,
             fontWeight = FontWeight.SemiBold,
             color = tone,
             maxLines = 1,

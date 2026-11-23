@@ -568,6 +568,7 @@ fun SpiritSquircleAvatar(
     cornerRadius: Dp = 14.dp,
     showPresenceDot: Boolean = false,
     interactive: Boolean = false,
+    animateIdle: Boolean = false,
     seedKey: String = bot?.id ?: "spirit",
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -594,7 +595,8 @@ fun SpiritSquircleAvatar(
                     fallbackStyle = bot.avatarStyle,
                     state = state,
                     size = innerSize,
-                    interactive = interactive
+                    interactive = interactive,
+                    animateIdle = animateIdle
                 )
             } else {
                 GrokBotAvatar(
@@ -602,6 +604,7 @@ fun SpiritSquircleAvatar(
                     state = state,
                     size = innerSize,
                     interactive = interactive,
+                    animateIdle = animateIdle,
                     seedKey = seedKey
                 )
             }

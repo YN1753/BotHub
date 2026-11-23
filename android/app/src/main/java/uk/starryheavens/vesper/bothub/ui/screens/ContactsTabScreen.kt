@@ -142,6 +142,7 @@ fun ContactsTabScreen(
                                         allBots = bots,
                                         containerSize = 42.dp,
                                         cornerRadius = 12.dp,
+                                        animateIdle = true,
                                         onClick = { onOpenProfile(group) }
                                     )
 
@@ -231,6 +232,7 @@ fun ContactsTabScreen(
                                         containerSize = 42.dp,
                                         cornerRadius = 12.dp,
                                         showPresenceDot = true,
+                                        animateIdle = true,
                                         onClick = { onOpenProfile(friend) }
                                     )
 

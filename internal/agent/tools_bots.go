@@ -180,17 +180,34 @@ func genManagedBotID(isGroup bool) string {
 }
 
 func normalizeManageAvatarStyle(raw, botMode string, isGroup bool) string {
-	valid := map[string]bool{
-		"butler:gold":     true,
-		"sentinel:indigo": true,
-		"radar:emerald":   true,
-		"swarm:violet":    true,
-		"scholar:cyan":    true,
-		"critic:rose":     true,
+	validShapes := map[string]bool{
+		"butler":   true,
+		"sentinel": true,
+		"radar":    true,
+		"critic":   true,
+		"swarm":    true,
+		"visor":    true,
 	}
-	s := strings.TrimSpace(raw)
-	if valid[s] {
-		return s
+	validColors := map[string]bool{
+		"gold":     true,
+		"indigo":   true,
+		"emerald":  true,
+		"amber":    true,
+		"violet":   true,
+		"cyan":     true,
+		"rose":     true,
+		"obsidian": true,
+	}
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if parts := strings.SplitN(s, ":", 2); len(parts) == 2 {
+		shape := parts[0]
+		if shape == "scholar" {
+			shape = "visor"
+		}
+		color := parts[1]
+		if validShapes[shape] && validColors[color] {
+			return shape + ":" + color
+		}
 	}
 	if isGroup {
 		return "swarm:violet"
@@ -199,7 +216,7 @@ func normalizeManageAvatarStyle(raw, botMode string, isGroup bool) string {
 	case store.BotModeCompanion:
 		return "critic:rose"
 	case store.BotModeWorker:
-		return "scholar:cyan"
+		return "visor:cyan"
 	default:
 		return "radar:emerald"
 	}

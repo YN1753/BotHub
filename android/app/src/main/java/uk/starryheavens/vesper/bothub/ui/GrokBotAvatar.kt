@@ -17,8 +17,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +65,26 @@ data class BotPaletteUi(
     val eyeInk: Color,
     val blush: Color,
     val isDarkBody: Boolean = false
+)
+
+data class BotShapeOptionUi(
+    val id: String,
+    val label: String
+)
+
+data class BotColorOptionUi(
+    val id: String,
+    val label: String,
+    val palette: BotPaletteUi
+)
+
+val GROKBOT_SHAPE_OPTIONS: List<BotShapeOptionUi> = listOf(
+    BotShapeOptionUi("butler", "云团灵眸"),
+    BotShapeOptionUi("sentinel", "猫耳灵团"),
+    BotShapeOptionUi("radar", "流光星滴"),
+    BotShapeOptionUi("critic", "灵角小魔"),
+    BotShapeOptionUi("swarm", "绵绵星云"),
+    BotShapeOptionUi("visor", "方糖果冻")
 )
 
 private val GROKBOT_PALETTES = mapOf(
@@ -141,9 +163,20 @@ private val GROKBOT_PALETTES = mapOf(
     )
 )
 
-fun parseBotAvatarStyle(raw: String?): Pair<String, BotPaletteUi> {
-    val clean = (raw ?: "cyan").trim().lowercase()
-    val (shape, colorKey) = if (clean.contains(":")) {
+val GROKBOT_COLOR_OPTIONS: List<BotColorOptionUi> = listOf(
+    BotColorOptionUi("gold", "奶白暖杏", GROKBOT_PALETTES.getValue("gold")),
+    BotColorOptionUi("indigo", "冰透星蓝", GROKBOT_PALETTES.getValue("indigo")),
+    BotColorOptionUi("emerald", "薄荷青玉", GROKBOT_PALETTES.getValue("emerald")),
+    BotColorOptionUi("amber", "蜜桃晨曦", GROKBOT_PALETTES.getValue("amber")),
+    BotColorOptionUi("violet", "雾粉星紫", GROKBOT_PALETTES.getValue("violet")),
+    BotColorOptionUi("cyan", "天青星岚", GROKBOT_PALETTES.getValue("cyan")),
+    BotColorOptionUi("rose", "绯红莓果", GROKBOT_PALETTES.getValue("rose")),
+    BotColorOptionUi("obsidian", "暗夜流光", GROKBOT_PALETTES.getValue("obsidian"))
+)
+
+fun parseBotAvatarParts(raw: String?): Pair<String, String> {
+    val clean = (raw ?: "butler:gold").trim().lowercase()
+    return if (clean.contains(":")) {
         val parts = clean.split(":", limit = 2)
         val rawShape = if (parts[0] == "scholar") "visor" else parts[0]
         val s = rawShape.takeIf { it in setOf("butler", "sentinel", "radar", "critic", "swarm", "visor") } ?: "butler"
@@ -157,9 +190,14 @@ fun parseBotAvatarStyle(raw: String?): Pair<String, BotPaletteUi> {
             "violet" -> "swarm" to "violet"
             "cyan" -> "visor" to "cyan"
             "rose" -> "critic" to "rose"
+            "obsidian" -> "visor" to "obsidian"
             else -> "butler" to "gold"
         }
     }
+}
+
+fun parseBotAvatarStyle(raw: String?): Pair<String, BotPaletteUi> {
+    val (shape, colorKey) = parseBotAvatarParts(raw)
     return shape to (GROKBOT_PALETTES[colorKey] ?: GROKBOT_PALETTES.getValue("gold"))
 }
 
@@ -247,10 +285,11 @@ fun resolveGroupMembers(groupBot: BotItem, allBots: List<BotItem>): List<BotItem
  */
 @Composable
 fun GrokBotAvatar(
-    avatarStyle: String = "cyan",
+    avatarStyle: String = "butler:gold",
     state: String = "idle",
     size: Dp = 38.dp,
     interactive: Boolean = false,
+    animateIdle: Boolean = false,
     isListening: Boolean = false,
     seedKey: String = avatarStyle,
     modifier: Modifier = Modifier
@@ -272,12 +311,13 @@ fun GrokBotAvatar(
         (h % 37) * 0.17f
     }
 
-    // Only run 60/120Hz infinite animation when interactive or actively thinking/working/blocked.
-    // Static list rows in Chats/Contacts/History use resting phase (0 GPU redraws/sec when idle!).
-    val shouldAnimate = interactive || state != "idle" || isListening || activeStunt != null
-    val masterPhase = if (shouldAnimate) {
+    // Animate when explicitly requested (Home/Contacts rosters, interactive headers, pickers)
+    // or actively thinking/working/blocked. Deferred State reads keep 0 recompositions/sec!
+    val shouldAnimate = animateIdle || interactive || state != "idle" || isListening || activeStunt != null
+    val staticPhaseState = remember { mutableFloatStateOf(0f) }
+    val masterPhaseState: State<Float> = if (shouldAnimate) {
         val infinite = rememberInfiniteTransition(label = "grokbot_loop")
-        val animated by infinite.animateFloat(
+        infinite.animateFloat(
             initialValue = 0f,
             targetValue = (2.0 * PI).toFloat(),
             animationSpec = infiniteRepeatable(
@@ -286,119 +326,11 @@ fun GrokBotAvatar(
             ),
             label = "master_phase"
         )
-        animated
     } else {
-        0f
+        staticPhaseState
     }
-
-    val p = masterPhase + seedPhase
-    val floatWave = sin(p * 1.5f)
-
-    // 6 distinct archetype personality offsets + state choreographies
-    var rigDx = 0f
-    var rigDy = -floatWave * 1.8f
-    var rigRot = 0f
-    var rigScaleX = 1f - floatWave * 0.026f
-    var rigScaleY = 1f + floatWave * 0.026f
 
     val effectiveState = if (activeStunt != null && activeStunt != "shy") "done" else state
-
-    when (effectiveState) {
-        "thinking" -> {
-            rigRot = sin(p * 2f) * 5.2f
-            rigDy -= 1.0f
-        }
-        "working" -> {
-            val fast = sin(p * 4f)
-            rigDy = -abs(fast) * 3.0f
-            rigScaleX = 1f + fast * 0.04f
-            rigScaleY = 1f - fast * 0.04f
-            rigRot = cos(p * 4f) * 3.5f
-        }
-        "done" -> {
-            val hop = abs(sin(p * 2.5f))
-            rigDy -= hop * 2.6f
-            rigScaleX = 1f - hop * 0.03f
-            rigScaleY = 1f + hop * 0.04f
-        }
-        "blocked" -> {
-            rigDx = sin(p * 8f) * 1.4f
-        }
-        else -> {
-            // Idle personality actions per archetype
-            val burst = ((sin(p) + 1f) * 0.5f)
-            if (burst > 0.62f) {
-                val t = (burst - 0.62f) / 0.38f
-                val pulse = sin(t * PI.toFloat())
-                when (shape) {
-                    "butler" -> {
-                        rigRot = sin(t * 2f * PI.toFloat()) * 6f
-                        rigDy -= pulse * 2.4f
-                    }
-                    "sentinel" -> {
-                        rigScaleY += pulse * 0.055f
-                        rigScaleX -= pulse * 0.035f
-                        rigRot = sin(t * 2f * PI.toFloat()) * 7f
-                    }
-                    "radar" -> {
-                        rigDx = sin(t * 2f * PI.toFloat()) * 2.2f
-                        rigRot = rigDx * 2.1f
-                    }
-                    "critic" -> {
-                        val hop2 = abs(sin(t * 2f * PI.toFloat()))
-                        rigDy -= hop2 * 3.6f
-                        rigRot = sin(t * 2f * PI.toFloat()) * 5f
-                    }
-                    "swarm" -> {
-                        rigScaleX += pulse * 0.065f
-                        rigScaleY += pulse * 0.035f
-                        rigRot = sin(t * 2f * PI.toFloat()) * 3.2f
-                    }
-                    "visor" -> {
-                        rigScaleX += sin(t * 2f * PI.toFloat()) * 0.07f
-                        rigScaleY -= sin(t * 2f * PI.toFloat()) * 0.07f
-                    }
-                }
-            }
-        }
-    }
-
-    if (isListening && state == "idle" && activeStunt == null) {
-        rigDy += 1.0f
-        rigScaleX *= 1.045f
-        rigScaleY *= 0.965f
-    }
-
-    // Apply 4 interactive tap stunts (hop, flip, dance, shy)
-    val sp = stuntProgress.value
-    if (activeStunt != null) {
-        when (activeStunt) {
-            "hop" -> {
-                val arc = sin(sp * PI.toFloat())
-                rigDy -= arc * 7.5f
-                rigScaleX = if (sp < 0.2f) 1.16f else 1f - arc * 0.08f
-                rigScaleY = if (sp < 0.2f) 0.84f else 1f + arc * 0.1f
-            }
-            "flip" -> {
-                val arc = sin(sp * PI.toFloat())
-                rigDy -= arc * 8.0f
-                rigRot += sp * 360f
-            }
-            "dance" -> {
-                val wave = sin(sp * 4f * PI.toFloat())
-                rigDx += wave * 2.8f
-                rigDy -= abs(wave) * 3.2f
-                rigRot += wave * 11f
-            }
-            "shy" -> {
-                val hold = sin(sp * PI.toFloat())
-                rigDy += hold * 4.2f
-                rigScaleX = 1f + hold * 0.2f
-                rigScaleY = 1f - hold * 0.22f
-                rigRot += sin(sp * 3f * PI.toFloat()) * 2.5f * hold
-            }
-        }
-    }
 
     val clickMod = if (interactive) {
         Modifier.clickable(
@@ -450,21 +382,114 @@ fun GrokBotAvatar(
         palette.eyeInk
     }
 
-    // Natural blink & eye glance
-    val blinkNorm = (p % (2f * PI.toFloat())) / (2f * PI.toFloat())
-    val blinkScaleY = if ((blinkNorm in 0.34f..0.38f) || (blinkNorm in 0.84f..0.875f)) 0.1f else 1f
-    val gazeDx = when {
-        state == "working" -> sin(p * 4.5f) * 2.4f
-        state == "thinking" -> sin(p * 2f) * 1.8f
-        else -> if (blinkNorm in 0.44f..0.62f) 2.0f else if (blinkNorm in 0.68f..0.80f) -1.8f else 0f
-    }
-    val gazeDy = if (state == "thinking") -2.2f else 0f
-
     Canvas(
         modifier = modifier
             .size(size)
             .then(clickMod)
             .graphicsLayer {
+                val p = masterPhaseState.value + seedPhase
+                val floatWave = sin(p * 1.5f)
+                var rigDx = 0f
+                var rigDy = -floatWave * 1.8f
+                var rigRot = 0f
+                var rigScaleX = 1f - floatWave * 0.026f
+                var rigScaleY = 1f + floatWave * 0.026f
+
+                when (effectiveState) {
+                    "thinking" -> {
+                        rigRot = sin(p * 2f) * 5.2f
+                        rigDy -= 1.0f
+                    }
+                    "working" -> {
+                        val fast = sin(p * 4f)
+                        rigDy = -abs(fast) * 3.0f
+                        rigScaleX = 1f + fast * 0.04f
+                        rigScaleY = 1f - fast * 0.04f
+                        rigRot = cos(p * 4f) * 3.5f
+                    }
+                    "done" -> {
+                        val hop = abs(sin(p * 2.5f))
+                        rigDy -= hop * 2.6f
+                        rigScaleX = 1f - hop * 0.03f
+                        rigScaleY = 1f + hop * 0.04f
+                    }
+                    "blocked" -> {
+                        rigDx = sin(p * 8f) * 1.4f
+                    }
+                    else -> {
+                        val burst = ((sin(p) + 1f) * 0.5f)
+                        if (burst > 0.62f) {
+                            val t = (burst - 0.62f) / 0.38f
+                            val pulse = sin(t * PI.toFloat())
+                            when (shape) {
+                                "butler" -> {
+                                    rigRot = sin(t * 2f * PI.toFloat()) * 6f
+                                    rigDy -= pulse * 2.4f
+                                }
+                                "sentinel" -> {
+                                    rigScaleY += pulse * 0.055f
+                                    rigScaleX -= pulse * 0.035f
+                                    rigRot = sin(t * 2f * PI.toFloat()) * 7f
+                                }
+                                "radar" -> {
+                                    rigDx = sin(t * 2f * PI.toFloat()) * 2.2f
+                                    rigRot = rigDx * 2.1f
+                                }
+                                "critic" -> {
+                                    val hop2 = abs(sin(t * 2f * PI.toFloat()))
+                                    rigDy -= hop2 * 3.6f
+                                    rigRot = sin(t * 2f * PI.toFloat()) * 5f
+                                }
+                                "swarm" -> {
+                                    rigScaleX += pulse * 0.065f
+                                    rigScaleY += pulse * 0.035f
+                                    rigRot = sin(t * 2f * PI.toFloat()) * 3.2f
+                                }
+                                "visor" -> {
+                                    rigScaleX += sin(t * 2f * PI.toFloat()) * 0.07f
+                                    rigScaleY -= sin(t * 2f * PI.toFloat()) * 0.07f
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (isListening && state == "idle" && activeStunt == null) {
+                    rigDy += 1.0f
+                    rigScaleX *= 1.045f
+                    rigScaleY *= 0.965f
+                }
+
+                val sp = stuntProgress.value
+                if (activeStunt != null) {
+                    when (activeStunt) {
+                        "hop" -> {
+                            val arc = sin(sp * PI.toFloat())
+                            rigDy -= arc * 7.5f
+                            rigScaleX = if (sp < 0.2f) 1.16f else 1f - arc * 0.08f
+                            rigScaleY = if (sp < 0.2f) 0.84f else 1f + arc * 0.1f
+                        }
+                        "flip" -> {
+                            val arc = sin(sp * PI.toFloat())
+                            rigDy -= arc * 8.0f
+                            rigRot += sp * 360f
+                        }
+                        "dance" -> {
+                            val wave = sin(sp * 4f * PI.toFloat())
+                            rigDx += wave * 2.8f
+                            rigDy -= abs(wave) * 3.2f
+                            rigRot += wave * 11f
+                        }
+                        "shy" -> {
+                            val hold = sin(sp * PI.toFloat())
+                            rigDy += hold * 4.2f
+                            rigScaleX = 1f + hold * 0.2f
+                            rigScaleY = 1f - hold * 0.22f
+                            rigRot += sin(sp * 3f * PI.toFloat()) * 2.5f * hold
+                        }
+                    }
+                }
+
                 val pxScale = this.size.minDimension / 56f
                 translationX = rigDx * pxScale
                 translationY = rigDy * pxScale
@@ -473,6 +498,16 @@ fun GrokBotAvatar(
                 scaleY = rigScaleY
             }
     ) {
+        val p = masterPhaseState.value + seedPhase
+        val blinkNorm = (p % (2f * PI.toFloat())) / (2f * PI.toFloat())
+        val blinkScaleY = if ((blinkNorm in 0.34f..0.38f) || (blinkNorm in 0.84f..0.875f)) 0.1f else 1f
+        val gazeDx = when {
+            state == "working" -> sin(p * 4.5f) * 2.4f
+            state == "thinking" -> sin(p * 2f) * 1.8f
+            else -> if (blinkNorm in 0.44f..0.62f) 2.0f else if (blinkNorm in 0.68f..0.80f) -1.8f else 0f
+        }
+        val gazeDy = if (state == "thinking") -2.2f else 0f
+
         val unit = this.size.minDimension / 56f
         withTransform({
             scale(scaleX = unit, scaleY = unit, pivot = Offset.Zero)
@@ -501,8 +536,8 @@ fun GrokBotAvatar(
                         0.0f to palette.shellHi,
                         0.56f to palette.shellMid,
                         1.0f to palette.shellDeep,
-                        center = Offset(19f, 14f),
-                        radius = 35f
+                        center = Offset(20f, 15f),
+                        radius = 34f
                     )
                 )
 
@@ -736,6 +771,7 @@ fun GrokBotGroupCluster(
     activeSpeakerId: String = "",
     size: Dp = 40.dp,
     interactive: Boolean = false,
+    animateIdle: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val display = remember(members) { members.take(4) }
@@ -745,6 +781,7 @@ fun GrokBotGroupCluster(
             state = state,
             size = size,
             interactive = interactive,
+            animateIdle = animateIdle,
             modifier = modifier
         )
         return
@@ -847,6 +884,7 @@ fun GrokBotGroupCluster(
                         state = memberState,
                         size = size,
                         interactive = interactive && slot == 0,
+                        animateIdle = animateIdle,
                         seedKey = m.id
                     )
                 }

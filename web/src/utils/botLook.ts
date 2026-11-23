@@ -4,7 +4,7 @@ import { botStateDotClass, parseJsonStringArray } from './format.ts'
 export { botStateDotClass }
 
 export type BotShape = 'butler' | 'sentinel' | 'radar' | 'critic' | 'swarm' | 'visor'
-export type BotColor = 'gold' | 'indigo' | 'emerald' | 'amber' | 'violet' | 'obsidian'
+export type BotColor = 'gold' | 'indigo' | 'emerald' | 'amber' | 'violet' | 'cyan' | 'rose' | 'obsidian'
 
 export interface ShapeOption {
   id: BotShape
@@ -102,6 +102,32 @@ export const BOT_COLORS: ColorOption[] = [
     shadow: 'rgba(4, 7, 16, 0.58)',
   },
   {
+    id: 'cyan',
+    label: '天青星岚',
+    ring: '#38bdf8',
+    glow: 'rgba(56, 189, 248, 0.44)',
+    shellHi: '#ffffff',
+    shellMid: '#e0f7fe',
+    shellDeep: '#9cd8f2',
+    aurora: '#22d3ee',
+    eyeInk: '#0e1d2a',
+    blush: '#fb7185',
+    shadow: 'rgba(4, 7, 16, 0.58)',
+  },
+  {
+    id: 'rose',
+    label: '绯红莓果',
+    ring: '#fb7185',
+    glow: 'rgba(251, 113, 133, 0.44)',
+    shellHi: '#ffffff',
+    shellMid: '#ffe7ec',
+    shellDeep: '#f3afc0',
+    aurora: '#f472b6',
+    eyeInk: '#261018',
+    blush: '#fb923c',
+    shadow: 'rgba(4, 7, 16, 0.58)',
+  },
+  {
     id: 'obsidian',
     label: '暗夜流光',
     ring: '#38bdf8',
@@ -117,18 +143,22 @@ export const BOT_COLORS: ColorOption[] = [
 ]
 
 const LEGACY_MAP: Record<string, { shape: BotShape; color: BotColor }> = {
-  cyan: { shape: 'butler', color: 'gold' },
+  gold: { shape: 'butler', color: 'gold' },
   indigo: { shape: 'sentinel', color: 'indigo' },
   emerald: { shape: 'radar', color: 'emerald' },
   amber: { shape: 'critic', color: 'amber' },
   violet: { shape: 'swarm', color: 'violet' },
+  cyan: { shape: 'visor', color: 'cyan' },
+  rose: { shape: 'critic', color: 'rose' },
+  obsidian: { shape: 'visor', color: 'obsidian' },
 }
 
 export function parseAvatarStyle(raw?: string): { shape: BotShape; color: BotColor } {
-  const val = (raw || 'cyan').trim().toLowerCase()
+  const val = (raw || 'butler:gold').trim().toLowerCase()
   if (val.includes(':')) {
-    const [s, c] = val.split(':')
-    const shape = BOT_SHAPES.some((x) => x.id === s) ? (s as BotShape) : 'butler'
+    const [rawShape, c] = val.split(':')
+    const normalizedShape = rawShape === 'scholar' ? 'visor' : rawShape
+    const shape = BOT_SHAPES.some((x) => x.id === normalizedShape) ? (normalizedShape as BotShape) : 'butler'
     const color = BOT_COLORS.some((x) => x.id === c) ? (c as BotColor) : 'gold'
     return { shape, color }
   }
