@@ -144,12 +144,6 @@ internal fun LazyListScope.hubTasksItems(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
-                        if (task.allowPaidFallback) {
-                            VesperTag(
-                                text = if (task.maxPaidCallsPerDay > 0) "付费<=${task.maxPaidCallsPerDay}/日" else "允许付费",
-                                toneColor = theme.warning
-                            )
-                        }
                     }
                     Text(
                         text = task.formattedSchedule(),
@@ -204,8 +198,6 @@ internal fun TaskEditorSheet(
         runAt: String,
         description: String,
         model: String,
-        allowPaidFallback: Boolean,
-        maxPaidCallsPerDay: Int,
         enabled: Boolean,
         params: String
     ) -> Unit,
@@ -242,11 +234,6 @@ internal fun TaskEditorSheet(
         mutableStateOf(fromParams.ifBlank { task?.description.orEmpty() })
     }
     var model by remember(task) { mutableStateOf(task?.model.orEmpty()) }
-    var allowPaidFallback by remember(task) { mutableStateOf(task?.allowPaidFallback ?: true) }
-    var maxPaidCallsText by remember(task) {
-        val v = task?.maxPaidCallsPerDay ?: 0
-        mutableStateOf(if (v > 0) v.toString() else "0")
-    }
     var enabled by remember(task) { mutableStateOf(task?.enabled ?: true) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
@@ -472,64 +459,12 @@ internal fun TaskEditorSheet(
                 ) {
                     listOf(
                         "" to "跟随负责 Bot",
-                        "auto:paid" to "付费主力池",
-                        "auto:free" to "免费模型池"
+                        "auto" to "统一模型池自动路由"
                     ).forEach { (mid, label) ->
                         VesperFilterChip(
                             label = label,
                             selected = model == mid,
-                            onClick = {
-                                model = mid
-                                if (mid == "auto:paid") allowPaidFallback = true
-                            }
-                        )
-                    }
-                }
-            }
-
-            VesperCard(
-                cornerRadius = 15.dp,
-                onClick = { allowPaidFallback = !allowPaidFallback },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .sizeIn(minHeight = 52.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
-                            Text(
-                                text = "允许本任务调用付费模型池",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = theme.textPrimary
-                            )
-                            Text(
-                                text = if (allowPaidFallback) "优先使用付费主力池保障执行质量" else "严格锁定免费池，拦截付费调用",
-                                fontSize = 11.5.sp,
-                                color = theme.textMuted
-                            )
-                        }
-                        VesperSwitch(
-                            checked = allowPaidFallback,
-                            onCheckedChange = { allowPaidFallback = it }
-                        )
-                    }
-
-                    if (allowPaidFallback) {
-                        VesperTextField(
-                            value = maxPaidCallsText,
-                            onValueChange = { maxPaidCallsText = it.filter { ch -> ch.isDigit() } },
-                            label = "单日最大付费调用次数上限（0 表示不限）",
-                            placeholder = "0",
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            onClick = { model = mid }
                         )
                     }
                 }
@@ -589,8 +524,6 @@ internal fun TaskEditorSheet(
                             finalRunAt,
                             promptText.trim(),
                             model.trim(),
-                            allowPaidFallback,
-                            maxPaidCallsText.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                             enabled,
                             paramsJson
                         )
@@ -618,13 +551,10 @@ internal fun TaskEditorSheet(
 
     if (showModelPicker) {
         ModelPickerSheet(
-            activeModel = model.ifBlank { "auto:paid" },
+            activeModel = model.ifBlank { "auto" },
             modelOptions = modelOptions,
             onSelect = { chosen ->
                 model = chosen
-                if (chosen == "auto:paid" || modelOptions.find { it.id == chosen }?.tier == "paid") {
-                    allowPaidFallback = true
-                }
                 showModelPicker = false
             },
             onDismiss = { showModelPicker = false }

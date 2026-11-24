@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -28,11 +31,11 @@ type Engine struct {
 	hub                   *pushstream.Hub
 	httpClient            *http.Client
 	health                *ModelHealthTracker
-	freeRR                atomic.Uint64
-	paidRR                atomic.Uint64
+	poolRR                atomic.Uint64
 	allowLocalhostForTest bool
 	stashSem              chan struct{}
 	pendingStashImages    sync.Map
+	compactingThreads     sync.Map
 	biliAPIBase           string
 	githubAPIBase         string
 	githubRawBase         string
@@ -64,17 +67,17 @@ func NewEngine(st *store.Store, sched TaskController) *Engine {
 }
 
 type ChatRequest struct {
-	SessionID         string `json:"session_id"`
-	BotID             string `json:"bot_id,omitempty"`
-	ThreadID          string `json:"thread_id,omitempty"`
-	MsgKind           string `json:"-"`
-	Message           string `json:"message"`
-	Persona           string `json:"persona"`
-	Model             string `json:"model"`
-	EnableThinking    *bool  `json:"enable_thinking,omitempty"`
-	AllowPaidFallback *bool  `json:"allow_paid_fallback,omitempty"`
-	ReplyToID         int64  `json:"reply_to_id,omitempty"`
-	ReplyPreview      string `json:"reply_preview,omitempty"`
+	SessionID      string   `json:"session_id"`
+	BotID          string   `json:"bot_id,omitempty"`
+	ThreadID       string   `json:"thread_id,omitempty"`
+	MsgKind        string   `json:"-"`
+	Message        string   `json:"message"`
+	Images         []string `json:"images,omitempty"`
+	Persona        string   `json:"persona"`
+	Model          string   `json:"model"`
+	EnableThinking *bool    `json:"enable_thinking,omitempty"`
+	ReplyToID      int64    `json:"reply_to_id,omitempty"`
+	ReplyPreview   string   `json:"reply_preview,omitempty"`
 }
 
 type ToolTrace struct {
@@ -85,9 +88,48 @@ type ToolTrace struct {
 }
 
 type TokenUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens     int     `json:"prompt_tokens"`
+	CachedTokens     int     `json:"cached_tokens,omitempty"`
+	CompletionTokens int     `json:"completion_tokens"`
+	TotalTokens      int     `json:"total_tokens"`
+	CostUSD          float64 `json:"cost_usd,omitempty"`
+}
+
+func (u *TokenUsage) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		PromptTokens        int     `json:"prompt_tokens"`
+		CachedTokens        int     `json:"cached_tokens"`
+		CompletionTokens    int     `json:"completion_tokens"`
+		TotalTokens         int     `json:"total_tokens"`
+		CostUSD             float64 `json:"cost_usd"`
+		CacheReadInput      int     `json:"cache_read_input_tokens"`
+		PromptCacheHit      int     `json:"prompt_cache_hit_tokens"`
+		PromptTokensDetails *struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	u.PromptTokens = raw.PromptTokens
+	u.CompletionTokens = raw.CompletionTokens
+	u.TotalTokens = raw.TotalTokens
+	u.CostUSD = raw.CostUSD
+	cached := raw.CachedTokens
+	if raw.PromptTokensDetails != nil && raw.PromptTokensDetails.CachedTokens > cached {
+		cached = raw.PromptTokensDetails.CachedTokens
+	}
+	if raw.CacheReadInput > cached {
+		cached = raw.CacheReadInput
+	}
+	if raw.PromptCacheHit > cached {
+		cached = raw.PromptCacheHit
+	}
+	u.CachedTokens = cached
+	if u.TotalTokens == 0 && (u.PromptTokens > 0 || u.CompletionTokens > 0) {
+		u.TotalTokens = u.PromptTokens + u.CompletionTokens
+	}
+	return nil
 }
 
 type ChatResponse struct {
@@ -98,7 +140,6 @@ type ChatResponse struct {
 	Persona          string      `json:"persona"`
 	Model            string      `json:"model"`
 	ModelTargetID    string      `json:"model_target_id,omitempty"`
-	ModelTier        string      `json:"model_tier,omitempty"`
 	ProviderLabel    string      `json:"provider_label,omitempty"`
 	ReasoningContent string      `json:"reasoning_content,omitempty"`
 	Content          string      `json:"content"`
@@ -107,11 +148,14 @@ type ChatResponse struct {
 }
 
 type apiMessage struct {
-	Role             string        `json:"role"`
-	Content          string        `json:"content"`
-	ReasoningContent string        `json:"reasoning_content,omitempty"`
-	ToolCalls        []apiToolCall `json:"tool_calls,omitempty"`
-	ToolCallID       string        `json:"tool_call_id,omitempty"`
+	Role                string        `json:"role"`
+	Content             string        `json:"content"`
+	StaticSystemPrefix  string        `json:"-"`
+	DynamicSystemSuffix string        `json:"-"`
+	Images              []string      `json:"-"`
+	ReasoningContent    string        `json:"reasoning_content,omitempty"`
+	ToolCalls           []apiToolCall `json:"tool_calls,omitempty"`
+	ToolCallID          string        `json:"tool_call_id,omitempty"`
 }
 
 type apiToolCall struct {
@@ -185,9 +229,8 @@ func NormalizeModelID(model string) string {
 	}
 }
 
-// CallLightModel executes a non-streaming completion preferring explicit light / Free Pool nodes,
-// only falling back to Paid Pool when PaidFallbackFromContext(ctx) is explicitly enabled (or when
-// legacy callers without a context guard have no Free Pool configured).
+// CallLightModel executes a non-streaming completion preferring explicit light config,
+// pool models marked is_light, or the unified model pool.
 func (e *Engine) CallLightModel(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
 	return e.callLightModelInternal(ctx, systemPrompt, userPrompt, "")
 }
@@ -199,7 +242,6 @@ func (e *Engine) CallLightModelWithImage(ctx context.Context, systemPrompt, user
 
 func (e *Engine) callLightModelInternal(ctx context.Context, systemPrompt, userPrompt, imageDataURL string) (string, error) {
 	var candidates []ModelTarget
-	allowPaid, explicitPaid := store.PaidFallbackFromContext(ctx)
 
 	lightKey, _ := e.store.GetConfig(store.KeyLightAPIKey)
 	lightBase, _ := e.store.GetConfig(store.KeyLightBaseURL)
@@ -228,30 +270,22 @@ func (e *Engine) callLightModelInternal(ctx context.Context, systemPrompt, userP
 		})
 	}
 
-	_, _, strategies := e.store.GetModelConfig()
-	paidTargets := e.orderPoolTargets(activePoolTargetsByTier(e.store, store.ModelTierPaid), store.ModelTierPaid, strategies.Paid, ModelResolveOptions{})
-	freeTargets := e.orderPoolTargets(activePoolTargetsByTier(e.store, store.ModelTierFree), store.ModelTierFree, strategies.Free, ModelResolveOptions{})
-
-	// Paid-first routing for all intelligent background tasks unless ctx explicitly restricts paid usage
-	allowPaidHere := !explicitPaid || allowPaid
-	if allowPaidHere && len(paidTargets) > 0 {
-		if qErr := e.checkTaskPaidQuota(ctx); qErr != nil {
-			if len(candidates) == 0 && len(freeTargets) == 0 {
-				return "", qErr
-			}
-		} else {
-			candidates = append(candidates, paidTargets...)
-		}
+	_, _, strategy := e.store.GetModelConfig()
+	lightPool := e.orderPoolTargets(activeLightPoolTargets(e.store), strategy, ModelResolveOptions{})
+	mainPool := e.orderPoolTargets(activePoolTargets(e.store), strategy, ModelResolveOptions{})
+	seen := make(map[string]bool, len(candidates)+len(lightPool)+len(mainPool))
+	for _, c := range candidates {
+		seen[c.ID] = true
 	}
-	if isConfigTrue(e.store, store.KeyPoolForLight, true) || len(candidates) == 0 {
-		candidates = append(candidates, freeTargets...)
+	for _, t := range append(lightPool, mainPool...) {
+		if !seen[t.ID] {
+			seen[t.ID] = true
+			candidates = append(candidates, t)
+		}
 	}
 
 	if len(candidates) == 0 {
-		if explicitPaid && !allowPaid && len(paidTargets) > 0 {
-			return "", fmt.Errorf("当前任务未开启「允许付费兜底」，且免费模型池暂无可用节点")
-		}
-		return "", fmt.Errorf("未配置付费/免费模型池或可用轻量模型节点")
+		return "", fmt.Errorf("未配置可用模型池节点")
 	}
 	candidates = e.health.prioritizeHealthy(candidates)
 
@@ -360,14 +394,14 @@ func (e *Engine) callLightModelInternal(ctx context.Context, systemPrompt, userP
 	if lastErr != nil {
 		return "", lastErr
 	}
-	return "", fmt.Errorf("所有轻量及免费模型节点均调用失败")
+	return "", fmt.Errorf("所有模型池节点均调用失败")
 }
 
 // ChatStream executes a multi-round streaming conversation and invokes emit for SSE events.
 // Event types: "session", "reasoning", "tool_start", "tool_result", "content", "done", "error".
 func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(event string, data any)) (*ChatResponse, error) {
 	userMsg := notifier.StripEmoji(strings.TrimSpace(req.Message))
-	if userMsg == "" {
+	if userMsg == "" && len(req.Images) == 0 {
 		return nil, fmt.Errorf("消息内容不能为空")
 	}
 
@@ -375,7 +409,7 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 		return e.chatStreamForBot(ctx, req, emit)
 	}
 
-	targets, err := e.ResolveChatTargetsWithContext(ctx, req.Model, req.AllowPaidFallback != nil && *req.AllowPaidFallback)
+	targets, err := e.ResolveChatTargetsWithContext(ctx, req.Model)
 	if err != nil {
 		return nil, err
 	}
@@ -603,7 +637,6 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 		Persona:          persona.ID,
 		Model:            model,
 		ModelTargetID:    activeTarget.ID,
-		ModelTier:        activeTarget.Tier,
 		ProviderLabel:    activeTarget.Label,
 		ReasoningContent: totalReasoning.String(),
 		Content:          finalContent.String(),
@@ -635,13 +668,10 @@ func (e *Engine) hasLightTarget() bool {
 	if e == nil || e.store == nil {
 		return false
 	}
-	if len(activePoolTargetsByTier(e.store, store.ModelTierFree)) > 0 {
-		return true
-	}
 	if lightKey, _ := e.store.GetConfig(store.KeyLightAPIKey); strings.TrimSpace(lightKey) != "" {
 		return true
 	}
-	if isConfigTrue(e.store, store.KeyPoolForLight, true) && len(activeFreePoolTargets(e.store)) > 0 {
+	if len(activePoolTargets(e.store)) > 0 {
 		return true
 	}
 	return primaryDeepSeekTarget(e.store).APIKey != ""
@@ -1001,37 +1031,185 @@ func (e *Engine) recordModelUsage(ctx context.Context, target ModelTarget, sourc
 	if e == nil || e.store == nil || strings.TrimSpace(target.Model) == "" {
 		return
 	}
-	taskID, _ := store.TaskQuotaFromContext(ctx)
+	taskID := store.TaskIDFromContext(ctx)
 	sc := toolScopeFromContext(ctx)
-	tier := strings.TrimSpace(target.Tier)
-	if tier == "" {
-		if target.ID == "primary" {
-			tier = store.ModelTierPaid
-		} else {
-			tier = store.ModelTierFree
-		}
-	}
 	if taskID != "" && source == "chat" {
 		source = "routine"
 	}
-	var promptTokens, completionTokens int
+	var promptTokens, cachedTokens, completionTokens int
+	var costUSD float64
 	if usage != nil {
 		promptTokens = usage.PromptTokens
+		cachedTokens = usage.CachedTokens
 		completionTokens = usage.CompletionTokens
+		costUSD = store.EstimateModelCostUSD(target.Model, promptTokens, cachedTokens, completionTokens, target.InputPricePerM, target.OutputPricePerM)
+		usage.CostUSD = costUSD
 	}
 	_ = e.store.RecordModelUsage(store.ModelUsageRecord{
 		TargetID:         target.ID,
 		ProviderID:       target.ProviderID,
 		ModelID:          target.Model,
-		Tier:             tier,
 		Source:           source,
 		TaskID:           taskID,
 		BotID:            sc.BotID,
 		PromptTokens:     promptTokens,
+		CachedTokens:     cachedTokens,
 		CompletionTokens: completionTokens,
+		CostUSD:          costUSD,
 		LatencyMs:        latencyMs,
 		Success:          success,
 	})
+}
+
+func supportsExplicitPromptCaching(provider, baseURL, model string) bool {
+	lowerModel := strings.ToLower(strings.TrimSpace(model))
+	lowerBase := strings.ToLower(strings.TrimSpace(baseURL))
+	if strings.Contains(lowerModel, "claude") {
+		return true
+	}
+	if provider == "openrouter" || strings.Contains(lowerBase, "openrouter.ai") {
+		return strings.Contains(lowerModel, "claude") || strings.Contains(lowerModel, "gemini")
+	}
+	return false
+}
+
+func (e *Engine) resolveChatImageURLForLLM(raw string) string {
+	u := strings.TrimSpace(raw)
+	if u == "" {
+		return ""
+	}
+	if strings.HasPrefix(u, "data:image/") {
+		return u
+	}
+	const localPrefix = "/api/v2/chat/uploads/"
+	if strings.HasPrefix(u, localPrefix) && e != nil && e.store != nil {
+		base := filepath.Base(strings.TrimPrefix(u, localPrefix))
+		if base == "" || base == "." || base == "/" {
+			return ""
+		}
+		fpath := filepath.Join(e.store.DataDir(), "chat_uploads", base)
+		data, err := os.ReadFile(fpath)
+		if err != nil || len(data) == 0 {
+			return ""
+		}
+		mimeType := http.DetectContentType(data)
+		if !strings.HasPrefix(mimeType, "image/") {
+			ext := strings.ToLower(filepath.Ext(base))
+			switch ext {
+			case ".png":
+				mimeType = "image/png"
+			case ".webp":
+				mimeType = "image/webp"
+			case ".gif":
+				mimeType = "image/gif"
+			default:
+				mimeType = "image/jpeg"
+			}
+		}
+		return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
+	}
+	return u
+}
+
+func (e *Engine) buildUpstreamChatPayload(
+	model string,
+	messages []apiMessage,
+	tools []ToolDefinition,
+	thinking *thinkingConfig,
+	incUsage bool,
+	usePromptCache bool,
+	includeImages bool,
+) ([]byte, error) {
+	wireMsgs := make([]map[string]any, 0, len(messages))
+	for _, m := range messages {
+		obj := map[string]any{"role": m.Role}
+		if m.Role == "system" && usePromptCache && strings.TrimSpace(m.StaticSystemPrefix) != "" {
+			blocks := []map[string]any{
+				{
+					"type":          "text",
+					"text":          m.StaticSystemPrefix,
+					"cache_control": map[string]string{"type": "ephemeral"},
+				},
+			}
+			if dyn := strings.TrimSpace(m.DynamicSystemSuffix); dyn != "" {
+				blocks = append(blocks, map[string]any{
+					"type": "text",
+					"text": dyn,
+				})
+			}
+			obj["content"] = blocks
+		} else if m.Role == "user" && includeImages && len(m.Images) > 0 {
+			parts := make([]map[string]any, 0, 1+len(m.Images))
+			txt := m.Content
+			if strings.TrimSpace(txt) == "" {
+				txt = "请分析这张图片"
+			}
+			parts = append(parts, map[string]any{
+				"type": "text",
+				"text": txt,
+			})
+			attachedCount := 0
+			for _, img := range m.Images {
+				if resolved := e.resolveChatImageURLForLLM(img); resolved != "" {
+					parts = append(parts, map[string]any{
+						"type": "image_url",
+						"image_url": map[string]string{
+							"url": resolved,
+						},
+					})
+					attachedCount++
+				}
+			}
+			if attachedCount > 0 {
+				obj["content"] = parts
+			} else {
+				obj["content"] = m.Content
+			}
+		} else {
+			obj["content"] = m.Content
+		}
+		if m.ReasoningContent != "" {
+			obj["reasoning_content"] = m.ReasoningContent
+		}
+		if len(m.ToolCalls) > 0 {
+			obj["tool_calls"] = m.ToolCalls
+		}
+		if m.ToolCallID != "" {
+			obj["tool_call_id"] = m.ToolCallID
+		}
+		wireMsgs = append(wireMsgs, obj)
+	}
+
+	body := map[string]any{
+		"model":    model,
+		"messages": wireMsgs,
+		"stream":   true,
+	}
+	if len(tools) > 0 {
+		if usePromptCache {
+			wireTools := make([]map[string]any, 0, len(tools))
+			for idx, td := range tools {
+				tObj := map[string]any{
+					"type":     td.Type,
+					"function": td.Function,
+				}
+				if idx == len(tools)-1 {
+					tObj["cache_control"] = map[string]string{"type": "ephemeral"}
+				}
+				wireTools = append(wireTools, tObj)
+			}
+			body["tools"] = wireTools
+		} else {
+			body["tools"] = tools
+		}
+	}
+	if incUsage {
+		body["stream_options"] = map[string]bool{"include_usage": true}
+	}
+	if thinking != nil {
+		body["thinking"] = thinking
+	}
+	return json.Marshal(body)
 }
 
 // trimContextMessages safely drops the oldest middle conversation turns when upstream rejects context length,
@@ -1128,25 +1306,15 @@ func (e *Engine) streamSingleRoundWithProvider(
 	onDelta func(deltaReasoning, deltaContent string),
 ) (string, string, []apiToolCall, *TokenUsage, error) {
 	incUsage := true
+	usePromptCache := supportsExplicitPromptCaching(provider, baseURL, model)
+	includeImages := true
 	curMessages := messages
 	curTools := tools
 	curThinking := thinking
 
 	var resp *http.Response
-	for attempt := 0; attempt < 3; attempt++ {
-		var streamOpts *streamOptions
-		if incUsage {
-			streamOpts = &streamOptions{IncludeUsage: true}
-		}
-		reqBody := chatCompletionRequest{
-			Model:         model,
-			Messages:      curMessages,
-			Tools:         curTools,
-			Stream:        true,
-			StreamOptions: streamOpts,
-			Thinking:      curThinking,
-		}
-		payload, err := json.Marshal(reqBody)
+	for attempt := 0; attempt < 4; attempt++ {
+		payload, err := e.buildUpstreamChatPayload(model, curMessages, curTools, curThinking, incUsage, usePromptCache, includeImages)
 		if err != nil {
 			return "", "", nil, nil, err
 		}
@@ -1179,9 +1347,17 @@ func (e *Engine) streamSingleRoundWithProvider(
 		errText := strings.TrimSpace(string(errBody))
 		lowerErr := strings.ToLower(errText)
 
-		// Auto-downgrade optional OpenAI params on 400/413/422 or trim oversized history before giving up
-		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusRequestEntityTooLarge || resp.StatusCode == http.StatusUnprocessableEntity) && attempt < 2 {
+		// Auto-downgrade optional OpenAI/Anthropic params on 400/413/422 or trim oversized history before giving up
+		if (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusRequestEntityTooLarge || resp.StatusCode == http.StatusUnprocessableEntity) && attempt < 3 {
 			adjusted := false
+			if usePromptCache && (strings.Contains(lowerErr, "cache_control") || strings.Contains(lowerErr, "content") || strings.Contains(lowerErr, "expected string") || strings.Contains(lowerErr, "unknown")) {
+				usePromptCache = false
+				adjusted = true
+			}
+			if includeImages && (strings.Contains(lowerErr, "image_url") || strings.Contains(lowerErr, "vision") || strings.Contains(lowerErr, "multimodal") || strings.Contains(lowerErr, "image")) {
+				includeImages = false
+				adjusted = true
+			}
 			if strings.Contains(lowerErr, "context_length") || strings.Contains(lowerErr, "maximum context") || strings.Contains(lowerErr, "too many tokens") || strings.Contains(lowerErr, "context window") {
 				if trimmed, ok := trimContextMessages(curMessages); ok {
 					curMessages = trimmed

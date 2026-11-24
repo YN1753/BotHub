@@ -2,11 +2,13 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,7 +16,7 @@ import (
 	"github.com/YN1753/vesper/bothub/internal/store"
 )
 
-func TestFreeModelPoolRoutingFailoverAndLiveFetchModels(t *testing.T) {
+func TestUnifiedModelPoolRoutingFailoverAndLiveFetchModels(t *testing.T) {
 	if got := NormalizeModelID("deepseek-v4-pro"); got != "" {
 		t.Fatalf("expected legacy deepseek-v4-pro cleared, got %q", got)
 	}
@@ -33,19 +35,19 @@ func TestFreeModelPoolRoutingFailoverAndLiveFetchModels(t *testing.T) {
 	defer st.Close()
 
 	// Fresh DB pool must start blank (no pre-seeded hardcoded providers)
-	if initial := st.GetModelPool(); len(initial) != 0 {
-		t.Fatalf("expected initial free_model_pool empty, got %d items", len(initial))
+	provs, mods, strat := st.GetModelConfig()
+	if len(provs) != 0 || len(mods) != 0 || strat != store.PoolStrategyPriority {
+		t.Fatalf("expected blank initial model config, got provs=%d mods=%d strat=%q", len(provs), len(mods), strat)
 	}
 
-	// Create user bot explicitly
 	_ = st.SaveBot(store.Bot{
 		ID:           "assistant_one",
 		Name:         "个人助理",
 		RoleTitle:    "测试 Bot",
 		SystemPrompt: "简洁回答",
+		Model:        "auto",
 	})
 
-	// Mock upstream /models discovery + selective usability verification
 	googleRateLimited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/models") {
 			w.Header().Set("Content-Type", "application/json")
@@ -56,7 +58,6 @@ func TestFreeModelPoolRoutingFailoverAndLiveFetchModels(t *testing.T) {
 	}))
 	defer googleRateLimited.Close()
 
-	// Dedicated server returning 200 for gemini-2.5-flash and 429 quota=0 for gemini-2.5-pro
 	selectiveVerifySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/models") {
 			w.Header().Set("Content-Type", "application/json")
@@ -85,11 +86,11 @@ func TestFreeModelPoolRoutingFailoverAndLiveFetchModels(t *testing.T) {
 		}
 		raw, _ := io.ReadAll(r.Body)
 		sfPayload = string(raw)
-		if strings.Contains(r.URL.Path, "chat/completions") && !strings.Contains(r.URL.Path, "chat/completions/chat") {
+		if strings.Contains(r.URL.Path, "chat/completions") {
 			w.Header().Set("Content-Type", "text/event-stream")
 			flusher, _ := w.(http.Flusher)
 			for _, c := range []string{
-				`data: {"choices":[{"delta":{"role":"assistant","content":"硅基流动免费模型已自动接管并回复。"}}]}`,
+				`data: {"choices":[{"delta":{"role":"assistant","content":"硅基流动模型已自动接管并回复。"}}]}`,
 				`data: [DONE]`,
 			} {
 				fmt.Fprintln(w, c)
@@ -106,443 +107,69 @@ func TestFreeModelPoolRoutingFailoverAndLiveFetchModels(t *testing.T) {
 
 	eng := NewEngine(st, &fakeTaskController{st: st})
 
-	// Test live /models discovery filters non-chat modalities cleanly
 	fetchedGoogleModels, err := eng.FetchUpstreamModels(context.Background(), googleRateLimited.URL, "AIzaTestGoogleKey123456", "google")
 	if err != nil || len(fetchedGoogleModels) != 2 || fetchedGoogleModels[0] != "gemini-2.5-flash" {
 		t.Fatalf("unexpected live Google models fetch: models=%v err=%v", fetchedGoogleModels, err)
 	}
 
-	// Test FetchAndVerifyUpstreamModels verifies usability and keeps only usable chat models
 	verifiedRes, err := eng.FetchAndVerifyUpstreamModels(context.Background(), selectiveVerifySrv.URL, "AIzaTestGoogleKey123456", "google", true)
 	if err != nil {
 		t.Fatalf("FetchAndVerifyUpstreamModels failed: %v", err)
 	}
-	if verifiedRes.FilteredOutCount != 2 {
-		t.Fatalf("expected 2 non-chat models filtered out, got %d", verifiedRes.FilteredOutCount)
-	}
-	if len(verifiedRes.Models) != 1 || verifiedRes.Models[0] != "gemini-2.5-flash" {
+	if verifiedRes.FilteredOutCount != 2 || len(verifiedRes.Models) != 1 || verifiedRes.Models[0] != "gemini-2.5-flash" {
 		t.Fatalf("expected only gemini-2.5-flash usable, got %+v", verifiedRes)
 	}
 
-	// User creates two free pool items from templates using dynamically discovered models
 	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "")
-	userPool := []store.ModelPoolEntry{
-		{
-			ID:       "google_user",
-			Name:     "Google AI Studio",
-			Provider: "google",
-			BaseURL:  googleRateLimited.URL,
-			APIKey:   "AIzaTestGoogleKey123456",
-			Model:    fetchedGoogleModels[0],
-			Enabled:  true,
-			Priority: 10,
+	if err := st.SaveModelConfig(
+		[]store.ModelProvider{
+			{ID: "google_user", Name: "Google AI Studio", Protocol: "google", BaseURL: googleRateLimited.URL, APIKey: "AIzaTestGoogleKey123456", Enabled: true},
+			{ID: "sf_user", Name: "硅基流动", Protocol: "openai", BaseURL: sfServer.URL, APIKey: "sk-sf-testkey123456", Enabled: true},
 		},
-		{
-			ID:       "sf_user",
-			Name:     "硅基流动",
-			Provider: "siliconflow",
-			BaseURL:  sfServer.URL,
-			APIKey:   "sk-sf-testkey123456",
-			Model:    "Qwen/Qwen2.5-7B-Instruct",
-			Enabled:  true,
-			Priority: 20,
+		[]store.PooledModel{
+			{ProviderID: "google_user", ModelID: fetchedGoogleModels[0], Enabled: true, Priority: 10},
+			{ProviderID: "sf_user", ModelID: "Qwen/Qwen2.5-7B-Instruct", Enabled: true, Priority: 20},
 		},
-	}
-	if err := st.SaveModelPool(userPool); err != nil {
-		t.Fatalf("SaveModelPool: %v", err)
+		store.PoolStrategyPriority,
+	); err != nil {
+		t.Fatalf("SaveModelConfig: %v", err)
 	}
 
-	// Verify SaveModelPool preserves existing key when masked placeholder is submitted back
-	masked := store.MaskModelPool(st.GetModelPool())
-	if err := st.SaveModelPool(masked); err != nil {
-		t.Fatalf("SaveModelPool masked roundtrip: %v", err)
+	// Verify masked roundtrip preserves API key
+	pGot, mGot, sGot := st.GetModelConfig()
+	if err := st.SaveModelConfig(store.MaskModelProviders(pGot), mGot, sGot); err != nil {
+		t.Fatalf("SaveModelConfig masked roundtrip: %v", err)
 	}
-	reloaded := st.GetModelPool()
+	reloaded, _, _ := st.GetModelConfig()
 	if reloaded[0].APIKey != "AIzaTestGoogleKey123456" {
 		t.Fatalf("expected Google API key preserved across **** mask roundtrip, got %q", reloaded[0].APIKey)
 	}
 
-	// Test ChatStream on Bot with model="free-pool": hits Google (429) -> failover cleanly to SiliconFlow
+	// ChatStream with model="auto": hits Google (429) -> fails over cleanly to SiliconFlow
 	resp, err := eng.ChatStream(context.Background(), ChatRequest{
 		BotID:   "assistant_one",
-		Message: "测试免费模型池自动容灾切换",
-		Model:   "free-pool",
+		Message: "测试统一模型池自动容灾切换",
+		Model:   "auto",
 	}, nil)
 	if err != nil {
-		t.Fatalf("ChatStream free-pool failed: %v", err)
+		t.Fatalf("ChatStream auto failed: %v", err)
 	}
-	if resp.Model != "Qwen/Qwen2.5-7B-Instruct" || !strings.Contains(resp.Content, "硅基流动免费模型") {
-		t.Fatalf("unexpected free-pool failover response: %+v", resp)
+	if resp.Model != "Qwen/Qwen2.5-7B-Instruct" || !strings.Contains(resp.Content, "硅基流动模型") {
+		t.Fatalf("unexpected auto failover response: %+v", resp)
 	}
 	if strings.Contains(sfPayload, `"thinking"`) {
 		t.Fatalf("non-DeepSeek pool provider must not receive proprietary DeepSeek thinking field: %s", sfPayload)
 	}
-
-	// Test Primary Relay Station URL + custom relay model name probe
-	var relayUsedModel, relayAuth string
-	relaySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		relayAuth = r.Header.Get("Authorization")
-		var reqBody map[string]any
-		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &reqBody)
-		relayUsedModel, _ = reqBody["model"].(string)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"}}]}`))
-	}))
-	defer relaySrv.Close()
-
-	_, preview, probeErr := eng.ProbeModelTarget(context.Background(), relaySrv.URL+"/v1/chat/completions", "sk-relay-token", "deepseek-v3-flash-relay", "deepseek")
-	if probeErr != nil || preview != "OK" {
-		t.Fatalf("ProbeModelTarget relay failed: err=%v preview=%q", probeErr, preview)
-	}
-	if relayUsedModel != "deepseek-v3-flash-relay" || relayAuth != "Bearer sk-relay-token" {
-		t.Fatalf("unexpected relay probe request: model=%q auth=%q", relayUsedModel, relayAuth)
-	}
 }
 
-func TestModelHealthCooldownAndModelUsedPersistence(t *testing.T) {
+func TestModelHealthCooldownStrategiesCapabilitiesAndLightTag(t *testing.T) {
 	tmpDir := t.TempDir()
-	st, err := store.Open(filepath.Join(tmpDir, "health_test.db"))
+	st, err := store.Open(filepath.Join(tmpDir, "strategies_test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
 
-	_ = st.SaveBot(store.Bot{
-		ID:           "assistant_one",
-		Name:         "个人助理",
-		RoleTitle:    "测试 Bot",
-		SystemPrompt: "简洁回答",
-	})
-
-	hitCounts := map[string]int{}
-	s1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hitCounts["google"]++
-		http.Error(w, `{"error":"rate limit"}`, http.StatusTooManyRequests)
-	}))
-	defer s1.Close()
-
-	s2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hitCounts["sf"]++
-		w.Header().Set("Content-Type", "text/event-stream")
-		flusher, _ := w.(http.Flusher)
-		for _, c := range []string{
-			`data: {"choices":[{"delta":{"role":"assistant","content":"节点二正常响应。"}}]}`,
-			`data: [DONE]`,
-		} {
-			fmt.Fprintln(w, c)
-			fmt.Fprintln(w)
-			if flusher != nil {
-				flusher.Flush()
-			}
-		}
-	}))
-	defer s2.Close()
-
-	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "")
-	_ = st.SaveModelPool([]store.ModelPoolEntry{
-		{
-			ID:       "google_ai_studio",
-			Name:     "Google AI Studio",
-			Provider: "google",
-			BaseURL:  s1.URL,
-			APIKey:   "AIzaTestKey",
-			Model:    "gemini-2.5-flash",
-			Enabled:  true,
-			Priority: 10,
-		},
-		{
-			ID:       "siliconflow_free",
-			Name:     "硅基流动",
-			Provider: "siliconflow",
-			BaseURL:  s2.URL,
-			APIKey:   "sk-sf-key",
-			Model:    "Qwen/Qwen2.5-7B-Instruct",
-			Enabled:  true,
-			Priority: 20,
-		},
-	})
-
-	eng := NewEngine(st, &fakeTaskController{st: st})
-
-	var events []string
-	_, err = eng.ChatStream(context.Background(), ChatRequest{
-		BotID:   "assistant_one",
-		Message: "第一次提问",
-		Model:   "free-pool",
-	}, func(event string, _ any) {
-		events = append(events, event)
-	})
-	if err != nil {
-		t.Fatalf("first turn failed: %v", err)
-	}
-	if !strings.Contains(strings.Join(events, ","), "model_switch") {
-		t.Fatalf("expected model_switch SSE event during failover, got: %v", events)
-	}
-
-	// Second turn should skip cooled google_ai_studio and hit s2 directly!
-	_, err = eng.ChatStream(context.Background(), ChatRequest{
-		BotID:   "assistant_one",
-		Message: "第二次提问",
-		Model:   "free-pool",
-	}, nil)
-	if err != nil {
-		t.Fatalf("second turn failed: %v", err)
-	}
-	if hitCounts["google"] != 1 || hitCounts["sf"] != 2 {
-		t.Fatalf("expected google called once (then cooled) and sf called twice, got %+v", hitCounts)
-	}
-
-	snap := eng.GetModelHealth()
-	googleHealth := snap["pool:google_ai_studio::gemini-2.5-flash"]
-	sfHealth := snap["pool:siliconflow_free::Qwen/Qwen2.5-7B-Instruct"]
-	if googleHealth.CooldownSec <= 0 || googleHealth.Status != "cooling_down" || sfHealth.SuccessCount != 2 || sfHealth.Status != "healthy" {
-		t.Fatalf("unexpected health snapshot: %+v", snap)
-	}
-
-	// Verify CallLightModel also skips cooled google_ai_studio and records health telemetry
-	s2Light := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hitCounts["sf_light"]++
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"轻量摘要结果"}}]}`))
-	}))
-	defer s2Light.Close()
-	_ = st.SaveModelPool([]store.ModelPoolEntry{
-		{ID: "google_ai_studio", Name: "Google AI Studio", Provider: "google", BaseURL: s1.URL, APIKey: "AIzaTestKey", Model: "gemini-2.5-flash", Enabled: true, Priority: 10},
-		{ID: "siliconflow_free", Name: "硅基流动", Provider: "siliconflow", BaseURL: s2Light.URL, APIKey: "sk-sf-key", Model: "Qwen/Qwen2.5-7B-Instruct", Enabled: true, Priority: 20},
-	})
-	lightReply, lightErr := eng.CallLightModel(context.Background(), "摘要助手", "测试输入")
-	if lightErr != nil || lightReply != "轻量摘要结果" {
-		t.Fatalf("CallLightModel failed: err=%v reply=%q", lightErr, lightReply)
-	}
-	if hitCounts["google"] != 1 || hitCounts["sf_light"] != 1 {
-		t.Fatalf("expected CallLightModel to bypass cooled google_ai_studio and hit sf_light once, got %+v", hitCounts)
-	}
-
-	// Verify primary cooldown deprioritizes primary behind healthy pool fallback while retaining primary at tail
-	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "sk-primary-key")
-	eng.health.recordFailure("primary", "HTTP 429 rate limited", true)
-	targets, rErr := eng.ResolveChatTargets("primary")
-	if rErr != nil || len(targets) < 2 {
-		t.Fatalf("ResolveChatTargets primary fallback failed: err=%v targets=%+v", rErr, targets)
-	}
-	if targets[0].ID != "pool:siliconflow_free::Qwen/Qwen2.5-7B-Instruct" || targets[1].ID != "primary" {
-		t.Fatalf("expected healthy pool target first and cooled primary moved into cooling tail, got %+v", targets)
-	}
-
-	msgs, _ := st.ListBotMessages("assistant_one", 10)
-	foundModelUsed := false
-	for _, m := range msgs {
-		if m.Role == "assistant" && m.ModelUsed == "Qwen/Qwen2.5-7B-Instruct" {
-			foundModelUsed = true
-		}
-	}
-	if !foundModelUsed {
-		t.Fatalf("expected persisted model_used=Qwen/Qwen2.5-7B-Instruct in agent_messages, got %+v", msgs)
-	}
-}
-
-func TestDualPoolMultiModelAndPerTaskPaidGuard(t *testing.T) {
-	tmpDir := t.TempDir()
-	st, err := store.Open(filepath.Join(tmpDir, "dual_pool.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	defer st.Close()
-
-	if err := st.SaveModelPool([]store.ModelPoolEntry{
-		{
-			ID:       "free_vendor",
-			Name:     "免费聚合",
-			Tier:     store.ModelTierFree,
-			Provider: "openai",
-			BaseURL:  "https://free.example.com/v1",
-			APIKey:   "sk-free-key",
-			Models:   []string{"free-m1", "free-m2"},
-			Enabled:  true,
-			Priority: 10,
-		},
-		{
-			ID:       "paid_vendor",
-			Name:     "付费主力",
-			Tier:     store.ModelTierPaid,
-			Provider: "deepseek",
-			BaseURL:  "https://paid.example.com/v1",
-			APIKey:   "sk-paid-key",
-			Models:   []string{"paid-m1", "paid-m2"},
-			Enabled:  true,
-			Priority: 10,
-		},
-	}); err != nil {
-		t.Fatalf("SaveModelPool failed: %v", err)
-	}
-
-	eng := NewEngine(st, &fakeTaskController{st: st})
-
-	opts := eng.ModelOptionsPayload()
-	optIDs := make(map[string]store.ModelPoolEntry)
-	seenIDs := make(map[string]string)
-	for _, o := range opts {
-		seenIDs[o.ID] = o.Tier
-	}
-	_ = optIDs
-	for _, want := range []string{"auto:free", "auto:paid", "pool:free_vendor::free-m1", "pool:free_vendor::free-m2", "pool:paid_vendor::paid-m1", "pool:paid_vendor::paid-m2"} {
-		if _, ok := seenIDs[want]; !ok {
-			t.Fatalf("expected ModelOptionsPayload to contain %q, got %+v", want, opts)
-		}
-	}
-	// Legacy pool:<providerID> alias without ::<model> must still resolve cleanly
-	legacyPinned, lErr := eng.ResolveChatTargetsWithContext(context.Background(), "pool:free_vendor", false)
-	if lErr != nil || len(legacyPinned) == 0 || legacyPinned[0].Model != "free-m1" {
-		t.Fatalf("expected legacy pool:free_vendor alias to resolve to free-m1, got err=%v targets=%+v", lErr, legacyPinned)
-	}
-
-	// 1. Per-task guard OFF (false): auto:free MUST NOT include any Paid Pool target
-	ctxBlocked := store.WithPaidFallback(context.Background(), false)
-	targets, err := eng.ResolveChatTargetsWithContext(ctxBlocked, "auto:free", false)
-	if err != nil || len(targets) != 2 {
-		t.Fatalf("expected strictly 2 free targets when allow_paid_fallback=false, got err=%v targets=%+v", err, targets)
-	}
-	for _, tg := range targets {
-		if tg.Model == "paid-m1" || tg.Model == "paid-m2" {
-			t.Fatalf("paid model leaked into auto:free with guard off: %+v", tg)
-		}
-	}
-
-	// 2. Task guard OFF also blocks auto:paid / pinned paid model if task explicitly forbids paid
-	if _, err := eng.ResolveChatTargetsWithContext(ctxBlocked, "auto:paid", false); err == nil {
-		t.Fatalf("expected task allow_paid_fallback=false to block auto:paid")
-	}
-	if _, err := eng.ResolveChatTargetsWithContext(ctxBlocked, "pool:paid_vendor::paid-m2", false); err == nil {
-		t.Fatalf("expected task allow_paid_fallback=false to block pinned paid node")
-	}
-
-	// 3. Task guard ON (true): auto:free includes Free models first, Paid models as tail fallback
-	ctxAllowed := store.WithPaidFallback(context.Background(), true)
-	targetsWithFallback, err := eng.ResolveChatTargetsWithContext(ctxAllowed, "auto:free", true)
-	if err != nil || len(targetsWithFallback) != 4 {
-		t.Fatalf("expected 4 targets (2 free + 2 paid fallback), got err=%v targets=%+v", err, targetsWithFallback)
-	}
-	if targetsWithFallback[0].Model != "free-m1" || targetsWithFallback[2].Model != "paid-m1" {
-		t.Fatalf("unexpected priority ordering in dual pool fallback: %+v", targetsWithFallback)
-	}
-
-	// 4. Disable free vendor & verify allow_paid_fallback=false fails loudly instead of silently billing
-	_ = st.SaveModelPool([]store.ModelPoolEntry{
-		{
-			ID:       "free_vendor",
-			Name:     "免费聚合",
-			Tier:     store.ModelTierFree,
-			Provider: "openai",
-			BaseURL:  "https://free.example.com/v1",
-			APIKey:   "sk-free-key",
-			Models:   []string{"free-m1"},
-			Enabled:  false,
-			Priority: 10,
-		},
-		{
-			ID:       "paid_vendor",
-			Name:     "付费主力",
-			Tier:     store.ModelTierPaid,
-			Provider: "deepseek",
-			BaseURL:  "https://paid.example.com/v1",
-			APIKey:   "sk-paid-key",
-			Models:   []string{"paid-m1"},
-			Enabled:  true,
-			Priority: 10,
-		},
-	})
-	if _, err := eng.ResolveChatTargetsWithContext(ctxBlocked, "auto:free", false); err == nil {
-		t.Fatalf("expected error when Free Pool is empty and allow_paid_fallback=false")
-	}
-	fallbackOnlyPaid, err := eng.ResolveChatTargetsWithContext(ctxAllowed, "auto:free", true)
-	if err != nil || len(fallbackOnlyPaid) != 1 || fallbackOnlyPaid[0].Model != "paid-m1" {
-		t.Fatalf("expected fallback to paid-m1 when allow_paid_fallback=true, got err=%v targets=%+v", err, fallbackOnlyPaid)
-	}
-}
-
-func TestDecoupledProvidersMigrationCapabilitiesStrategiesAndTaskQuota(t *testing.T) {
-	tmpDir := t.TempDir()
-	st, err := store.Open(filepath.Join(tmpDir, "v259_model_config.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	defer st.Close()
-
-	// 1. Seamless lossless migration & deduplication from legacy free_model_pool (same vendor in Free + Paid)
-	if err := st.SaveModelPool([]store.ModelPoolEntry{
-		{
-			ID:       "or_free",
-			Name:     "OpenRouter Free",
-			Tier:     store.ModelTierFree,
-			Provider: "openai",
-			BaseURL:  "https://openrouter.ai/api/v1/chat/completions",
-			APIKey:   "sk-or-shared-secret-1234",
-			Models:   []string{"qwen/qwen3:free"},
-			Enabled:  true,
-			Priority: 10,
-		},
-		{
-			ID:       "or_paid",
-			Name:     "OpenRouter Paid",
-			Tier:     store.ModelTierPaid,
-			Provider: "openai",
-			BaseURL:  "https://openrouter.ai/api/v1/",
-			APIKey:   "sk-or-shared-secret-1234",
-			Models:   []string{"anthropic/claude-sonnet-4"},
-			Enabled:  true,
-			Priority: 10,
-		},
-	}); err != nil {
-		t.Fatalf("SaveModelPool: %v", err)
-	}
-
-	providers, pooled, _ := st.GetModelConfig()
-	if len(providers) != 1 {
-		t.Fatalf("expected identical OpenRouter free+paid entries merged into 1 ModelProvider, got %+v", providers)
-	}
-	if providers[0].BaseURL != "https://openrouter.ai/api/v1" {
-		t.Fatalf("expected CleanProviderBaseURL to strip /chat/completions, got %q", providers[0].BaseURL)
-	}
-	if len(pooled) != 2 {
-		t.Fatalf("expected 2 pooled models across free and paid tiers, got %+v", pooled)
-	}
-
-	eng := NewEngine(st, &fakeTaskController{st: st})
-
-	// Legacy alias ID "pool:or_paid" must still resolve cleanly even after merge
-	aliasTargets, err := eng.ResolveChatTargetsWithContext(context.Background(), "pool:or_paid", true)
-	if err != nil || len(aliasTargets) == 0 || aliasTargets[0].ProviderID != providers[0].ID {
-		t.Fatalf("expected merged alias pool:or_paid to resolve, err=%v targets=%+v", err, aliasTargets)
-	}
-
-	// 2. Zero-cost full model fetch (>24 models) must NOT truncate or fire inference probes
-	var chatCalls int
-	fullModelsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/models") {
-			items := make([]map[string]string, 0, 32)
-			for i := 1; i <= 32; i++ {
-				items = append(items, map[string]string{"id": fmt.Sprintf("vendor/model-%02d:free", i)})
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": items})
-			return
-		}
-		chatCalls++
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"}}]}`))
-	}))
-	defer fullModelsSrv.Close()
-
-	fullRes, err := eng.FetchAndVerifyUpstreamModels(context.Background(), fullModelsSrv.URL, "sk-test", "openai", false)
-	if err != nil {
-		t.Fatalf("zero-cost fetch failed: %v", err)
-	}
-	if len(fullRes.Models) != 32 || chatCalls != 0 {
-		t.Fatalf("expected all 32 models returned with 0 chat calls, got len=%d chatCalls=%d", len(fullRes.Models), chatCalls)
-	}
-
-	// 3. Capability probing (supports_tools + supports_thinking persisted to SQLite) + NeedTools routing
 	toolSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -557,303 +184,238 @@ func TestDecoupledProvidersMigrationCapabilitiesStrategiesAndTaskQuota(t *testin
 	}))
 	defer toolSrv.Close()
 
+	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "")
 	if err := st.SaveModelConfig(
 		[]store.ModelProvider{
 			{ID: "prov_a", Name: "通道A", Protocol: "openai", BaseURL: toolSrv.URL, APIKey: "sk-prov-a-secret", Enabled: true},
 		},
 		[]store.PooledModel{
-			{ProviderID: "prov_a", ModelID: "no-tools-model", Tier: store.ModelTierFree, Enabled: true, Priority: 10},
-			{ProviderID: "prov_a", ModelID: "full-tools-model", Tier: store.ModelTierFree, Enabled: true, Priority: 20},
-			{ProviderID: "prov_a", ModelID: "paid-pro", Tier: store.ModelTierPaid, Enabled: true, Priority: 10},
+			{ProviderID: "prov_a", ModelID: "no-tools-model", Enabled: true, Priority: 10},
+			{ProviderID: "prov_a", ModelID: "full-tools-model", Enabled: true, Priority: 20},
+			{ProviderID: "prov_a", ModelID: "fast-light-model", Enabled: true, Priority: 30, IsLight: true, LastLatencyMs: 90},
 		},
-		store.PoolStrategyConfig{Free: store.PoolStrategyPriority, Paid: store.PoolStrategyPriority},
+		store.PoolStrategyPriority,
 	); err != nil {
 		t.Fatalf("SaveModelConfig: %v", err)
 	}
 
-	probe1, err := eng.ProbeModelTargetWithCapabilities(context.Background(), "prov_a", toolSrv.URL, "sk-prov-a-secret", "no-tools-model", "openai", true)
-	if err != nil || probe1.SupportsTools == nil || *probe1.SupportsTools {
-		t.Fatalf("expected no-tools-model supports_tools=false, got err=%v res=%+v", err, probe1)
-	}
-	probe2, err := eng.ProbeModelTargetWithCapabilities(context.Background(), "prov_a", toolSrv.URL, "sk-prov-a-secret", "full-tools-model", "openai", true)
-	if err != nil || probe2.SupportsTools == nil || !*probe2.SupportsTools || probe2.SupportsThinking == nil || !*probe2.SupportsThinking {
-		t.Fatalf("expected full-tools-model supports_tools=true & supports_thinking=true, got err=%v res=%+v", err, probe2)
+	eng := NewEngine(st, &fakeTaskController{st: st})
+
+	// 1. ModelOptionsPayload returns single auto + enabled models
+	opts := eng.ModelOptionsPayload()
+	if len(opts) != 4 || opts[0].ID != "auto" || !opts[0].IsAuto {
+		t.Fatalf("expected auto + 3 pool models, got %+v", opts)
 	}
 
-	toolTargets, err := eng.ResolveChatTargetsWithOptions(context.Background(), "auto:free", ModelResolveOptions{NeedTools: true})
+	// 2. Capability probing persists supports_tools & supports_thinking and guides NeedTools routing
+	p1, err := eng.ProbeModelTargetWithCapabilities(context.Background(), "prov_a", toolSrv.URL, "sk-prov-a-secret", "no-tools-model", "openai", true)
+	if err != nil || p1.SupportsTools == nil || *p1.SupportsTools {
+		t.Fatalf("expected no-tools-model supports_tools=false, got err=%v res=%+v", err, p1)
+	}
+	p2, err := eng.ProbeModelTargetWithCapabilities(context.Background(), "prov_a", toolSrv.URL, "sk-prov-a-secret", "full-tools-model", "openai", true)
+	if err != nil || p2.SupportsTools == nil || !*p2.SupportsTools || p2.SupportsThinking == nil || !*p2.SupportsThinking {
+		t.Fatalf("expected full-tools-model supports_tools=true & supports_thinking=true, got err=%v res=%+v", err, p2)
+	}
+	toolTargets, err := eng.ResolveChatTargetsWithOptions(context.Background(), "auto", ModelResolveOptions{NeedTools: true})
 	if err != nil || len(toolTargets) < 2 || toolTargets[0].Model != "full-tools-model" {
-		t.Fatalf("expected NeedTools routing to prefer full-tools-model over higher-priority no-tools-model, got err=%v targets=%+v", err, toolTargets)
+		t.Fatalf("expected NeedTools to prefer full-tools-model over no-tools-model, got err=%v targets=%+v", err, toolTargets)
 	}
 
-	// 4. Intra-pool strategies: round_robin & lowest_latency + ClearModelCooldown
-	if err := st.SaveModelConfig(
-		[]store.ModelProvider{
-			{ID: "prov_a", Name: "通道A", Protocol: "openai", BaseURL: toolSrv.URL, APIKey: "sk-prov-a-secret", Enabled: true},
-		},
-		[]store.PooledModel{
-			{ProviderID: "prov_a", ModelID: "slow-m", Tier: store.ModelTierFree, Enabled: true, Priority: 10, LastLatencyMs: 900},
-			{ProviderID: "prov_a", ModelID: "fast-m", Tier: store.ModelTierFree, Enabled: true, Priority: 20, LastLatencyMs: 120},
-			{ProviderID: "prov_a", ModelID: "paid-pro", Tier: store.ModelTierPaid, Enabled: true, Priority: 10},
-		},
-		store.PoolStrategyConfig{Free: store.PoolStrategyLowestLatency, Paid: store.PoolStrategyPriority},
-	); err != nil {
-		t.Fatalf("SaveModelConfig lowest_latency: %v", err)
-	}
-	latTargets, err := eng.ResolveChatTargetsWithOptions(context.Background(), "auto:free", ModelResolveOptions{})
-	if err != nil || latTargets[0].Model != "fast-m" {
-		t.Fatalf("expected lowest_latency strategy to pick fast-m first, got err=%v targets=%+v", err, latTargets)
+	// 3. Lowest latency & round_robin strategies
+	_ = st.SetConfig(store.KeyPoolStrategy, store.PoolStrategyLowestLatency)
+	latTargets, err := eng.ResolveChatTargetsWithOptions(context.Background(), "auto", ModelResolveOptions{})
+	if err != nil || latTargets[0].Model != "fast-light-model" {
+		t.Fatalf("expected lowest_latency to pick fast-light-model first, got err=%v targets=%+v", err, latTargets)
 	}
 
-	_ = st.SetConfig(store.KeyFreePoolStrategy, store.PoolStrategyRoundRobin)
-	rr1, _ := eng.ResolveChatTargetsWithOptions(context.Background(), "auto:free", ModelResolveOptions{})
-	rr2, _ := eng.ResolveChatTargetsWithOptions(context.Background(), "auto:free", ModelResolveOptions{})
+	_ = st.SetConfig(store.KeyPoolStrategy, store.PoolStrategyRoundRobin)
+	rr1, _ := eng.ResolveChatTargetsWithOptions(context.Background(), "auto", ModelResolveOptions{})
+	rr2, _ := eng.ResolveChatTargetsWithOptions(context.Background(), "auto", ModelResolveOptions{})
 	if rr1[0].Model == rr2[0].Model {
-		t.Fatalf("expected round_robin strategy to alternate primary target across calls, got %q and %q", rr1[0].Model, rr2[0].Model)
+		t.Fatalf("expected round_robin to alternate primary target, got %q and %q", rr1[0].Model, rr2[0].Model)
 	}
 
-	eng.health.recordFailure("pool:prov_a::fast-m", "HTTP 429", true)
-	if !eng.health.isCooling("pool:prov_a::fast-m") {
-		t.Fatalf("expected fast-m cooling down")
+	// 4. Pinned model stays index 0 even when cooling down
+	_ = st.SetConfig(store.KeyPoolStrategy, store.PoolStrategyPriority)
+	eng.health.recordFailure("pool:prov_a::full-tools-model", "HTTP 429", true)
+	pinned, err := eng.ResolveChatTargetsWithOptions(context.Background(), "pool:prov_a::full-tools-model", ModelResolveOptions{})
+	if err != nil || len(pinned) < 2 || pinned[0].ID != "pool:prov_a::full-tools-model" {
+		t.Fatalf("expected pinned target at index 0 even during cooldown, got err=%v targets=%+v", err, pinned)
 	}
-	eng.ClearModelCooldown("pool:prov_a::fast-m")
-	if eng.health.isCooling("pool:prov_a::fast-m") {
-		t.Fatalf("expected ClearModelCooldown to immediately unblock fast-m")
-	}
-
-	// 5. Usage telemetry & per-task daily paid call limit circuit breaker
-	_ = st.RecordModelUsage(store.ModelUsageRecord{
-		TargetID:         "pool:prov_a::paid-pro",
-		ProviderID:       "prov_a",
-		ModelID:          "paid-pro",
-		Tier:             store.ModelTierPaid,
-		Source:           "routine",
-		TaskID:           "task_daily_guard",
-		PromptTokens:     120,
-		CompletionTokens: 80,
-		LatencyMs:        340,
-		Success:          true,
-	})
-	_ = st.RecordModelUsage(store.ModelUsageRecord{
-		TargetID:         "pool:prov_a::fast-m",
-		ProviderID:       "prov_a",
-		ModelID:          "fast-m",
-		Tier:             store.ModelTierFree,
-		Source:           "chat",
-		PromptTokens:     50,
-		CompletionTokens: 50,
-		LatencyMs:        110,
-		Success:          true,
-	})
-
-	summary, err := st.SummarizeModelUsage(7)
-	if err != nil || summary.FreeCalls != 1 || summary.PaidCalls != 1 || summary.PaidTokens != 200 || summary.FreeTokens != 100 {
-		t.Fatalf("unexpected 7-day usage summary: err=%v summary=%+v", err, summary)
+	eng.ClearModelCooldown("pool:prov_a::full-tools-model")
+	if eng.health.isCooling("pool:prov_a::full-tools-model") {
+		t.Fatalf("expected cooldown cleared")
 	}
 
-	quotaCtx := store.WithPaidFallback(context.Background(), true)
-	quotaCtx = store.WithTaskQuota(quotaCtx, "task_daily_guard", 1)
-	if _, qErr := eng.ResolveChatTargetsWithOptions(quotaCtx, "auto:paid", ModelResolveOptions{AllowPaidFallback: true}); qErr == nil || !strings.Contains(qErr.Error(), "今日付费调用已达上限") {
-		t.Fatalf("expected daily paid call quota limit to block task_daily_guard after 1/1 call, got err=%v", qErr)
+	// 5. CallLightModel prefers IsLight-tagged pool model first
+	var lightUsedModel string
+	lightSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		lightUsedModel = body.Model
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"light-ok"}}]}`))
+	}))
+	defer lightSrv.Close()
+	_ = st.SaveModelConfig(
+		[]store.ModelProvider{{ID: "prov_a", Name: "通道A", Protocol: "openai", BaseURL: lightSrv.URL, APIKey: "sk-prov-a-secret", Enabled: true}},
+		[]store.PooledModel{
+			{ProviderID: "prov_a", ModelID: "claude-sonnet-4", Enabled: true, Priority: 10, IsLight: false},
+			{ProviderID: "prov_a", ModelID: "gemini-2.5-flash", Enabled: true, Priority: 20, IsLight: true},
+		},
+		store.PoolStrategyPriority,
+	)
+	out, err := eng.CallLightModel(context.Background(), "sys", "hello")
+	if err != nil || out != "light-ok" || lightUsedModel != "gemini-2.5-flash" {
+		t.Fatalf("expected CallLightModel to prefer IsLight model gemini-2.5-flash, got model=%q out=%q err=%v", lightUsedModel, out, err)
 	}
 }
 
-func TestPinnedModelNeverSilentlyDemotedByCooldown(t *testing.T) {
+func TestPromptCachingCostEstimationVisionAndAutoCompact(t *testing.T) {
 	tmpDir := t.TempDir()
-	st, err := store.Open(filepath.Join(tmpDir, "pinned_model_test.db"))
+	st, err := store.Open(filepath.Join(tmpDir, "v289_features.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
+
+	// Seed a tiny valid 1x1 PNG in <dataDir>/chat_uploads/test_img.png
+	uploadDir := filepath.Join(st.DataDir(), "chat_uploads")
+	if err := os.MkdirAll(uploadDir, 0o750); err != nil {
+		t.Fatalf("mkdir chat_uploads: %v", err)
+	}
+	tinyPNG, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=")
+	if err := os.WriteFile(filepath.Join(uploadDir, "test_img.png"), tinyPNG, 0o640); err != nil {
+		t.Fatalf("write test_img.png: %v", err)
+	}
+
+	var lastReqBody map[string]any
+	mockClaude := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &lastReqBody)
+		isStream, _ := lastReqBody["stream"].(bool)
+		if !isStream {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"用户希望持续优化服务器架构，已完成图片排查与第一轮评审。"}}],"usage":{"prompt_tokens":1000,"completion_tokens":100,"total_tokens":1100,"prompt_tokens_details":{"cached_tokens":600}}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		for _, c := range []string{
+			`data: {"choices":[{"delta":{"role":"assistant","content":"我看到了这张 PNG 图片，架构非常清晰。"}}]}`,
+			`data: {"choices":[],"usage":{"prompt_tokens":2000,"completion_tokens":200,"total_tokens":2200,"prompt_tokens_details":{"cached_tokens":1500}}}`,
+			`data: [DONE]`,
+		} {
+			fmt.Fprintln(w, c)
+			fmt.Fprintln(w)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer mockClaude.Close()
 
 	_ = st.SetConfig(store.KeyDeepSeekAPIKey, "")
-	_ = st.SetConfig(store.KeyPoolFallback, "true")
 	if err := st.SaveModelConfig(
-		[]store.ModelProvider{
-			{
-				ID:       "prov_free",
-				Name:     "免费渠道",
-				Protocol: "openai",
-				BaseURL:  "https://free.example.com/v1",
-				APIKey:   "sk-free",
-				Enabled:  true,
-			},
-			{
-				ID:       "prov_paid",
-				Name:     "付费渠道",
-				Protocol: "openai",
-				BaseURL:  "https://paid.example.com/v1",
-				APIKey:   "sk-paid",
-				Enabled:  true,
-			},
-		},
-		[]store.PooledModel{
-			{ProviderID: "prov_free", ModelID: "model-alpha", Tier: store.ModelTierFree, Enabled: true, Priority: 10},
-			{ProviderID: "prov_free", ModelID: "model-beta", Tier: store.ModelTierFree, Enabled: true, Priority: 20},
-			{ProviderID: "prov_free", ModelID: "model-gamma", Tier: store.ModelTierFree, Enabled: true, Priority: 30},
-			{ProviderID: "prov_paid", ModelID: "paid-one", Tier: store.ModelTierPaid, Enabled: true, Priority: 10},
-			{ProviderID: "prov_paid", ModelID: "paid-two", Tier: store.ModelTierPaid, Enabled: true, Priority: 20},
-		},
-		store.PoolStrategyConfig{Free: store.PoolStrategyPriority, Paid: store.PoolStrategyPriority},
+		[]store.ModelProvider{{
+			ID:       "or_claude",
+			Name:     "OpenRouter",
+			Protocol: store.ProviderProtocolOpenAI,
+			BaseURL:  mockClaude.URL + "/v1",
+			APIKey:   "sk-or-v289-test",
+			Enabled:  true,
+		}},
+		[]store.PooledModel{{
+			ProviderID: "or_claude",
+			ModelID:    "anthropic/claude-sonnet-4",
+			Enabled:    true,
+			Priority:   10,
+		}},
+		store.PoolStrategyPriority,
 	); err != nil {
 		t.Fatalf("SaveModelConfig: %v", err)
 	}
 
-	eng := NewEngine(st, &fakeTaskController{st: st})
-
-	// Put both pinned targets and one fallback in cooldown
-	eng.health.recordFailure("pool:prov_free::model-alpha", "HTTP 429", true)
-	eng.health.recordFailure("pool:prov_free::model-beta", "HTTP 429", true)
-	eng.health.recordFailure("pool:prov_paid::paid-one", "HTTP 503", false)
-
-	// Free pinned model MUST remain index 0 even when cooling down, while healthy fallback (gamma) is sorted before cooling fallback (beta)
-	freeResolved, err := eng.ResolveChatTargetsWithOptions(context.Background(), "pool:prov_free::model-alpha", ModelResolveOptions{
-		AllowPaidFallback: true,
+	_ = st.SaveBot(store.Bot{
+		ID:           "bot_vision",
+		Name:         "架构师",
+		RoleTitle:    "架构审查与多模态诊断",
+		SystemPrompt: "你是资深架构师，分析问题直接给本质结论。",
+		Model:        "auto",
+		AllowedTools: `["web_search"]`,
 	})
-	if err != nil {
-		t.Fatalf("resolve pinned free model: %v", err)
-	}
-	if len(freeResolved) < 3 {
-		t.Fatalf("expected pinned + fallbacks, got %d", len(freeResolved))
-	}
-	if freeResolved[0].ID != "pool:prov_free::model-alpha" {
-		t.Fatalf("expected pinned free model at index 0, got %s", freeResolved[0].ID)
-	}
-	if freeResolved[1].ID != "pool:prov_free::model-gamma" {
-		t.Fatalf("expected healthy fallback gamma at index 1, got %s", freeResolved[1].ID)
-	}
-
-	// Paid pinned model MUST also remain index 0 even when cooling down
-	paidResolved, err := eng.ResolveChatTargetsWithOptions(context.Background(), "pool:prov_paid::paid-one", ModelResolveOptions{
-		AllowPaidFallback: true,
-	})
-	if err != nil {
-		t.Fatalf("resolve pinned paid model: %v", err)
-	}
-	if len(paidResolved) < 2 || paidResolved[0].ID != "pool:prov_paid::paid-one" {
-		t.Fatalf("expected pinned paid model at index 0, got %+v", paidResolved)
-	}
-}
-
-func TestMultiKeyProviderFailoverAndModelAttribution(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "multi_key_test.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	defer st.Close()
-
-	var usedKeys []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		usedKeys = append(usedKeys, auth)
-		if strings.HasSuffix(r.URL.Path, "/models") {
-			if auth == "sk-bad-123456" {
-				http.Error(w, `{"error":"invalid key"}`, http.StatusUnauthorized)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":[{"id":"gemini-2.5-flash"},{"id":"nano-banana-pro-preview"},{"id":"gemini-1.5-pro"},{"id":"gemini-2.5-pro"}]}`))
-			return
-		}
-		if strings.HasSuffix(r.URL.Path, "/chat/completions") {
-			if auth == "sk-bad-123456" {
-				http.Error(w, `{"error":"rate limit"}`, http.StatusTooManyRequests)
-				return
-			}
-			var body struct {
-				Model  string `json:"model"`
-				Stream bool   `json:"stream"`
-			}
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			if body.Model == "gemini-2.5-pro" {
-				http.Error(w, `{"error":"quota exceeded"}`, http.StatusTooManyRequests)
-				return
-			}
-			if !body.Stream {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"OK"}}]}`))
-				return
-			}
-			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = fmt.Fprintln(w, `data: {"choices":[{"delta":{"role":"assistant","content":"多密钥自动切换成功"}}]}`)
-			_, _ = fmt.Fprintln(w)
-			_, _ = fmt.Fprintln(w, `data: [DONE]`)
-			_, _ = fmt.Fprintln(w)
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-
-	providers := []store.ModelProvider{
-		{
-			ID:       "prov_free",
-			Name:     "Free Channel",
-			Protocol: store.ProviderProtocolOpenAI,
-			BaseURL:  srv.URL + "/v1",
-			APIKeys:  []string{"sk-bad-123456", "sk-good-999999"},
-			Enabled:  true,
-		},
-		{
-			ID:       "prov_paid",
-			Name:     "Paid Channel",
-			Protocol: store.ProviderProtocolOpenAI,
-			BaseURL:  srv.URL + "/v1",
-			APIKeys:  []string{"sk-good-999999"},
-			Enabled:  true,
-		},
-	}
-	models := []store.PooledModel{
-		{ProviderID: "prov_free", ModelID: "gemini-2.5-flash", Tier: store.ModelTierFree, Enabled: true, Priority: 10},
-		{ProviderID: "prov_paid", ModelID: "gemini-2.5-flash", Tier: store.ModelTierPaid, Enabled: true, Priority: 10},
-	}
-	if err := st.SaveModelConfig(providers, models, store.PoolStrategyConfig{}); err != nil {
-		t.Fatalf("SaveModelConfig: %v", err)
-	}
-	// Verify masked roundtrip preserves both keys
-	gotProv, gotMod, gotStrat := st.GetModelConfig()
-	masked := store.MaskModelProviders(gotProv)
-	if len(masked[0].APIKeys) != 2 || !strings.Contains(masked[0].APIKeys[0], "****") {
-		t.Fatalf("expected 2 masked keys, got %+v", masked[0].APIKeys)
-	}
-	if err := st.SaveModelConfig(masked, gotMod, gotStrat); err != nil {
-		t.Fatalf("SaveModelConfig masked roundtrip: %v", err)
-	}
-	reloadedProv, _, _ := st.GetModelConfig()
-	if len(reloadedProv[0].EffectiveAPIKeys()) != 2 || reloadedProv[0].EffectiveAPIKeys()[1] != "sk-good-999999" {
-		t.Fatalf("expected preserved raw keys after masked save, got %+v", reloadedProv[0].EffectiveAPIKeys())
-	}
 
 	eng := NewEngine(st, &fakeTaskController{st: st})
 
-	// Test FetchAndVerifyUpstreamModelsWithKeys: rotates from bad key to good key, filters nano-banana & gemini-1.5, and intercepts failing gemini-2.5-pro
-	fetchRes, err := eng.FetchAndVerifyUpstreamModelsWithKeys(context.Background(), srv.URL+"/v1", []string{"sk-bad-123456", "sk-good-999999"}, "openai", true)
+	// 1. Send a vision chat message referencing local /api/v2/chat/uploads/test_img.png
+	resp, err := eng.ChatStream(context.Background(), ChatRequest{
+		BotID:   "bot_vision",
+		Message: "请看这张架构图",
+		Images:  []string{"/api/v2/chat/uploads/test_img.png"},
+	}, nil)
 	if err != nil {
-		t.Fatalf("FetchAndVerifyUpstreamModelsWithKeys: %v", err)
+		t.Fatalf("ChatStream with image failed: %v", err)
 	}
-	if len(fetchRes.Models) != 1 || fetchRes.Models[0] != "gemini-2.5-flash" {
-		t.Fatalf("expected only gemini-2.5-flash usable, got %+v", fetchRes)
+	if !strings.Contains(resp.Content, "PNG 图片") {
+		t.Fatalf("unexpected reply: %q", resp.Content)
 	}
-	if fetchRes.FilteredOutCount != 2 || fetchRes.FailedVerifyCount != 1 {
-		t.Fatalf("expected filteredOut=2 failedVerify=1, got %+v", fetchRes)
+	if resp.Usage == nil || resp.Usage.CachedTokens != 1500 || resp.Usage.CostUSD <= 0 {
+		t.Fatalf("expected cached_tokens=1500 and positive cost_usd in response usage, got %+v", resp.Usage)
 	}
 
-	// Test multi-key failover during streaming chat + exact paid tier attribution when same model ID exists in both pools
-	targets, err := eng.ResolveChatTargetsWithOptions(context.Background(), "pool:prov_free::gemini-2.5-flash", ModelResolveOptions{})
-	if err != nil {
-		t.Fatalf("ResolveChatTargetsWithOptions: %v", err)
+	// Verify upstream payload carried cache_control on system static block & tool, and base64 image_url on user message
+	rawReqJSON, _ := json.Marshal(lastReqBody)
+	reqStr := string(rawReqJSON)
+	if !strings.Contains(reqStr, `"cache_control":{"type":"ephemeral"}`) {
+		t.Fatalf("expected cache_control ephemeral in Claude request payload, got: %s", reqStr)
 	}
-	_, content, _, _, usedTarget, err := eng.streamRoundWithFailover(context.Background(), targets, []apiMessage{{Role: "user", Content: "hi"}}, nil, nil, nil, nil)
-	if err != nil || !strings.Contains(content, "多密钥自动切换成功") {
-		t.Fatalf("expected multi-key failover to succeed, got content=%q err=%v", content, err)
-	}
-	if usedTarget.ID != "pool:prov_free::gemini-2.5-flash" {
-		t.Fatalf("expected usedTarget.ID=pool:prov_free::gemini-2.5-flash, got %s", usedTarget.ID)
+	if !strings.Contains(reqStr, `"type":"image_url"`) || !strings.Contains(reqStr, "data:image/png;base64,") {
+		t.Fatalf("expected multipart image_url with base64 data URL in user message, got: %s", reqStr)
 	}
 
-	// Paid pinned target must preserve paid tier and target ID
-	paidTargets, err := eng.ResolveChatTargetsWithOptions(context.Background(), "pool:prov_paid::gemini-2.5-flash", ModelResolveOptions{AllowPaidFallback: true})
-	if err != nil || len(paidTargets) == 0 || paidTargets[0].Tier != store.ModelTierPaid || paidTargets[0].ID != "pool:prov_paid::gemini-2.5-flash" {
-		t.Fatalf("expected paid target attribution, got %+v err=%v", paidTargets, err)
+	// Verify usage summary persisted cached tokens & USD/CNY cost
+	sum, err := st.SummarizeModelUsage(7)
+	if err != nil || sum.TotalCachedTokens < 1500 || sum.TotalCostUSD <= 0 || sum.TotalCostCNY <= 0 || sum.CacheHitRate <= 0 {
+		t.Fatalf("expected usage summary with cache hit & USD/CNY cost, err=%v sum=%+v", err, sum)
 	}
-	_ = usedKeys
+
+	// 2. Seed additional turns and test CompactBotThread + rolling summary injection
+	for i := 0; i < 6; i++ {
+		_, _ = st.AppendAgentMessage(store.AgentMessage{
+			SessionID: "bot:bot_vision",
+			BotID:     "bot_vision",
+			Role:      "user",
+			Content:   fmt.Sprintf("第 %d 轮架构问题讨论", i+1),
+		})
+		_, _ = st.AppendAgentMessage(store.AgentMessage{
+			SessionID: "bot:bot_vision",
+			BotID:     "bot_vision",
+			Role:      "assistant",
+			Content:   fmt.Sprintf("第 %d 轮架构回答结论", i+1),
+		})
+	}
+	bot, _ := st.GetBot("bot_vision")
+	summary, compactedCount, err := eng.CompactBotThread(context.Background(), bot, "")
+	if err != nil || compactedCount == 0 || !strings.Contains(summary, "服务器架构") {
+		t.Fatalf("CompactBotThread failed: err=%v count=%d summary=%q", err, compactedCount, summary)
+	}
+	compState := st.GetThreadCompactionState("bot_vision", "")
+	if compState.UpToID == 0 || !strings.Contains(compState.Summary, "服务器架构") {
+		t.Fatalf("expected persisted compaction state, got %+v", compState)
+	}
+
+	// Next turn must inject the rolling summary into upstream messages!
+	_, err = eng.ChatStream(context.Background(), ChatRequest{
+		BotID:   "bot_vision",
+		Message: "继续下一步改造",
+	}, nil)
+	if err != nil {
+		t.Fatalf("post-compact chat failed: %v", err)
+	}
+	postReqBytes, _ := json.Marshal(lastReqBody)
+	if !strings.Contains(string(postReqBytes), "早期对话滚动摘要") || !strings.Contains(string(postReqBytes), "服务器架构") {
+		t.Fatalf("expected rolling summary injected into post-compact prompt, got: %s", string(postReqBytes))
+	}
 }

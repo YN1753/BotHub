@@ -5,15 +5,11 @@ import { BotHubApi } from '../api/client'
 import {
   describeCron,
   formatDateOnly,
-  inferRecommendedRenewMonths,
   summarizeAssetsMonthlyCost,
   summarizeAssetsYearlyCost,
-  triggerBlobDownload,
-  csvEscapeCell,
 } from '../utils/format'
-import { addMonthsPlain, diffPlainDaysFromToday, todayPlainDate } from '../utils/calendar'
+import { todayPlainDate } from '../utils/calendar'
 import { mergeExtensibleCategories, resolveCategoryMeta } from '../utils/assetCategories'
-import { pickDefaultWorkerBot } from '../utils/botLook'
 import { applySiblingStaggerFallback, trackSpotlight } from '../utils/topLayer'
 import type { Asset, TodoItem, WorkNote } from '../types/bothub'
 import SegmentedTabs from './SegmentedTabs.vue'
@@ -38,8 +34,6 @@ const searchQuery = ref('')
 const activeCat = ref('all')
 const expiringOnly = ref(false)
 const sortByUrgency = ref(false)
-const syncing = ref(false)
-const renewingAssetId = ref('')
 
 // Task controls
 const taskSearch = ref('')
@@ -157,37 +151,6 @@ const filteredAssets = computed(() => {
 const activeCostSummary = computed(() => summarizeAssetsMonthlyCost(filteredAssets.value, store.state.fxRates))
 const activeYearlyCostSummary = computed(() => summarizeAssetsYearlyCost(filteredAssets.value, store.state.fxRates))
 
-async function quickRenewAsset(a: Asset, months: 1 | 3 | 12) {
-  if (renewingAssetId.value) return
-  const curDate = (a.due_date || '').slice(0, 10)
-  const curDiff = diffPlainDaysFromToday(curDate)
-  const baseDate =
-    /^\d{4}-\d{2}-\d{2}$/.test(curDate) &&
-    !curDate.startsWith('2099') &&
-    curDiff !== null &&
-    curDiff >= -30
-      ? curDate
-      : todayPlainDate()
-  const nextDue = addMonthsPlain(baseDate, months)
-  const nextDays = diffPlainDaysFromToday(nextDue) ?? a.days_left
-  renewingAssetId.value = a.id
-  try {
-    await BotHubApi.updateAsset(a.id, {
-      ...a,
-      due_date: nextDue,
-      days_left: nextDays,
-      status: '生效中',
-    })
-    const stepLabel = months === 12 ? '1 年' : months === 3 ? '1 季度' : '1 个月'
-    store.notify(`已将「${a.name}」顺延 ${stepLabel} 至 ${nextDue}`)
-    await store.refreshWorkspaceSlices(['assets'])
-  } catch (err: any) {
-    store.notify(err.message || '顺延到期日失败')
-  } finally {
-    renewingAssetId.value = ''
-  }
-}
-
 function resetAssetFilters() {
   searchQuery.value = ''
   activeCat.value = 'all'
@@ -245,59 +208,9 @@ onMounted(() => {
 watch(() => filteredAssets.value.length, () => nextTick(() => applySiblingStaggerFallback(assetGridRef.value)))
 watch(() => filteredTasks.value.length, () => nextTick(() => applySiblingStaggerFallback(taskGridRef.value)))
 
-async function handleSyncAssets() {
-  syncing.value = true
-  try {
-    const res = await BotHubApi.syncAssets()
-    store.notify(res.summary || '资产嗅探同步完成')
-    void store.refreshWorkspaceSlices(['assets'])
-  } catch (err: any) {
-    store.notify(err.message)
-  } finally {
-    syncing.value = false
-  }
-}
-
-async function auditAssetsWithAssistant() {
-  const targetBotId = pickDefaultWorkerBot(store.state.bots, store.activeBot.value)
-  if (!targetBotId) {
-    store.notify('请先创建一个可执行 Bot')
-    return
-  }
-  await store.jumpToBot(
-    targetBotId,
-    '请调用 manage_assets(action="summary") 与 manage_assets(action="expiring", within_days=30) 为我全面核查月/年费预算与 30 天内到期续费风险，需要续费的项目请顺便整理为待办事项。'
-  )
-}
-
 function taskBot(botId?: string) {
   if (!botId) return undefined
   return store.state.bots.find((b) => b.id === botId)
-}
-
-function exportAssetsCsv() {
-  if (!filteredAssets.value.length) {
-    store.notify('当前筛选结果为空，无法导出')
-    return
-  }
-  const header = ['ID', '名称', '类别', '规格', '费用', '状态', '到期日期', '剩余天数', '自动续费']
-  const rows = filteredAssets.value.map((a) => [
-    a.id,
-    a.name,
-    a.category,
-    a.spec,
-    a.price,
-    a.status,
-    formatDateOnly(a.due_date),
-    String(a.days_left),
-    a.auto_renew ? '是' : '否',
-  ])
-  const csv = [header, ...rows]
-    .map((cols) => cols.map((c) => csvEscapeCell(c)).join(','))
-    .join('\n')
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
-  triggerBlobDownload(blob, `bothub_assets_${Date.now()}.csv`)
-  store.notify(`已导出 ${filteredAssets.value.length} 项数字资产`)
 }
 
 async function runTaskNow(id: string) {
@@ -537,19 +450,11 @@ function noteCategoryLabel(cat: string): string {
               @click="store.state.editingAsset = a"
               class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-canvas/80 border border-line/70 hover:border-warn-border transition cursor-pointer"
             >
-              <div class="flex items-center gap-2 min-w-0 text-xs">
-                <strong class="font-semibold text-fg truncate">{{ a.name }}</strong>
-                <span :class="['font-mono shrink-0', daysBadgeClass(a)]">{{ daysText(a) }}</span>
+              <strong class="text-xs font-semibold text-fg truncate">{{ a.name }}</strong>
+              <div class="flex items-center gap-2 shrink-0 text-xs">
                 <span v-if="a.price" class="font-mono text-fg-muted shrink-0">{{ a.price }}</span>
+                <span :class="['font-mono shrink-0', daysBadgeClass(a)]">{{ daysText(a) }}</span>
               </div>
-              <button
-                type="button"
-                :disabled="renewingAssetId === a.id"
-                @click.stop="quickRenewAsset(a, inferRecommendedRenewMonths(a.price))"
-                class="font-mono text-xs px-2 py-0.5 rounded-md border border-accent-border bg-accent-soft text-accent-fg hover:border-accent transition cursor-pointer shrink-0"
-              >
-                续期+{{ inferRecommendedRenewMonths(a.price) === 12 ? '1年' : inferRecommendedRenewMonths(a.price) === 3 ? '1季' : '1月' }}
-              </button>
             </div>
             <div
               v-for="td in focusTodos.slice(0, 4)"
@@ -576,22 +481,6 @@ function noteCategoryLabel(cat: string): string {
         <div class="flex items-center justify-between gap-3 flex-wrap">
           <SegmentedTabs v-model="activeHubTab" :items="hubTabs" aria-label="中枢板块切换" />
           <div v-if="activeHubTab === 'assets'" class="flex items-center gap-2 shrink-0">
-            <button
-              v-if="store.state.bots.length > 0"
-              type="button"
-              @click="auditAssetsWithAssistant"
-              class="btn-tactile min-h-[34px] px-3 rounded-full text-info text-xs cursor-pointer"
-            >
-              AI 审计
-            </button>
-            <button
-              type="button"
-              :disabled="syncing"
-              @click="handleSyncAssets"
-              class="btn-tactile min-h-[34px] px-3 rounded-full text-xs cursor-pointer disabled:opacity-50"
-            >
-              {{ syncing ? '同步中...' : '嗅探同步' }}
-            </button>
             <button
               type="button"
               @click="store.state.editingAsset = null"
@@ -655,14 +544,6 @@ function noteCategoryLabel(cat: string): string {
                 ]"
               >
                 按紧迫度
-              </button>
-              <button
-                type="button"
-                @click="exportAssetsCsv"
-                title="导出当前筛选列表为 CSV"
-                class="btn-tactile min-h-[30px] px-2.5 rounded-full text-xs cursor-pointer"
-              >
-                导出
               </button>
             </div>
           </div>
@@ -740,18 +621,7 @@ function noteCategoryLabel(cat: string): string {
                   <span class="font-mono tabular-nums text-fg-muted">
                     {{ formatDateOnly(a.due_date) }}<template v-if="a.auto_renew"> · 自动续费</template>
                   </span>
-                  <div class="flex items-center gap-1.5 ml-auto">
-                    <button
-                      v-if="a.status !== '长期有效' && !String(a.due_date || '').startsWith('2099') && a.days_left <= 30"
-                      type="button"
-                      :disabled="renewingAssetId === a.id"
-                      @click.stop="quickRenewAsset(a, inferRecommendedRenewMonths(a.price))"
-                      class="font-mono text-xs px-1.5 py-0.5 rounded-md border border-accent-border bg-accent-soft text-accent-fg hover:border-accent transition cursor-pointer"
-                    >
-                      续期+{{ inferRecommendedRenewMonths(a.price) === 12 ? '1年' : inferRecommendedRenewMonths(a.price) === 3 ? '1季' : '1月' }}
-                    </button>
-                    <span :class="['font-mono tabular-nums shrink-0', daysBadgeClass(a)]">{{ daysText(a) }}</span>
-                  </div>
+                  <span :class="['font-mono tabular-nums shrink-0', daysBadgeClass(a)]">{{ daysText(a) }}</span>
                 </div>
               </div>
             </button>

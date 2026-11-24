@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"unicode"
@@ -32,7 +33,7 @@ type AgentMessage struct {
 	ReplyPreview     string `json:"reply_preview,omitempty"`
 	ModelUsed        string `json:"model_used,omitempty"`
 	ModelTargetID    string `json:"model_target_id,omitempty"`
-	ModelTier        string `json:"model_tier,omitempty"`
+	Attachments      string `json:"attachments,omitempty"` // JSON array of image URLs / data refs
 	CreatedAt        string `json:"created_at"`
 }
 
@@ -51,14 +52,16 @@ type AgentMemory struct {
 }
 
 type BotThread struct {
-	ID        string `json:"id"`
-	BotID     string `json:"bot_id"`
-	Title     string `json:"title"`
-	Summary   string `json:"summary,omitempty"`
-	Archived  bool   `json:"archived"`
-	MsgCount  int    `json:"msg_count"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID             string `json:"id"`
+	BotID          string `json:"bot_id"`
+	Title          string `json:"title"`
+	Summary        string `json:"summary,omitempty"`
+	RollingSummary string `json:"rolling_summary,omitempty"`
+	SummaryUpToID  int64  `json:"summary_up_to_id,omitempty"`
+	Archived       bool   `json:"archived"`
+	MsgCount       int    `json:"msg_count"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 type BotExecutionLog struct {
@@ -148,9 +151,9 @@ func (s *Store) AppendAgentMessage(msg AgentMessage) (int64, error) {
 	if msg.MsgKind == "" {
 		msg.MsgKind = "chat"
 	}
-	res, err := s.db.Exec(`INSERT INTO agent_messages (session_id, bot_id, thread_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, model_used, model_target_id, model_tier, created_at)
+	res, err := s.db.Exec(`INSERT INTO agent_messages (session_id, bot_id, thread_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, model_used, model_target_id, attachments, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		msg.SessionID, msg.BotID, msg.ThreadID, msg.SenderBotID, msg.MsgKind, msg.Role, msg.Content, msg.ReasoningContent, msg.ToolCalls, msg.ToolCallID, msg.ReplyToID, msg.ReplyPreview, msg.ModelUsed, msg.ModelTargetID, msg.ModelTier, msg.CreatedAt)
+		msg.SessionID, msg.BotID, msg.ThreadID, msg.SenderBotID, msg.MsgKind, msg.Role, msg.Content, msg.ReasoningContent, msg.ToolCalls, msg.ToolCallID, msg.ReplyToID, msg.ReplyPreview, msg.ModelUsed, msg.ModelTargetID, msg.Attachments, msg.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -168,9 +171,9 @@ func (s *Store) ListAgentMessages(sessionID string, limit int) ([]AgentMessage, 
 		limit = 60
 	}
 	rows, err := s.db.Query(`
-		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(thread_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, COALESCE(reply_to_id,0), COALESCE(reply_preview,''), COALESCE(model_used,''), COALESCE(model_target_id,''), COALESCE(model_tier,''), created_at
+		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(thread_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, COALESCE(reply_to_id,0), COALESCE(reply_preview,''), COALESCE(model_used,''), COALESCE(model_target_id,''), COALESCE(attachments,''), created_at
 		FROM (
-			SELECT id, session_id, bot_id, thread_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, model_used, model_target_id, model_tier, created_at
+			SELECT id, session_id, bot_id, thread_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, model_used, model_target_id, attachments, created_at
 			FROM agent_messages WHERE session_id = ? ORDER BY id DESC LIMIT ?
 		) sub ORDER BY id ASC`, sessionID, limit)
 	if err != nil {
@@ -181,7 +184,7 @@ func (s *Store) ListAgentMessages(sessionID string, limit int) ([]AgentMessage, 
 	list := make([]AgentMessage, 0)
 	for rows.Next() {
 		var m AgentMessage
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.BotID, &m.ThreadID, &m.SenderBotID, &m.MsgKind, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.ReplyToID, &m.ReplyPreview, &m.ModelUsed, &m.ModelTargetID, &m.ModelTier, &m.CreatedAt); err == nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.BotID, &m.ThreadID, &m.SenderBotID, &m.MsgKind, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.ReplyToID, &m.ReplyPreview, &m.ModelUsed, &m.ModelTargetID, &m.Attachments, &m.CreatedAt); err == nil {
 			list = append(list, m)
 		}
 	}
@@ -198,9 +201,9 @@ func (s *Store) ListBotMessagesByThread(botID, threadID string, limit int) ([]Ag
 	}
 	threadID = strings.TrimSpace(threadID)
 	rows, err := s.db.Query(`
-		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(thread_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, COALESCE(reply_to_id,0), COALESCE(reply_preview,''), COALESCE(model_used,''), COALESCE(model_target_id,''), COALESCE(model_tier,''), created_at
+		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(thread_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, COALESCE(reply_to_id,0), COALESCE(reply_preview,''), COALESCE(model_used,''), COALESCE(model_target_id,''), COALESCE(attachments,''), created_at
 		FROM (
-			SELECT id, session_id, bot_id, thread_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, model_used, model_target_id, model_tier, created_at
+			SELECT id, session_id, bot_id, thread_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, model_used, model_target_id, attachments, created_at
 			FROM agent_messages WHERE bot_id = ? AND thread_id = ? ORDER BY id DESC LIMIT ?
 		) sub ORDER BY id ASC`, botID, threadID, limit)
 	if err != nil {
@@ -211,11 +214,95 @@ func (s *Store) ListBotMessagesByThread(botID, threadID string, limit int) ([]Ag
 	list := make([]AgentMessage, 0)
 	for rows.Next() {
 		var m AgentMessage
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.BotID, &m.ThreadID, &m.SenderBotID, &m.MsgKind, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.ReplyToID, &m.ReplyPreview, &m.ModelUsed, &m.ModelTargetID, &m.ModelTier, &m.CreatedAt); err == nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.BotID, &m.ThreadID, &m.SenderBotID, &m.MsgKind, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.ReplyToID, &m.ReplyPreview, &m.ModelUsed, &m.ModelTargetID, &m.Attachments, &m.CreatedAt); err == nil {
 			list = append(list, m)
 		}
 	}
 	return list, rows.Err()
+}
+
+func (s *Store) ListBotMessagesAfterID(botID, threadID string, afterID int64, limit int) ([]AgentMessage, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 80
+	}
+	threadID = strings.TrimSpace(threadID)
+	rows, err := s.db.Query(`
+		SELECT id, session_id, COALESCE(bot_id,''), COALESCE(thread_id,''), COALESCE(sender_bot_id,''), COALESCE(msg_kind,'chat'), role, content, reasoning_content, tool_calls, tool_call_id, COALESCE(reply_to_id,0), COALESCE(reply_preview,''), COALESCE(model_used,''), COALESCE(model_target_id,''), COALESCE(attachments,''), created_at
+		FROM (
+			SELECT id, session_id, bot_id, thread_id, sender_bot_id, msg_kind, role, content, reasoning_content, tool_calls, tool_call_id, reply_to_id, reply_preview, model_used, model_target_id, attachments, created_at
+			FROM agent_messages WHERE bot_id = ? AND thread_id = ? AND id > ? ORDER BY id DESC LIMIT ?
+		) sub ORDER BY id ASC`, botID, threadID, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]AgentMessage, 0)
+	for rows.Next() {
+		var m AgentMessage
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.BotID, &m.ThreadID, &m.SenderBotID, &m.MsgKind, &m.Role, &m.Content, &m.ReasoningContent, &m.ToolCalls, &m.ToolCallID, &m.ReplyToID, &m.ReplyPreview, &m.ModelUsed, &m.ModelTargetID, &m.Attachments, &m.CreatedAt); err == nil {
+			list = append(list, m)
+		}
+	}
+	return list, rows.Err()
+}
+
+type ThreadCompactionState struct {
+	Summary  string `json:"summary"`
+	UpToID   int64  `json:"up_to_id"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+func (s *Store) GetThreadCompactionState(botID, threadID string) ThreadCompactionState {
+	bid := strings.TrimSpace(botID)
+	tid := strings.TrimSpace(threadID)
+	if bid == "" || s == nil || s.db == nil {
+		return ThreadCompactionState{}
+	}
+	if tid != "" {
+		var st ThreadCompactionState
+		err := s.db.QueryRow(`SELECT COALESCE(rolling_summary,''), COALESCE(summary_up_to_id,0), updated_at FROM bot_threads WHERE bot_id = ? AND id = ?`, bid, tid).
+			Scan(&st.Summary, &st.UpToID, &st.UpdatedAt)
+		if err == nil {
+			return st
+		}
+	}
+	raw, _ := s.GetConfig("thread_compact:" + bid + ":" + tid)
+	if strings.TrimSpace(raw) == "" {
+		return ThreadCompactionState{}
+	}
+	var st ThreadCompactionState
+	_ = json.Unmarshal([]byte(raw), &st)
+	return st
+}
+
+func (s *Store) SaveThreadCompactionState(botID, threadID, summary string, upToID int64) error {
+	bid := strings.TrimSpace(botID)
+	tid := strings.TrimSpace(threadID)
+	if bid == "" || s == nil || s.db == nil {
+		return nil
+	}
+	now := NowShanghai()
+	if tid != "" {
+		res, err := s.db.Exec(`UPDATE bot_threads SET rolling_summary = ?, summary_up_to_id = ?, updated_at = ? WHERE bot_id = ? AND id = ?`,
+			strings.TrimSpace(summary), upToID, now, bid, tid)
+		if err == nil {
+			if n, _ := res.RowsAffected(); n > 0 {
+				return nil
+			}
+		}
+	}
+	st := ThreadCompactionState{
+		Summary:   strings.TrimSpace(summary),
+		UpToID:    upToID,
+		UpdatedAt: now,
+	}
+	b, _ := json.Marshal(st)
+	return s.SetConfig("thread_compact:"+bid+":"+tid, string(b))
+}
+
+func (s *Store) ClearThreadCompactionState(botID, threadID string) {
+	_ = s.SaveThreadCompactionState(botID, threadID, "", 0)
 }
 
 func (s *Store) DeleteBotMessage(botID string, msgID int64) error {
@@ -231,11 +318,13 @@ func (s *Store) DeleteBotMessagesAfterID(botID, threadID string, afterID int64) 
 
 func (s *Store) ClearBotMessages(botID string) error {
 	_, err := s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ?`, botID)
+	s.ClearThreadCompactionState(botID, "")
 	return err
 }
 
 func (s *Store) ClearBotMessagesInThread(botID, threadID string) error {
 	_, err := s.db.Exec(`DELETE FROM agent_messages WHERE bot_id = ? AND thread_id = ?`, botID, strings.TrimSpace(threadID))
+	s.ClearThreadCompactionState(botID, threadID)
 	return err
 }
 
@@ -243,7 +332,7 @@ func (s *Store) ClearBotMessagesInThread(botID, threadID string) error {
 
 func (s *Store) ListBotThreads(botID string) ([]BotThread, error) {
 	rows, err := s.db.Query(`
-		SELECT t.id, t.bot_id, t.title, COALESCE(t.summary,''), COALESCE(t.archived,0), t.created_at, t.updated_at,
+		SELECT t.id, t.bot_id, t.title, COALESCE(t.summary,''), COALESCE(t.rolling_summary,''), COALESCE(t.summary_up_to_id,0), COALESCE(t.archived,0), t.created_at, t.updated_at,
 			(SELECT COUNT(*) FROM agent_messages m WHERE m.bot_id = t.bot_id AND m.thread_id = t.id) AS msg_count
 		FROM bot_threads t WHERE t.bot_id = ? ORDER BY t.archived ASC, t.updated_at DESC`, strings.TrimSpace(botID))
 	if err != nil {
@@ -255,7 +344,7 @@ func (s *Store) ListBotThreads(botID string) ([]BotThread, error) {
 	for rows.Next() {
 		var item BotThread
 		var arch int
-		if err := rows.Scan(&item.ID, &item.BotID, &item.Title, &item.Summary, &arch, &item.CreatedAt, &item.UpdatedAt, &item.MsgCount); err == nil {
+		if err := rows.Scan(&item.ID, &item.BotID, &item.Title, &item.Summary, &item.RollingSummary, &item.SummaryUpToID, &arch, &item.CreatedAt, &item.UpdatedAt, &item.MsgCount); err == nil {
 			item.Archived = arch == 1
 			list = append(list, item)
 		}
@@ -267,10 +356,10 @@ func (s *Store) GetBotThread(botID, threadID string) (*BotThread, error) {
 	var item BotThread
 	var arch int
 	err := s.db.QueryRow(`
-		SELECT t.id, t.bot_id, t.title, COALESCE(t.summary,''), COALESCE(t.archived,0), t.created_at, t.updated_at,
+		SELECT t.id, t.bot_id, t.title, COALESCE(t.summary,''), COALESCE(t.rolling_summary,''), COALESCE(t.summary_up_to_id,0), COALESCE(t.archived,0), t.created_at, t.updated_at,
 			(SELECT COUNT(*) FROM agent_messages m WHERE m.bot_id = t.bot_id AND COALESCE(m.thread_id,'') = t.id) AS msg_count
 		FROM bot_threads t WHERE t.bot_id = ? AND t.id = ?`, strings.TrimSpace(botID), strings.TrimSpace(threadID)).
-		Scan(&item.ID, &item.BotID, &item.Title, &item.Summary, &arch, &item.CreatedAt, &item.UpdatedAt, &item.MsgCount)
+		Scan(&item.ID, &item.BotID, &item.Title, &item.Summary, &item.RollingSummary, &item.SummaryUpToID, &arch, &item.CreatedAt, &item.UpdatedAt, &item.MsgCount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

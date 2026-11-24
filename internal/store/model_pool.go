@@ -7,9 +7,6 @@ import (
 )
 
 const (
-	ModelTierFree = "free"
-	ModelTierPaid = "paid"
-
 	ProviderProtocolOpenAI = "openai"
 	ProviderProtocolGemini = "gemini"
 
@@ -17,14 +14,6 @@ const (
 	PoolStrategyRoundRobin    = "round_robin"
 	PoolStrategyLowestLatency = "lowest_latency"
 )
-
-// NormalizeModelTier constrains pool tier to "free" or "paid" (default "free").
-func NormalizeModelTier(raw string) string {
-	if strings.EqualFold(strings.TrimSpace(raw), ModelTierPaid) {
-		return ModelTierPaid
-	}
-	return ModelTierFree
-}
 
 // NormalizeProviderProtocol constrains protocol to "openai" or "gemini" (default "openai").
 func NormalizeProviderProtocol(raw, baseURL string) string {
@@ -35,7 +24,7 @@ func NormalizeProviderProtocol(raw, baseURL string) string {
 	return ProviderProtocolOpenAI
 }
 
-// NormalizePoolStrategy constrains intra-pool scheduling strategy.
+// NormalizePoolStrategy constrains pool scheduling strategy.
 func NormalizePoolStrategy(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case PoolStrategyRoundRobin:
@@ -70,7 +59,7 @@ type ModelProvider struct {
 	APIKeys  []string `json:"api_keys,omitempty"`
 	Enabled  bool     `json:"enabled"`
 	Note     string   `json:"note,omitempty"`
-	AliasIDs []string `json:"alias_ids,omitempty"` // preserved legacy ModelPoolEntry IDs when merged during migration
+	AliasIDs []string `json:"alias_ids,omitempty"`
 }
 
 // SplitAPIKeys splits raw key strings (supporting newline, comma, or semicolon separators)
@@ -106,18 +95,20 @@ func (p ModelProvider) EffectiveAPIKeys() []string {
 	return SplitAPIKeys(p.APIKey)
 }
 
-// PooledModel represents Layer 2: a specific model assigned to either the Free Pool or Paid Pool.
+// PooledModel represents Layer 2: a specific model in the unified Model Pool.
 type PooledModel struct {
-	ProviderID       string `json:"provider_id"`
-	ModelID          string `json:"model_id"`
-	DisplayName      string `json:"display_name,omitempty"`
-	Tier             string `json:"tier"` // free | paid
-	Enabled          bool   `json:"enabled"`
-	Priority         int    `json:"priority"`
-	SupportsTools    *bool  `json:"supports_tools,omitempty"`
-	SupportsThinking *bool  `json:"supports_thinking,omitempty"`
-	LastLatencyMs    int64  `json:"last_latency_ms,omitempty"`
-	LastVerifiedAt   string `json:"last_verified_at,omitempty"`
+	ProviderID       string  `json:"provider_id"`
+	ModelID          string  `json:"model_id"`
+	DisplayName      string  `json:"display_name,omitempty"`
+	Enabled          bool    `json:"enabled"`
+	Priority         int     `json:"priority"`
+	IsLight          bool    `json:"is_light,omitempty"`           // Optional fast/background model marker
+	InputPricePerM   float64 `json:"input_price_per_m,omitempty"`  // Optional USD / 1M input tokens override (0 = built-in table)
+	OutputPricePerM  float64 `json:"output_price_per_m,omitempty"` // Optional USD / 1M output tokens override (0 = built-in table)
+	SupportsTools    *bool   `json:"supports_tools,omitempty"`
+	SupportsThinking *bool   `json:"supports_thinking,omitempty"`
+	LastLatencyMs    int64   `json:"last_latency_ms,omitempty"`
+	LastVerifiedAt   string  `json:"last_verified_at,omitempty"`
 }
 
 // CanonicalTargetID returns the unified, per-model target identifier used for routing and health telemetry.
@@ -125,138 +116,20 @@ func (m PooledModel) CanonicalTargetID() string {
 	return "pool:" + strings.TrimSpace(m.ProviderID) + "::" + strings.TrimSpace(m.ModelID)
 }
 
-type PoolStrategyConfig struct {
-	Free string `json:"free"` // priority | round_robin | lowest_latency
-	Paid string `json:"paid"` // priority | round_robin | lowest_latency
-}
-
-type ModelPoolEntry struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Tier     string   `json:"tier"`     // free | paid
-	Provider string   `json:"provider"` // openai | gemini | deepseek | custom
-	BaseURL  string   `json:"base_url"`
-	APIKey   string   `json:"api_key"`
-	APIKeys  []string `json:"api_keys,omitempty"`
-	Model    string   `json:"model"`            // primary / default model on this endpoint
-	Models   []string `json:"models,omitempty"` // multiple checked model IDs sharing BaseURL+APIKey
-	Enabled  bool     `json:"enabled"`
-	Priority int      `json:"priority"`
-	Note     string   `json:"note"`
-}
-
-// EffectiveModels returns the deduplicated list of enabled model IDs configured on this provider entry.
-func (e ModelPoolEntry) EffectiveModels() []string {
-	out := make([]string, 0, len(e.Models)+1)
-	seen := make(map[string]bool, len(e.Models)+1)
-	for _, raw := range e.Models {
-		m := strings.TrimSpace(raw)
-		if m != "" && !seen[m] {
-			seen[m] = true
-			out = append(out, m)
-		}
-	}
-	if primary := strings.TrimSpace(e.Model); primary != "" && !seen[primary] {
-		out = append([]string{primary}, out...)
-	}
-	return out
-}
-
-func (s *Store) GetModelPool() []ModelPoolEntry {
-	raw, err := s.GetConfig(KeyFreeModelPool)
-	if err != nil || strings.TrimSpace(raw) == "" {
-		return []ModelPoolEntry{}
-	}
-	var list []ModelPoolEntry
-	if err := json.Unmarshal([]byte(raw), &list); err != nil {
-		return []ModelPoolEntry{}
-	}
-	for i := range list {
-		list[i].Tier = NormalizeModelTier(list[i].Tier)
-		eff := list[i].EffectiveModels()
-		if len(eff) > 0 {
-			list[i].Model = eff[0]
-			list[i].Models = eff
-		} else {
-			list[i].Models = nil
-		}
-	}
-	sort.SliceStable(list, func(i, j int) bool {
-		if list[i].Tier != list[j].Tier {
-			return list[i].Tier == ModelTierFree
-		}
-		return list[i].Priority < list[j].Priority
-	})
-	return list
-}
-
-func (s *Store) SaveModelPool(entries []ModelPoolEntry) error {
-	existing := s.GetModelPool()
-	existingKeys := make(map[string]string, len(existing))
-	for _, item := range existing {
-		existingKeys[item.ID] = item.APIKey
-	}
-
-	cleaned := make([]ModelPoolEntry, 0, len(entries))
-	for idx, e := range entries {
-		e.ID = strings.TrimSpace(e.ID)
-		e.Name = strings.TrimSpace(e.Name)
-		e.Tier = NormalizeModelTier(e.Tier)
-		e.Provider = strings.TrimSpace(e.Provider)
-		e.BaseURL = CleanProviderBaseURL(e.BaseURL)
-		e.Model = strings.TrimSpace(e.Model)
-		e.APIKey = strings.TrimSpace(e.APIKey)
-		if e.ID == "" || e.BaseURL == "" {
-			continue
-		}
-		eff := e.EffectiveModels()
-		if len(eff) > 0 {
-			e.Model = eff[0]
-			e.Models = eff
-		} else {
-			e.Models = nil
-		}
-		if e.Name == "" {
-			e.Name = e.Model
-		}
-		if strings.Contains(e.APIKey, "****") {
-			e.APIKey = existingKeys[e.ID]
-		}
-		if e.Priority == 0 {
-			e.Priority = (idx + 1) * 10
-		}
-		cleaned = append(cleaned, e)
-	}
-	b, err := json.Marshal(cleaned)
-	if err != nil {
-		return err
-	}
-	if err := s.SetConfig(KeyFreeModelPool, string(b)); err != nil {
-		return err
-	}
-	// Reset decoupled keys so legacy SaveModelPool callers & tests immediately reflect in GetModelConfig()
-	_ = s.SetConfig(KeyModelProviders, "")
-	_ = s.SetConfig(KeyPooledModels, "")
-	return nil
-}
-
-// GetPoolStrategies returns the configured intra-pool scheduling strategies for Free & Paid pools.
-func (s *Store) GetPoolStrategies() PoolStrategyConfig {
-	freeRaw, _ := s.GetConfig(KeyFreePoolStrategy)
-	paidRaw, _ := s.GetConfig(KeyPaidPoolStrategy)
-	return PoolStrategyConfig{
-		Free: NormalizePoolStrategy(freeRaw),
-		Paid: NormalizePoolStrategy(paidRaw),
-	}
-}
-
-// GetModelConfig loads the two-layer model configuration (Providers + PooledModels + PoolStrategies).
-// When the new keys are empty, it performs a lossless in-memory migration from legacy free_model_pool
-// and deepseek_api_key without requiring any re-entry of API keys.
-func (s *Store) GetModelConfig() ([]ModelProvider, []PooledModel, PoolStrategyConfig) {
-	strategies := s.GetPoolStrategies()
+// GetPoolStrategy returns the configured scheduling strategy for the unified model pool.
+func (s *Store) GetPoolStrategy() string {
 	if s == nil {
-		return []ModelProvider{}, []PooledModel{}, strategies
+		return PoolStrategyPriority
+	}
+	raw, _ := s.GetConfig(KeyPoolStrategy)
+	return NormalizePoolStrategy(raw)
+}
+
+// GetModelConfig loads the unified two-layer model configuration (Providers + PooledModels + PoolStrategy).
+func (s *Store) GetModelConfig() ([]ModelProvider, []PooledModel, string) {
+	strategy := s.GetPoolStrategy()
+	if s == nil {
+		return []ModelProvider{}, []PooledModel{}, strategy
 	}
 	rawProviders, _ := s.GetConfig(KeyModelProviders)
 	rawModels, _ := s.GetConfig(KeyPooledModels)
@@ -277,7 +150,6 @@ func (s *Store) GetModelConfig() ([]ModelProvider, []PooledModel, PoolStrategyCo
 		for i := range models {
 			models[i].ProviderID = strings.TrimSpace(models[i].ProviderID)
 			models[i].ModelID = strings.TrimSpace(models[i].ModelID)
-			models[i].Tier = NormalizeModelTier(models[i].Tier)
 		}
 		sortPooledModels(models)
 		if providers == nil {
@@ -286,140 +158,89 @@ func (s *Store) GetModelConfig() ([]ModelProvider, []PooledModel, PoolStrategyCo
 		if models == nil {
 			models = []PooledModel{}
 		}
-		return providers, models, strategies
+		return providers, models, strategy
 	}
 
-	return s.migrateLegacyModelConfig(strategies)
+	return s.fallbackSinglePrimaryConfig(strategy)
 }
 
-func (s *Store) migrateLegacyModelConfig(strategies PoolStrategyConfig) ([]ModelProvider, []PooledModel, PoolStrategyConfig) {
-	legacyEntries := s.GetModelPool()
-	providers := make([]ModelProvider, 0, len(legacyEntries)+1)
-	models := make([]PooledModel, 0, len(legacyEntries)*2+1)
-
-	type dedupeKey struct {
-		baseURL  string
-		apiKey   string
-		protocol string
+func (s *Store) fallbackSinglePrimaryConfig(strategy string) ([]ModelProvider, []PooledModel, string) {
+	dsKey, _ := s.GetConfig(KeyDeepSeekAPIKey)
+	dsKey = strings.TrimSpace(dsKey)
+	if dsKey == "" {
+		return []ModelProvider{}, []PooledModel{}, strategy
 	}
-	providerIdxByKey := make(map[dedupeKey]int)
-	seenPoolModel := make(map[string]bool)
-	hasPaid := false
-
-	for _, e := range legacyEntries {
-		baseURL := CleanProviderBaseURL(e.BaseURL)
-		if e.ID == "" || baseURL == "" {
-			continue
-		}
-		proto := NormalizeProviderProtocol(e.Provider, baseURL)
-		key := dedupeKey{baseURL: strings.ToLower(baseURL), apiKey: strings.TrimSpace(e.APIKey), protocol: proto}
-
-		var providerID string
-		if idx, exists := providerIdxByKey[key]; exists {
-			providerID = providers[idx].ID
-			if e.ID != providerID {
-				providers[idx].AliasIDs = appendUniqueString(providers[idx].AliasIDs, e.ID)
-			}
-			if e.Enabled {
-				providers[idx].Enabled = true
-			}
-		} else {
-			providerID = e.ID
-			name := strings.TrimSpace(e.Name)
-			if name == "" {
-				name = providerID
-			}
-			providers = append(providers, ModelProvider{
-				ID:       providerID,
-				Name:     name,
-				Protocol: proto,
-				BaseURL:  baseURL,
-				APIKey:   strings.TrimSpace(e.APIKey),
-				Enabled:  e.Enabled,
-				Note:     strings.TrimSpace(e.Note),
-			})
-			providerIdxByKey[key] = len(providers) - 1
-		}
-
-		tier := NormalizeModelTier(e.Tier)
-		if tier == ModelTierPaid && e.Enabled && strings.TrimSpace(e.APIKey) != "" {
-			hasPaid = true
-		}
-		eff := e.EffectiveModels()
-		for mIdx, mid := range eff {
-			dedupeModelKey := providerID + "::" + mid
-			if seenPoolModel[dedupeModelKey] {
-				continue
-			}
-			seenPoolModel[dedupeModelKey] = true
-			prio := e.Priority
-			if prio <= 0 {
-				prio = (len(models) + 1) * 10
-			} else {
-				prio = prio*10 + mIdx
-			}
-			models = append(models, PooledModel{
-				ProviderID: providerID,
-				ModelID:    mid,
-				Tier:       tier,
-				Enabled:    e.Enabled,
-				Priority:   prio,
-			})
-		}
+	dsBase, _ := s.GetConfig(KeyDeepSeekBaseURL)
+	dsBase = CleanProviderBaseURL(dsBase)
+	if dsBase == "" {
+		dsBase = DefaultDeepSeekBaseURL
 	}
-
-	// Losslessly surface legacy deepseek_api_key as a Paid channel if no paid pool entry exists yet
-	if !hasPaid {
-		dsKey, _ := s.GetConfig(KeyDeepSeekAPIKey)
-		dsKey = strings.TrimSpace(dsKey)
-		if dsKey != "" {
-			dsBase, _ := s.GetConfig(KeyDeepSeekBaseURL)
-			dsBase = CleanProviderBaseURL(dsBase)
-			if dsBase == "" {
-				dsBase = DefaultDeepSeekBaseURL
-			}
-			dsModel, _ := s.GetConfig(KeyAIModel)
-			dsModel = strings.TrimSpace(dsModel)
-			if dsModel == "" {
-				dsModel = DefaultAIModel
-			}
-			proto := NormalizeProviderProtocol("", dsBase)
-			pid := "legacy_deepseek"
-			key := dedupeKey{baseURL: strings.ToLower(dsBase), apiKey: dsKey, protocol: proto}
-			if idx, exists := providerIdxByKey[key]; exists {
-				pid = providers[idx].ID
-			} else {
-				providers = append(providers, ModelProvider{
-					ID:       pid,
-					Name:     "DeepSeek 官方",
-					Protocol: proto,
-					BaseURL:  dsBase,
-					APIKey:   dsKey,
-					Enabled:  true,
-					Note:     "自动迁移自历史主力配置",
-				})
-			}
-			dedupeModelKey := pid + "::" + dsModel
-			if !seenPoolModel[dedupeModelKey] {
-				models = append(models, PooledModel{
-					ProviderID: pid,
-					ModelID:    dsModel,
-					Tier:       ModelTierPaid,
-					Enabled:    true,
-					Priority:   10,
-				})
-			}
-		}
+	dsModel, _ := s.GetConfig(KeyAIModel)
+	dsModel = strings.TrimSpace(dsModel)
+	if dsModel == "" {
+		dsModel = DefaultAIModel
 	}
-
-	sortPooledModels(models)
-	return providers, models, strategies
+	proto := NormalizeProviderProtocol("", dsBase)
+	providers := []ModelProvider{{
+		ID:       "legacy_deepseek",
+		Name:     "DeepSeek 官方",
+		Protocol: proto,
+		BaseURL:  dsBase,
+		APIKey:   dsKey,
+		Enabled:  true,
+		Note:     "自动承接主力配置",
+	}}
+	models := []PooledModel{{
+		ProviderID: "legacy_deepseek",
+		ModelID:    dsModel,
+		Enabled:    true,
+		Priority:   10,
+	}}
+	return providers, models, strategy
 }
 
-// SaveModelConfig persists the decoupled Providers, PooledModels, and PoolStrategies.
+// purgeLegacyFreePoolModelsOnce removes legacy free-tier models when paid models already exist,
+// and strips obsolete tier fields cleanly during the v2.89 single-pool migration.
+func (s *Store) purgeLegacyFreePoolModelsOnce() {
+	rawModels, _ := s.GetConfig(KeyPooledModels)
+	if strings.TrimSpace(rawModels) == "" {
+		return
+	}
+	type legacyModel struct {
+		PooledModel
+		Tier string `json:"tier"`
+	}
+	var legacy []legacyModel
+	if err := json.Unmarshal([]byte(rawModels), &legacy); err != nil || len(legacy) == 0 {
+		return
+	}
+	var paidOnly []PooledModel
+	var allClean []PooledModel
+	for _, item := range legacy {
+		m := item.PooledModel
+		allClean = append(allClean, m)
+		lower := strings.ToLower(m.ModelID)
+		isFree := strings.EqualFold(strings.TrimSpace(item.Tier), "free") || strings.Contains(lower, ":free")
+		if !isFree {
+			paidOnly = append(paidOnly, m)
+		}
+	}
+	chosen := allClean
+	if len(paidOnly) > 0 {
+		chosen = paidOnly
+	}
+	sortPooledModels(chosen)
+	for i := range chosen {
+		chosen[i].Priority = (i + 1) * 10
+	}
+	if b, err := json.Marshal(chosen); err == nil {
+		_ = s.SetConfig(KeyPooledModels, string(b))
+	}
+}
+
+// SaveModelConfig persists the unified Providers, PooledModels, and PoolStrategy.
 // Masked API keys ("****") automatically retain their existing raw secret from storage.
-// It also writes a synchronized mirror into KeyFreeModelPool for backward compatibility.
-func (s *Store) SaveModelConfig(providers []ModelProvider, models []PooledModel, strategies PoolStrategyConfig) error {
+func (s *Store) SaveModelConfig(providers []ModelProvider, models []PooledModel, strategy string) error {
 	existingProviders, existingModels, _ := s.GetModelConfig()
 	existingKeys := make(map[string]string, len(existingProviders)+2)
 	existingKeyLists := make(map[string][]string, len(existingProviders)+2)
@@ -524,7 +345,6 @@ func (s *Store) SaveModelConfig(providers []ModelProvider, models []PooledModel,
 		m.ProviderID = strings.TrimSpace(m.ProviderID)
 		m.ModelID = strings.TrimSpace(m.ModelID)
 		m.DisplayName = strings.TrimSpace(m.DisplayName)
-		m.Tier = NormalizeModelTier(m.Tier)
 		if m.ProviderID == "" || m.ModelID == "" {
 			continue
 		}
@@ -539,7 +359,12 @@ func (s *Store) SaveModelConfig(providers []ModelProvider, models []PooledModel,
 		if m.Priority <= 0 {
 			m.Priority = (idx + 1) * 10
 		}
-		// Preserve persisted probe telemetry if caller omitted them
+		if m.InputPricePerM < 0 {
+			m.InputPricePerM = 0
+		}
+		if m.OutputPricePerM < 0 {
+			m.OutputPricePerM = 0
+		}
 		if prev, ok := existingProbeMeta[key]; ok {
 			if m.SupportsTools == nil {
 				m.SupportsTools = prev.SupportsTools
@@ -558,8 +383,7 @@ func (s *Store) SaveModelConfig(providers []ModelProvider, models []PooledModel,
 	}
 	sortPooledModels(cleanedModels)
 
-	strategies.Free = NormalizePoolStrategy(strategies.Free)
-	strategies.Paid = NormalizePoolStrategy(strategies.Paid)
+	normStrategy := NormalizePoolStrategy(strategy)
 
 	pb, err := json.Marshal(cleanedProviders)
 	if err != nil {
@@ -575,17 +399,8 @@ func (s *Store) SaveModelConfig(providers []ModelProvider, models []PooledModel,
 	if err := s.SetConfig(KeyPooledModels, string(mb)); err != nil {
 		return err
 	}
-	if err := s.SetConfig(KeyFreePoolStrategy, strategies.Free); err != nil {
+	if err := s.SetConfig(KeyPoolStrategy, normStrategy); err != nil {
 		return err
-	}
-	if err := s.SetConfig(KeyPaidPoolStrategy, strategies.Paid); err != nil {
-		return err
-	}
-
-	// Keep legacy KeyFreeModelPool synchronized for older clients & backward-compatible readers
-	legacyMirror := buildLegacyPoolMirror(cleanedProviders, cleanedModels)
-	if lb, err := json.Marshal(legacyMirror); err == nil {
-		_ = s.SetConfig(KeyFreeModelPool, string(lb))
 	}
 	return nil
 }
@@ -600,7 +415,7 @@ func (s *Store) UpdatePooledModelProbe(providerID, modelID string, supportsTools
 	if pid == "" || mid == "" {
 		return nil
 	}
-	providers, models, strategies := s.GetModelConfig()
+	providers, models, strategy := s.GetModelConfig()
 	updated := false
 	now := NowShanghai()
 	for i := range models {
@@ -624,98 +439,16 @@ func (s *Store) UpdatePooledModelProbe(providerID, modelID string, supportsTools
 	if !updated {
 		return nil
 	}
-	return s.SaveModelConfig(providers, models, strategies)
-}
-
-func buildLegacyPoolMirror(providers []ModelProvider, models []PooledModel) []ModelPoolEntry {
-	pMap := make(map[string]ModelProvider, len(providers))
-	for _, p := range providers {
-		pMap[p.ID] = p
-	}
-	type groupKey struct {
-		providerID string
-		tier       string
-	}
-	order := make([]groupKey, 0)
-	grouped := make(map[groupKey][]PooledModel)
-	for _, m := range models {
-		gk := groupKey{providerID: m.ProviderID, tier: m.Tier}
-		if _, ok := grouped[gk]; !ok {
-			order = append(order, gk)
-		}
-		grouped[gk] = append(grouped[gk], m)
-	}
-
-	out := make([]ModelPoolEntry, 0, len(order))
-	for idx, gk := range order {
-		p, ok := pMap[gk.providerID]
-		if !ok {
-			continue
-		}
-		list := grouped[gk]
-		mids := make([]string, 0, len(list))
-		anyEnabled := false
-		minPrio := list[0].Priority
-		for _, m := range list {
-			mids = append(mids, m.ModelID)
-			if m.Enabled {
-				anyEnabled = true
-			}
-			if m.Priority < minPrio {
-				minPrio = m.Priority
-			}
-		}
-		entryID := p.ID
-		if gk.tier == ModelTierPaid {
-			// Avoid ID collision if the same provider has both Free and Paid models in legacy view
-			if _, hasFree := grouped[groupKey{providerID: p.ID, tier: ModelTierFree}]; hasFree {
-				entryID = p.ID + "_paid"
-			}
-		}
-		primaryModel := ""
-		if len(mids) > 0 {
-			primaryModel = mids[0]
-		}
-		out = append(out, ModelPoolEntry{
-			ID:       entryID,
-			Name:     p.Name,
-			Tier:     gk.tier,
-			Provider: p.Protocol,
-			BaseURL:  p.BaseURL,
-			APIKey:   p.APIKey,
-			Model:    primaryModel,
-			Models:   mids,
-			Enabled:  p.Enabled && anyEnabled,
-			Priority: minPrio + idx,
-			Note:     p.Note,
-		})
-	}
-	return out
+	return s.SaveModelConfig(providers, models, strategy)
 }
 
 func sortPooledModels(models []PooledModel) {
 	sort.SliceStable(models, func(i, j int) bool {
-		if models[i].Tier != models[j].Tier {
-			return models[i].Tier == ModelTierFree
-		}
 		if models[i].Priority != models[j].Priority {
 			return models[i].Priority < models[j].Priority
 		}
 		return models[i].ModelID < models[j].ModelID
 	})
-}
-
-func appendUniqueString(list []string, val string) []string {
-	val = strings.TrimSpace(val)
-	if val == "" {
-		return list
-	}
-	for _, existing := range list {
-		if existing == val {
-			return list
-		}
-	}
-	return append(list, val)
 }
 
 func MaskSecretValue(val string) string {
@@ -739,17 +472,6 @@ func MaskAPIKeys(keys []string) []string {
 		if m := MaskSecretValue(k); m != "" {
 			out = append(out, m)
 		}
-	}
-	return out
-}
-
-func MaskModelPool(entries []ModelPoolEntry) []ModelPoolEntry {
-	out := make([]ModelPoolEntry, 0, len(entries))
-	for _, e := range entries {
-		copyEntry := e
-		copyEntry.APIKey = MaskSecretValue(e.APIKey)
-		copyEntry.APIKeys = MaskAPIKeys(e.APIKeys)
-		out = append(out, copyEntry)
 	}
 	return out
 }

@@ -1,10 +1,17 @@
 package uk.starryheavens.vesper.bothub.ui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Base64
+import android.util.LruCache
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -33,22 +40,24 @@ import uk.starryheavens.vesper.bothub.data.formatHumanToolName
 import uk.starryheavens.vesper.bothub.data.DashboardSnapshot
 import uk.starryheavens.vesper.bothub.data.JsonMappers
 import uk.starryheavens.vesper.bothub.data.MemoryItemUi
+import uk.starryheavens.vesper.bothub.data.MemoryMarkdownPayload
 import uk.starryheavens.vesper.bothub.data.ModelConfigPayload
 import uk.starryheavens.vesper.bothub.data.ModelHealthItem
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
 import uk.starryheavens.vesper.bothub.data.ModelProviderItem
 import uk.starryheavens.vesper.bothub.data.ModelUsageSummaryItem
 import uk.starryheavens.vesper.bothub.data.NotificationItem
-import uk.starryheavens.vesper.bothub.data.PoolStrategiesItem
 import uk.starryheavens.vesper.bothub.data.PooledModelItem
 import uk.starryheavens.vesper.bothub.data.SkillItemUi
 import uk.starryheavens.vesper.bothub.data.StashItemUi
 import uk.starryheavens.vesper.bothub.data.TaskItem
 import uk.starryheavens.vesper.bothub.data.TodoItemUi
+import uk.starryheavens.vesper.bothub.data.normalizeModelIdForSinglePool
 import uk.starryheavens.vesper.bothub.navigation.BotHubTab
 import uk.starryheavens.vesper.bothub.notify.NotificationHelper
 import uk.starryheavens.vesper.bothub.sync.FloatingCaptureService
 import uk.starryheavens.vesper.bothub.sync.RealtimePushService
+import java.io.ByteArrayOutputStream
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicLong
 
@@ -71,6 +80,9 @@ class BotHubViewModel(
         private set
 
     var showModelConfigSheet by mutableStateOf(false)
+        private set
+
+    var showMcpAppsSheet by mutableStateOf(false)
         private set
 
     var biometricUnlocked by mutableStateOf(!prefs.biometricAppLockEnabled || !prefs.isLikelyPaired)
@@ -107,6 +119,18 @@ class BotHubViewModel(
         private set
 
     var activeThreadId by mutableStateOf("")
+        private set
+
+    var compactionSummary by mutableStateOf("")
+        private set
+
+    var compactingThread by mutableStateOf(false)
+        private set
+
+    var pendingChatImages by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    var uploadingChatImage by mutableStateOf(false)
         private set
 
     var draftsByBot by mutableStateOf(prefs.loadBotDrafts())
@@ -203,13 +227,16 @@ class BotHubViewModel(
     var pooledModels by mutableStateOf<List<PooledModelItem>>(emptyList())
         private set
 
-    var poolStrategies by mutableStateOf(PoolStrategiesItem())
+    var poolStrategy by mutableStateOf("priority")
         private set
 
     var modelHealth by mutableStateOf<Map<String, ModelHealthItem>>(emptyMap())
         private set
 
-    var modelUsageSummary by mutableStateOf(ModelUsageSummaryItem())
+    var modelUsageSummary by mutableStateOf(ModelUsageSummaryItem(days = 7))
+        private set
+
+    var modelUsage30d by mutableStateOf(ModelUsageSummaryItem(days = 30))
         private set
 
     var skills by mutableStateOf<List<SkillItemUi>>(emptyList())
@@ -224,8 +251,16 @@ class BotHubViewModel(
     var botMemoriesLoading by mutableStateOf(false)
         private set
 
+    var botMemoryMarkdown by mutableStateOf<MemoryMarkdownPayload?>(null)
+        private set
+
+    var botMemoryDreaming by mutableStateOf(false)
+        private set
+
     var isRefreshing by mutableStateOf(false)
         private set
+
+    private val chatImageCache = LruCache<String, ImageBitmap>(28)
 
     private val timelineCache = mutableMapOf<String, List<ChatTurnUi>>()
     private var lastRevisions: Map<String, Long> = prefs.loadCachedDashboard()?.revisions ?: emptyMap()
@@ -342,7 +377,7 @@ class BotHubViewModel(
                                     senderBotId = obj.optString("sender_bot_id", ""),
                                     modelUsed = obj.optString("model_used", ""),
                                     modelTargetId = obj.optString("model_target_id", ""),
-                                    modelTier = obj.optString("model_tier", ""),
+                                    attachments = JsonMappers.optStringList(obj, "attachments"),
                                     toolTraces = JsonMappers.parseToolCallsJson(obj.optString("tool_calls", "[]"))
                                 ).toChatTurnUi(
                                     idPrefix = "botmsg",
@@ -424,9 +459,10 @@ class BotHubViewModel(
                 }
                 slice.modelProviders?.let { modelProviders = it }
                 slice.pooledModels?.let { pooledModels = it }
-                slice.poolStrategies?.let { poolStrategies = it }
+                slice.poolStrategy?.let { poolStrategy = it }
                 slice.modelHealth?.let { modelHealth = it }
                 slice.modelUsageSummary?.let { modelUsageSummary = it }
+                slice.modelUsage30d?.let { modelUsage30d = it }
                 val curDash = dashboard
                 if (curDash != null && (slice.assets != null || slice.tasks != null || slice.todos != null || slice.notes != null || slice.assetCategories != null || slice.fxRates != null || slice.modelOptions != null)) {
                     val nextDash = curDash.copy(
@@ -473,15 +509,60 @@ class BotHubViewModel(
         showModelConfigSheet = false
     }
 
+    fun openMcpApps() {
+        showSettingsSheet = false
+        showMcpAppsSheet = true
+        refreshSkills()
+    }
+
+    fun dismissMcpApps() {
+        showMcpAppsSheet = false
+    }
+
+    fun refreshSkills() {
+        if (!prefs.isLikelyPaired || prefs.bearerToken.isEmpty()) return
+        viewModelScope.launch {
+            api.fetchSkills().onSuccess { list ->
+                skills = list
+            }
+        }
+    }
+
+    fun toggleSkillEnabled(skill: SkillItemUi, enabled: Boolean) {
+        val prev = skills
+        skills = skills.map { if (it.id == skill.id) it.copy(enabled = enabled) else it }
+        viewModelScope.launch {
+            api.toggleSkillEnabled(skill.id, enabled).onSuccess { updated ->
+                skills = skills.map { if (it.id == updated.id) updated else it }
+                showMessage(if (enabled) "已启用「${skill.name}」" else "已停用「${skill.name}」")
+            }.onFailure { err ->
+                skills = prev
+                showMessage(err.message ?: "更新状态失败")
+            }
+        }
+    }
+
+    fun testSkill(skill: SkillItemUi, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            api.testSkill(skill.id).onSuccess { msg ->
+                refreshSkills()
+                onResult(true, msg)
+            }.onFailure { err ->
+                onResult(false, err.message ?: "测试失败")
+            }
+        }
+    }
+
     fun applyModelConfigPayload(payload: ModelConfigPayload) {
         modelProviders = payload.providers
         pooledModels = payload.models
-        poolStrategies = payload.strategies
+        poolStrategy = payload.strategy
         if (payload.modelOptions.isNotEmpty()) {
             modelOptions = payload.modelOptions
         }
         modelHealth = payload.modelHealth
         modelUsageSummary = payload.usageSummary
+        modelUsage30d = payload.usage30d
     }
 
     fun refreshModelConfig() {
@@ -556,7 +637,7 @@ class BotHubViewModel(
             activeBotId = botId
             prefs.lastActiveBotId = botId
             bots.find { it.id == botId }?.let { cachedBot ->
-                activeModel = cachedBot.model.ifBlank { "auto:paid" }
+                activeModel = normalizeModelIdForSinglePool(cachedBot.model)
                 enableThinking = cachedBot.enableThinking
             }
             val nextBots = bots.map { if (it.id == botId && it.unreadCount != 0) it.copy(unreadCount = 0) else it }
@@ -570,6 +651,8 @@ class BotHubViewModel(
                 if (changedBot) {
                     activeThreadId = ""
                     botThreads = emptyList()
+                    compactionSummary = ""
+                    pendingChatImages = emptyList()
                 }
                 inputText = draftsByBot[botId].orEmpty()
                 val cachedTurns = timelineCache[botId] ?: prefs.loadCachedBotMessages(botId).also { loaded ->
@@ -876,9 +959,10 @@ class BotHubViewModel(
                     modelOptions = payload.modelOptions.ifEmpty { payload.dashboard.modelOptions }
                     modelProviders = payload.modelProviders
                     pooledModels = payload.pooledModels
-                    poolStrategies = payload.poolStrategies
+                    poolStrategy = payload.poolStrategy
                     modelHealth = payload.modelHealth
                     modelUsageSummary = payload.modelUsageSummary
+                    modelUsage30d = payload.modelUsage30d
                     if (payload.revisions.isNotEmpty()) {
                         lastRevisions = lastRevisions + payload.revisions
                     }
@@ -1105,8 +1189,7 @@ class BotHubViewModel(
         botMode: String,
         traits: String,
         systemPrompt: String,
-        model: String = "auto:paid",
-        allowPaidFallback: Boolean = true,
+        model: String = "auto",
         allowedTools: List<String>? = null,
         skillIds: List<String> = emptyList()
     ) {
@@ -1119,7 +1202,6 @@ class BotHubViewModel(
                 traits = traits,
                 systemPrompt = systemPrompt,
                 model = model,
-                allowPaidFallback = allowPaidFallback,
                 allowedTools = allowedTools,
                 skillIds = skillIds
             ).onSuccess { created ->
@@ -1129,6 +1211,38 @@ class BotHubViewModel(
                 openChatRoom(created.id)
             }.onFailure { err ->
                 showMessage(err.message ?: "添加 AI 好友失败")
+            }
+        }
+    }
+
+    fun forgeBotPrompt(
+        botId: String?,
+        name: String,
+        roleTitle: String,
+        botMode: String,
+        traits: String,
+        systemPrompt: String,
+        onResult: (forgedPrompt: String?, forgedTraits: String?) -> Unit
+    ) {
+        if (name.isBlank()) {
+            showMessage("请先填写 Bot 名称再进行人设精修")
+            onResult(null, null)
+            return
+        }
+        viewModelScope.launch {
+            api.forgeBotPrompt(
+                botId = botId,
+                name = name,
+                roleTitle = roleTitle,
+                botMode = botMode,
+                traits = traits,
+                systemPrompt = systemPrompt
+            ).onSuccess { (prompt, forgedTraits) ->
+                showMessage("已生成高密度精修人设，可按需调整后保存")
+                onResult(prompt, forgedTraits)
+            }.onFailure { err ->
+                showMessage(err.message ?: "AI 精修人设失败")
+                onResult(null, null)
             }
         }
     }
@@ -1186,7 +1300,6 @@ class BotHubViewModel(
         systemPrompt: String,
         groupMode: String,
         announcement: String,
-        allowPaidFallback: Boolean? = null,
         allowedTools: List<String>? = null,
         skillIds: List<String>? = null
     ) {
@@ -1200,7 +1313,6 @@ class BotHubViewModel(
                 systemPrompt = systemPrompt,
                 groupMode = groupMode,
                 announcement = announcement,
-                allowPaidFallback = allowPaidFallback,
                 allowedTools = allowedTools,
                 skillIds = skillIds
             ).onSuccess { updated ->
@@ -1219,6 +1331,7 @@ class BotHubViewModel(
         inspectingBotProfile = null
         inspectingMemoriesBot = bot
         botMemoriesLoading = true
+        botMemoryMarkdown = null
         val botScope = "bot:${bot.id}"
         viewModelScope.launch {
             val botRes = api.fetchMemories(botScope).getOrDefault(emptyList())
@@ -1230,6 +1343,33 @@ class BotHubViewModel(
 
     fun dismissBotMemories() {
         inspectingMemoriesBot = null
+        botMemoryMarkdown = null
+    }
+
+    fun loadBotMemoryMarkdown(bot: BotItem) {
+        viewModelScope.launch {
+            api.fetchMemoryMarkdown("bot:${bot.id}").onSuccess { payload ->
+                botMemoryMarkdown = payload
+            }.onFailure { err ->
+                showMessage(err.message ?: "读取 MEMORY.md 索引失败")
+            }
+        }
+    }
+
+    fun runBotMemoryDream(bot: BotItem) {
+        if (botMemoryDreaming) return
+        botMemoryDreaming = true
+        showMessage("AutoDream 正在整合近期对话与矛盾记忆...")
+        viewModelScope.launch {
+            api.dreamMemories("bot:${bot.id}").onSuccess { summary ->
+                showMessage(summary.take(72))
+                openBotMemories(bot)
+                loadBotMemoryMarkdown(bot)
+            }.onFailure { err ->
+                showMessage(err.message ?: "AutoDream 整合失败")
+            }
+            botMemoryDreaming = false
+        }
     }
 
     fun createBotMemory(bot: BotItem, category: String, factKey: String, content: String, pinned: Boolean) {
@@ -1294,8 +1434,9 @@ class BotHubViewModel(
                 if (activeBotId == botId && sessionId.isEmpty() && !isStreaming) {
                     botThreads = payload.threads
                     activeThreadId = resolvedThreadId
+                    compactionSummary = payload.compactionSummary
                     if (target != null) {
-                        activeModel = target.model.ifBlank { "auto:paid" }
+                        activeModel = normalizeModelIdForSinglePool(target.model)
                         enableThinking = target.enableThinking
                     }
                     if (chatMessages.toList() != mapped) {
@@ -1311,12 +1452,34 @@ class BotHubViewModel(
         if (isStreaming || activeBotId.isBlank()) return
         val clean = threadId.trim()
         activeThreadId = clean
+        compactionSummary = ""
+        pendingChatImages = emptyList()
         val cacheKey = if (clean.isBlank()) activeBotId else "$activeBotId::$clean"
         timelineCache[cacheKey]?.let { cached ->
             chatMessages.clear()
             chatMessages.addAll(cached)
         } ?: chatMessages.clear()
         loadBotTimeline(activeBotId, clean)
+    }
+
+    fun compactActiveThread() {
+        if (isStreaming || compactingThread || activeBotId.isBlank()) return
+        val targetBotId = activeBotId
+        val targetThreadId = activeThreadId
+        compactingThread = true
+        showMessage("正在压缩较早历史上下文...")
+        viewModelScope.launch {
+            api.compactBotThread(targetBotId, targetThreadId).onSuccess { (summary, count) ->
+                if (activeBotId == targetBotId && activeThreadId == targetThreadId) {
+                    compactionSummary = summary
+                }
+                showMessage(if (count > 0) "已将前 $count 条历史压缩为上下文摘要" else "上下文已压缩整理")
+                loadBotTimeline(targetBotId, targetThreadId)
+            }.onFailure { err ->
+                showMessage(err.message ?: "压缩上下文失败")
+            }
+            compactingThread = false
+        }
     }
 
     fun createNewBotThread(title: String = "") {
@@ -1445,22 +1608,84 @@ class BotHubViewModel(
         }
     }
 
-    fun updateAllowPaidFallback(allow: Boolean) {
-        val targetId = activeBotId
-        if (sessionId.isEmpty() && targetId.isNotBlank()) {
-            val optimistic = bots.map { if (it.id == targetId) it.copy(allowPaidFallback = allow) else it }
-            bots = optimistic
-            prefs.saveCachedBots(optimistic)
-            if (prefs.isLikelyPaired) {
-                viewModelScope.launch {
-                    api.updateBotPreferences(botId = targetId, allowPaidFallback = allow).onSuccess { updated ->
-                        val synced = bots.map { if (it.id == targetId) updated else it }
-                        bots = synced
-                        prefs.saveCachedBots(synced)
+    suspend fun loadChatImageBitmap(url: String): ImageBitmap? {
+        val clean = url.trim()
+        if (clean.isEmpty()) return null
+        chatImageCache.get(clean)?.let { return it }
+        return withContext(Dispatchers.IO) {
+            val bytes = api.fetchAuthenticatedBytes(clean).getOrNull() ?: return@withContext null
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+            var sample = 1
+            val maxDim = maxOf(opts.outWidth, opts.outHeight)
+            while (maxDim / sample > 1280) {
+                sample *= 2
+            }
+            val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOpts) ?: return@withContext null
+            val img = bmp.asImageBitmap()
+            chatImageCache.put(clean, img)
+            img
+        }
+    }
+
+    fun uploadChatImageFromUri(uri: Uri) {
+        if (uploadingChatImage) return
+        if (pendingChatImages.size >= 4) {
+            showMessage("单条消息最多附带 4 张图片")
+            return
+        }
+        uploadingChatImage = true
+        viewModelScope.launch {
+            val dataUrlRes = withContext(Dispatchers.IO) {
+                runCatching {
+                    val cr = appContext.contentResolver
+                    val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    cr.openInputStream(uri)?.use { input ->
+                        BitmapFactory.decodeStream(input, null, boundsOpts)
+                    } ?: throw IllegalStateException("无法读取所选图片")
+                    val origMax = maxOf(boundsOpts.outWidth, boundsOpts.outHeight).coerceAtLeast(1)
+                    var sample = 1
+                    while (origMax / sample > 1600) {
+                        sample *= 2
                     }
+                    val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sample }
+                    val rawBmp = cr.openInputStream(uri)?.use { input ->
+                        BitmapFactory.decodeStream(input, null, decodeOpts)
+                    } ?: throw IllegalStateException("图片解码失败")
+                    val maxEdge = 1280
+                    val scaled = if (rawBmp.width > maxEdge || rawBmp.height > maxEdge) {
+                        val ratio = maxEdge.toFloat() / maxOf(rawBmp.width, rawBmp.height).toFloat()
+                        val w = (rawBmp.width * ratio).toInt().coerceAtLeast(1)
+                        val h = (rawBmp.height * ratio).toInt().coerceAtLeast(1)
+                        Bitmap.createScaledBitmap(rawBmp, w, h, true).also {
+                            if (it !== rawBmp) rawBmp.recycle()
+                        }
+                    } else {
+                        rawBmp
+                    }
+                    val baos = ByteArrayOutputStream()
+                    scaled.compress(Bitmap.CompressFormat.JPEG, 82, baos)
+                    scaled.recycle()
+                    val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+                    "data:image/jpeg;base64,$b64"
                 }
             }
+            dataUrlRes.onSuccess { dataUrl ->
+                api.uploadChatImage(dataUrl).onSuccess { uploadedUrl ->
+                    pendingChatImages = (pendingChatImages + uploadedUrl).distinct().take(4)
+                }.onFailure { err ->
+                    showMessage(err.message ?: "上传图片失败")
+                }
+            }.onFailure { err ->
+                showMessage(err.message ?: "读取图片失败")
+            }
+            uploadingChatImage = false
         }
+    }
+
+    fun removePendingChatImage(url: String) {
+        pendingChatImages = pendingChatImages.filterNot { it == url }
     }
 
     fun updateInputText(text: String) {
@@ -1480,10 +1705,11 @@ class BotHubViewModel(
     fun sendAgentPrompt(
         promptText: String,
         overrideModel: String? = null,
-        allowPaidOnce: Boolean = false
+        replayImages: List<String>? = null
     ) {
         val clean = promptText.trim()
-        if (clean.isEmpty() || isStreaming) return
+        val attachedImages = replayImages ?: pendingChatImages
+        if ((clean.isEmpty() && attachedImages.isEmpty()) || isStreaming) return
         if (prefs.bearerToken.isEmpty()) {
             showSettingsSheet = true
             return
@@ -1492,8 +1718,9 @@ class BotHubViewModel(
         val activeBotObj = bots.find { it.id == activeBotId }
         val botDisplayName = activeBotObj?.name ?: activePersona
         val botStyle = activeBotObj?.avatarStyle ?: "butler:gold"
-        val effectiveModel = overrideModel?.trim()?.takeIf { it.isNotEmpty() } ?: activeModel
-        val effectiveAllowPaid = if (allowPaidOnce) true else activeBotObj?.allowPaidFallback
+        val effectiveModel = normalizeModelIdForSinglePool(
+            overrideModel?.trim()?.takeIf { it.isNotEmpty() } ?: activeModel
+        )
         val seq = turnSequence.incrementAndGet()
         val now = System.currentTimeMillis()
         val userTurnId = "u_${now}_$seq"
@@ -1503,6 +1730,7 @@ class BotHubViewModel(
         val targetThreadId = activeThreadId
         if (overrideModel == null) {
             inputText = ""
+            pendingChatImages = emptyList()
             if (sessionId.isEmpty() && targetBotId.isNotBlank()) {
                 persistBotDraft(targetBotId, "")
             }
@@ -1524,7 +1752,8 @@ class BotHubViewModel(
                 role = "user",
                 persona = botDisplayName,
                 model = effectiveModel,
-                content = if (activeQuote != null) "> 引用通知：${activeQuote.title}\n\n$clean" else clean
+                content = if (activeQuote != null) "> 引用通知：${activeQuote.title}\n\n$clean" else clean,
+                attachments = attachedImages
             )
         )
         chatMessages.add(
@@ -1549,10 +1778,10 @@ class BotHubViewModel(
                     botId = activeBotId,
                     threadId = targetThreadId,
                     message = payloadMessage,
+                    images = attachedImages,
                     persona = activePersona,
                     model = effectiveModel,
                     enableThinking = enableThinking,
-                    allowPaidFallback = effectiveAllowPaid,
                     onCallCreated = { call -> activeStreamCall = call },
                     onSession = { sid ->
                         viewModelScope.launch { sessionId = sid }
@@ -1639,7 +1868,7 @@ class BotHubViewModel(
                             }
                         }
                     },
-                    onDoneModel = { usedModel, targetId, tier ->
+                    onDoneModel = { usedModel, targetId ->
                         viewModelScope.launch {
                             updateTurnById(assistantId) { cur ->
                                 val displayModel = if (usedModel.isNotBlank()) {
@@ -1653,8 +1882,7 @@ class BotHubViewModel(
                                 }
                                 cur.copy(
                                     model = displayModel,
-                                    modelTargetId = targetId.ifBlank { cur.modelTargetId },
-                                    modelTier = tier.ifBlank { cur.modelTier }
+                                    modelTargetId = targetId.ifBlank { cur.modelTargetId }
                                 )
                             }
                         }
@@ -1706,8 +1934,7 @@ class BotHubViewModel(
 
     fun retryTurnWithModel(
         assistantTurn: ChatTurnUi,
-        targetModel: String,
-        allowPaidOnce: Boolean
+        targetModel: String
     ) {
         if (isStreaming) return
         val aIdx = chatMessages.indexOfFirst { it.id == assistantTurn.id }
@@ -1715,7 +1942,7 @@ class BotHubViewModel(
 
         var uIdx = -1
         for (i in (aIdx - 1) downTo 0) {
-            if (chatMessages[i].role == "user" && chatMessages[i].content.isNotBlank()) {
+            if (chatMessages[i].role == "user" && (chatMessages[i].content.isNotBlank() || chatMessages[i].attachments.isNotEmpty())) {
                 uIdx = i
                 break
             }
@@ -1726,6 +1953,7 @@ class BotHubViewModel(
         }
         val userTurn = chatMessages[uIdx]
         val promptToReplay = userTurn.content
+        val imagesToReplay = userTurn.attachments
         val targetBotId = activeBotId
 
         chatMessages.removeAll { it.id == assistantTurn.id || it.id == userTurn.id }
@@ -1740,7 +1968,7 @@ class BotHubViewModel(
             sendAgentPrompt(
                 promptText = promptToReplay,
                 overrideModel = targetModel,
-                allowPaidOnce = allowPaidOnce
+                replayImages = imagesToReplay
             )
         }
     }
@@ -2199,25 +2427,17 @@ class BotHubViewModel(
         }
     }
 
-    fun syncAssets() {
-        viewModelScope.launch {
-            api.syncAssetWatcher().onSuccess {
-                showMessage("资产状态已刷新")
-                refreshAll(silent = true)
-            }.onFailure { err ->
-                showMessage("同步失败: ${err.message}")
-            }
-        }
-    }
-
     fun saveAssetItem(
         existingId: String?,
         name: String,
         category: String,
         spec: String,
         price: String,
+        status: String = "生效中",
         dueDate: String,
-        autoRenew: Boolean
+        autoRenew: Boolean,
+        warnDays: String = "[7, 3, 1]",
+        extraConfig: String = "{}"
     ) {
         viewModelScope.launch {
             api.saveAsset(
@@ -2226,8 +2446,11 @@ class BotHubViewModel(
                 category = category,
                 spec = spec,
                 price = price,
+                status = status,
                 dueDate = dueDate,
-                autoRenew = autoRenew
+                autoRenew = autoRenew,
+                warnDays = warnDays,
+                extraConfig = extraConfig
             ).onSuccess {
                 showMessage("资产已保存")
                 refreshAll(silent = true)
@@ -2288,40 +2511,6 @@ class BotHubViewModel(
         }
     }
 
-    fun quickRenewAsset(asset: AssetItem, months: Int) {
-        if (asset.isPerpetual || months <= 0) return
-        val today = LocalDate.now()
-        val parsedCur = runCatching { LocalDate.parse(asset.dueDate.take(10)) }.getOrNull()
-        val baseDate = if (parsedCur != null && !asset.dueDate.startsWith("2099") && !parsedCur.isBefore(today.minusDays(30))) {
-            parsedCur
-        } else {
-            today
-        }
-        val nextDue = baseDate.plusMonths(months.toLong()).toString()
-        val stepLabel = when (months) {
-            1 -> "1 个月"
-            3 -> "1 季度"
-            12 -> "1 年"
-            else -> "$months 个月"
-        }
-        viewModelScope.launch {
-            api.saveAsset(
-                existingId = asset.id,
-                name = asset.name,
-                category = asset.category,
-                spec = asset.spec,
-                price = asset.price,
-                dueDate = nextDue,
-                autoRenew = asset.autoRenew
-            ).onSuccess {
-                showMessage("已将「${asset.name}」顺延 $stepLabel 至 $nextDue")
-                refreshAll(silent = true)
-            }.onFailure { err ->
-                showMessage(err.message ?: "顺延到期日失败")
-            }
-        }
-    }
-
     fun saveTaskItem(
         existingId: String?,
         name: String,
@@ -2331,8 +2520,6 @@ class BotHubViewModel(
         runAt: String,
         description: String,
         model: String,
-        allowPaidFallback: Boolean,
-        maxPaidCallsPerDay: Int,
         enabled: Boolean,
         params: String = "{}"
     ) {
@@ -2346,8 +2533,6 @@ class BotHubViewModel(
                 runAt = runAt,
                 description = description,
                 model = model,
-                allowPaidFallback = allowPaidFallback,
-                maxPaidCallsPerDay = maxPaidCallsPerDay,
                 enabled = enabled,
                 params = params
             ).onSuccess {

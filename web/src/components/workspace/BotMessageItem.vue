@@ -30,7 +30,7 @@ const emit = defineEmits<{
   jumpBot: [botId: string]
   continue: []
   retry: []
-  retryModel: [modelId: string, allowPaidOnce: boolean]
+  retryModel: [modelId: string]
   saveMemory: [msg: ChatMessageUI]
   convertTodo: [msg: ChatMessageUI]
   saveNote: [msg: ChatMessageUI]
@@ -42,48 +42,15 @@ const expandedUser = ref(false)
 const touchActionsOpen = ref(false)
 const rowMaxWidthClass = computed(() => (store.state.chatWide ? 'max-w-[1120px]' : 'max-w-[840px]'))
 
-const modelTierTag = computed<'' | 'free' | 'paid'>(() => {
-  const explicitTier = (props.message.modelTier || '').trim().toLowerCase()
-  if (explicitTier === 'paid' || explicitTier === 'free') return explicitTier as 'free' | 'paid'
-  const targetId = (props.message.modelTargetId || '').trim()
-  if (targetId) {
-    if (targetId === 'primary' || targetId === 'auto:paid') return 'paid'
-    const exactOpt = (store.state.modelOptions || []).find((o) => o.id === targetId)
-    if (exactOpt && (exactOpt.tier === 'paid' || exactOpt.tier === 'free')) {
-      return exactOpt.tier as 'free' | 'paid'
-    }
-    const exactPooled = (store.state.pooledModels || []).find(
-      (p) => `pool:${p.provider_id}::${p.model_id}` === targetId
-    )
-    if (exactPooled) return exactPooled.tier === 'paid' ? 'paid' : 'free'
-  }
-  const m = (props.message.model || '').replace(/\s*\(已回退\)$/, '').trim()
-  if (!m) return ''
-  if (m === 'auto:paid' || m === 'paid-pool' || m === 'primary') return 'paid'
-  if (m === 'auto:free' || m === 'free-pool') return 'free'
-  const opt = (store.state.modelOptions || []).find((o) => o.id === m || o.model === m)
-  if (opt && (opt.tier === 'paid' || opt.tier === 'free')) return opt.tier as 'free' | 'paid'
-  const pooled = (store.state.pooledModels || []).find(
-    (p) => p.model_id === m || `pool:${p.provider_id}::${p.model_id}` === m
-  )
-  if (pooled) return pooled.tier === 'paid' ? 'paid' : 'free'
-  if (m.toLowerCase().includes(':free')) return 'free'
-  return ''
-})
-
 const retryModelChoices = computed(() => {
   const opts = store.state.modelOptions || []
   if (opts.length > 0) {
     return opts.filter((o) => o.available).map((o) => ({
       id: o.id,
       label: o.label,
-      isPaid: o.tier === 'paid' || o.id === 'auto:paid',
     }))
   }
-  return [
-    { id: 'auto:paid', label: '自动 · 付费主力池', isPaid: true },
-    { id: 'auto:free', label: '自动 · 免费模型池', isPaid: false },
-  ]
+  return [{ id: 'auto', label: '自动路由 · 统一模型池' }]
 })
 
 function handleTouchMessageTap(e: MouseEvent) {
@@ -150,6 +117,23 @@ function closeDetailsMenu(e: Event) {
         class="mb-2 pl-2.5 border-l-2 border-on-accent/60 text-xs text-on-accent/90 bg-black/15 rounded-r-lg py-1 pr-2 line-clamp-2"
       >
         {{ message.replyPreview }}
+      </div>
+      <div v-if="message.attachments && message.attachments.length > 0" class="mb-2 flex flex-wrap gap-1.5">
+        <a
+          v-for="(imgUrl, imgIdx) in message.attachments"
+          :key="imgUrl + imgIdx"
+          :href="imgUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="block rounded-lg overflow-hidden border border-white/20 bg-black/10"
+        >
+          <img
+            :src="imgUrl"
+            alt="对话附带图片"
+            loading="lazy"
+            class="max-h-52 max-w-[240px] object-cover block"
+          />
+        </a>
       </div>
       <div :class="isLongUserMessage && !expandedUser ? 'line-clamp-5' : ''">
         {{ message.content }}
@@ -280,18 +264,6 @@ function closeDetailsMenu(e: Event) {
         </div>
         <div class="flex items-center gap-1.5 shrink-0">
           <span
-            v-if="modelTierTag && !message.streaming"
-            :class="[
-              isLast ? '' : 'reveal-actions',
-              'font-mono text-xs px-1.5 py-0.5 rounded-lg border leading-none',
-              modelTierTag === 'paid'
-                ? 'border-accent-border bg-accent-soft text-accent-fg'
-                : 'border-ok-border bg-ok-soft text-ok',
-            ]"
-          >
-            {{ modelTierTag === 'paid' ? '付费池' : '免费池' }}
-          </span>
-          <span
             v-if="message.model && !message.streaming"
             :class="[isLast ? 'hidden sm:inline-flex' : 'reveal-actions hidden sm:inline-flex', 'font-mono text-xs text-fg-muted']"
           >
@@ -420,19 +392,14 @@ function closeDetailsMenu(e: Event) {
             </summary>
             <div class="aero-glass absolute right-0 sm:left-0 sm:right-auto bottom-full mb-1.5 z-30 min-w-[14rem] max-w-[19rem] max-h-60 overflow-y-auto rounded-lg border border-line-strong p-1 flex flex-col gap-0.5">
               <div class="px-2 py-1 text-xs text-fg-muted border-b border-line">
-                原位重答（选付费模型仅对本轮临时放行）
+                切换模型原位重答
               </div>
               <button
                 v-for="choice in retryModelChoices"
                 :key="choice.id"
                 type="button"
-                @click="emit('retryModel', choice.id, choice.isPaid); closeDetailsMenu($event)"
-                :class="[
-                  'px-2.5 py-1.5 rounded-lg text-xs text-left truncate cursor-pointer',
-                  choice.isPaid
-                    ? 'text-accent-fg hover:bg-accent-soft'
-                    : 'text-fg hover:bg-ok-soft hover:text-ok',
-                ]"
+                @click="emit('retryModel', choice.id); closeDetailsMenu($event)"
+                class="px-2.5 py-1.5 rounded-lg text-xs text-left truncate cursor-pointer text-fg hover:bg-accent-soft hover:text-accent-fg"
               >
                 {{ choice.label }}
               </button>

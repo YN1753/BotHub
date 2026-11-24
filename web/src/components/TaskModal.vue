@@ -22,8 +22,6 @@ const name = ref('')
 const type = ref('morning')
 const botId = ref('')
 const taskModel = ref('')
-const allowPaidFallback = ref(true)
-const maxPaidCallsPerDay = ref(0)
 const enabled = ref(true)
 const description = ref('')
 
@@ -97,7 +95,7 @@ const botOptions = computed(() => [
   ...store.state.bots.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` })),
 ])
 const taskModelOptions = computed(() => [
-  { value: '', label: '沿用默认 (优先付费主力池 / 绑定 Bot)' },
+  { value: '', label: '沿用默认 (绑定 Bot / 统一模型池)' },
   ...store.modelOptions.value,
 ])
 const currentFields = computed(() => {
@@ -159,8 +157,6 @@ watch(
       type.value = store.state.templates[0]?.type || 'bot_prompt'
       botId.value = (item as any)?.bot_id || store.state.activeBotId || ''
       taskModel.value = ''
-      allowPaidFallback.value = true
-      maxPaidCallsPerDay.value = 0
       enabled.value = true
       description.value = ''
       freq.value = 'daily'
@@ -181,8 +177,6 @@ watch(
     type.value = t.type
     botId.value = t.bot_id || ''
     taskModel.value = t.model || ''
-    allowPaidFallback.value = Boolean(t.allow_paid_fallback)
-    maxPaidCallsPerDay.value = Number(t.max_paid_calls_per_day) || 0
     enabled.value = Boolean(t.enabled)
     description.value = t.description || ''
     if (t.run_at) {
@@ -223,8 +217,6 @@ async function handleSubmit() {
       type: type.value,
       bot_id: botId.value,
       model: taskModel.value,
-      allow_paid_fallback: allowPaidFallback.value,
-      max_paid_calls_per_day: allowPaidFallback.value ? Math.max(0, Number(maxPaidCallsPerDay.value) || 0) : 0,
       cron_expr: freq.value === 'once' ? '' : computedCron.value,
       run_at: freq.value === 'once' ? runAt.value.trim() : '',
       enabled: enabled.value,
@@ -317,35 +309,12 @@ async function handleOptimizePrompt() {
           <div class="flex flex-col justify-end">
             <ToggleSwitch v-model="enabled" label="启用后台自动调度" />
           </div>
-          <div class="flex flex-col gap-1 text-xs text-fg-sub">
+          <div class="sm:col-span-2 flex flex-col gap-1 text-xs text-fg-sub">
             <span>任务指定模型</span>
             <CustomSelect v-model="taskModel" :options="taskModelOptions" aria-label="任务指定模型" />
           </div>
-          <div class="flex flex-col justify-end">
-            <ToggleSwitch
-              v-model="allowPaidFallback"
-              label="允许该任务调用付费模型"
-              description="默认仅走免费池；此任务必须保底执行时再单独开启"
-            />
-          </div>
-          <label v-if="allowPaidFallback" class="sm:col-span-2 flex flex-col gap-1 text-xs text-fg-sub">
-            <span>单日付费调用上限（次/日，0 表示不限；超限自动熔断告警）</span>
-            <input
-              v-model.number="maxPaidCallsPerDay"
-              type="number"
-              min="0"
-              max="500"
-              placeholder="0 表示不限，建议设为 3 或 5"
-              class="min-h-[40px] rounded-xl border border-accent-border bg-canvas px-3 py-1.5 font-mono text-sm text-fg focus:border-accent"
-            />
-          </label>
           <div class="sm:col-span-2">
-            <ModelRoutePreview
-              :selected-model="taskModel"
-              :allow-paid-fallback="allowPaidFallback"
-              :max-paid-calls-per-day="maxPaidCallsPerDay"
-              :is-task="true"
-            />
+            <ModelRoutePreview :selected-model="taskModel" />
           </div>
         </div>
       </div>

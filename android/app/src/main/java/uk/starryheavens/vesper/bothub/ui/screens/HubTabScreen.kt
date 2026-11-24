@@ -68,17 +68,18 @@ fun HubTabScreen(
     notifications: List<NotificationItem> = emptyList(),
     onRunTask: (TaskItem) -> Unit,
     onToggleTask: (TaskItem, Boolean) -> Unit,
-    onSyncAssets: () -> Unit,
     onSaveAsset: (
         existingId: String?,
         name: String,
         category: String,
         spec: String,
         price: String,
+        status: String,
         dueDate: String,
-        autoRenew: Boolean
+        autoRenew: Boolean,
+        warnDays: String,
+        extraConfig: String
     ) -> Unit,
-    onQuickRenewAsset: (AssetItem, Int) -> Unit = { _, _ -> },
     onDeleteAsset: (String) -> Unit,
     onSaveAssetCategories: (List<AssetCategoryItem>) -> Unit = {},
     onSaveTask: (
@@ -90,11 +91,9 @@ fun HubTabScreen(
         runAt: String,
         description: String,
         model: String,
-        allowPaidFallback: Boolean,
-        maxPaidCallsPerDay: Int,
         enabled: Boolean,
         params: String
-    ) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _ -> },
+    ) -> Unit = { _, _, _, _, _, _, _, _, _, _ -> },
     onDeleteTask: (String) -> Unit = {},
     onOptimizeTaskPrompt: (name: String, rawPrompt: String, onResult: (String?) -> Unit) -> Unit = { _, _, cb -> cb(null) },
     onCreateTodo: (title: String, notes: String, dueAt: String, priority: String) -> Unit = { _, _, _, _ -> },
@@ -158,7 +157,10 @@ fun HubTabScreen(
     }
 
     var selectedSegment by remember { mutableStateOf(0) }
+    var assetSearchQuery by remember { mutableStateOf("") }
     var selectedCategoryFilter by remember { mutableStateOf("all") }
+    var assetExpiringOnly by remember { mutableStateOf(false) }
+    var assetSortByUrgency by remember { mutableStateOf(false) }
     var showDoneTodos by remember { mutableStateOf(false) }
 
     var showAssetSheet by remember { mutableStateOf(false) }
@@ -173,11 +175,31 @@ fun HubTabScreen(
     var showNoteSheet by remember { mutableStateOf(false) }
     var editingNote by remember { mutableStateOf<WorkNoteItemUi?>(null) }
 
-    val filteredAssets = remember(assets, selectedCategoryFilter) {
-        if (selectedCategoryFilter == "all") {
-            assets
+    val filteredAssets = remember(
+        assets,
+        assetSearchQuery,
+        selectedCategoryFilter,
+        assetExpiringOnly,
+        assetSortByUrgency
+    ) {
+        val q = assetSearchQuery.trim().lowercase(Locale.ROOT)
+        val matched = assets.filter { a ->
+            if (selectedCategoryFilter != "all" && !a.category.equals(selectedCategoryFilter, ignoreCase = true)) {
+                return@filter false
+            }
+            if (assetExpiringOnly && !a.isExpiringSoon) {
+                return@filter false
+            }
+            if (q.isEmpty()) true
+            else "${a.name} ${a.spec} ${a.status} ${a.extraConfig}".lowercase(Locale.ROOT).contains(q)
+        }
+        if (!assetSortByUrgency) {
+            matched
         } else {
-            assets.filter { it.category.equals(selectedCategoryFilter, ignoreCase = true) }
+            matched.sortedWith(
+                compareBy<AssetItem> { it.isPerpetual }
+                    .thenBy { it.daysLeft }
+            )
         }
     }
 
@@ -243,7 +265,6 @@ fun HubTabScreen(
                     editingAsset = asset
                     showAssetSheet = true
                 },
-                onQuickRenewAsset = onQuickRenewAsset,
                 onClickTodo = { todo ->
                     editingTodo = todo
                     showTodoSheet = true
@@ -274,21 +295,30 @@ fun HubTabScreen(
                     savedCategories = savedCategories,
                     mergedCategories = mergedCategories,
                     categoryCounts = categoryCounts,
+                    searchQuery = assetSearchQuery,
                     selectedCategoryFilter = selectedCategoryFilter,
+                    expiringOnly = assetExpiringOnly,
+                    sortByUrgency = assetSortByUrgency,
                     totalMonthlyCost = totalMonthlyCost,
                     totalYearlyCost = totalYearlyCost,
                     expiringCount = expiringCount,
+                    onSearchQueryChange = { assetSearchQuery = it },
                     onSelectCategory = { selectedCategoryFilter = it },
+                    onToggleExpiringOnly = { assetExpiringOnly = !assetExpiringOnly },
+                    onToggleSortByUrgency = { assetSortByUrgency = !assetSortByUrgency },
+                    onResetFilters = {
+                        assetSearchQuery = ""
+                        selectedCategoryFilter = "all"
+                        assetExpiringOnly = false
+                    },
                     onAddAsset = {
                         editingAsset = null
                         showAssetSheet = true
                     },
-                    onSyncAssets = onSyncAssets,
                     onEditAsset = { asset ->
                         editingAsset = asset
                         showAssetSheet = true
-                    },
-                    onQuickRenewAsset = onQuickRenewAsset
+                    }
                 )
 
                 1 -> hubTasksItems(
@@ -340,7 +370,6 @@ fun HubTabScreen(
                     nezhaAlerts = nezhaAlerts,
                     fxRates = fxRates,
                     onInspectNezhaWithAi = onInspectNezhaWithAi,
-                    onSyncAssets = onSyncAssets,
                     onEditNodeAsset = { asset ->
                         editingAsset = asset
                         showAssetSheet = true
@@ -357,8 +386,19 @@ fun HubTabScreen(
             savedCategories = savedCategories,
             availableCategories = mergedCategories,
             onSaveCategories = onSaveAssetCategories,
-            onSave = { name, category, spec, price, dueDate, autoRenew ->
-                onSaveAsset(editingAsset?.id, name, category, spec, price, dueDate, autoRenew)
+            onSave = { name, category, spec, price, status, dueDate, autoRenew, warnDays, extraConfig ->
+                onSaveAsset(
+                    editingAsset?.id,
+                    name,
+                    category,
+                    spec,
+                    price,
+                    status,
+                    dueDate,
+                    autoRenew,
+                    warnDays,
+                    extraConfig
+                )
                 showAssetSheet = false
             },
             onDelete = editingAsset?.let { target ->
@@ -376,7 +416,7 @@ fun HubTabScreen(
             task = editingTask,
             bots = bots,
             modelOptions = modelOptions,
-            onSave = { name, type, botId, cronExpr, runAt, description, model, allowPaid, maxPaid, enabled, params ->
+            onSave = { name, type, botId, cronExpr, runAt, description, model, enabled, params ->
                 onSaveTask(
                     editingTask?.id,
                     name,
@@ -386,8 +426,6 @@ fun HubTabScreen(
                     runAt,
                     description,
                     model,
-                    allowPaid,
-                    maxPaid,
                     enabled,
                     params
                 )
@@ -500,7 +538,6 @@ private fun HubTodayFocusStrip(
     focusTodos: List<TodoItemUi>,
     todayPrefix: String,
     onClickAsset: (AssetItem) -> Unit,
-    onQuickRenewAsset: (AssetItem, Int) -> Unit,
     onClickTodo: (TodoItemUi) -> Unit,
     onToggleTodoDone: (TodoItemUi) -> Unit,
     modifier: Modifier = Modifier
@@ -539,12 +576,6 @@ private fun HubTodayFocusStrip(
             }
 
             focusAssets.take(3).forEach { asset ->
-                val recMonths = remember(asset.price) { asset.inferRecommendedRenewMonths() }
-                val recLabel = when (recMonths) {
-                    12 -> "+1年"
-                    3 -> "+1季"
-                    else -> "+1月"
-                }
                 val urgentColor = if (asset.daysLeft <= 3) theme.danger else theme.warning
                 Row(
                     modifier = Modifier
@@ -557,52 +588,32 @@ private fun HubTodayFocusStrip(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
+                    Text(
+                        text = asset.name,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = theme.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .weight(1f)
-                            .padding(end = 8.dp),
+                            .padding(end = 8.dp)
+                    )
+                    Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(
-                            text = asset.name,
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = theme.textPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        Text(
-                            text = listOfNotNull(
-                                asset.dueBadgeLabel,
-                                asset.price.takeIf { it.isNotBlank() }?.replace(" / ", "/")
-                            ).joinToString(" · "),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            color = urgentColor,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .sizeIn(minHeight = 30.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(theme.accentSoft)
-                            .border(0.8.dp, theme.accentMuted, RoundedCornerShape(8.dp))
-                            .vesperPressable(pressedScale = 0.94f, hapticOnTap = true) {
-                                onQuickRenewAsset(asset, recMonths)
-                            }
-                            .padding(horizontal = 9.dp, vertical = 5.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "续期$recLabel",
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = theme.accentForeground
-                        )
+                        if (asset.price.isNotBlank()) {
+                            Text(
+                                text = asset.price.replace(" / ", "/"),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = theme.textMuted,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                        VesperTag(text = asset.dueBadgeLabel, toneColor = urgentColor)
                     }
                 }
             }

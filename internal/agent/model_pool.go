@@ -235,13 +235,15 @@ func (e *Engine) ClearModelCooldown(targetID string) {
 type ModelTarget struct {
 	ID               string
 	ProviderID       string
-	Tier             string // free | paid
 	Label            string
 	Provider         string // openai | gemini | deepseek | openrouter | custom
 	BaseURL          string
 	APIKey           string
 	APIKeys          []string
 	Model            string
+	IsLight          bool
+	InputPricePerM   float64
+	OutputPricePerM  float64
 	AllowThinking    bool
 	SupportsTools    *bool
 	SupportsThinking *bool
@@ -261,9 +263,8 @@ func (t ModelTarget) EffectiveAPIKeys() []string {
 }
 
 type ModelResolveOptions struct {
-	AllowPaidFallback bool
-	NeedTools         bool
-	NeedThinking      bool
+	NeedTools    bool
+	NeedThinking bool
 }
 
 func BuildChatCompletionsURL(baseURL string) string {
@@ -355,7 +356,6 @@ func primaryDeepSeekTarget(st *store.Store) ModelTarget {
 	return ModelTarget{
 		ID:            "primary",
 		ProviderID:    "legacy_deepseek",
-		Tier:          store.ModelTierPaid,
 		Label:         "主力 · " + model,
 		Provider:      provider,
 		BaseURL:       baseURL,
@@ -366,19 +366,22 @@ func primaryDeepSeekTarget(st *store.Store) ModelTarget {
 }
 
 type ModelOptionDTO struct {
-	ID               string `json:"id"`
-	ProviderID       string `json:"provider_id,omitempty"`
-	Label            string `json:"label"`
-	Tier             string `json:"tier"` // auto | free | paid
-	Provider         string `json:"provider"`
-	Model            string `json:"model"`
-	Available        bool   `json:"available"`
-	SupportsTools    *bool  `json:"supports_tools,omitempty"`
-	SupportsThinking *bool  `json:"supports_thinking,omitempty"`
-	LastLatencyMs    int64  `json:"last_latency_ms,omitempty"`
+	ID               string  `json:"id"`
+	ProviderID       string  `json:"provider_id,omitempty"`
+	Label            string  `json:"label"`
+	IsAuto           bool    `json:"is_auto,omitempty"`
+	IsLight          bool    `json:"is_light,omitempty"`
+	Provider         string  `json:"provider"`
+	Model            string  `json:"model"`
+	Available        bool    `json:"available"`
+	InputPricePerM   float64 `json:"input_price_per_m,omitempty"`
+	OutputPricePerM  float64 `json:"output_price_per_m,omitempty"`
+	SupportsTools    *bool   `json:"supports_tools,omitempty"`
+	SupportsThinking *bool   `json:"supports_thinking,omitempty"`
+	LastLatencyMs    int64   `json:"last_latency_ms,omitempty"`
 }
 
-func activePoolTargetsByTier(st *store.Store, wantTier string) []ModelTarget {
+func activePoolTargets(st *store.Store) []ModelTarget {
 	if st == nil {
 		return nil
 	}
@@ -390,7 +393,7 @@ func activePoolTargetsByTier(st *store.Store, wantTier string) []ModelTarget {
 
 	targets := make([]ModelTarget, 0, len(models))
 	for _, m := range models {
-		if !m.Enabled || store.NormalizeModelTier(m.Tier) != wantTier {
+		if !m.Enabled {
 			continue
 		}
 		p, ok := pMap[m.ProviderID]
@@ -407,20 +410,22 @@ func activePoolTargetsByTier(st *store.Store, wantTier string) []ModelTarget {
 		targets = append(targets, ModelTarget{
 			ID:               m.CanonicalTargetID(),
 			ProviderID:       p.ID,
-			Tier:             wantTier,
 			Label:            label,
 			Provider:         runtimeProv,
 			BaseURL:          p.BaseURL,
 			APIKey:           effKeys[0],
 			APIKeys:          effKeys,
 			Model:            m.ModelID,
+			IsLight:          m.IsLight,
+			InputPricePerM:   m.InputPricePerM,
+			OutputPricePerM:  m.OutputPricePerM,
 			AllowThinking:    IsAllowThinkingModel(runtimeProv, m.ModelID),
 			SupportsTools:    m.SupportsTools,
 			SupportsThinking: m.SupportsThinking,
 			LastLatencyMs:    m.LastLatencyMs,
 		})
 	}
-	if wantTier == store.ModelTierPaid && len(targets) == 0 && len(providers) == 0 {
+	if len(targets) == 0 && len(providers) == 0 {
 		primary := primaryDeepSeekTarget(st)
 		if primary.APIKey != "" {
 			targets = append(targets, primary)
@@ -429,8 +434,15 @@ func activePoolTargetsByTier(st *store.Store, wantTier string) []ModelTarget {
 	return targets
 }
 
-func activeFreePoolTargets(st *store.Store) []ModelTarget {
-	return activePoolTargetsByTier(st, store.ModelTierFree)
+func activeLightPoolTargets(st *store.Store) []ModelTarget {
+	all := activePoolTargets(st)
+	var light []ModelTarget
+	for _, t := range all {
+		if t.IsLight {
+			light = append(light, t)
+		}
+	}
+	return light
 }
 
 func (e *Engine) capabilityScore(t ModelTarget, opts ModelResolveOptions) int {
@@ -470,9 +482,9 @@ func (e *Engine) effectiveLatencyMs(t ModelTarget) int64 {
 	return 1_000_000_000
 }
 
-// orderPoolTargets applies health filtering, capability-aware sorting, and intra-pool scheduling strategy
-// (priority | round_robin | lowest_latency) for a single pool tier.
-func (e *Engine) orderPoolTargets(targets []ModelTarget, tier, strategy string, opts ModelResolveOptions) []ModelTarget {
+// orderPoolTargets applies health filtering, capability-aware sorting, and scheduling strategy
+// (priority | round_robin | lowest_latency) for the unified model pool.
+func (e *Engine) orderPoolTargets(targets []ModelTarget, strategy string, opts ModelResolveOptions) []ModelTarget {
 	if len(targets) <= 1 {
 		return targets
 	}
@@ -512,12 +524,7 @@ func (e *Engine) orderPoolTargets(targets []ModelTarget, tier, strategy string, 
 					topCount++
 				}
 				if topCount > 1 {
-					var seq uint64
-					if tier == store.ModelTierPaid {
-						seq = e.paidRR.Add(1) - 1
-					} else {
-						seq = e.freeRR.Add(1) - 1
-					}
+					seq := e.poolRR.Add(1) - 1
 					shift := int(seq % uint64(topCount))
 					if shift > 0 {
 						rotated := make([]ModelTarget, 0, len(ordered))
@@ -543,7 +550,7 @@ func (e *Engine) orderPoolTargets(targets []ModelTarget, tier, strategy string, 
 	return append(healthy, cooling...)
 }
 
-// ModelOptionsPayload returns unified, tier-tagged model & pool routing options for Web & Android clients.
+// ModelOptionsPayload returns unified single-pool routing options for Web & Android clients.
 func (e *Engine) ModelOptionsPayload() []ModelOptionDTO {
 	if e == nil || e.store == nil {
 		return []ModelOptionDTO{}
@@ -554,10 +561,8 @@ func (e *Engine) ModelOptionsPayload() []ModelOptionDTO {
 		pMap[p.ID] = p
 	}
 
-	freeReady := 0
-	paidReady := 0
-	var freeOpts []ModelOptionDTO
-	var paidOpts []ModelOptionDTO
+	readyCount := 0
+	var modelOpts []ModelOptionDTO
 
 	for _, m := range models {
 		if !m.Enabled {
@@ -568,17 +573,8 @@ func (e *Engine) ModelOptionsPayload() []ModelOptionDTO {
 			continue
 		}
 		ready := len(p.EffectiveAPIKeys()) > 0 && strings.TrimSpace(p.BaseURL) != "" && strings.TrimSpace(m.ModelID) != ""
-		tier := store.NormalizeModelTier(m.Tier)
 		if ready {
-			if tier == store.ModelTierPaid {
-				paidReady++
-			} else {
-				freeReady++
-			}
-		}
-		tag := "[免费]"
-		if tier == store.ModelTierPaid {
-			tag = "[付费]"
+			readyCount++
 		}
 		statusPart := "可用"
 		if !ready {
@@ -588,41 +584,40 @@ func (e *Engine) ModelOptionsPayload() []ModelOptionDTO {
 		if display == "" {
 			display = m.ModelID
 		}
+		roleTag := ""
+		if m.IsLight {
+			roleTag = "[轻量] "
+		}
 		lat := m.LastLatencyMs
 		if e.health != nil {
 			if live := e.health.lastLatency(m.CanonicalTargetID()); live > 0 {
 				lat = live
 			}
 		}
-		dto := ModelOptionDTO{
+		modelOpts = append(modelOpts, ModelOptionDTO{
 			ID:               m.CanonicalTargetID(),
 			ProviderID:       p.ID,
-			Label:            fmt.Sprintf("%s %s · %s (%s)", tag, p.Name, display, statusPart),
-			Tier:             tier,
+			Label:            fmt.Sprintf("%s%s · %s (%s)", roleTag, p.Name, display, statusPart),
+			IsLight:          m.IsLight,
 			Provider:         inferRuntimeProvider(p.Protocol, p.BaseURL),
 			Model:            m.ModelID,
 			Available:        ready,
+			InputPricePerM:   m.InputPricePerM,
+			OutputPricePerM:  m.OutputPricePerM,
 			SupportsTools:    m.SupportsTools,
 			SupportsThinking: m.SupportsThinking,
 			LastLatencyMs:    lat,
-		}
-		if tier == store.ModelTierPaid {
-			paidOpts = append(paidOpts, dto)
-		} else {
-			freeOpts = append(freeOpts, dto)
-		}
+		})
 	}
 
-	// Backward-compatible legacy Paid node if user has deepseek_api_key without any providers
-	if paidReady == 0 && len(providers) == 0 {
+	if readyCount == 0 && len(providers) == 0 {
 		primary := primaryDeepSeekTarget(e.store)
 		if primary.APIKey != "" {
-			paidReady = 1
-			paidOpts = append(paidOpts, ModelOptionDTO{
+			readyCount = 1
+			modelOpts = append(modelOpts, ModelOptionDTO{
 				ID:         "primary",
 				ProviderID: "legacy_deepseek",
-				Label:      fmt.Sprintf("[付费] 主力配置 · %s (可用)", primary.Model),
-				Tier:       store.ModelTierPaid,
+				Label:      fmt.Sprintf("主力配置 · %s (可用)", primary.Model),
 				Provider:   primary.Provider,
 				Model:      primary.Model,
 				Available:  true,
@@ -630,158 +625,47 @@ func (e *Engine) ModelOptionsPayload() []ModelOptionDTO {
 		}
 	}
 
-	out := make([]ModelOptionDTO, 0, 2+len(freeOpts)+len(paidOpts))
-	paidDesc := fmt.Sprintf("付费模型池 (%d 可用)", paidReady)
-	if paidReady == 0 {
-		paidDesc = "付费模型池 (未配置)"
+	out := make([]ModelOptionDTO, 0, 1+len(modelOpts))
+	desc := fmt.Sprintf("模型池 (%d 可用)", readyCount)
+	if readyCount == 0 {
+		desc = "模型池 (未配置)"
 	}
 	out = append(out, ModelOptionDTO{
-		ID:        "auto:paid",
-		Label:     "自动 · " + paidDesc,
-		Tier:      "auto",
-		Provider:  "paid-pool",
-		Model:     "auto:paid",
-		Available: paidReady > 0,
+		ID:        "auto",
+		Label:     "自动路由 · " + desc,
+		IsAuto:    true,
+		Provider:  "pool",
+		Model:     "auto",
+		Available: readyCount > 0,
 	})
-	freeDesc := fmt.Sprintf("免费模型池 (%d 可用)", freeReady)
-	if freeReady == 0 {
-		freeDesc = "免费模型池 (未配置)"
-	}
-	out = append(out, ModelOptionDTO{
-		ID:        "auto:free",
-		Label:     "自动 · " + freeDesc,
-		Tier:      "auto",
-		Provider:  "free-pool",
-		Model:     "auto:free",
-		Available: freeReady > 0,
-	})
-	out = append(out, paidOpts...)
-	out = append(out, freeOpts...)
+	out = append(out, modelOpts...)
 	return out
 }
 
 func (e *Engine) ResolveChatTargets(requestedModel string) ([]ModelTarget, error) {
-	return e.ResolveChatTargetsWithContext(context.Background(), requestedModel, false)
+	return e.ResolveChatTargetsWithOptions(context.Background(), requestedModel, ModelResolveOptions{})
 }
 
-func (e *Engine) ResolveChatTargetsWithContext(ctx context.Context, requestedModel string, allowPaidParam bool) ([]ModelTarget, error) {
-	return e.ResolveChatTargetsWithOptions(ctx, requestedModel, ModelResolveOptions{
-		AllowPaidFallback: allowPaidParam,
-	})
+func (e *Engine) ResolveChatTargetsWithContext(ctx context.Context, requestedModel string) ([]ModelTarget, error) {
+	return e.ResolveChatTargetsWithOptions(ctx, requestedModel, ModelResolveOptions{})
 }
 
-func (e *Engine) checkTaskPaidQuota(ctx context.Context) error {
-	if e == nil || e.store == nil {
-		return nil
-	}
-	taskID, maxPerDay := store.TaskQuotaFromContext(ctx)
-	if taskID == "" || maxPerDay <= 0 {
-		return nil
-	}
-	used, err := e.store.CountTaskPaidCallsToday(taskID)
-	if err != nil {
-		return nil
-	}
-	if used >= maxPerDay {
-		return fmt.Errorf("当前任务今日付费调用已达上限（%d/%d 次），已自动熔断拦截", used, maxPerDay)
-	}
-	return nil
-}
-
-// ResolveChatTargetsWithOptions builds an ordered failover slice of upstream ModelTargets
-// honoring two-layer provider/pool separation, intra-pool strategies, capability preference,
-// per-task/per-bot paid fallback guardrails, and per-task daily paid call quota limits.
+// ResolveChatTargetsWithOptions builds an ordered failover slice from the unified single model pool,
+// honoring scheduling strategy (priority / round_robin / lowest_latency), health cooldowns, and capability preference.
 func (e *Engine) ResolveChatTargetsWithOptions(ctx context.Context, requestedModel string, opts ModelResolveOptions) ([]ModelTarget, error) {
 	reqM := strings.TrimSpace(requestedModel)
-	providers, models, strategies := e.store.GetModelConfig()
-	freeTargets := e.orderPoolTargets(activePoolTargetsByTier(e.store, store.ModelTierFree), store.ModelTierFree, strategies.Free, opts)
-	paidTargets := e.orderPoolTargets(activePoolTargetsByTier(e.store, store.ModelTierPaid), store.ModelTierPaid, strategies.Paid, opts)
+	providers, models, strategy := e.store.GetModelConfig()
+	poolTargets := e.orderPoolTargets(activePoolTargets(e.store), strategy, opts)
 	primary := primaryDeepSeekTarget(e.store)
 
-	allowPaid := opts.AllowPaidFallback
-	ctxAllowPaid, ctxExplicit := store.PaidFallbackFromContext(ctx)
-	if ctxExplicit {
-		allowPaid = ctxAllowPaid
-	}
-	legacyAllowFallback := isConfigTrue(e.store, store.KeyPoolFallback, true)
-
-	if reqM == "auto:free" || reqM == "free-pool" {
-		if len(freeTargets) > 0 {
-			out := append([]ModelTarget{}, freeTargets...)
-			shouldFailoverToPaid := allowPaid || (reqM == "free-pool" && !ctxExplicit && legacyAllowFallback)
-			if shouldFailoverToPaid && len(paidTargets) > 0 && e.checkTaskPaidQuota(ctx) == nil {
-				out = append(out, paidTargets...)
-			}
-			return out, nil
+	if reqM == "" || reqM == "auto" {
+		if len(poolTargets) > 0 {
+			return poolTargets, nil
 		}
-		shouldUsePaid := allowPaid || (reqM == "free-pool" && !ctxExplicit && len(paidTargets) > 0)
-		if shouldUsePaid && len(paidTargets) > 0 {
-			if qErr := e.checkTaskPaidQuota(ctx); qErr != nil {
-				return nil, qErr
-			}
-			return paidTargets, nil
-		}
-		return nil, fmt.Errorf("免费模型池暂无可用节点；若当前任务或对话需要调用付费模型，请开启「允许付费兜底」或改选付费模型")
-	}
-
-	if reqM == "auto:paid" || reqM == "paid-pool" {
-		if ctxExplicit && !ctxAllowPaid {
-			return nil, fmt.Errorf("当前任务未开启「允许付费兜底/付费调用」，已拦截付费模型池请求")
-		}
-		if qErr := e.checkTaskPaidQuota(ctx); qErr != nil {
-			return nil, qErr
-		}
-		if len(paidTargets) > 0 {
-			out := append([]ModelTarget{}, paidTargets...)
-			if len(freeTargets) > 0 {
-				out = append(out, freeTargets...)
-			}
-			return out, nil
-		}
-		if len(freeTargets) > 0 {
-			return freeTargets, nil
-		}
-		onlyLegacyPrimary := len(providers) == 1 && providers[0].ID == "legacy_deepseek" && len(e.store.GetModelPool()) == 0
-		if ((len(providers) == 0 && len(models) == 0) || onlyLegacyPrimary) && primary.APIKey != "" {
+		if primary.APIKey != "" {
 			return []ModelTarget{primary}, nil
 		}
-		return nil, fmt.Errorf("付费模型池暂无可用节点，请先在「设置 -> AI 模型配置」的付费模型池中添加渠道与模型")
-	}
-
-	if reqM == "" {
-		if !(ctxExplicit && !ctxAllowPaid) && len(paidTargets) > 0 {
-			if qErr := e.checkTaskPaidQuota(ctx); qErr == nil {
-				out := append([]ModelTarget{}, paidTargets...)
-				if len(freeTargets) > 0 {
-					out = append(out, freeTargets...)
-				}
-				return out, nil
-			}
-		}
-		if len(freeTargets) > 0 {
-			out := append([]ModelTarget{}, freeTargets...)
-			if allowPaid && len(paidTargets) > 0 && e.checkTaskPaidQuota(ctx) == nil {
-				out = append(out, paidTargets...)
-			}
-			return out, nil
-		}
-		if allowPaid && len(paidTargets) > 0 {
-			if qErr := e.checkTaskPaidQuota(ctx); qErr != nil {
-				return nil, qErr
-			}
-			return paidTargets, nil
-		}
-		onlyLegacyPrimary := len(providers) == 1 && providers[0].ID == "legacy_deepseek" && len(e.store.GetModelPool()) == 0
-		if ((len(providers) == 0 && len(models) == 0) || onlyLegacyPrimary) && primary.APIKey != "" {
-			if qErr := e.checkTaskPaidQuota(ctx); qErr != nil {
-				return nil, qErr
-			}
-			return []ModelTarget{primary}, nil
-		}
-		if len(paidTargets) > 0 {
-			return nil, fmt.Errorf("免费模型池暂无可用节点；若当前任务或对话需要调用付费模型，请开启「允许付费兜底」或改选付费模型")
-		}
-		return nil, fmt.Errorf("尚未配置任何可用模型节点，请先在「设置 -> AI 模型配置」中添加渠道与付费/免费池模型")
+		return nil, fmt.Errorf("模型池暂无可用节点，请先在「设置 -> AI 模型配置」中添加渠道与模型")
 	}
 
 	if strings.HasPrefix(reqM, "pool:") {
@@ -793,7 +677,6 @@ func (e *Engine) ResolveChatTargetsWithOptions(ctx context.Context, requestedMod
 			pinnedModel = strings.TrimSpace(rawSpec[idx+2:])
 		}
 
-		// Find provider by canonical ID or migrated alias ID
 		var matchedProvider *store.ModelProvider
 		for i := range providers {
 			if providers[i].ID == entryID {
@@ -818,7 +701,6 @@ func (e *Engine) ResolveChatTargetsWithOptions(ctx context.Context, requestedMod
 			return nil, fmt.Errorf("渠道「%s」尚未填写 API Key，请先在系统设置中填入密钥", matchedProvider.Name)
 		}
 
-		// Match specific pooled model (or first pooled model of this provider when legacy pool:<id> is used)
 		var matchedModel *store.PooledModel
 		if pinnedModel != "" {
 			for i := range models {
@@ -845,140 +727,89 @@ func (e *Engine) ResolveChatTargetsWithOptions(ctx context.Context, requestedMod
 		}
 
 		chosenModel := pinnedModel
-		tier := store.ModelTierFree
 		var supportsTools, supportsThinking *bool
 		var lastLatency int64
+		var isLight bool
+		var inPrice, outPrice float64
 		if matchedModel != nil {
 			chosenModel = matchedModel.ModelID
-			tier = store.NormalizeModelTier(matchedModel.Tier)
 			supportsTools = matchedModel.SupportsTools
 			supportsThinking = matchedModel.SupportsThinking
 			lastLatency = matchedModel.LastLatencyMs
+			isLight = matchedModel.IsLight
+			inPrice = matchedModel.InputPricePerM
+			outPrice = matchedModel.OutputPricePerM
 		}
 		if chosenModel == "" {
 			return nil, fmt.Errorf("渠道「%s」尚未分配具体模型 ID，请先在设置中拉取并加入模型池", matchedProvider.Name)
 		}
-		if tier == store.ModelTierPaid {
-			if ctxExplicit && !ctxAllowPaid {
-				return nil, fmt.Errorf("当前任务未开启「允许付费兜底/付费调用」，已拦截付费节点「%s」", matchedProvider.Name)
-			}
-			if qErr := e.checkTaskPaidQuota(ctx); qErr != nil {
-				return nil, qErr
-			}
-		}
+
 		runtimeProv := inferRuntimeProvider(matchedProvider.Protocol, matchedProvider.BaseURL)
 		pinned := ModelTarget{
 			ID:               "pool:" + matchedProvider.ID + "::" + chosenModel,
 			ProviderID:       matchedProvider.ID,
-			Tier:             tier,
 			Label:            fmt.Sprintf("%s · %s", matchedProvider.Name, chosenModel),
 			Provider:         runtimeProv,
 			BaseURL:          matchedProvider.BaseURL,
 			APIKey:           effKeys[0],
 			APIKeys:          effKeys,
 			Model:            chosenModel,
+			IsLight:          isLight,
+			InputPricePerM:   inPrice,
+			OutputPricePerM:  outPrice,
 			AllowThinking:    IsAllowThinkingModel(runtimeProv, chosenModel),
 			SupportsTools:    supportsTools,
 			SupportsThinking: supportsThinking,
 			LastLatencyMs:    lastLatency,
 		}
-		out := []ModelTarget{pinned}
-		if tier == store.ModelTierPaid {
-			var fallbacks []ModelTarget
-			for _, pt := range paidTargets {
-				if pt.ID != pinned.ID {
-					fallbacks = append(fallbacks, pt)
-				}
+		var fallbacks []ModelTarget
+		for _, pt := range poolTargets {
+			if pt.ID != pinned.ID {
+				fallbacks = append(fallbacks, pt)
 			}
-			// Always keep the user-pinned model strictly at index 0; only sort fallback candidates by health.
-			return append(out, e.health.prioritizeHealthy(fallbacks)...), nil
 		}
-		if legacyAllowFallback || allowPaid {
-			var fallbacks []ModelTarget
-			for _, ft := range freeTargets {
-				if ft.ID != pinned.ID {
-					fallbacks = append(fallbacks, ft)
-				}
-			}
-			if (allowPaid || (!ctxExplicit && legacyAllowFallback)) && e.checkTaskPaidQuota(ctx) == nil {
-				fallbacks = append(fallbacks, paidTargets...)
-			}
-			// Always try the user-pinned model first even if it had a prior cooldown; fallback only on actual failure.
-			out = append(out, e.health.prioritizeHealthy(fallbacks)...)
-		}
-		return out, nil
+		// Always keep the user-pinned model strictly at index 0; only sort fallback candidates by health.
+		return append([]ModelTarget{pinned}, e.health.prioritizeHealthy(fallbacks)...), nil
 	}
 
-	// Legacy / explicit paid target: "primary", "deepseek-flash", or specific model override
+	// Explicit model ID or primary fallback
 	normModel := NormalizeModelID(reqM)
 	if normModel != "" && normModel != "primary" && normModel != "deepseek-flash" {
-		if ctxExplicit && !ctxAllowPaid {
-			return nil, fmt.Errorf("当前任务未开启「允许付费兜底/付费调用」，已拦截付费模型 %s", normModel)
+		if len(poolTargets) > 0 {
+			for _, pt := range poolTargets {
+				if strings.EqualFold(pt.Model, normModel) {
+					var rest []ModelTarget
+					for _, other := range poolTargets {
+						if other.ID != pt.ID {
+							rest = append(rest, other)
+						}
+					}
+					return append([]ModelTarget{pt}, rest...), nil
+				}
+			}
 		}
-		if qErr := e.checkTaskPaidQuota(ctx); qErr != nil {
-			return nil, qErr
+		if primary.APIKey != "" {
+			primary.Model = normModel
+			primary.Label = "主力 · " + normModel
+			primary.AllowThinking = IsAllowThinkingModel(primary.Provider, normModel)
+			return append([]ModelTarget{primary}, poolTargets...), nil
 		}
-		primary.Model = normModel
-		primary.Label = "付费 · " + normModel
-		primary.AllowThinking = IsAllowThinkingModel(primary.Provider, normModel)
-		if len(paidTargets) > 0 && primary.APIKey == "" {
-			firstPaid := paidTargets[0]
-			firstPaid.Model = normModel
-			firstPaid.Label = "付费 · " + normModel
-			firstPaid.AllowThinking = IsAllowThinkingModel(firstPaid.Provider, normModel)
-			return append([]ModelTarget{firstPaid}, paidTargets...), nil
+		if len(poolTargets) > 0 {
+			first := poolTargets[0]
+			first.Model = normModel
+			first.Label = "模型 · " + normModel
+			first.AllowThinking = IsAllowThinkingModel(first.Provider, normModel)
+			return append([]ModelTarget{first}, poolTargets...), nil
 		}
 	}
 
+	if len(poolTargets) > 0 {
+		return poolTargets, nil
+	}
 	if primary.APIKey != "" {
-		if ctxExplicit && !ctxAllowPaid {
-			if len(freeTargets) > 0 {
-				return freeTargets, nil
-			}
-			return nil, fmt.Errorf("当前任务未开启「允许付费兜底/付费调用」，已拦截主力付费模型")
-		}
-		if qErr := e.checkTaskPaidQuota(ctx); qErr != nil {
-			if len(freeTargets) > 0 {
-				return freeTargets, nil
-			}
-			return nil, qErr
-		}
-		out := []ModelTarget{primary}
-		if legacyAllowFallback && len(freeTargets) > 0 {
-			if normModel != "" && normModel != "primary" && normModel != "deepseek-flash" {
-				out = append(out, e.health.prioritizeHealthy(freeTargets)...)
-			} else {
-				out = append(out, freeTargets...)
-				out = e.health.prioritizeHealthy(out)
-			}
-		}
-		return out, nil
+		return []ModelTarget{primary}, nil
 	}
-
-	if len(paidTargets) > 0 {
-		if ctxExplicit && !ctxAllowPaid {
-			if len(freeTargets) > 0 {
-				return freeTargets, nil
-			}
-			return nil, fmt.Errorf("当前任务未开启「允许付费兜底/付费调用」，已拦截付费模型池")
-		}
-		if qErr := e.checkTaskPaidQuota(ctx); qErr != nil {
-			if len(freeTargets) > 0 {
-				return freeTargets, nil
-			}
-			return nil, qErr
-		}
-		out := append([]ModelTarget{}, paidTargets...)
-		if allowPaid && len(freeTargets) > 0 {
-			out = append(out, freeTargets...)
-		}
-		return e.health.prioritizeHealthy(out), nil
-	}
-
-	if len(freeTargets) > 0 {
-		return freeTargets, nil
-	}
-	return nil, fmt.Errorf("尚未配置任何可用模型节点，请先在「设置 -> AI 模型配置」中添加免费模型池或付费模型池")
+	return nil, fmt.Errorf("模型池暂无可用节点，请先在「设置 -> AI 模型配置」中添加渠道与模型")
 }
 
 type ProbeResult struct {

@@ -6,7 +6,7 @@ import { lazyPanelChunk } from '../utils/lazyComponent'
 import { resolveTabSlideTransition, type DirectionalTransitionName } from '../utils/motion'
 import { checkPasskeyCapabilities, registerPasskeyCeremony } from '../utils/passkey'
 import { useAppTheme } from '../utils/theme'
-import type { ModelProvider, PoolStrategies, PooledModel } from '../types/bothub'
+import type { ModelProvider, PoolStrategy, PooledModel } from '../types/bothub'
 import BaseModal from './BaseModal.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
 import SecretInput from './ui/SecretInput.vue'
@@ -42,10 +42,10 @@ const SETTINGS_TABS = [
   { id: 'security', label: '安全与数据灾备' },
 ]
 
-// Decoupled Two-Layer Model Config (Providers + Free/Paid Pooled Models + Intra-Pool Strategies)
+// Unified Model Config (Providers + Single Model Pool + Strategy)
 const draftProviders = ref<ModelProvider[]>([])
 const draftModels = ref<PooledModel[]>([])
-const draftStrategies = ref<PoolStrategies>({ free: 'priority', paid: 'priority' })
+const draftStrategy = ref<PoolStrategy>('priority')
 
 const nezhaUrl = ref('')
 const nezhaDbPath = ref('')
@@ -68,17 +68,14 @@ function hydrateModelConfigDrafts() {
     alias_ids: p.alias_ids ? [...p.alias_ids] : undefined,
   }))
   draftModels.value = (store.state.pooledModels || []).map((m) => ({ ...m }))
-  draftStrategies.value = {
-    free: store.state.poolStrategies?.free || 'priority',
-    paid: store.state.poolStrategies?.paid || 'priority',
-  }
+  draftStrategy.value = store.state.poolStrategy || 'priority'
 }
 
 function currentConfigSnapshot(): string {
   return JSON.stringify({
     providers: draftProviders.value,
     models: draftModels.value,
-    strategies: draftStrategies.value,
+    strategy: draftStrategy.value,
     nezhaUrl: nezhaUrl.value.trim(),
     nezhaDbPath: nezhaDbPath.value.trim(),
     cfApiToken: cfApiToken.value.trim(),
@@ -107,14 +104,15 @@ watch(
     searxngUrl.value = c['searxng_url'] || ''
     savedSnapshot.value = currentConfigSnapshot()
 
-    // Refresh latest model telemetry & 7d usage asynchronously without blocking modal open
+    // Refresh latest model telemetry, 7d/30d cost & cache stats without blocking modal open
     void BotHubApi.getModelConfig()
       .then((res) => {
         store.state.modelProviders = res.providers || []
         store.state.pooledModels = res.models || []
-        if (res.strategies) store.state.poolStrategies = res.strategies
+        if (res.strategy) store.state.poolStrategy = res.strategy
         if (res.model_health) store.state.modelHealth = res.model_health
         if (res.model_usage_summary) store.state.modelUsageSummary = res.model_usage_summary
+        if (res.model_usage_30d) store.state.modelUsage30d = res.model_usage_30d
         if (!hasUnsavedChanges.value) {
           hydrateModelConfigDrafts()
           savedSnapshot.value = currentConfigSnapshot()
@@ -149,8 +147,7 @@ async function saveAllConfig() {
       tavily_api_key: tavilyApiKey.value.trim(),
       searxng_url: searxngUrl.value.trim(),
     }
-    const hasPaidModel = draftModels.value.some((m) => m.tier === 'paid')
-    if (!hasPaidModel && (store.state.configs?.['deepseek_api_key'] || '').trim()) {
+    if (draftModels.value.length === 0 && (store.state.configs?.['deepseek_api_key'] || '').trim()) {
       cfgPayload.deepseek_api_key = ''
       cfgPayload.deepseek_base_url = ''
       cfgPayload.ai_model = ''
@@ -160,16 +157,17 @@ async function saveAllConfig() {
     const modelRes = await BotHubApi.saveModelConfig({
       providers: draftProviders.value,
       models: draftModels.value,
-      strategies: draftStrategies.value,
+      strategy: draftStrategy.value,
     })
     store.state.modelProviders = modelRes.providers || []
     store.state.pooledModels = modelRes.models || []
-    if (modelRes.strategies) store.state.poolStrategies = modelRes.strategies
+    if (modelRes.strategy) store.state.poolStrategy = modelRes.strategy
     if (modelRes.model_options) store.state.modelOptions = modelRes.model_options
     if (modelRes.model_health) store.state.modelHealth = modelRes.model_health
     if (modelRes.model_usage_summary) store.state.modelUsageSummary = modelRes.model_usage_summary
+    if (modelRes.model_usage_30d) store.state.modelUsage30d = modelRes.model_usage_30d
 
-    store.notify('模型渠道、双池策略与系统凭据已保存')
+    store.notify('模型渠道、统一模型池与系统凭据已保存')
     await store.loadDashboard(false)
     hydrateModelConfigDrafts()
     savedSnapshot.value = currentConfigSnapshot()
@@ -293,7 +291,7 @@ async function handleQuickCreatePasskey() {
           <ModelConfigPanel
             v-model:providers="draftProviders"
             v-model:models="draftModels"
-            v-model:strategies="draftStrategies"
+            v-model:strategy="draftStrategy"
           />
 
           <div class="flex justify-end pt-1">

@@ -6,6 +6,7 @@ export type SlashCommandAction =
   | 'clear_timeline'
   | 'new_thread'
   | 'summarize_thread'
+  | 'compact_thread'
   | 'open_skills'
   | 'open_workhub'
 
@@ -101,9 +102,9 @@ export const BUILTIN_SLASH_SPECS: readonly SlashCommandSpec[] = [
   },
   {
     cmd: '/models',
-    title: '巡检双模型池与 7 日用量',
-    desc: '查看免费池/付费池健康度、7日 Token 统计或一键解封冷却',
-    prompt: '请调用 manage_models(action="status") 巡检当前免费池与付费池健康状态及近 7 日调用统计。',
+    title: '巡检模型池与用量费用',
+    desc: '查看统一模型池健康度、7日 Token 与预估费用或解封冷却',
+    prompt: '请调用 manage_models(action="status") 巡检当前模型池健康状态及近 7 日调用与费用统计。',
     anyOfTools: ['manage_models'],
   },
   {
@@ -157,6 +158,7 @@ export const BUILTIN_SLASH_SPECS: readonly SlashCommandSpec[] = [
   },
   { cmd: '/workhub', title: '打开个人行动台', desc: '管理待办清单与 Bot 产出的 Markdown 文档', action: 'open_workhub' },
   { cmd: '/thread', title: '新建独立话题', desc: '在当前会话内开启一条干净的新话题线', action: 'new_thread' },
+  { cmd: '/compact', title: '压缩长对话上下文', desc: '将早期对话折叠为滚动摘要，保持长对话清晰且省费用', action: 'compact_thread' },
   { cmd: '/summarize', title: '总结话题并存记忆', desc: '提炼当前话题核心结论并沉淀到专属记忆库', action: 'summarize_thread' },
   { cmd: '/skills', title: '打开自定义技能工坊', desc: '管理 Playbook 与 Webhook 外部技能工具', action: 'open_skills' },
   { cmd: '/invite', title: '拉人进群 / 群设置', desc: '打开右侧群成员与协同策略抽屉', action: 'open_drawer' },

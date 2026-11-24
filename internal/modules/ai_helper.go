@@ -119,47 +119,40 @@ func summarizeDirect(ctx context.Context, st *store.Store, systemPrompt, userPro
 		})
 	}
 
-	allowPaid, explicitPaid := store.PaidFallbackFromContext(ctx)
-	var freeCandidates []llmCandidate
-	for _, entry := range st.GetModelPool() {
-		if !entry.Enabled || strings.TrimSpace(entry.APIKey) == "" {
-			continue
-		}
-		if store.NormalizeModelTier(entry.Tier) == store.ModelTierPaid {
-			continue
-		}
-		for _, modID := range entry.EffectiveModels() {
-			freeCandidates = append(freeCandidates, llmCandidate{
-				baseURL:  strings.TrimRight(strings.TrimSpace(entry.BaseURL), "/"),
-				apiKey:   strings.TrimSpace(entry.APIKey),
-				model:    modID,
-				provider: entry.Provider,
-			})
+	providers, models, _ := st.GetModelConfig()
+	provMap := make(map[string]store.ModelProvider, len(providers))
+	for _, p := range providers {
+		if p.Enabled && strings.TrimSpace(p.APIKey) != "" {
+			provMap[p.ID] = p
 		}
 	}
+	var lightPoolCandidates []llmCandidate
+	var regularPoolCandidates []llmCandidate
+	for _, m := range models {
+		if !m.Enabled {
+			continue
+		}
+		p, ok := provMap[m.ProviderID]
+		if !ok {
+			continue
+		}
+		c := llmCandidate{
+			baseURL:  strings.TrimRight(strings.TrimSpace(p.BaseURL), "/"),
+			apiKey:   strings.TrimSpace(p.APIKey),
+			model:    strings.TrimSpace(m.ModelID),
+			provider: p.Protocol,
+		}
+		if m.IsLight {
+			lightPoolCandidates = append(lightPoolCandidates, c)
+		} else {
+			regularPoolCandidates = append(regularPoolCandidates, c)
+		}
+	}
+	candidates = append(candidates, lightPoolCandidates...)
+	candidates = append(candidates, regularPoolCandidates...)
 
-	poolLightFlag, _ := st.GetConfig(store.KeyPoolForLight)
-	usePoolLight := strings.TrimSpace(poolLightFlag) == "" || strings.EqualFold(strings.TrimSpace(poolLightFlag), "true") || strings.TrimSpace(poolLightFlag) == "1"
-	if usePoolLight {
-		candidates = append(candidates, freeCandidates...)
-	}
-
-	var paidCandidates []llmCandidate
-	for _, entry := range st.GetModelPool() {
-		if !entry.Enabled || strings.TrimSpace(entry.APIKey) == "" || store.NormalizeModelTier(entry.Tier) != store.ModelTierPaid {
-			continue
-		}
-		for _, modID := range entry.EffectiveModels() {
-			paidCandidates = append(paidCandidates, llmCandidate{
-				baseURL:  strings.TrimRight(strings.TrimSpace(entry.BaseURL), "/"),
-				apiKey:   strings.TrimSpace(entry.APIKey),
-				model:    modID,
-				provider: entry.Provider,
-			})
-		}
-	}
-	if len(paidCandidates) == 0 && primaryKey != "" {
-		paidCandidates = append(paidCandidates, llmCandidate{
+	if len(candidates) == 0 && primaryKey != "" {
+		candidates = append(candidates, llmCandidate{
 			baseURL:       primaryBase,
 			apiKey:        primaryKey,
 			model:         primaryModel,
@@ -168,14 +161,7 @@ func summarizeDirect(ctx context.Context, st *store.Store, systemPrompt, userPro
 		})
 	}
 
-	if (explicitPaid && allowPaid) || (!explicitPaid && len(freeCandidates) == 0 && lightKey == "") || (!explicitPaid && len(freeCandidates) > 0 && lightKey == "") {
-		candidates = append(candidates, paidCandidates...)
-	}
-
 	if len(candidates) == 0 {
-		if explicitPaid && !allowPaid && len(paidCandidates) > 0 {
-			return "", fmt.Errorf("当前任务未开启「允许付费兜底」，且免费模型池暂无可用节点")
-		}
 		return "", fmt.Errorf("api_key not configured")
 	}
 

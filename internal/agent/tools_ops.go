@@ -162,15 +162,7 @@ func manageTasksToolSpec() ToolSpec {
 						},
 						"model": map[string]any{
 							"type":        "string",
-							"description": "可选：任务指定模型（如 auto:free、auto:paid 或 pool:<id>[::<model>]，留空沿用默认）",
-						},
-						"allow_paid_fallback": map[string]any{
-							"type":        "boolean",
-							"description": "可选：是否允许该任务在免费池不可用或指定付费模型时使用付费模型池（默认 false，防误消耗）",
-						},
-						"max_paid_calls_per_day": map[string]any{
-							"type":        "integer",
-							"description": "可选：单任务每日付费调用上限次数（0 表示不限，超限自动熔断并告警）",
+							"description": "可选：任务指定模型（如 auto 或 pool:<provider_id>::<model_id>，留空沿用 Bot 默认模型）",
 						},
 						"description": map[string]any{
 							"type":        "string",
@@ -535,12 +527,10 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		RunAt             string `json:"run_at"`
 		DelayMinutes      int    `json:"delay_minutes"`
 		Prompt            string `json:"prompt"`
-		Enabled           *bool  `json:"enabled"`
-		Model              string `json:"model"`
-		AllowPaidFallback  *bool  `json:"allow_paid_fallback"`
-		MaxPaidCallsPerDay *int   `json:"max_paid_calls_per_day"`
-		Description        string `json:"description"`
-		Params            string `json:"params"`
+		Enabled      *bool  `json:"enabled"`
+		Model        string `json:"model"`
+		Description  string `json:"description"`
+		Params       string `json:"params"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 manage_tasks 参数失败: %w", err)
@@ -639,14 +629,12 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 				defaultBotID = strings.TrimSpace(sc.BotID)
 			}
 			task = store.Task{
-				ID:                id,
-				Type:              "bot_prompt",
-				BotID:             defaultBotID,
-				CronExpr:          "0 9 * * *",
-				Model:             "auto:paid",
-				AllowPaidFallback: true,
-				Enabled:           true,
-				Params:            "{}",
+				ID:       id,
+				Type:     "bot_prompt",
+				BotID:    defaultBotID,
+				CronExpr: "0 9 * * *",
+				Enabled:  true,
+				Params:   "{}",
 			}
 		}
 		if strings.TrimSpace(args.BotID) != "" {
@@ -689,12 +677,6 @@ func (e *Engine) toolManageTasks(ctx context.Context, argsJSON string) (string, 
 		}
 		if m := strings.TrimSpace(args.Model); m != "" {
 			task.Model = m
-		}
-		if args.AllowPaidFallback != nil {
-			task.AllowPaidFallback = *args.AllowPaidFallback
-		}
-		if args.MaxPaidCallsPerDay != nil && *args.MaxPaidCallsPerDay >= 0 {
-			task.MaxPaidCallsPerDay = *args.MaxPaidCallsPerDay
 		}
 		if strings.TrimSpace(args.Params) != "" {
 			var js map[string]any

@@ -23,6 +23,7 @@ export interface StarterChipItem {
 
 const props = defineProps<{
   inputPrompt: string
+  pendingImages: string[]
   selectedModel: string
   enableThinking: boolean
   streamStatus: string
@@ -37,6 +38,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:inputPrompt': [val: string]
+  'update:pendingImages': [val: string[]]
   'update:selectedModel': [val: string]
   'update:enableThinking': [val: boolean]
   'update:replyTarget': [val: ReplyQuoteTarget | null]
@@ -44,6 +46,7 @@ const emit = defineEmits<{
   stopStream: []
   clearTimeline: []
   summarizeThread: []
+  compactThread: []
   pickStarter: [toolId: string]
 }>()
 
@@ -54,6 +57,84 @@ const composerMaxWidthClass = computed(() => (store.state.chatWide ? 'max-w-[112
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const formRef = ref<HTMLFormElement | null>(null)
+const imageInputRef = ref<HTMLInputElement | null>(null)
+const uploadingImages = ref(false)
+const draggingImage = ref(false)
+
+async function uploadImageFiles(files: File[]) {
+  const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+  if (imageFiles.length === 0) return
+  const remaining = Math.max(0, 4 - props.pendingImages.length)
+  if (remaining <= 0) {
+    store.notify('单条消息最多附加 4 张图片')
+    return
+  }
+  const batch = imageFiles.slice(0, remaining)
+  uploadingImages.value = true
+  try {
+    const uploaded: string[] = []
+    for (const file of batch) {
+      if (file.size > 8 * 1024 * 1024) {
+        store.notify(`图片 ${file.name} 超过 8MB 限制，已跳过`)
+        continue
+      }
+      const res = await BotHubApi.uploadChatImage(file)
+      if (res?.url) uploaded.push(res.url)
+    }
+    if (uploaded.length > 0) {
+      emit('update:pendingImages', [...props.pendingImages, ...uploaded])
+    }
+  } catch (err: any) {
+    store.notify(err.message || '图片上传失败')
+  } finally {
+    uploadingImages.value = false
+  }
+}
+
+function triggerImagePick() {
+  imageInputRef.value?.click()
+}
+
+function onImageFilesSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = input.files ? Array.from(input.files) : []
+  input.value = ''
+  if (files.length > 0) {
+    void uploadImageFiles(files)
+  }
+}
+
+function handleComposerPaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  const files: File[] = []
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i]
+    if (it.kind === 'file' && it.type.startsWith('image/')) {
+      const f = it.getAsFile()
+      if (f) files.push(f)
+    }
+  }
+  if (files.length > 0) {
+    e.preventDefault()
+    void uploadImageFiles(files)
+  }
+}
+
+function handleComposerDrop(e: DragEvent) {
+  draggingImage.value = false
+  const files = e.dataTransfer?.files ? Array.from(e.dataTransfer.files) : []
+  if (files.some((f) => f.type.startsWith('image/'))) {
+    void uploadImageFiles(files)
+  }
+}
+
+function removePendingImage(idx: number) {
+  emit(
+    'update:pendingImages',
+    props.pendingImages.filter((_, i) => i !== idx)
+  )
+}
 
 const mentionOpen = ref(false)
 const mentionQuery = ref('')
@@ -238,6 +319,11 @@ function pickSlashCommand(item: SlashCmdItem) {
     emit('summarizeThread')
     return
   }
+  if (item.action === 'compact_thread') {
+    promptModel.value = ''
+    emit('compactThread')
+    return
+  }
   if (item.action === 'open_skills') {
     promptModel.value = ''
     store.state.showSkillsModal = true
@@ -404,12 +490,42 @@ function handleComposerKeydown(e: KeyboardEvent) {
     <form
       ref="formRef"
       @submit.prevent="emit('submitPrompt')"
+      @dragover.prevent="draggingImage = true"
+      @dragleave="draggingImage = false"
+      @drop.prevent="handleComposerDrop"
       :class="[
-        'composer-dock w-full mx-auto rounded-xl px-4 sm:px-4.5 pt-3.5 pb-2.5 flex flex-col gap-2',
+        'composer-dock w-full mx-auto rounded-xl px-4 sm:px-4.5 pt-3.5 pb-2.5 flex flex-col gap-2 transition-shadow',
         composerMaxWidthClass,
         store.state.isStreaming ? 'is-streaming' : '',
+        draggingImage ? 'ring-2 ring-accent' : '',
       ]"
     >
+      <input
+        ref="imageInputRef"
+        type="file"
+        accept="image/*"
+        multiple
+        class="hidden"
+        @change="onImageFilesSelected"
+      />
+      <div v-if="pendingImages.length > 0 || uploadingImages" class="flex items-center gap-2 flex-wrap">
+        <div
+          v-for="(imgUrl, idx) in pendingImages"
+          :key="imgUrl + idx"
+          class="relative group w-14 h-14 rounded-lg overflow-hidden border border-line bg-canvas shrink-0"
+        >
+          <img :src="imgUrl" alt="待发送图片" class="w-full h-full object-cover" />
+          <button
+            type="button"
+            aria-label="移除图片"
+            @click="removePendingImage(idx)"
+            class="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/70 text-white text-xs flex items-center justify-center opacity-90 hover:opacity-100 cursor-pointer"
+          >
+            ×
+          </button>
+        </div>
+        <span v-if="uploadingImages" class="text-xs text-fg-muted font-mono">上传图片中...</span>
+      </div>
       <Transition
         enter-active-class="transition-[opacity,transform] duration-180 ease-[var(--ease-spring)] motion-reduce:duration-100"
         enter-from-class="opacity-0 -translate-y-1.5 scale-98 motion-reduce:translate-y-0 motion-reduce:scale-100"
@@ -447,8 +563,9 @@ function handleComposerKeydown(e: KeyboardEvent) {
           ref="textareaRef"
           v-model="promptModel"
           rows="1"
-          placeholder="输入指令，@ 召唤任何 Bot，/ 呼出快捷指令（Enter 发送）..."
+          placeholder="输入指令，粘贴/拖入图片，@ 召唤 Bot，/ 呼出快捷指令（Enter 发送）..."
           @input="syncMentionAndSlash"
+          @paste="handleComposerPaste"
           @compositionend="handleCompositionEnd"
           @keydown="handleComposerKeydown"
           class="auto-size-textarea composer-textarea w-full bg-transparent border-0 text-base sm:text-sm text-fg placeholder:text-fg-muted resize-none focus:outline-none min-h-[24px] max-h-[160px] overflow-y-auto leading-relaxed"
@@ -462,9 +579,23 @@ function handleComposerKeydown(e: KeyboardEvent) {
           </div>
           <button
             type="button"
+            :disabled="uploadingImages || pendingImages.length >= 4 || store.state.isStreaming"
+            @click="triggerImagePick"
+            title="附加图片（也支持直接粘贴截图或拖拽图片进输入框）"
+            aria-label="添加图片"
+            class="btn-tactile min-h-[40px] sm:min-h-[34px] inline-flex items-center justify-center px-2.5 rounded-lg text-xs text-fg-sub hover:text-fg cursor-pointer shrink-0 disabled:opacity-45"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
+          <button
+            type="button"
             :aria-pressed="enableThinking"
             @click="emit('update:enableThinking', !enableThinking)"
-            :title="selectedModel.startsWith('pool:') || selectedModel === 'auto:free' ? '深度思考开关作用于支持推理链（Thinking）的模型' : '开启或关闭深度推理思考链'"
+            title="开启或关闭深度推理思考链（作用于支持 Thinking 的模型）"
             :class="[
               'min-h-[40px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 rounded-lg text-xs cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
               enableThinking ? 'btn-tactile-gold' : 'btn-tactile text-fg-muted',
@@ -526,7 +657,7 @@ function handleComposerKeydown(e: KeyboardEvent) {
           </button>
           <button
             type="submit"
-            :disabled="store.state.isStreaming || !promptModel.trim()"
+            :disabled="store.state.isStreaming || uploadingImages || (!promptModel.trim() && pendingImages.length === 0)"
             aria-label="发送指令"
             title="发送 (Enter)"
             class="btn-jewel w-10 h-10 sm:w-9 sm:h-9 rounded-full hover:scale-105 flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent cursor-pointer disabled:opacity-35 disabled:hover:scale-100 disabled:cursor-not-allowed"

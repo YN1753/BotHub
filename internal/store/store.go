@@ -39,13 +39,9 @@ const (
 	KeyLightAPIKey       = "light_api_key"
 	KeyLightBaseURL      = "light_base_url"
 	KeyLightModel        = "light_model"
-	KeyFreeModelPool     = "free_model_pool"
 	KeyModelProviders    = "model_providers"
 	KeyPooledModels      = "pooled_models"
-	KeyFreePoolStrategy  = "free_pool_strategy"
-	KeyPaidPoolStrategy  = "paid_pool_strategy"
-	KeyPoolForLight      = "pool_for_light"
-	KeyPoolFallback      = "pool_fallback"
+	KeyPoolStrategy      = "pool_strategy"
 	KeyAppBearerToken    = "app_bearer_token"
 	KeyNezhaWebhookToken = "nezha_webhook_token"
 	KeyAdminPassHash          = "admin_pass_hash"
@@ -60,60 +56,27 @@ const (
 	KeyOIDCAllowedSub   = "oidc_allowed_sub"
 )
 
-type paidFallbackCtxKey struct{}
+type taskIDCtxKey struct{}
 type taskModelCtxKey struct{}
-type taskQuotaCtxKey struct{}
 
-type TaskQuota struct {
-	TaskID        string
-	MaxPaidPerDay int
-}
-
-// WithTaskQuota binds a scheduled task's ID and daily paid call guardrail limit (0 = unlimited) to ctx.
-func WithTaskQuota(ctx context.Context, taskID string, maxPaidPerDay int) context.Context {
+// WithTaskID binds a scheduled task's ID to ctx for usage attribution.
+func WithTaskID(ctx context.Context, taskID string) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if maxPaidPerDay < 0 {
-		maxPaidPerDay = 0
-	}
-	return context.WithValue(ctx, taskQuotaCtxKey{}, TaskQuota{
-		TaskID:        strings.TrimSpace(taskID),
-		MaxPaidPerDay: maxPaidPerDay,
-	})
+	return context.WithValue(ctx, taskIDCtxKey{}, strings.TrimSpace(taskID))
 }
 
-// TaskQuotaFromContext extracts the task ID and daily paid call limit bound to ctx, if any.
-func TaskQuotaFromContext(ctx context.Context) (taskID string, maxPaidPerDay int) {
+// TaskIDFromContext extracts the scheduled task ID bound to ctx, if any.
+func TaskIDFromContext(ctx context.Context) string {
 	if ctx == nil {
-		return "", 0
+		return ""
 	}
-	q, ok := ctx.Value(taskQuotaCtxKey{}).(TaskQuota)
-	if !ok {
-		return "", 0
-	}
-	return strings.TrimSpace(q.TaskID), q.MaxPaidPerDay
+	v, _ := ctx.Value(taskIDCtxKey{}).(string)
+	return strings.TrimSpace(v)
 }
 
-// WithPaidFallback binds a per-task or per-bot paid-model fallback permission to ctx.
-// Background tasks default to disallowing paid fallback unless explicitly enabled.
-func WithPaidFallback(ctx context.Context, allow bool) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, paidFallbackCtxKey{}, allow)
-}
-
-// PaidFallbackFromContext inspects ctx for an explicit per-task/per-bot paid fallback flag.
-func PaidFallbackFromContext(ctx context.Context) (allowed bool, explicit bool) {
-	if ctx == nil {
-		return false, false
-	}
-	v, ok := ctx.Value(paidFallbackCtxKey{}).(bool)
-	return v, ok
-}
-
-// WithTaskModelOverride attaches an optional per-task model/pool target ID to ctx.
+// WithTaskModelOverride attaches an optional per-task model target ID to ctx.
 func WithTaskModelOverride(ctx context.Context, model string) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -121,7 +84,7 @@ func WithTaskModelOverride(ctx context.Context, model string) context.Context {
 	return context.WithValue(ctx, taskModelCtxKey{}, strings.TrimSpace(model))
 }
 
-// TaskModelFromContext extracts any task-level model/pool override attached to ctx.
+// TaskModelFromContext extracts any task-level model override attached to ctx.
 func TaskModelFromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""
@@ -131,7 +94,15 @@ func TaskModelFromContext(ctx context.Context) string {
 }
 
 type Store struct {
-	db *sql.DB
+	db     *sql.DB
+	dbPath string
+}
+
+func (s *Store) DataDir() string {
+	if s == nil || strings.TrimSpace(s.dbPath) == "" {
+		return "."
+	}
+	return filepath.Dir(s.dbPath)
 }
 
 func Open(dbPath string) (*Store, error) {
@@ -146,7 +117,7 @@ func Open(dbPath string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 
-	s := &Store{db: db}
+	s := &Store{db: db, dbPath: dbPath}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -464,8 +435,11 @@ CREATE INDEX IF NOT EXISTS idx_model_usage_task_day ON model_usage_logs(task_id,
 		`ALTER TABLE bots ADD COLUMN allow_paid_fallback INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE tasks ADD COLUMN run_at TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE tasks ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE tasks ADD COLUMN allow_paid_fallback INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE tasks ADD COLUMN max_paid_calls_per_day INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE model_usage_logs ADD COLUMN cached_tokens INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE model_usage_logs ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE agent_messages ADD COLUMN attachments TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE bot_threads ADD COLUMN rolling_summary TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE bot_threads ADD COLUMN summary_up_to_id INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range alters {
 		if _, err := s.db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
@@ -499,7 +473,7 @@ CREATE INDEX IF NOT EXISTS idx_model_usage_task_day ON model_usage_logs(task_id,
 	s.migrateStashToolOnce()
 	s.migrateBuiltinToolsDefaultOnce()
 	s.migrateMCPZeroMountOnce()
-	s.migratePaidFirstAndFixBotToolsOnce()
+	s.migrateSinglePoolV289Once()
 	s.cleanupNoisyRoutineLogs()
 	return nil
 }
@@ -523,29 +497,34 @@ func (s *Store) migrateMCPZeroMountOnce() {
 	_ = s.SetConfig("mcp_zero_mount_migrated_v1", "1")
 }
 
-func (s *Store) migratePaidFirstAndFixBotToolsOnce() {
-	if v, _ := s.GetConfig("paid_first_v285_migrated"); v == "1" {
+func (s *Store) migrateSinglePoolV289Once() {
+	if v, _ := s.GetConfig("single_pool_v289_migrated"); v == "1" {
 		return
 	}
-	// 1. Switch existing Bots from Free Pool to Paid Pool (auto:paid), enable thinking & paid fallback,
-	// clear any legacy allowed_tools restriction caused by create_bot so every Bot has full Native Core + mount_mcp,
-	// and default memory_policy to standard so Bots inherit global user context.
+	// 1. Normalize all Bots to unified single-pool routing ("auto"), thinking enabled, full Native Core
 	_, _ = s.db.Exec(`UPDATE bots SET
-		model = CASE WHEN COALESCE(TRIM(model), '') IN ('', 'auto:free', 'free-pool') THEN 'auto:paid' ELSE model END,
-		allow_paid_fallback = 1,
+		model = CASE WHEN COALESCE(TRIM(model), '') IN ('', 'auto:free', 'auto:paid', 'free-pool', 'paid-pool') THEN 'auto' ELSE model END,
 		enable_thinking = 1,
 		allowed_tools = '[]',
 		memory_policy = 'standard'`)
-	// 2. Switch existing scheduled tasks to Paid Pool default
+	// 2. Normalize all Tasks to unified single-pool routing (empty inherits Bot / auto)
 	_, _ = s.db.Exec(`UPDATE tasks SET
-		model = CASE WHEN COALESCE(TRIM(model), '') IN ('', 'auto:free', 'free-pool') THEN 'auto:paid' ELSE model END,
-		allow_paid_fallback = 1`)
-	// 3. Refresh concierge prompt if it still has the retired "free pool only" instruction
-	if concierge, _ := s.GetBot(DefaultConciergeBotID); concierge != nil && strings.Contains(concierge.SystemPrompt, "仅走免费池") {
-		concierge.SystemPrompt = DefaultConciergeBot().SystemPrompt
-		_ = s.SaveBot(*concierge)
+		model = CASE WHEN COALESCE(TRIM(model), '') IN ('auto:free', 'auto:paid', 'free-pool', 'paid-pool') THEN '' ELSE model END`)
+	// 3. Migrate pool strategy & clean free-tier models out of pooled_models when paid models exist
+	if strat, _ := s.GetConfig("paid_pool_strategy"); strings.TrimSpace(strat) != "" {
+		_ = s.SetConfig(KeyPoolStrategy, NormalizePoolStrategy(strat))
 	}
-	_ = s.SetConfig("paid_first_v285_migrated", "1")
+	s.purgeLegacyFreePoolModelsOnce()
+	_, _ = s.db.Exec(`DELETE FROM configs WHERE key IN ('free_model_pool', 'free_pool_strategy', 'paid_pool_strategy', 'pool_for_light', 'pool_fallback')`)
+	// 4. Refresh default concierge prompt to match unified single pool
+	if concierge, _ := s.GetBot(DefaultConciergeBotID); concierge != nil {
+		if strings.Contains(concierge.SystemPrompt, "免费池") || strings.Contains(concierge.SystemPrompt, "auto:paid") {
+			concierge.SystemPrompt = DefaultConciergeBot().SystemPrompt
+			concierge.Model = "auto"
+			_ = s.SaveBot(*concierge)
+		}
+	}
+	_ = s.SetConfig("single_pool_v289_migrated", "1")
 }
 
 func (s *Store) cleanupNoisyRoutineLogs() {
@@ -685,9 +664,7 @@ func (s *Store) seedDefaults() error {
 		KeyLightAPIKey:       lightKey,
 		KeyLightBaseURL:      lightBaseURL,
 		KeyLightModel:        lightModel,
-		KeyFreeModelPool:     "[]",
-		KeyPoolForLight:      "true",
-		KeyPoolFallback:      "true",
+		KeyPoolStrategy:      PoolStrategyPriority,
 		KeyAppBearerToken:    appToken,
 		KeyNezhaWebhookToken: "",
 		KeyAdminPassHash:     HashPassword(adminToken),

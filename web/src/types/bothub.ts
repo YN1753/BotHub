@@ -10,7 +10,6 @@ export interface Bot {
   avatar_style: string
   system_prompt: string
   model: string
-  allow_paid_fallback?: boolean
   enable_thinking: boolean
   allowed_tools: string
   bot_mode?: BotMode | string
@@ -69,6 +68,8 @@ export interface BotThread {
   bot_id: string
   title: string
   summary?: string
+  rolling_summary?: string
+  summary_up_to_id?: number
   msg_count: number
   archived: boolean
   created_at: string
@@ -102,9 +103,9 @@ export interface AgentMessage {
   tool_call_id?: string
   reply_to_id?: number
   reply_preview?: string
+  attachments?: string
   model_used?: string
   model_target_id?: string
-  model_tier?: string
   created_at: string
 }
 
@@ -162,8 +163,6 @@ export interface Task {
   type: string
   bot_id?: string
   model?: string
-  allow_paid_fallback?: boolean
-  max_paid_calls_per_day?: number
   description: string
   cron_expr: string
   run_at?: string
@@ -313,29 +312,28 @@ export interface PooledModel {
   provider_id: string
   model_id: string
   display_name?: string
-  tier: 'free' | 'paid'
   enabled: boolean
   priority: number
+  is_light?: boolean
+  input_price_per_m?: number
+  output_price_per_m?: number
   supports_tools?: boolean
   supports_thinking?: boolean
   last_latency_ms?: number
   last_verified_at?: string
 }
 
-export interface PoolStrategies {
-  free: PoolStrategy
-  paid: PoolStrategy
-}
-
 export interface ModelUsageModelStat {
   target_id: string
   model_id: string
-  tier: string
   calls: number
   success_calls?: number
-  free_calls?: number
-  paid_calls?: number
+  prompt_tokens?: number
+  cached_tokens?: number
+  completion_tokens?: number
   tokens: number
+  cost_usd?: number
+  cost_cny?: number
   avg_latency_ms: number
 }
 
@@ -343,45 +341,38 @@ export interface ModelUsageCallerStat {
   bot_id: string
   task_id: string
   source: string
-  free_calls: number
-  paid_calls: number
+  calls: number
+  cached_tokens?: number
   tokens: number
+  cost_usd?: number
+  cost_cny?: number
 }
 
 export interface ModelUsageSummary {
   days: number
   total_calls: number
   success_calls: number
-  free_calls: number
-  paid_calls: number
-  free_tokens: number
-  paid_tokens: number
+  total_prompt_tokens?: number
+  total_cached_tokens?: number
+  total_completion_tokens?: number
+  total_tokens?: number
+  cache_hit_rate?: number
+  total_cost_usd?: number
+  total_cost_cny?: number
+  usd_to_cny?: number
   top_models?: ModelUsageModelStat[]
   top_callers?: ModelUsageCallerStat[]
-}
-
-export interface ModelPoolEntry {
-  id: string
-  name: string
-  tier?: 'free' | 'paid' | string
-  provider: string
-  base_url: string
-  api_key: string
-  model: string
-  models?: string[]
-  enabled: boolean
-  priority: number
-  note: string
 }
 
 export interface ModelOptionDTO {
   id: string
   provider_id?: string
   label: string
-  tier: 'auto' | 'free' | 'paid' | string
   provider: string
   model: string
   available: boolean
+  is_auto?: boolean
+  is_light?: boolean
   supports_tools?: boolean
   supports_thinking?: boolean
   last_latency_ms?: number
@@ -418,11 +409,11 @@ export interface DashboardPayload {
   notes?: WorkNote[]
   stash?: StashItem[]
   stash_tags?: StashTagCount[]
-  model_pool?: ModelPoolEntry[]
   model_providers?: ModelProvider[]
   pooled_models?: PooledModel[]
-  pool_strategies?: PoolStrategies
+  pool_strategy?: PoolStrategy
   model_usage_summary?: ModelUsageSummary
+  model_usage_30d?: ModelUsageSummary
   model_options?: ModelOptionDTO[]
   revisions?: Record<string, number>
   available_tools?: AvailableToolMeta[]

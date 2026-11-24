@@ -6,16 +6,10 @@ import { buildRoutePreview } from '../../utils/modelRouting'
 const props = withDefaults(
   defineProps<{
     selectedModel?: string
-    allowPaidFallback?: boolean
-    maxPaidCallsPerDay?: number
-    isTask?: boolean
     needTools?: boolean
   }>(),
   {
     selectedModel: '',
-    allowPaidFallback: false,
-    maxPaidCallsPerDay: 0,
-    isTask: false,
     needTools: false,
   }
 )
@@ -25,12 +19,9 @@ const store = useAppStore()
 const preview = computed(() =>
   buildRoutePreview({
     selectedModel: props.selectedModel || '',
-    allowPaidFallback: Boolean(props.allowPaidFallback),
-    maxPaidCallsPerDay: Number(props.maxPaidCallsPerDay) || 0,
     providers: store.state.modelProviders || [],
     pooledModels: store.state.pooledModels || [],
-    strategies: store.state.poolStrategies,
-    isTask: props.isTask,
+    strategy: store.state.poolStrategy,
     needTools: props.needTools,
   })
 )
@@ -39,7 +30,7 @@ const containerClasses = computed(() => {
   if (preview.value.tone === 'warn') {
     return 'border-danger-border bg-danger-soft text-danger'
   }
-  if (preview.value.tone === 'paid') {
+  if (preview.value.tone === 'accent') {
     return 'border-accent-border bg-accent-soft text-accent-fg'
   }
   return 'border-ok-border bg-ok-soft text-ok'
@@ -47,7 +38,7 @@ const containerClasses = computed(() => {
 
 const dotClasses = computed(() => {
   if (preview.value.tone === 'warn') return 'bg-danger'
-  if (preview.value.tone === 'paid') return 'bg-accent'
+  if (preview.value.tone === 'accent') return 'bg-accent'
   return 'bg-ok'
 })
 </script>

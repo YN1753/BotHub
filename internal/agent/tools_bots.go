@@ -22,7 +22,7 @@ func manageBotsToolSpec() ToolSpec {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "manage_bots",
-				Description: "管理 BotHub 工作区中的专属 Bot 与多 Bot 协同群聊（大管家核心能力）。支持 list（查看全部 Bot 与群聊名录）、create_bot（新建高智商专属 Bot，默认走付费池 auto:paid 并自动深度锻造人设）、update_bot（修改已有 Bot 配置）、upgrade_bot（AI 一键深度重构升级已有 Bot 的人设、模型为付费池并恢复完整原生+MCP能力）、delete_bot（删除 Bot 或群聊）、create_group（将多位 Bot 拉入协同群聊）、add_group_members / remove_group_members / update_group、setup_blueprint（一站式编排 Bot + MCP/技能 + 定时任务，默认走付费池）。",
+				Description: "管理 BotHub 工作区中的专属 Bot 与多 Bot 协同群聊（大管家核心能力）。支持 list（查看全部 Bot 与群聊名录）、create_bot（新建高智商专属 Bot，默认走模型池 auto 自动路由并自动深度锻造人设）、update_bot（修改已有 Bot 配置）、upgrade_bot（AI 一键深度重构升级已有 Bot 的人设、模型设为自动路由并恢复完整原生+MCP能力）、delete_bot（删除 Bot 或群聊）、create_group（将多位 Bot 拉入协同群聊）、add_group_members / remove_group_members / update_group、setup_blueprint（一站式编排 Bot + MCP/技能 + 定时任务）。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
@@ -79,11 +79,7 @@ func manageBotsToolSpec() ToolSpec {
 						},
 						"model": map[string]any{
 							"type":        "string",
-							"description": "可选：默认推理模型（默认 auto:free，也支持 auto:paid 或 pool:<id>[::<model>]）",
-						},
-						"allow_paid_fallback": map[string]any{
-							"type":        "boolean",
-							"description": "可选：是否允许该 Bot 或群聊在免费模型池不可用时回退付费池（默认 false）",
+							"description": "可选：默认推理模型（默认 auto 自动路由，也支持 pool:<provider_id>::<model_id>）",
 						},
 						"enable_thinking": map[string]any{
 							"type":        "boolean",
@@ -144,16 +140,14 @@ func manageBotsToolSpec() ToolSpec {
 						},
 						"task_spec": map[string]any{
 							"type":        "object",
-							"description": "setup_blueprint 时可选：配套定时任务定义（name, type, cron_expr, run_at, prompt, model, allow_paid_fallback, max_paid_calls_per_day）",
+							"description": "setup_blueprint 时可选：配套定时任务定义（name, type, cron_expr, run_at, prompt, model）",
 							"properties": map[string]any{
-								"name":                   map[string]any{"type": "string"},
-								"type":                   map[string]any{"type": "string"},
-								"cron_expr":              map[string]any{"type": "string"},
-								"run_at":                 map[string]any{"type": "string"},
-								"prompt":                 map[string]any{"type": "string"},
-								"model":                  map[string]any{"type": "string"},
-								"allow_paid_fallback":    map[string]any{"type": "boolean"},
-								"max_paid_calls_per_day": map[string]any{"type": "integer"},
+								"name":      map[string]any{"type": "string"},
+								"type":      map[string]any{"type": "string"},
+								"cron_expr": map[string]any{"type": "string"},
+								"run_at":    map[string]any{"type": "string"},
+								"prompt":    map[string]any{"type": "string"},
+								"model":     map[string]any{"type": "string"},
 							},
 						},
 					},
@@ -439,27 +433,24 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 		MemoryPolicy      string   `json:"memory_policy"`
 		Traits            string   `json:"traits"`
 		SystemPrompt      string   `json:"system_prompt"`
-		Model             string   `json:"model"`
-		AllowPaidFallback *bool    `json:"allow_paid_fallback"`
-		EnableThinking    *bool    `json:"enable_thinking"`
-		AllowedTools      []string `json:"allowed_tools"`
-		IsPinned          *bool    `json:"is_pinned"`
-		MemberIDs         []string `json:"member_ids"`
-		MemberNames       []string `json:"member_names"`
-		IncludeSelf       bool     `json:"include_self"`
-		GroupMode         string   `json:"group_mode"`
-		Announcement      string   `json:"announcement"`
-		SkillIDs          []string `json:"skill_ids"`
-		SkillSpecs        []skillUpsertInput `json:"skill_specs"`
-		TaskSpec          *struct {
-			Name               string `json:"name"`
-			Type               string `json:"type"`
-			CronExpr           string `json:"cron_expr"`
-			RunAt              string `json:"run_at"`
-			Prompt             string `json:"prompt"`
-			Model              string `json:"model"`
-			AllowPaidFallback  *bool  `json:"allow_paid_fallback"`
-			MaxPaidCallsPerDay int    `json:"max_paid_calls_per_day"`
+		Model          string           `json:"model"`
+		EnableThinking *bool            `json:"enable_thinking"`
+		AllowedTools   []string         `json:"allowed_tools"`
+		IsPinned       *bool            `json:"is_pinned"`
+		MemberIDs      []string         `json:"member_ids"`
+		MemberNames    []string         `json:"member_names"`
+		IncludeSelf    bool             `json:"include_self"`
+		GroupMode      string           `json:"group_mode"`
+		Announcement   string           `json:"announcement"`
+		SkillIDs       []string         `json:"skill_ids"`
+		SkillSpecs     []skillUpsertInput `json:"skill_specs"`
+		TaskSpec       *struct {
+			Name     string `json:"name"`
+			Type     string `json:"type"`
+			CronExpr string `json:"cron_expr"`
+			RunAt    string `json:"run_at"`
+			Prompt   string `json:"prompt"`
+			Model    string `json:"model"`
 		} `json:"task_spec"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
@@ -501,7 +492,6 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 				"member_ids":          b.MemberIDList(),
 				"member_names":        mNames,
 				"model":               b.Model,
-				"allow_paid_fallback": b.AllowPaidFallback,
 				"is_pinned":           b.IsPinned,
 				"allowed_tools_count": len(b.AllowedToolList()),
 			})
@@ -559,11 +549,7 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 		}
 		model := strings.TrimSpace(args.Model)
 		if model == "" {
-			model = "auto:paid"
-		}
-		allowPaid := true
-		if args.AllowPaidFallback != nil {
-			allowPaid = *args.AllowPaidFallback
+			model = "auto"
 		}
 		enableThinking := true
 		if args.EnableThinking != nil {
@@ -577,40 +563,38 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 		toolsJSON, _ := json.Marshal(tools)
 
 		newBot := store.Bot{
-			ID:                id,
-			Name:              name,
-			RoleTitle:         roleTitle,
-			AvatarStyle:       normalizeManageAvatarStyle(args.AvatarStyle, botMode, false),
-			SystemPrompt:      sysPrompt,
-			BotMode:           botMode,
-			MemoryPolicy:      memPolicy,
-			Traits:            traits,
-			Model:             model,
-			AllowPaidFallback: allowPaid,
-			EnableThinking:    enableThinking,
-			AllowedTools:      string(toolsJSON),
-			SkillIDs:          "[]",
-			State:             store.BotStateIdle,
-			IsPinned:          isPinned,
-			IsGroup:           false,
-			MemberIDs:         "[]",
-			GroupMode:         "smart",
-			SortOrder:         100,
+			ID:             id,
+			Name:           name,
+			RoleTitle:      roleTitle,
+			AvatarStyle:    normalizeManageAvatarStyle(args.AvatarStyle, botMode, false),
+			SystemPrompt:   sysPrompt,
+			BotMode:        botMode,
+			MemoryPolicy:   memPolicy,
+			Traits:         traits,
+			Model:          model,
+			EnableThinking: enableThinking,
+			AllowedTools:   string(toolsJSON),
+			SkillIDs:       "[]",
+			State:          store.BotStateIdle,
+			IsPinned:       isPinned,
+			IsGroup:        false,
+			MemberIDs:      "[]",
+			GroupMode:      "smart",
+			SortOrder:      100,
 		}
 		if err := e.store.SaveBot(newBot); err != nil {
 			return "", fmt.Errorf("创建 Bot 失败: %w", err)
 		}
 		e.publishAssistantUpdate("bots")
 		out, _ := json.Marshal(map[string]any{
-			"ok":                  true,
-			"action":              "create_bot",
-			"bot_id":              newBot.ID,
-			"name":                newBot.Name,
-			"role_title":          newBot.RoleTitle,
-			"bot_mode":            newBot.BotMode,
-			"model":               newBot.Model,
-			"allow_paid_fallback": newBot.AllowPaidFallback,
-			"allowed_tools":       tools,
+			"ok":            true,
+			"action":        "create_bot",
+			"bot_id":        newBot.ID,
+			"name":          newBot.Name,
+			"role_title":    newBot.RoleTitle,
+			"bot_mode":      newBot.BotMode,
+			"model":         newBot.Model,
+			"allowed_tools": tools,
 		})
 		return string(out), nil
 
@@ -626,8 +610,7 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 			return "", fmt.Errorf("未找到要升级的 Bot (id=%q, name=%q)", wantID, wantName)
 		}
 		updated := *target
-		updated.Model = "auto:paid"
-		updated.AllowPaidFallback = true
+		updated.Model = "auto"
 		updated.EnableThinking = true
 		updated.AllowedTools = "[]"
 		updated.MemoryPolicy = store.MemoryPolicyStandard
@@ -700,9 +683,6 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 		}
 		if strings.TrimSpace(args.Model) != "" {
 			updated.Model = strings.TrimSpace(args.Model)
-		}
-		if args.AllowPaidFallback != nil {
-			updated.AllowPaidFallback = *args.AllowPaidFallback
 		}
 		if args.EnableThinking != nil {
 			updated.EnableThinking = *args.EnableThinking
@@ -830,11 +810,7 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 		}
 		model := strings.TrimSpace(args.Model)
 		if model == "" {
-			model = "auto:free"
-		}
-		allowPaid := false
-		if args.AllowPaidFallback != nil {
-			allowPaid = *args.AllowPaidFallback
+			model = "auto"
 		}
 		isPinned := false
 		if args.IsPinned != nil {
@@ -848,26 +824,25 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 
 		memberIDsJSON, _ := json.Marshal(memberIDs)
 		groupBot := store.Bot{
-			ID:                genManagedBotID(true),
-			Name:              groupName,
-			RoleTitle:         roleTitle,
-			AvatarStyle:       normalizeManageAvatarStyle(args.AvatarStyle, derivedMode, true),
-			SystemPrompt:      sysPrompt,
-			BotMode:           derivedMode,
-			MemoryPolicy:      store.MemoryPolicyIsolated,
-			Model:             model,
-			AllowPaidFallback: allowPaid,
-			EnableThinking:    derivedThink,
-			AllowedTools:      toolsJSON,
-			SkillIDs:          skillsJSON,
-			State:             store.BotStateIdle,
-			IsPinned:          isPinned,
-			IsGroup:           true,
-			MemberIDs:         string(memberIDsJSON),
-			GroupMode:         groupMode,
-			Announcement:      announcement,
-			SortOrder:         50,
-			LastSummary:       "群聊已组建，成员：" + strings.Join(memberNames, "、"),
+			ID:             genManagedBotID(true),
+			Name:           groupName,
+			RoleTitle:      roleTitle,
+			AvatarStyle:    normalizeManageAvatarStyle(args.AvatarStyle, derivedMode, true),
+			SystemPrompt:   sysPrompt,
+			BotMode:        derivedMode,
+			MemoryPolicy:   store.MemoryPolicyIsolated,
+			Model:          model,
+			EnableThinking: derivedThink,
+			AllowedTools:   toolsJSON,
+			SkillIDs:       skillsJSON,
+			State:          store.BotStateIdle,
+			IsPinned:       isPinned,
+			IsGroup:        true,
+			MemberIDs:      string(memberIDsJSON),
+			GroupMode:      groupMode,
+			Announcement:   announcement,
+			SortOrder:      50,
+			LastSummary:    "群聊已组建，成员：" + strings.Join(memberNames, "、"),
 		}
 		if err := e.store.SaveBot(groupBot); err != nil {
 			return "", fmt.Errorf("创建群聊失败: %w", err)
@@ -1074,39 +1049,31 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 			tb, _ := json.Marshal(tools)
 			model := strings.TrimSpace(args.Model)
 			if model == "" {
-				model = "auto:paid"
-			}
-			allowPaid := true
-			if args.AllowPaidFallback != nil {
-				allowPaid = *args.AllowPaidFallback
+				model = "auto"
 			}
 			enableThinking := true
 			if args.EnableThinking != nil {
 				enableThinking = *args.EnableThinking
 			}
 			targetBot = store.Bot{
-				ID:                genManagedBotID(false),
-				Name:              botName,
-				RoleTitle:         roleTitle,
-				AvatarStyle:       normalizeManageAvatarStyle(args.AvatarStyle, botMode, false),
-				SystemPrompt:      sysPrompt,
-				BotMode:           botMode,
-				MemoryPolicy:      store.MemoryPolicyStandard,
-				Traits:            traits,
-				Model:             model,
-				AllowPaidFallback: allowPaid,
-				EnableThinking:    enableThinking,
-				AllowedTools:      string(tb),
-				State:             store.BotStateIdle,
-				IsPinned:          args.IsPinned != nil && *args.IsPinned,
-				IsGroup:           false,
-				MemberIDs:         "[]",
-				GroupMode:         "smart",
-				SortOrder:         100,
+				ID:             genManagedBotID(false),
+				Name:           botName,
+				RoleTitle:      roleTitle,
+				AvatarStyle:    normalizeManageAvatarStyle(args.AvatarStyle, botMode, false),
+				SystemPrompt:   sysPrompt,
+				BotMode:        botMode,
+				MemoryPolicy:   store.MemoryPolicyStandard,
+				Traits:         traits,
+				Model:          model,
+				EnableThinking: enableThinking,
+				AllowedTools:   string(tb),
+				State:          store.BotStateIdle,
+				IsPinned:       args.IsPinned != nil && *args.IsPinned,
+				IsGroup:        false,
+				MemberIDs:      "[]",
+				GroupMode:      "smart",
+				SortOrder:      100,
 			}
-		}
-		if args.AllowPaidFallback != nil {
-			targetBot.AllowPaidFallback = *args.AllowPaidFallback
 		}
 		skBytes, _ := json.Marshal(boundSkillIDs)
 		targetBot.SkillIDs = string(skBytes)
@@ -1114,7 +1081,7 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 			return "", fmt.Errorf("保存套装 Bot 失败: %w", err)
 		}
 
-		// 3. Optionally create bound scheduled task (defaults to Paid Pool)
+		// 3. Optionally create bound scheduled task
 		var createdTask *store.Task
 		if args.TaskSpec != nil && strings.TrimSpace(args.TaskSpec.Name) != "" {
 			tType := strings.TrimSpace(args.TaskSpec.Type)
@@ -1143,28 +1110,19 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 				paramsJSON = string(pb)
 			}
 			tModel := strings.TrimSpace(args.TaskSpec.Model)
-			if tModel == "" {
-				tModel = "auto:paid"
-			}
-			tAllowPaid := true
-			if args.TaskSpec.AllowPaidFallback != nil {
-				tAllowPaid = *args.TaskSpec.AllowPaidFallback
-			}
 			buf := make([]byte, 4)
 			_, _ = rand.Read(buf)
 			task := store.Task{
-				ID:                 "task_" + hex.EncodeToString(buf),
-				Name:               notifier.StripEmoji(strings.TrimSpace(args.TaskSpec.Name)),
-				Type:               tType,
-				BotID:              targetBot.ID,
-				Model:              tModel,
-				AllowPaidFallback:  tAllowPaid,
-				MaxPaidCallsPerDay: args.TaskSpec.MaxPaidCallsPerDay,
-				Description:        truncateTitle(cleanPrompt),
-				CronExpr:           tCron,
-				RunAt:              tRunAt,
-				Enabled:            true,
-				Params:             paramsJSON,
+				ID:          "task_" + hex.EncodeToString(buf),
+				Name:        notifier.StripEmoji(strings.TrimSpace(args.TaskSpec.Name)),
+				Type:        tType,
+				BotID:       targetBot.ID,
+				Model:       tModel,
+				Description: truncateTitle(cleanPrompt),
+				CronExpr:    tCron,
+				RunAt:       tRunAt,
+				Enabled:     true,
+				Params:      paramsJSON,
 			}
 			if err := e.store.SaveTask(task); err != nil {
 				return "", fmt.Errorf("创建套装定时任务失败: %w", err)
@@ -1177,14 +1135,13 @@ func (e *Engine) toolManageBots(ctx context.Context, argsJSON string) (string, e
 		}
 		e.publishAssistantUpdate("bots")
 		out, _ := json.Marshal(map[string]any{
-			"ok":                  true,
-			"action":              "setup_blueprint",
-			"bot_id":              targetBot.ID,
-			"bot_name":            targetBot.Name,
-			"allow_paid_fallback": targetBot.AllowPaidFallback,
-			"skill_ids":           boundSkillIDs,
-			"skills":              boundSkills,
-			"task":                createdTask,
+			"ok":        true,
+			"action":    "setup_blueprint",
+			"bot_id":    targetBot.ID,
+			"bot_name":  targetBot.Name,
+			"skill_ids": boundSkillIDs,
+			"skills":    boundSkills,
+			"task":      createdTask,
 		})
 		return string(out), nil
 

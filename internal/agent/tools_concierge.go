@@ -18,14 +18,14 @@ func manageModelsToolSpec() ToolSpec {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "manage_models",
-				Description: "巡检与调优 AI 模型渠道与免费池/付费池（大管家核心能力，不暴露任何明文 API Key）。支持 status（查看各渠道、免费池/付费池模型、健康冷却状态与近 7 日调用统计）、clear_cooldown（一键解封冷却模型，target_id 留空则全部解封）、set_strategy（切换免费池或付费池调度策略：priority / round_robin / lowest_latency）、toggle_model（启用或停用池内模型）、move_tier（将已配模型在 free 与 paid 池之间移动）、reorder（调整池内模型优先级 priority）。",
+				Description: "巡检与调优 AI 模型渠道与统一模型池（大管家核心能力，不暴露任何明文 API Key）。支持 status（查看各渠道、模型池列表、健康冷却状态与近 7 日调用及预估费用统计）、clear_cooldown（一键解封冷却模型，target_id 留空则全部解封）、set_strategy（切换模型池调度策略：priority / round_robin / lowest_latency）、toggle_model（启用或停用池内模型）、reorder（调整池内模型优先级 priority）。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"action": map[string]any{
 							"type":        "string",
-							"enum":        []string{"status", "clear_cooldown", "set_strategy", "toggle_model", "move_tier", "reorder"},
-							"description": "操作类型：status | clear_cooldown | set_strategy | toggle_model | move_tier | reorder",
+							"enum":        []string{"status", "clear_cooldown", "set_strategy", "toggle_model", "reorder"},
+							"description": "操作类型：status | clear_cooldown | set_strategy | toggle_model | reorder",
 						},
 						"target_id": map[string]any{
 							"type":        "string",
@@ -33,29 +33,16 @@ func manageModelsToolSpec() ToolSpec {
 						},
 						"provider_id": map[string]any{
 							"type":        "string",
-							"description": "可选：目标渠道 ID（toggle_model / move_tier / reorder 时可配合 model_id 精确匹配）",
+							"description": "可选：目标渠道 ID（toggle_model / reorder 时可配合 model_id 精确匹配）",
 						},
 						"model_id": map[string]any{
 							"type":        "string",
-							"description": "目标模型 ID（如 gemini-2.5-flash、deepseek-chat 等）",
-						},
-						"tier": map[string]any{
-							"type":        "string",
-							"enum":        []string{"free", "paid"},
-							"description": "目标模型池层级：free（免费模型池）| paid（付费模型池）",
+							"description": "目标模型 ID（如 claude-sonnet-4、deepseek-chat 等）",
 						},
 						"strategy": map[string]any{
 							"type":        "string",
 							"enum":        []string{"priority", "round_robin", "lowest_latency"},
 							"description": "set_strategy 时的池内调度策略：priority（按优先级）| round_robin（轮询均摊）| lowest_latency（最快延迟）",
-						},
-						"free_strategy": map[string]any{
-							"type":        "string",
-							"description": "可选：单独指定免费池调度策略（priority | round_robin | lowest_latency）",
-						},
-						"paid_strategy": map[string]any{
-							"type":        "string",
-							"description": "可选：单独指定付费池调度策略（priority | round_robin | lowest_latency）",
 						},
 						"enabled": map[string]any{
 							"type":        "boolean",
@@ -71,7 +58,7 @@ func manageModelsToolSpec() ToolSpec {
 			},
 		},
 		StatusLabel:    "正在巡检与调优 AI 模型池...",
-		DomainKeywords: []string{"模型池", "免费池", "付费池", "渠道", "冷却", "解封", "轮询", "token", "调用量", "测速"},
+		DomainKeywords: []string{"模型池", "模型", "渠道", "冷却", "解封", "轮询", "token", "调用量", "费用", "测速"},
 		Execute: func(ctx context.Context, e *Engine, cleanArgs string) (string, error) {
 			return e.toolManageModels(ctx, cleanArgs)
 		},
@@ -157,22 +144,19 @@ func manageSkillsToolSpec() ToolSpec {
 
 func (e *Engine) toolManageModels(_ context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Action       string `json:"action"`
-		TargetID     string `json:"target_id"`
-		ProviderID   string `json:"provider_id"`
-		ModelID      string `json:"model_id"`
-		Tier         string `json:"tier"`
-		Strategy     string `json:"strategy"`
-		FreeStrategy string `json:"free_strategy"`
-		PaidStrategy string `json:"paid_strategy"`
-		Enabled      *bool  `json:"enabled"`
-		Priority     *int   `json:"priority"`
+		Action     string `json:"action"`
+		TargetID   string `json:"target_id"`
+		ProviderID string `json:"provider_id"`
+		ModelID    string `json:"model_id"`
+		Strategy   string `json:"strategy"`
+		Enabled    *bool  `json:"enabled"`
+		Priority   *int   `json:"priority"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 manage_models 参数失败: %w", err)
 	}
 
-	providers, models, strategies := e.store.GetModelConfig()
+	providers, models, strategy := e.store.GetModelConfig()
 	action := strings.ToLower(strings.TrimSpace(args.Action))
 
 	type safeProviderView struct {
@@ -203,7 +187,7 @@ func (e *Engine) toolManageModels(_ context.Context, argsJSON string) (string, e
 			"ok":            true,
 			"providers":     safeProvs,
 			"pooled_models": mList,
-			"strategies":    strat,
+			"strategy":      strat,
 			"model_health":  e.GetModelHealth(),
 			"usage_7d":      usage,
 		}
@@ -270,25 +254,14 @@ func (e *Engine) toolManageModels(_ context.Context, argsJSON string) (string, e
 		return buildStatusPayload("已解除模型 " + tid + " 的冷却状态"), nil
 
 	case "set_strategy":
-		if s := strings.TrimSpace(args.FreeStrategy); s != "" {
-			strategies.Free = store.NormalizePoolStrategy(s)
-		}
-		if s := strings.TrimSpace(args.PaidStrategy); s != "" {
-			strategies.Paid = store.NormalizePoolStrategy(s)
-		}
 		if s := strings.TrimSpace(args.Strategy); s != "" {
-			norm := store.NormalizePoolStrategy(s)
-			if strings.EqualFold(strings.TrimSpace(args.Tier), store.ModelTierPaid) {
-				strategies.Paid = norm
-			} else {
-				strategies.Free = norm
-			}
+			strategy = store.NormalizePoolStrategy(s)
 		}
-		if err := e.store.SaveModelConfig(providers, models, strategies); err != nil {
+		if err := e.store.SaveModelConfig(providers, models, strategy); err != nil {
 			return "", err
 		}
 		e.publishAssistantUpdate("models")
-		return buildStatusPayload(fmt.Sprintf("已更新池调度策略：免费池=%s，付费池=%s", strategies.Free, strategies.Paid)), nil
+		return buildStatusPayload(fmt.Sprintf("已更新模型池调度策略：%s", strategy)), nil
 
 	case "toggle_model":
 		idx := matchModelIndex()
@@ -300,24 +273,11 @@ func (e *Engine) toolManageModels(_ context.Context, argsJSON string) (string, e
 			nextEnabled = *args.Enabled
 		}
 		models[idx].Enabled = nextEnabled
-		if err := e.store.SaveModelConfig(providers, models, strategies); err != nil {
+		if err := e.store.SaveModelConfig(providers, models, strategy); err != nil {
 			return "", err
 		}
 		e.publishAssistantUpdate("models")
 		return buildStatusPayload(fmt.Sprintf("已将模型 %s 设为 enabled=%v", models[idx].ModelID, nextEnabled)), nil
-
-	case "move_tier":
-		idx := matchModelIndex()
-		if idx < 0 {
-			return "", fmt.Errorf("未在当前模型池中找到模型 %q", args.ModelID)
-		}
-		nextTier := store.NormalizeModelTier(args.Tier)
-		models[idx].Tier = nextTier
-		if err := e.store.SaveModelConfig(providers, models, strategies); err != nil {
-			return "", err
-		}
-		e.publishAssistantUpdate("models")
-		return buildStatusPayload(fmt.Sprintf("已将模型 %s 移至 %s 池", models[idx].ModelID, nextTier)), nil
 
 	case "reorder":
 		idx := matchModelIndex()
@@ -328,7 +288,7 @@ func (e *Engine) toolManageModels(_ context.Context, argsJSON string) (string, e
 			return "", fmt.Errorf("reorder 时需提供大于 0 的 priority 参数")
 		}
 		models[idx].Priority = *args.Priority
-		if err := e.store.SaveModelConfig(providers, models, strategies); err != nil {
+		if err := e.store.SaveModelConfig(providers, models, strategy); err != nil {
 			return "", err
 		}
 		e.publishAssistantUpdate("models")

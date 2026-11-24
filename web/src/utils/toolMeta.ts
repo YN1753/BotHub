@@ -147,7 +147,6 @@ const TOOL_ACTION_LABELS: Record<string, string> = {
   clear_cooldown: '解除冷却',
   set_strategy: '切换调度策略',
   toggle_model: '启停模型',
-  move_tier: '调整模型池',
   reorder: '调整优先级',
   upsert: '保存配置',
   bind_bot: '挂载到 Bot',

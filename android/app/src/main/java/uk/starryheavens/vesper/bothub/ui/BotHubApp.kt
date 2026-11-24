@@ -81,6 +81,7 @@ import uk.starryheavens.vesper.bothub.ui.sheets.CreateFriendSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.CreateGroupSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.EditBotSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.ManageGroupMembersSheet
+import uk.starryheavens.vesper.bothub.ui.sheets.McpAppsSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.ModelConfigSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.NotificationDetailSheet
 import uk.starryheavens.vesper.bothub.ui.sheets.SettingsPairingSheet
@@ -289,12 +290,19 @@ fun BotHubApp(
                                 messages = viewModel.messages,
                                 botThreads = viewModel.botThreads,
                                 activeThreadId = viewModel.activeThreadId,
+                                compactionSummary = viewModel.compactionSummary,
+                                compactingThread = viewModel.compactingThread,
+                                pendingImages = viewModel.pendingChatImages,
+                                uploadingImage = viewModel.uploadingChatImage,
                                 inputText = viewModel.inputText,
                                 isStreaming = viewModel.isStreaming,
                                 quotedNotification = viewModel.quotedNotification,
                                 onDismissQuotedNotification = viewModel::dismissQuotedNotification,
                                 onBack = viewModel::closeChatRoom,
                                 onInputChange = viewModel::updateInputText,
+                                onPickImageUri = viewModel::uploadChatImageFromUri,
+                                onRemovePendingImage = viewModel::removePendingChatImage,
+                                onLoadChatImage = viewModel::loadChatImageBitmap,
                                 onSendPrompt = { prompt -> viewModel.sendAgentPrompt(prompt) },
                                 onStop = { viewModel.stopAgentStream(notifyUser = true) },
                                 onModelChange = viewModel::updateModel,
@@ -303,6 +311,7 @@ fun BotHubApp(
                                 onCreateThread = viewModel::createNewBotThread,
                                 onDeleteThread = viewModel::deleteBotThread,
                                 onSummarizeThread = viewModel::summarizeActiveThreadToMemory,
+                                onCompactThread = viewModel::compactActiveThread,
                                 onForkFromTurn = viewModel::forkThreadFromTurn,
                                 onRetryTurnWithModel = viewModel::retryTurnWithModel,
                                 onCopyText = { txt ->
@@ -499,9 +508,7 @@ fun BotHubApp(
                                         notifications = viewModel.notifications,
                                         onRunTask = viewModel::runTask,
                                         onToggleTask = viewModel::toggleTask,
-                                        onSyncAssets = viewModel::syncAssets,
                                         onSaveAsset = viewModel::saveAssetItem,
-                                        onQuickRenewAsset = viewModel::quickRenewAsset,
                                         onDeleteAsset = viewModel::deleteAssetItem,
                                         onSaveAssetCategories = viewModel::saveAssetCategories,
                                         onSaveTask = viewModel::saveTaskItem,
@@ -668,6 +675,10 @@ fun BotHubApp(
                 bot = memBot,
                 memories = viewModel.botMemories,
                 loading = viewModel.botMemoriesLoading,
+                memoryMarkdown = viewModel.botMemoryMarkdown,
+                dreaming = viewModel.botMemoryDreaming,
+                onLoadMarkdown = { viewModel.loadBotMemoryMarkdown(memBot) },
+                onRunDream = { viewModel.runBotMemoryDream(memBot) },
                 onCreateMemory = { cat, fk, body, pin ->
                     viewModel.createBotMemory(memBot, cat, fk, body, pin)
                 },
@@ -682,7 +693,8 @@ fun BotHubApp(
             EditBotSheet(
                 bot = freshBot,
                 availableSkills = viewModel.skills,
-                onSave = { name, roleTitle, avatarStyle, traits, systemPrompt, groupMode, announcement, allowPaid, tools, skIds ->
+                onForgePrompt = viewModel::forgeBotPrompt,
+                onSave = { name, roleTitle, avatarStyle, traits, systemPrompt, groupMode, announcement, tools, skIds ->
                     viewModel.saveBotEdits(
                         botId = freshBot.id,
                         name = name,
@@ -692,7 +704,6 @@ fun BotHubApp(
                         systemPrompt = systemPrompt,
                         groupMode = groupMode,
                         announcement = announcement,
-                        allowPaidFallback = allowPaid,
                         allowedTools = tools,
                         skillIds = skIds
                     )
@@ -711,7 +722,6 @@ fun BotHubApp(
                 enableThinking = viewModel.enableThinking,
                 onModelChange = viewModel::updateModel,
                 onThinkingChange = viewModel::updateThinking,
-                onAllowPaidFallbackChange = viewModel::updateAllowPaidFallback,
                 onTogglePin = {
                     if (activeBot != null) viewModel.togglePinBot(activeBot)
                 },
@@ -735,7 +745,8 @@ fun BotHubApp(
         if (viewModel.showCreateFriendSheet) {
             CreateFriendSheet(
                 availableSkills = viewModel.skills,
-                onSubmit = { name, roleTitle, avatarStyle, botMode, traits, systemPrompt, allowPaid, tools, skIds ->
+                onForgePrompt = viewModel::forgeBotPrompt,
+                onSubmit = { name, roleTitle, avatarStyle, botMode, traits, systemPrompt, tools, skIds ->
                     viewModel.createNewFriend(
                         name = name,
                         roleTitle = roleTitle,
@@ -743,7 +754,6 @@ fun BotHubApp(
                         botMode = botMode,
                         traits = traits,
                         systemPrompt = systemPrompt,
-                        allowPaidFallback = allowPaid,
                         allowedTools = tools,
                         skillIds = skIds
                     )
@@ -800,6 +810,8 @@ fun BotHubApp(
                 clipboardBannerEnabled = viewModel.clipboardBannerEnabled,
                 floatingBallEnabled = viewModel.floatingBallEnabled,
                 appThemeId = viewModel.appThemeId,
+                skillsTotalCount = viewModel.skills.size,
+                skillsEnabledCount = viewModel.skills.count { it.enabled },
                 api = api,
                 onConnected = viewModel::onConnectedSuccessfully,
                 onServerUrlSaved = viewModel::updateServerUrl,
@@ -810,6 +822,7 @@ fun BotHubApp(
                 onFloatingBallChanged = viewModel::updateFloatingBall,
                 onThemeSelected = viewModel::setAppTheme,
                 onOpenModelConfig = viewModel::openModelConfig,
+                onOpenMcpApps = viewModel::openMcpApps,
                 onTestHealth = viewModel::testConnectivity,
                 onTestPush = viewModel::triggerTestPush,
                 onUnbindServer = viewModel::unbindServer,
@@ -822,14 +835,25 @@ fun BotHubApp(
             ModelConfigSheet(
                 providers = viewModel.modelProviders,
                 pooledModels = viewModel.pooledModels,
-                strategies = viewModel.poolStrategies,
+                strategy = viewModel.poolStrategy,
                 modelHealth = viewModel.modelHealth,
                 usageSummary = viewModel.modelUsageSummary,
+                usage30d = viewModel.modelUsage30d,
                 api = api,
                 onApplied = viewModel::applyModelConfigPayload,
                 onHealthUpdated = viewModel::updateModelHealth,
                 onShowMessage = viewModel::showMessage,
                 onDismiss = viewModel::dismissModelConfig
+            )
+        }
+
+        if (viewModel.showMcpAppsSheet) {
+            McpAppsSheet(
+                skills = viewModel.skills,
+                onRefresh = viewModel::refreshSkills,
+                onToggleEnabled = viewModel::toggleSkillEnabled,
+                onTestSkill = viewModel::testSkill,
+                onDismiss = viewModel::dismissMcpApps
             )
         }
     }

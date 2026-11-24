@@ -28,8 +28,8 @@ func TestDefaultButlerSeededCleanAndIdempotent(t *testing.T) {
 	if b.ID != store.DefaultConciergeBotID || b.Name != "大管家" || !b.IsPinned {
 		t.Fatalf("unexpected default butler bot: %+v", b)
 	}
-	if b.Model != "auto:paid" || !b.AllowPaidFallback || !b.EnableThinking {
-		t.Fatalf("expected default butler to use auto:paid with allow_paid_fallback=true and enable_thinking=true, got model=%q paid=%v thinking=%v", b.Model, b.AllowPaidFallback, b.EnableThinking)
+	if b.Model != "auto" || !b.EnableThinking {
+		t.Fatalf("expected default butler to use auto with enable_thinking=true, got model=%q thinking=%v", b.Model, b.EnableThinking)
 	}
 	if b.AllowedTools != "[]" || b.SkillIDs != "[]" {
 		t.Fatalf("expected default butler to start with pure Native Core (AllowedTools=[], SkillIDs=[]), got tools=%s skills=%s", b.AllowedTools, b.SkillIDs)
@@ -91,13 +91,13 @@ func TestManageBotsLifecycleCreateBotAndGroup(t *testing.T) {
 	}
 
 	// 2. Update bot by name
-	updRes, err := eng.ExecuteTool(ctx, "manage_bots", `{"action":"update_bot","bot_name":"代码审查官","traits":"直接指出边界风险","allow_paid_fallback":true}`)
+	updRes, err := eng.ExecuteTool(ctx, "manage_bots", `{"action":"update_bot","bot_name":"代码审查官","traits":"直接指出边界风险"}`)
 	if err != nil || !strings.Contains(updRes, `"ok":true`) {
 		t.Fatalf("update_bot failed: err=%v out=%s", err, updRes)
 	}
 	gotBot1, _ := st.GetBot(created1.BotID)
-	if gotBot1 == nil || !gotBot1.AllowPaidFallback || !strings.Contains(gotBot1.Traits, "边界风险") {
-		t.Fatalf("expected updated traits and allow_paid_fallback=true, got %+v", gotBot1)
+	if gotBot1 == nil || !strings.Contains(gotBot1.Traits, "边界风险") {
+		t.Fatalf("expected updated traits, got %+v", gotBot1)
 	}
 
 	// 3. Create group resolving members by names + include_self
@@ -169,10 +169,10 @@ func TestManageModelsAndManageSkillsConciergeTools(t *testing.T) {
 			{ID: "or_1", Name: "OpenRouter", Protocol: "openai", BaseURL: "https://openrouter.ai/api/v1", APIKey: "sk-top-secret-never-leak", Enabled: true},
 		},
 		[]store.PooledModel{
-			{ProviderID: "or_1", ModelID: "qwen/qwen3:free", Tier: store.ModelTierFree, Enabled: true, Priority: 10},
-			{ProviderID: "or_1", ModelID: "anthropic/claude-sonnet-4", Tier: store.ModelTierPaid, Enabled: true, Priority: 10},
+			{ProviderID: "or_1", ModelID: "anthropic/claude-sonnet-4", Enabled: true, Priority: 10},
+			{ProviderID: "or_1", ModelID: "google/gemini-2.5-flash", Enabled: true, Priority: 20, IsLight: true},
 		},
-		store.PoolStrategyConfig{Free: store.PoolStrategyPriority, Paid: store.PoolStrategyPriority},
+		store.PoolStrategyPriority,
 	)
 
 	eng := NewEngine(st, &fakeTaskController{st: st})
@@ -190,14 +190,14 @@ func TestManageModelsAndManageSkillsConciergeTools(t *testing.T) {
 		t.Fatalf("manage_models leaked raw API key: %s", statusOut)
 	}
 
-	// 2. manage_models set_strategy + clear_cooldown + move_tier
-	eng.health.recordFailure("pool:or_1::qwen/qwen3:free", "HTTP 429", true)
-	_, err = eng.ExecuteTool(ctx, "manage_models", `{"action":"clear_cooldown","model_id":"qwen/qwen3:free"}`)
-	if err != nil || eng.health.isCooling("pool:or_1::qwen/qwen3:free") {
+	// 2. manage_models set_strategy + clear_cooldown
+	eng.health.recordFailure("pool:or_1::anthropic/claude-sonnet-4", "HTTP 429", true)
+	_, err = eng.ExecuteTool(ctx, "manage_models", `{"action":"clear_cooldown","model_id":"anthropic/claude-sonnet-4"}`)
+	if err != nil || eng.health.isCooling("pool:or_1::anthropic/claude-sonnet-4") {
 		t.Fatalf("expected manage_models clear_cooldown to unblock model, err=%v", err)
 	}
-	_, err = eng.ExecuteTool(ctx, "manage_models", `{"action":"set_strategy","free_strategy":"round_robin"}`)
-	if err != nil || st.GetPoolStrategies().Free != store.PoolStrategyRoundRobin {
+	_, err = eng.ExecuteTool(ctx, "manage_models", `{"action":"set_strategy","strategy":"round_robin"}`)
+	if err != nil || st.GetPoolStrategy() != store.PoolStrategyRoundRobin {
 		t.Fatalf("expected manage_models set_strategy to set round_robin, err=%v", err)
 	}
 
@@ -254,45 +254,44 @@ func TestManageBotsSetupBlueprintAndUsageCallers(t *testing.T) {
 	}
 
 	var parsed struct {
-		OK                bool     `json:"ok"`
-		BotID             string   `json:"bot_id"`
-		AllowPaidFallback bool     `json:"allow_paid_fallback"`
-		SkillIDs          []string `json:"skill_ids"`
-		Task              struct {
-			ID                string `json:"id"`
-			BotID             string `json:"bot_id"`
-			AllowPaidFallback bool   `json:"allow_paid_fallback"`
+		OK       bool     `json:"ok"`
+		BotID    string   `json:"bot_id"`
+		SkillIDs []string `json:"skill_ids"`
+		Task     struct {
+			ID    string `json:"id"`
+			BotID string `json:"bot_id"`
 		} `json:"task"`
 	}
 	if err := json.Unmarshal([]byte(bpOut), &parsed); err != nil {
 		t.Fatalf("unmarshal blueprint output: %v", err)
 	}
-	if !parsed.OK || parsed.BotID == "" || !parsed.AllowPaidFallback {
-		t.Fatalf("expected valid paid-first bot from blueprint, got %+v", parsed)
+	if !parsed.OK || parsed.BotID == "" {
+		t.Fatalf("expected valid bot from blueprint, got %+v", parsed)
 	}
-	if len(parsed.SkillIDs) != 1 || parsed.Task.ID == "" || parsed.Task.BotID != parsed.BotID || !parsed.Task.AllowPaidFallback {
-		t.Fatalf("expected bound skill and paid-first task from blueprint, got %+v", parsed)
+	if len(parsed.SkillIDs) != 1 || parsed.Task.ID == "" || parsed.Task.BotID != parsed.BotID {
+		t.Fatalf("expected bound skill and task from blueprint, got %+v", parsed)
 	}
 
 	_ = st.RecordModelUsage(store.ModelUsageRecord{
-		TargetID:         "pool:or_1::qwen/qwen3:free",
+		TargetID:         "pool:or_1::anthropic/claude-sonnet-4",
 		ProviderID:       "or_1",
-		ModelID:          "qwen/qwen3:free",
-		Tier:             store.ModelTierFree,
+		ModelID:          "anthropic/claude-sonnet-4",
 		Source:           "chat",
 		BotID:            parsed.BotID,
-		PromptTokens:     120,
-		CompletionTokens: 80,
+		PromptTokens:     1200,
+		CachedTokens:     800,
+		CompletionTokens: 200,
+		CostUSD:          0.0045,
 		LatencyMs:        420,
 		Success:          true,
 	})
 	sum, err := st.SummarizeModelUsage(7)
-	if err != nil || len(sum.TopCallers) == 0 || sum.TopCallers[0].BotID != parsed.BotID {
-		t.Fatalf("expected top_callers breakdown in usage summary, err=%v sum=%+v", err, sum)
+	if err != nil || len(sum.TopCallers) == 0 || sum.TopCallers[0].BotID != parsed.BotID || sum.TotalCachedTokens != 800 || sum.TotalCostUSD <= 0 {
+		t.Fatalf("expected top_callers + cost + cache in usage summary, err=%v sum=%+v", err, sum)
 	}
 }
 
-func TestCreateBotPaidFirstAutoForgeAndUpgradeBot(t *testing.T) {
+func TestCreateBotAutoForgeAndUpgradeBot(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "forge_bots.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -306,7 +305,7 @@ func TestCreateBotPaidFirstAutoForgeAndUpgradeBot(t *testing.T) {
 	})
 
 	// 1. Creating a companion bot with NO system_prompt and NO allowed_tools must:
-	//    - Default to auto:paid, AllowPaidFallback=true, EnableThinking=true, MemoryPolicy=standard
+	//    - Default to auto, EnableThinking=true, MemoryPolicy=standard
 	//    - Keep AllowedTools="[]" (full Native Core including web_search & mount_mcp)
 	//    - Auto-forge a rich high-IQ SystemPrompt (>= 160 runes)
 	res, err := eng.ExecuteTool(ctx, "manage_bots", `{"action":"create_bot","name":"毒舌影评人","role_title":"电影与叙事结构分析","bot_mode":"companion","traits":"犀利、有审美、不客套"}`)
@@ -321,8 +320,8 @@ func TestCreateBotPaidFirstAutoForgeAndUpgradeBot(t *testing.T) {
 	if err != nil || bot == nil {
 		t.Fatalf("get created bot: %v", err)
 	}
-	if bot.Model != "auto:paid" || !bot.AllowPaidFallback || !bot.EnableThinking || bot.MemoryPolicy != "standard" {
-		t.Fatalf("expected paid-first high-IQ defaults, got %+v", bot)
+	if bot.Model != "auto" || !bot.EnableThinking || bot.MemoryPolicy != "standard" {
+		t.Fatalf("expected unified auto high-IQ defaults, got %+v", bot)
 	}
 	if bot.AllowedTools != "[]" {
 		t.Fatalf("expected empty AllowedTools ([]) to preserve full Native Core + mount_mcp, got %s", bot.AllowedTools)
@@ -331,19 +330,18 @@ func TestCreateBotPaidFirstAutoForgeAndUpgradeBot(t *testing.T) {
 		t.Fatalf("expected auto-forged rich SystemPrompt (>=160 runes), got %d runes: %s", len([]rune(bot.SystemPrompt)), bot.SystemPrompt)
 	}
 
-	// 2. Seed an old dumb bot (thin prompt, auto:free, restricted allowed_tools) and upgrade via manage_bots(action="upgrade_bot")
+	// 2. Seed an old dumb bot (thin prompt, restricted allowed_tools) and upgrade via manage_bots(action="upgrade_bot")
 	if err := st.SaveBot(store.Bot{
-		ID:                "bot_legacy_dumb",
-		Name:              "旧版小助手",
-		RoleTitle:         "查资料和写周报",
-		BotMode:           "worker",
-		MemoryPolicy:      "isolated",
-		Model:             "auto:free",
-		AllowPaidFallback: false,
-		EnableThinking:    false,
-		AllowedTools:      `["remember_fact","recall_memory"]`,
-		SystemPrompt:      "你是旧版小助手。",
-		SkillIDs:          "[]",
+		ID:             "bot_legacy_dumb",
+		Name:           "旧版小助手",
+		RoleTitle:      "查资料和写周报",
+		BotMode:        "worker",
+		MemoryPolicy:   "isolated",
+		Model:          "auto",
+		EnableThinking: false,
+		AllowedTools:   `["remember_fact","recall_memory"]`,
+		SystemPrompt:   "你是旧版小助手。",
+		SkillIDs:       "[]",
 	}); err != nil {
 		t.Fatalf("seed legacy dumb bot: %v", err)
 	}
@@ -356,8 +354,8 @@ func TestCreateBotPaidFirstAutoForgeAndUpgradeBot(t *testing.T) {
 	if upgraded == nil {
 		t.Fatalf("expected upgraded bot to exist")
 	}
-	if upgraded.Model != "auto:paid" || !upgraded.AllowPaidFallback || !upgraded.EnableThinking || upgraded.AllowedTools != "[]" || upgraded.MemoryPolicy != "standard" {
-		t.Fatalf("expected upgraded bot to be paid-first with full native core, got %+v", upgraded)
+	if upgraded.Model != "auto" || !upgraded.EnableThinking || upgraded.AllowedTools != "[]" || upgraded.MemoryPolicy != "standard" {
+		t.Fatalf("expected upgraded bot to use auto with full native core, got %+v", upgraded)
 	}
 	if len([]rune(upgraded.SystemPrompt)) < 160 {
 		t.Fatalf("expected upgraded SystemPrompt to be forged (>=160 runes), got %d runes: %s", len([]rune(upgraded.SystemPrompt)), upgraded.SystemPrompt)

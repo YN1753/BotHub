@@ -38,7 +38,8 @@ const store = useAppStore()
 const bot = store.activeBot
 
 const inputPrompt = ref('')
-const selectedModel = ref('primary')
+const pendingImages = ref<string[]>([])
+const selectedModel = ref('auto')
 const enableThinking = ref(true)
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const composerRef = ref<InstanceType<typeof BotChatComposer> | null>(null)
@@ -89,6 +90,7 @@ const {
 } = useBotChatStream({
   store,
   inputPrompt,
+  pendingImages,
   selectedModel,
   enableThinking,
   replyTarget,
@@ -225,7 +227,7 @@ function runQuickToolStarter(toolId: string) {
       nextTick(() => composerRef.value?.focus())
       break
     case 'manage_models':
-      void sendPrompt('请调用 manage_models(action="status") 巡检当前免费模型池与付费模型池的健康度及近 7 日调用量。')
+      void sendPrompt('请调用 manage_models(action="status") 巡检当前模型池健康度及近 7 日调用与预估费用。')
       break
     case 'manage_skills':
       inputPrompt.value = '请调用 manage_skills(action="upsert") 帮我创建一个自定义技能：'
@@ -249,11 +251,15 @@ watch(
   bot,
   (b) => {
     if (!b) return
-    const normModel = !b.model ? 'auto:paid' : b.model === 'free-pool' ? 'auto:free' : b.model
+    const normModel =
+      !b.model || b.model === 'auto:paid' || b.model === 'auto:free' || b.model === 'free-pool' || b.model === 'paid-pool'
+        ? 'auto'
+        : b.model
     selectedModel.value = normModel
     enableThinking.value = b.enable_thinking !== false
     announcementDismissed.value = false
     replyTarget.value = null
+    pendingImages.value = []
   },
   { immediate: true }
 )
@@ -704,6 +710,22 @@ async function clearTimeline() {
             </div>
           </Transition>
 
+          <!-- Rolling Compaction Summary Pill (when long conversation has been compacted) -->
+          <div
+            v-if="store.state.compactionSummary && !isStreamEmpty"
+            class="mx-4 md:mx-6 mb-1 shrink-0"
+          >
+            <details class="rounded-xl border border-line bg-subtle/80 px-3 py-1.5 text-xs text-fg-sub">
+              <summary class="cursor-pointer select-none flex items-center justify-between gap-2">
+                <span class="font-medium text-fg-sub">已启用上下文滚动摘要（早期长对话已自动压缩）</span>
+                <span class="font-mono text-[11px] text-fg-muted">点击展开</span>
+              </summary>
+              <p class="mt-1.5 pt-1.5 border-t border-line whitespace-pre-wrap leading-relaxed text-fg-muted">
+                {{ store.state.compactionSummary }}
+              </p>
+            </details>
+          </div>
+
           <div :class="['relative flex flex-col', isStreamEmpty ? 'shrink-0 mt-auto' : 'flex-1 min-h-0']">
             <div
               ref="scrollContainerRef"
@@ -742,7 +764,7 @@ async function clearTimeline() {
                 @jump-bot="store.jumpToBot($event)"
                 @continue="continueFromMessage"
                 @retry="sendPrompt(findPrecedingUserPrompt(idx), { replaceAssistantMsg: m })"
-                @retry-model="(mid, paidOnce) => sendPrompt(findPrecedingUserPrompt(idx), { overrideModel: mid, allowPaidOnce: paidOnce, replaceAssistantMsg: m })"
+                @retry-model="(mid) => sendPrompt(findPrecedingUserPrompt(idx), { overrideModel: mid, replaceAssistantMsg: m })"
                 @save-memory="saveMessageAsMemory"
                 @convert-todo="convertMessageToTodo"
                 @save-note="saveMessageAsNote"
@@ -837,6 +859,7 @@ async function clearTimeline() {
             ref="composerRef"
             :class="isStreamEmpty ? 'mb-auto' : ''"
             v-model:input-prompt="inputPrompt"
+            v-model:pending-images="pendingImages"
             :selected-model="selectedModel"
             :enable-thinking="enableThinking"
             v-model:reply-target="replyTarget"
@@ -853,6 +876,7 @@ async function clearTimeline() {
             @stop-stream="stopStream"
             @clear-timeline="clearTimeline"
             @summarize-thread="handleSummarizeThread"
+            @compact-thread="store.compactActiveThread()"
             @pick-starter="runQuickToolStarter"
           />
           </div>

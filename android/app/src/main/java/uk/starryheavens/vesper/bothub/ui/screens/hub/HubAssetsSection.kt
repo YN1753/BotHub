@@ -1,5 +1,7 @@
 package uk.starryheavens.vesper.bothub.ui.screens.hub
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,10 +29,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,36 +43,44 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.json.JSONObject
 import uk.starryheavens.vesper.bothub.data.AssetCategoryItem
 import uk.starryheavens.vesper.bothub.data.AssetItem
 import uk.starryheavens.vesper.bothub.ui.components.ThemeCalendarDialog
 import uk.starryheavens.vesper.bothub.ui.components.VesperButtonTone
 import uk.starryheavens.vesper.bothub.ui.components.VesperCard
+import uk.starryheavens.vesper.bothub.ui.components.VesperDivider
 import uk.starryheavens.vesper.bothub.ui.components.VesperEmptyState
 import uk.starryheavens.vesper.bothub.ui.components.VesperFilterChip
+import uk.starryheavens.vesper.bothub.ui.components.VesperIconButton
 import uk.starryheavens.vesper.bothub.ui.components.VesperPrimaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSearchField
 import uk.starryheavens.vesper.bothub.ui.components.VesperSecondaryButton
+import uk.starryheavens.vesper.bothub.ui.components.VesperSegmentedTabs
 import uk.starryheavens.vesper.bothub.ui.components.VesperSheetDragHandle
 import uk.starryheavens.vesper.bothub.ui.components.VesperSwitch
 import uk.starryheavens.vesper.bothub.ui.components.VesperTag
 import uk.starryheavens.vesper.bothub.ui.components.VesperTextField
 import uk.starryheavens.vesper.bothub.ui.components.assetCategoryIconVector
-import uk.starryheavens.vesper.bothub.ui.components.vesperPressable
 import uk.starryheavens.vesper.bothub.ui.theme.BotHubThemeTokens
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private val LEGACY_CATEGORY_META = mapOf(
@@ -108,6 +118,16 @@ private val CATEGORY_ICON_CHOICES = listOf(
     "wallet" to "账单"
 )
 
+private val ASSET_STATUS_OPTIONS = listOf("生效中", "已到期", "已停用")
+
+private val ASSET_WARN_OPTIONS = listOf(
+    "[7, 3, 1]" to "到期前 7天 / 3天 / 1天",
+    "[14, 7, 3, 1]" to "到期前 14天 / 7天 / 3天 / 1天",
+    "[30, 15, 7, 3, 1]" to "到期前 30天 / 15天 / 7天 / 3天 / 1天"
+)
+
+private val EXTRA_PRESET_KEYS = listOf("host", "region", "registrar", "panel_url", "account")
+
 private val ASSET_PRICE_REGEX = Regex(
     """(HK\$|NT\$|S\$|C\$|A\$|US\$|CN¥|RMB|USD|CNY|EUR|GBP|HKD|JPY|TWD|SGD|CAD|AUD|[¥$€£])?\s*([0-9]+(?:\.[0-9]+)?)""",
     RegexOption.IGNORE_CASE
@@ -125,6 +145,15 @@ private val DEFAULT_FX_RATES_TO_CNY = mapOf(
     "CAD" to 5.16,
     "AUD" to 4.70
 )
+
+private fun normalizeAssetStatus(raw: String?): String {
+    val s = raw.orEmpty().trim()
+    return when {
+        s == "已到期" || s.equals("expired", ignoreCase = true) -> "已到期"
+        s == "已停用" || s == "待购入" || s.equals("paused", ignoreCase = true) || s.equals("offline", ignoreCase = true) -> "已停用"
+        else -> "生效中"
+    }
+}
 
 private fun detectPriceCurrencyCode(rawPrice: String, matchedSymbol: String): String {
     val upper = "${matchedSymbol.trim()} ${rawPrice.trim()}".uppercase(Locale.ROOT)
@@ -150,6 +179,10 @@ private fun rateToCNY(currencyCode: String, fxRates: Map<String, Double>): Doubl
     return DEFAULT_FX_RATES_TO_CNY[code] ?: 1.0
 }
 
+/**
+ * Matches Web's summarizeAssetsMonthlyCost / summarizeAssetsYearlyCost exactly:
+ * excludes paused/archived, free, and one-time/permanent buyout assets; handles year/quarter/week/day/month cycles.
+ */
 internal fun summarizeAssetsCost(
     assets: List<AssetItem>,
     yearly: Boolean,
@@ -160,31 +193,35 @@ internal fun summarizeAssetsCost(
     assets.forEach { a ->
         if (a.status == "已停用" || a.status == "已归档") return@forEach
         val raw = a.price.trim()
-        if (raw.isEmpty()) return@forEach
+        if (raw.isEmpty() || raw.contains("免费") || raw.contains("一次") || raw.contains("永久")) return@forEach
         val match = ASSET_PRICE_REGEX.find(raw) ?: return@forEach
         val symbol = match.groupValues[1]
         val amount = match.groupValues[2].toDoubleOrNull() ?: return@forEach
         if (amount <= 0.0) return@forEach
+        val cnyAmt = amount * rateToCNY(detectPriceCurrencyCode(raw, symbol), fxRates)
         val lower = raw.lowercase(Locale.ROOT)
         val normalized = when {
-            lower.contains("年") || lower.contains("yr") || lower.contains("year") ->
-                if (yearly) amount else amount / 12.0
-            lower.contains("季") || lower.contains("quarter") ->
-                if (yearly) amount * 4.0 else amount / 3.0
+            raw.contains("年") || lower.contains("/yr") || lower.contains("year") || lower.contains("/y") ->
+                if (yearly) cnyAmt else cnyAmt / 12.0
+            raw.contains("季") || lower.contains("/qtr") || lower.contains("quarter") ->
+                if (yearly) cnyAmt * 4.0 else cnyAmt / 3.0
+            raw.contains("周") || lower.contains("/wk") || lower.contains("week") ->
+                if (yearly) cnyAmt * 52.0 else cnyAmt * 4.33
+            raw.contains("天") || raw.contains("日") || lower.contains("/day") || lower.contains("/d") ->
+                if (yearly) cnyAmt * 365.0 else cnyAmt * 30.0
             else ->
-                if (yearly) amount * 12.0 else amount
+                if (yearly) cnyAmt * 12.0 else cnyAmt
         }
-        val code = detectPriceCurrencyCode(raw, symbol)
-        totalCNY += normalized * rateToCNY(code, fxRates)
+        totalCNY += normalized
         hasPaidAsset = true
     }
     if (!hasPaidAsset || totalCNY <= 0.0) return "--"
     return if (yearly) {
-        "¥${totalCNY.roundToInt()}"
+        "¥${totalCNY.roundToInt()}/年"
     } else {
         val rounded = (totalCNY * 10.0).roundToInt() / 10.0
         val numStr = if (rounded % 1.0 == 0.0) rounded.toInt().toString() else rounded.toString()
-        "¥$numStr"
+        "¥$numStr/月"
     }
 }
 
@@ -229,100 +266,148 @@ internal fun mergeExtensibleAssetCategories(
     return result
 }
 
+private fun parseExtraConfigRows(rawJson: String): List<Pair<String, String>> {
+    val trimmed = rawJson.trim()
+    if (trimmed.isEmpty() || trimmed == "{}") return emptyList()
+    return runCatching {
+        val obj = JSONObject(trimmed)
+        buildList {
+            val iter = obj.keys()
+            while (iter.hasNext()) {
+                val k = iter.next().trim()
+                if (k.isNotEmpty()) {
+                    add(k to obj.optString(k, ""))
+                }
+            }
+        }
+    }.getOrDefault(emptyList())
+}
+
+private fun serializeExtraConfigRows(rows: List<Pair<String, String>>): String {
+    val obj = JSONObject()
+    rows.forEach { (rawKey, rawVal) ->
+        val k = rawKey.trim()
+        if (k.isNotEmpty()) {
+            obj.put(k, rawVal.trim())
+        }
+    }
+    return obj.toString()
+}
+
 internal fun LazyListScope.hubAssetsItems(
     assets: List<AssetItem>,
     filteredAssets: List<AssetItem>,
     savedCategories: List<AssetCategoryItem>,
     mergedCategories: List<AssetCategoryItem>,
     categoryCounts: Map<String, Int>,
+    searchQuery: String,
     selectedCategoryFilter: String,
+    expiringOnly: Boolean,
+    sortByUrgency: Boolean,
     totalMonthlyCost: String,
     totalYearlyCost: String,
     expiringCount: Int,
+    onSearchQueryChange: (String) -> Unit,
     onSelectCategory: (String) -> Unit,
+    onToggleExpiringOnly: () -> Unit,
+    onToggleSortByUrgency: () -> Unit,
+    onResetFilters: () -> Unit,
     onAddAsset: () -> Unit,
-    onSyncAssets: () -> Unit,
-    onEditAsset: (AssetItem) -> Unit,
-    onQuickRenewAsset: (AssetItem, Int) -> Unit
+    onEditAsset: (AssetItem) -> Unit
 ) {
     item(key = "__hub_assets_hdr__") {
         val theme = BotHubThemeTokens
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Compact Summary + Core Add Action + Sort / Expiring Filter Controls (aligned with Web)
             VesperCard(
                 cornerRadius = 15.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 13.dp, vertical = 11.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
                             Text(
-                                text = if (totalMonthlyCost != "--") "月均 $totalMonthlyCost" else "共 ${filteredAssets.size} 项资产",
-                                fontSize = 14.5.sp,
+                                text = if (totalMonthlyCost != "--") "月均 $totalMonthlyCost" else "月均 ¥0/月",
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontFamily = if (totalMonthlyCost != "--") FontFamily.Monospace else FontFamily.Default,
-                                color = theme.textPrimary,
+                                fontFamily = FontFamily.Monospace,
+                                color = theme.accentForeground,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            if (expiringCount > 0) {
-                                VesperTag(text = "${expiringCount}项临期", toneColor = theme.warning)
-                            }
+                            Text(
+                                text = buildString {
+                                    if (totalYearlyCost != "--") append("年化 $totalYearlyCost · ")
+                                    append("显示 ${filteredAssets.size} 项")
+                                },
+                                fontSize = 11.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = theme.textMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                        Text(
-                            text = if (totalYearlyCost != "--") {
-                                "年化 $totalYearlyCost · 当前显示 ${filteredAssets.size} 项"
-                            } else {
-                                if (expiringCount > 0) "请留意近期到期项目" else "全部资产状态正常"
-                            },
-                            fontSize = 11.5.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = theme.textMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        VesperSecondaryButton(
+                        VesperPrimaryButton(
                             text = "添加",
                             leadingIcon = Icons.Default.Add,
                             cornerRadius = 999.dp,
-                            minHeight = 36.dp,
-                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp),
+                            minHeight = 44.dp,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                             onClick = onAddAsset
                         )
-                        VesperSecondaryButton(
-                            text = "同步",
-                            leadingIcon = Icons.Default.Refresh,
-                            tone = VesperButtonTone.ACCENT,
-                            cornerRadius = 999.dp,
-                            minHeight = 36.dp,
-                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp),
-                            onClick = onSyncAssets
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        VesperFilterChip(
+                            label = "按紧迫度",
+                            selected = sortByUrgency,
+                            onClick = onToggleSortByUrgency
                         )
+                        if (expiringCount > 0) {
+                            VesperFilterChip(
+                                label = "${expiringCount} 项临期",
+                                selected = expiringOnly,
+                                onClick = onToggleExpiringOnly
+                            )
+                        }
                     }
                 }
             }
 
-            if (mergedCategories.size > 1) {
+            // Search bar matching Web (searches name, spec, status, extra_config)
+            if (assets.isNotEmpty()) {
+                VesperSearchField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    placeholder = "搜索资产名称、规格、属性..."
+                )
+            }
+
+            // Category filter tabs
+            if (mergedCategories.isNotEmpty()) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     item(key = "__cat_all__") {
                         VesperFilterChip(
-                            label = "全部",
+                            label = "全部 ${assets.size}",
                             selected = selectedCategoryFilter == "all",
                             onClick = { onSelectCategory("all") }
                         )
@@ -349,10 +434,19 @@ internal fun LazyListScope.hubAssetsItems(
         item(key = "__hub_assets_empty__") {
             VesperEmptyState(
                 icon = Icons.Outlined.Inventory2,
-                title = if (assets.isEmpty()) "暂无数字资产记录" else "当前分类下暂无资产",
+                title = if (assets.isEmpty()) "暂无追踪中的资产" else "当前筛选条件下无匹配资产",
                 subtitle = if (assets.isEmpty()) {
-                    "点击上方「添加」录入服务器、域名或订阅，支持自定义分类与到期提醒"
-                } else ""
+                    "点击上方「添加」登记数字资产，支持自定义分类、预警梯度与扩展属性"
+                } else "",
+                actions = if (assets.isNotEmpty()) {
+                    {
+                        VesperSecondaryButton(
+                            text = "重置筛选条件",
+                            minHeight = 44.dp,
+                            onClick = onResetFilters
+                        )
+                    }
+                } else null
             )
         }
     }
@@ -362,8 +456,7 @@ internal fun LazyListScope.hubAssetsItems(
             asset = asset,
             savedCategories = savedCategories,
             showCategoryPrefix = selectedCategoryFilter == "all",
-            onClick = { onEditAsset(asset) },
-            onQuickRenew = { months -> onQuickRenewAsset(asset, months) }
+            onClick = { onEditAsset(asset) }
         )
     }
 }
@@ -373,33 +466,31 @@ private fun HubAssetCard(
     asset: AssetItem,
     savedCategories: List<AssetCategoryItem>,
     showCategoryPrefix: Boolean,
-    onClick: () -> Unit,
-    onQuickRenew: (Int) -> Unit
+    onClick: () -> Unit
 ) {
     val theme = BotHubThemeTokens
     val catMeta = remember(asset.category, savedCategories) {
         resolveAssetCategory(asset.category, savedCategories)
     }
-    val isPermanent = asset.dueDate.startsWith("2099") || asset.daysLeft > 3650
-    val isMultiYear = !isPermanent && asset.daysLeft > 365
+    val isPermanent = asset.isPerpetual
     val barColor = when {
-        isPermanent || isMultiYear -> theme.success
-        asset.daysLeft <= 7 -> theme.danger
-        asset.daysLeft <= 30 -> theme.warning
+        isPermanent -> theme.success
+        asset.daysLeft <= 3 -> theme.danger
+        asset.daysLeft <= 7 -> theme.warning
         else -> theme.accent
     }
+    val daysColor = when {
+        isPermanent -> theme.success
+        asset.daysLeft <= 3 -> theme.danger
+        asset.daysLeft <= 7 -> theme.warning
+        else -> theme.success
+    }
+    // Exact Web 90-day runway formula
     val progressFraction = when {
         isPermanent -> 1f
-        asset.daysLeft <= 0 -> 0.04f
-        else -> (asset.daysLeft.toFloat() / 365f).coerceIn(0.06f, 1f)
+        asset.daysLeft <= 0 -> 0.06f
+        else -> (asset.daysLeft.toFloat() / 90f).coerceIn(0.08f, 1f)
     }
-    val recMonths = remember(asset.price) { asset.inferRecommendedRenewMonths() }
-    val recLabel = when (recMonths) {
-        12 -> "+1年"
-        3 -> "+1季"
-        else -> "+1月"
-    }
-    val showQuickRenew = !isPermanent && asset.daysLeft <= 30
 
     VesperCard(
         cornerRadius = 15.dp,
@@ -409,23 +500,23 @@ private fun HubAssetCard(
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier
                         .weight(1f)
                         .padding(end = 8.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
+                            .size(30.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(theme.accentSoft)
                             .border(0.75.dp, theme.accentMuted, RoundedCornerShape(8.dp)),
@@ -438,111 +529,96 @@ private fun HubAssetCard(
                             modifier = Modifier.size(15.dp)
                         )
                     }
-                    Text(
-                        text = asset.name,
-                        fontSize = 14.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = theme.textPrimary,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (asset.price.isNotBlank()) {
-                        Text(
-                            text = asset.price.replace(" / ", "/"),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = theme.textSecondary,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                    VesperTag(
-                        text = if (isPermanent) "长期" else asset.dueBadgeLabel,
-                        toneColor = barColor
-                    )
-                }
-            }
-
-            val subLeftText = when {
-                asset.spec.isNotBlank() && showCategoryPrefix -> "${catMeta.label} · ${asset.spec}"
-                asset.spec.isNotBlank() -> asset.spec
-                else -> catMeta.label
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = subLeftText,
-                    fontSize = 12.sp,
-                    color = theme.textMuted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 10.dp)
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (!isPermanent && asset.dueDate.isNotEmpty()) {
-                        Text(
-                            text = asset.dueDate.take(10),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            color = theme.textMuted,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                    if (showQuickRenew) {
-                        Box(
-                            modifier = Modifier
-                                .sizeIn(minHeight = 28.dp)
-                                .clip(RoundedCornerShape(7.dp))
-                                .background(theme.accentSoft)
-                                .border(0.8.dp, theme.accentMuted, RoundedCornerShape(7.dp))
-                                .vesperPressable(pressedScale = 0.94f, hapticOnTap = true) {
-                                    onQuickRenew(recMonths)
-                                }
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            contentAlignment = Alignment.Center
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = "续期$recLabel",
-                                fontSize = 10.5.sp,
+                                text = asset.name,
+                                fontSize = 14.5.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = theme.accentForeground
+                                color = theme.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
                             )
+                            if (asset.status == "已到期" || asset.status == "已停用") {
+                                VesperTag(
+                                    text = asset.status,
+                                    toneColor = if (asset.status == "已到期") theme.danger else theme.textMuted
+                                )
+                            }
                         }
+                        val subText = when {
+                            asset.spec.isNotBlank() && showCategoryPrefix -> "${catMeta.label} · ${asset.spec}"
+                            asset.spec.isNotBlank() -> asset.spec
+                            else -> catMeta.label
+                        }
+                        Text(
+                            text = subText,
+                            fontSize = 12.sp,
+                            color = theme.textMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
+
+                VesperTag(
+                    text = asset.price.ifBlank { "--" },
+                    toneColor = theme.accent
+                )
             }
 
+            // 90-day runway progress bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(3.dp)
+                    .height(3.5.dp)
                     .clip(RoundedCornerShape(999.dp))
                     .background(theme.surfaceInput)
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(progressFraction)
-                        .height(3.dp)
+                        .height(3.5.dp)
                         .clip(RoundedCornerShape(999.dp))
                         .background(barColor)
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val dateAndRenew = buildString {
+                    append(if (isPermanent) "长期有效" else asset.dueDate.take(10).ifBlank { "--" })
+                    if (asset.autoRenew) append(" · 自动续费")
+                }
+                Text(
+                    text = dateAndRenew,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.5.sp,
+                    color = theme.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                )
+                Text(
+                    text = asset.dueBadgeLabel,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.5.sp,
+                    fontWeight = if (!isPermanent && asset.daysLeft <= 7) FontWeight.SemiBold else FontWeight.Medium,
+                    color = daysColor,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
         }
@@ -621,7 +697,7 @@ private fun formatAssetStructuredPrice(currency: String, amount: String, cycle: 
         return if (cycle == "一次性") "免费 (一次性)" else "免费 / $cycle"
     }
     val cleanNum = amount.trim()
-    if (cleanNum.isEmpty()) return ""
+    if (cleanNum.isEmpty()) return cycle
     val prefix = ASSET_CURRENCY_SPECS.firstOrNull { it.code == currency }?.prefix ?: "¥"
     val numText = "$prefix$cleanNum"
     return if (cycle == "一次性") "$numText (一次性)" else "$numText / $cycle"
@@ -655,13 +731,17 @@ internal fun AssetEditorSheet(
         category: String,
         spec: String,
         price: String,
+        status: String,
         dueDate: String,
-        autoRenew: Boolean
+        autoRenew: Boolean,
+        warnDays: String,
+        extraConfig: String
     ) -> Unit,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit
 ) {
     val theme = BotHubThemeTokens
+    val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val defaultCat = availableCategories.firstOrNull()?.id ?: "general"
     val defaultDate = remember { LocalDate.now().plusYears(1).toString() }
@@ -670,23 +750,48 @@ internal fun AssetEditorSheet(
     var name by remember(asset) { mutableStateOf(asset?.name.orEmpty()) }
     var category by remember(asset) { mutableStateOf(asset?.category?.ifBlank { defaultCat } ?: defaultCat) }
     var spec by remember(asset) { mutableStateOf(asset?.spec.orEmpty()) }
+    var status by remember(asset) { mutableStateOf(normalizeAssetStatus(asset?.status)) }
     var currency by remember(asset) { mutableStateOf(initialPrice.currency) }
     var amountNum by remember(asset) { mutableStateOf(initialPrice.amount) }
     var billingCycle by remember(asset) { mutableStateOf(initialPrice.cycle) }
+    var isPermanent by remember(asset) {
+        mutableStateOf(
+            asset != null && (asset.dueDate.isBlank() || asset.dueDate.startsWith("2099"))
+        )
+    }
     var dueDate by remember(asset) {
         val raw = asset?.dueDate?.take(10).orEmpty()
-        mutableStateOf(if (asset == null) defaultDate else raw)
-    }
-    var isPermanent by remember(asset) {
-        mutableStateOf(asset?.dueDate?.startsWith("2099") == true)
+        mutableStateOf(
+            if (asset == null || raw.isBlank() || raw.startsWith("2099")) defaultDate else raw
+        )
     }
     var autoRenew by remember(asset) { mutableStateOf(asset?.autoRenew ?: false) }
+    var warnDays by remember(asset) {
+        val rawWarn = asset?.warnDays?.trim().orEmpty()
+        mutableStateOf(
+            ASSET_WARN_OPTIONS.firstOrNull { it.first == rawWarn }?.first ?: "[7, 3, 1]"
+        )
+    }
+    val extraRows = remember(asset) {
+        mutableStateListOf<Pair<String, String>>().apply {
+            addAll(parseExtraConfigRows(asset?.extraConfig.orEmpty()))
+        }
+    }
 
     val formattedPricePreview = remember(currency, amountNum, billingCycle) {
         formatAssetStructuredPrice(currency, amountNum, billingCycle)
     }
     val selectedCurrencySpec = remember(currency) {
         ASSET_CURRENCY_SPECS.firstOrNull { it.code == currency } ?: ASSET_CURRENCY_SPECS.first()
+    }
+    val previewDaysLeft = remember(isPermanent, dueDate) {
+        if (isPermanent) {
+            null
+        } else {
+            runCatching {
+                ChronoUnit.DAYS.between(LocalDate.now(), LocalDate.parse(dueDate.take(10))).toInt()
+            }.getOrNull()
+        }
     }
 
     var showCalendarDialog by remember { mutableStateOf(false) }
@@ -718,202 +823,233 @@ internal fun AssetEditorSheet(
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = if (asset == null) "添加资产" else "编辑资产",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = theme.textPrimary
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = if (asset == null) "登记数字资产" else "编辑数字资产",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = theme.textPrimary
+                )
+                Text(
+                    text = "结构化管理资产周期、币种成本、状态、预警规则与扩展属性",
+                    fontSize = 12.sp,
+                    color = theme.textMuted
+                )
+            }
 
-            // Extensible Category Selection
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            // =========================================================================
+            // Section 1: Basic Info, Lifecycle Status & Structured Billing
+            // =========================================================================
+            VesperCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "资产类别（可自由扩展）",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = theme.textMuted
+                        text = "基础信息与结构化费用",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = theme.accentForeground
                     )
-                    VesperSecondaryButton(
-                        text = if (showCategoryManager) "收起管理" else "扩展/管理",
-                        leadingIcon = if (showCategoryManager) Icons.Default.Close else Icons.Default.Settings,
-                        cornerRadius = 999.dp,
-                        minHeight = 34.dp,
-                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
-                        onClick = { showCategoryManager = !showCategoryManager }
-                    )
-                }
 
-                if (availableCategories.isEmpty()) {
-                    Text(
-                        text = "当前暂无预设分类（将归入「通用资产」）；点击右上角「扩展/管理」可添加任意类型",
-                        fontSize = 11.5.sp,
-                        color = theme.textMuted
-                    )
-                } else {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        availableCategories.forEach { cat ->
-                            val isSelected = category.equals(cat.id, ignoreCase = true)
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                VesperFilterChip(
-                                    label = cat.label,
-                                    leadingIcon = assetCategoryIconVector(cat.icon),
-                                    selected = isSelected,
-                                    onClick = { category = cat.id }
-                                )
-                                if (showCategoryManager && cat.id.lowercase(Locale.ROOT) in customIds) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(34.dp)
-                                            .clip(RoundedCornerShape(9.dp))
-                                            .background(theme.danger.copy(alpha = 0.14f))
-                                            .clickable {
-                                                val next = savedCategories.filterNot {
-                                                    it.id.equals(cat.id, ignoreCase = true)
-                                                }
-                                                onSaveCategories(next)
-                                                if (category.equals(cat.id, ignoreCase = true)) {
-                                                    category = next.firstOrNull()?.id ?: "general"
-                                                }
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "删除分类",
-                                            tint = theme.danger,
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (showCategoryManager) {
-                    VesperCard(
-                        cornerRadius = 14.dp,
-                        accentTone = theme.accent,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                    // Extensible Category Selection
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            VesperTextField(
-                                value = newCategoryLabel,
-                                onValueChange = { newCategoryLabel = it },
-                                label = "新建类型名称",
-                                placeholder = "例如：软件授权 / 硬件 / 保险 / 证件...",
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                            Text(
+                                text = "资产类别（可自由扩展）",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = theme.textSecondary
                             )
+                            VesperSecondaryButton(
+                                text = if (showCategoryManager) "收起管理" else "扩展/管理",
+                                leadingIcon = if (showCategoryManager) Icons.Default.Close else Icons.Default.Settings,
+                                cornerRadius = 999.dp,
+                                minHeight = 36.dp,
+                                contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp),
+                                onClick = { showCategoryManager = !showCategoryManager }
+                            )
+                        }
 
+                        if (availableCategories.isEmpty()) {
+                            Text(
+                                text = "当前暂无自定义分类（将归入「通用资产」）；点击右上角「扩展/管理」可添加任意类型",
+                                fontSize = 11.5.sp,
+                                color = theme.textMuted
+                            )
+                        } else {
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                CATEGORY_ICON_CHOICES.forEach { (iconId, iconLabel) ->
-                                    VesperFilterChip(
-                                        label = iconLabel,
-                                        leadingIcon = assetCategoryIconVector(iconId),
-                                        selected = newCategoryIcon == iconId,
-                                        onClick = { newCategoryIcon = iconId }
-                                    )
+                                availableCategories.forEach { cat ->
+                                    val isSelected = category.equals(cat.id, ignoreCase = true)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        VesperFilterChip(
+                                            label = cat.label,
+                                            leadingIcon = assetCategoryIconVector(cat.icon),
+                                            selected = isSelected,
+                                            onClick = { category = cat.id }
+                                        )
+                                        if (showCategoryManager && cat.id.lowercase(Locale.ROOT) in customIds) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(RoundedCornerShape(9.dp))
+                                                    .background(theme.danger.copy(alpha = 0.14f))
+                                                    .clickable {
+                                                        val next = savedCategories.filterNot {
+                                                            it.id.equals(cat.id, ignoreCase = true)
+                                                        }
+                                                        onSaveCategories(next)
+                                                        if (category.equals(cat.id, ignoreCase = true)) {
+                                                            category = next.firstOrNull()?.id ?: "general"
+                                                        }
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "删除分类",
+                                                    tint = theme.danger,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
+                        }
 
-                            VesperPrimaryButton(
-                                text = "保存并使用此类型",
-                                enabled = newCategoryLabel.isNotBlank(),
-                                minHeight = 44.dp,
-                                onClick = {
-                                    val cleanLabel = newCategoryLabel.trim()
-                                    if (cleanLabel.isNotEmpty()) {
-                                        val cleanId = cleanLabel.replace(Regex("\\s+"), "_")
-                                        val next = savedCategories.toMutableList()
-                                        if (next.none { it.id.equals(cleanId, ignoreCase = true) }) {
-                                            next.add(AssetCategoryItem(cleanId, cleanLabel, newCategoryIcon))
-                                            onSaveCategories(next)
-                                        }
-                                        category = cleanId
-                                        newCategoryLabel = ""
-                                    }
-                                },
+                        if (showCategoryManager) {
+                            VesperCard(
+                                cornerRadius = 14.dp,
+                                accentTone = theme.accent,
                                 modifier = Modifier.fillMaxWidth()
-                            )
-
-                            if (unusedSuggestions.isNotEmpty()) {
-                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(
-                                        text = "可选快捷添加：",
-                                        fontSize = 11.5.sp,
-                                        color = theme.textMuted
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    VesperTextField(
+                                        value = newCategoryLabel,
+                                        onValueChange = { newCategoryLabel = it },
+                                        label = "新建类型名称",
+                                        placeholder = "例如：软件授权 / 硬件 / 保险 / 证件...",
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
                                     )
+
                                     FlowRow(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        unusedSuggestions.forEach { sug ->
+                                        CATEGORY_ICON_CHOICES.forEach { (iconId, iconLabel) ->
                                             VesperFilterChip(
-                                                label = "+ ${sug.label}",
-                                                leadingIcon = assetCategoryIconVector(sug.icon),
-                                                selected = false,
-                                                onClick = {
-                                                    val next = savedCategories + sug
-                                                    onSaveCategories(next)
-                                                    category = sug.id
-                                                }
+                                                label = iconLabel,
+                                                leadingIcon = assetCategoryIconVector(iconId),
+                                                selected = newCategoryIcon == iconId,
+                                                onClick = { newCategoryIcon = iconId }
                                             )
+                                        }
+                                    }
+
+                                    VesperPrimaryButton(
+                                        text = "保存并使用此类型",
+                                        enabled = newCategoryLabel.isNotBlank(),
+                                        minHeight = 44.dp,
+                                        onClick = {
+                                            val cleanLabel = newCategoryLabel.trim()
+                                            if (cleanLabel.isNotEmpty()) {
+                                                val cleanId = cleanLabel.replace(Regex("\\s+"), "_")
+                                                val next = savedCategories.toMutableList()
+                                                if (next.none { it.id.equals(cleanId, ignoreCase = true) }) {
+                                                    next.add(AssetCategoryItem(cleanId, cleanLabel, newCategoryIcon))
+                                                    onSaveCategories(next)
+                                                }
+                                                category = cleanId
+                                                newCategoryLabel = ""
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    if (unusedSuggestions.isNotEmpty()) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(
+                                                text = "可选快捷添加：",
+                                                fontSize = 11.5.sp,
+                                                color = theme.textMuted
+                                            )
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                unusedSuggestions.forEach { sug ->
+                                                    VesperFilterChip(
+                                                        label = "+ ${sug.label}",
+                                                        leadingIcon = assetCategoryIconVector(sug.icon),
+                                                        selected = false,
+                                                        onClick = {
+                                                            val next = savedCategories + sug
+                                                            onSaveCategories(next)
+                                                            category = sug.id
+                                                        }
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            VesperTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = "名称",
-                placeholder = "例如：资产或服务名称",
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+                    VesperTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = "资产名称",
+                        placeholder = "如：项目或服务名称",
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-            VesperTextField(
-                value = spec,
-                onValueChange = { spec = it },
-                label = "说明（可选）",
-                placeholder = "规格、型号或补充备注",
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+                    VesperTextField(
+                        value = spec,
+                        onValueChange = { spec = it },
+                        label = "规格与备注描述",
+                        placeholder = "如：版本、配置或用途备注",
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-            // Structured Pricing Card
-            VesperCard(
-                cornerRadius = 15.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(13.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                    // Lifecycle Status Selector (aligned with Web)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "生命周期状态",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = theme.textSecondary
+                        )
+                        VesperSegmentedTabs(
+                            options = ASSET_STATUS_OPTIONS,
+                            selectedIndex = ASSET_STATUS_OPTIONS.indexOf(status).coerceAtLeast(0),
+                            onSelect = { idx -> status = ASSET_STATUS_OPTIONS[idx] }
+                        )
+                    }
+
+                    VesperDivider()
+
+                    // Structured Pricing
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -921,24 +1057,16 @@ internal fun AssetEditorSheet(
                     ) {
                         Text(
                             text = "费用与计费周期",
-                            fontSize = 13.sp,
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = theme.textPrimary
                         )
-                        if (formattedPricePreview.isNotEmpty()) {
-                            VesperTag(text = formattedPricePreview)
-                        } else {
-                            Text(
-                                text = "可选",
-                                fontSize = 11.sp,
-                                color = theme.textMuted
-                            )
-                        }
+                        VesperTag(text = formattedPricePreview)
                     }
 
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            text = "币种",
+                            text = "币种 / 费用类型",
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.Medium,
                             color = theme.textMuted
@@ -964,8 +1092,8 @@ internal fun AssetEditorSheet(
                         VesperTextField(
                             value = amountNum,
                             onValueChange = { amountNum = sanitizeAssetAmountInput(it) },
-                            label = "金额 · ${selectedCurrencySpec.fullLabel}",
-                            placeholder = "输入数字金额，例如 99 或 12.99",
+                            label = "金额数值 · ${selectedCurrencySpec.fullLabel}",
+                            placeholder = "如 21.66",
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.fillMaxWidth()
@@ -994,7 +1122,7 @@ internal fun AssetEditorSheet(
                                     text = cycleLabel,
                                     tone = if (billingCycle == cycleVal) VesperButtonTone.ACCENT else VesperButtonTone.NEUTRAL,
                                     cornerRadius = 10.dp,
-                                    minHeight = 38.dp,
+                                    minHeight = 42.dp,
                                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                                     onClick = { billingCycle = cycleVal },
                                     modifier = Modifier.weight(1f)
@@ -1005,115 +1133,335 @@ internal fun AssetEditorSheet(
                 }
             }
 
-            // Calendar Date Trigger
-            Column(
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "到期日（日历选择）",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = theme.textMuted
-                )
-                Surface(
-                    onClick = { showCalendarDialog = true },
-                    shape = RoundedCornerShape(12.dp),
-                    color = theme.surfaceInput,
-                    border = BorderStroke(1.dp, theme.border),
-                    modifier = Modifier.fillMaxWidth()
+            // =========================================================================
+            // Section 2: Due Date, Permanent Mode, Alert Gradient & Auto Renew
+            // =========================================================================
+            VesperCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .sizeIn(minHeight = 48.dp)
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = when {
-                                isPermanent -> "长期有效 / 免续费"
-                                dueDate.isNotBlank() -> dueDate
-                                else -> "选择日期"
-                            },
-                            fontFamily = if (!isPermanent && dueDate.isNotBlank()) FontFamily.Monospace else FontFamily.Default,
-                            fontSize = 14.sp,
-                            color = if (!isPermanent && dueDate.isBlank()) theme.textMuted else theme.textPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
+                            text = "到期守望与续费规则",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = theme.accentForeground
                         )
-                        Icon(
-                            imageVector = Icons.Default.CalendarMonth,
-                            contentDescription = "打开日历选择日期",
-                            tint = theme.accentForeground,
-                            modifier = Modifier.size(18.dp)
+                        if (isPermanent) {
+                            VesperTag(text = "长期有效", toneColor = theme.success)
+                        } else if (previewDaysLeft != null) {
+                            val badgeColor = when {
+                                previewDaysLeft <= 0 -> theme.danger
+                                previewDaysLeft <= 14 -> theme.warning
+                                else -> theme.success
+                            }
+                            VesperTag(
+                                text = if (previewDaysLeft <= 0) {
+                                    "已逾期 ${abs(previewDaysLeft)} 天"
+                                } else {
+                                    "预计距今剩余 $previewDaysLeft 天"
+                                },
+                                toneColor = badgeColor
+                            )
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "到期类型",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = theme.textSecondary
+                        )
+                        VesperSegmentedTabs(
+                            options = listOf("指定具体到期日", "长期有效"),
+                            selectedIndex = if (isPermanent) 1 else 0,
+                            onSelect = { idx -> isPermanent = idx == 1 }
+                        )
+                    }
+
+                    if (!isPermanent) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "到期日（日历选择）",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = theme.textSecondary
+                            )
+                            Surface(
+                                onClick = { showCalendarDialog = true },
+                                shape = RoundedCornerShape(12.dp),
+                                color = theme.surfaceInput,
+                                border = BorderStroke(1.dp, theme.border),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .sizeIn(minHeight = 48.dp)
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = dueDate.ifBlank { "选择日期" },
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 14.sp,
+                                        color = if (dueDate.isBlank()) theme.textMuted else theme.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.CalendarMonth,
+                                        contentDescription = "打开日历选择日期",
+                                        tint = theme.accentForeground,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "一键顺延",
+                                    fontSize = 12.sp,
+                                    color = theme.textMuted
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    listOf(1 to "+1月", 3 to "+1季", 12 to "+1年").forEach { (months, label) ->
+                                        VesperFilterChip(
+                                            label = label,
+                                            selected = false,
+                                            onClick = {
+                                                val base = runCatching { LocalDate.parse(dueDate.take(10)) }
+                                                    .getOrDefault(LocalDate.now())
+                                                dueDate = base.plusMonths(months.toLong()).toString()
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Alert Warning Days Gradient (aligned with Web)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "临期预警梯度",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = theme.textSecondary
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            ASSET_WARN_OPTIONS.forEach { (value, label) ->
+                                val chosen = warnDays == value
+                                Surface(
+                                    onClick = { warnDays = value },
+                                    shape = RoundedCornerShape(11.dp),
+                                    color = if (chosen) theme.accentSoft else theme.surfaceInput,
+                                    border = BorderStroke(1.dp, if (chosen) theme.accentMuted else theme.border),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .sizeIn(minHeight = 46.dp)
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            fontSize = 13.sp,
+                                            fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (chosen) theme.accentForeground else theme.textPrimary
+                                        )
+                                        if (chosen) {
+                                            VesperTag(text = "当前", toneColor = theme.accent)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    VesperDivider()
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .sizeIn(minHeight = 54.dp)
+                            .clickable { autoRenew = !autoRenew }
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "已开启自动续费扣款",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = theme.textPrimary
+                            )
+                            Text(
+                                text = "开启后临期预警将提示核对自动扣款授权",
+                                fontSize = 11.5.sp,
+                                color = theme.textMuted
+                            )
+                        }
+                        VesperSwitch(
+                            checked = autoRenew,
+                            onCheckedChange = { autoRenew = it }
                         )
                     }
                 }
             }
 
-            if (!isPermanent) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            // =========================================================================
+            // Section 3: Extensible Custom Key-Value Properties (extra_config)
+            // =========================================================================
+            VesperCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "基于到期日顺延",
-                        fontSize = 12.sp,
-                        color = theme.textMuted
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(1 to "+1月", 3 to "+1季", 12 to "+1年").forEach { (months, label) ->
-                            VesperFilterChip(
-                                label = label,
-                                selected = false,
-                                onClick = {
-                                    val today = LocalDate.now()
-                                    val parsed = runCatching { LocalDate.parse(dueDate.take(10)) }.getOrNull()
-                                    val base = if (parsed != null && !dueDate.startsWith("2099") && !parsed.isBefore(today.minusDays(30))) {
-                                        parsed
-                                    } else {
-                                        today
-                                    }
-                                    dueDate = base.plusMonths(months.toLong()).toString()
-                                }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "可扩展自定义属性 (Key / Value)",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = theme.accentForeground
                             )
+                            Text(
+                                text = "记录元信息（如 host、region、registrar、panel_url）",
+                                fontSize = 11.5.sp,
+                                color = theme.textMuted
+                            )
+                        }
+                        VesperSecondaryButton(
+                            text = "添加属性",
+                            leadingIcon = Icons.Default.Add,
+                            tone = VesperButtonTone.ACCENT,
+                            cornerRadius = 999.dp,
+                            minHeight = 36.dp,
+                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 6.dp),
+                            onClick = { extraRows.add("" to "") }
+                        )
+                    }
+
+                    if (extraRows.isEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "点击右上角「添加属性」或点下方常用键名快速添加：",
+                                fontSize = 11.5.sp,
+                                color = theme.textMuted
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                EXTRA_PRESET_KEYS.forEach { presetKey ->
+                                    VesperFilterChip(
+                                        label = "+ $presetKey",
+                                        selected = false,
+                                        onClick = { extraRows.add(presetKey to "") }
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            extraRows.forEachIndexed { idx, (rowKey, rowVal) ->
+                                val isUrl = rowVal.trim().startsWith("http://", ignoreCase = true) ||
+                                    rowVal.trim().startsWith("https://", ignoreCase = true)
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(theme.surfaceControl)
+                                        .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        VesperTextField(
+                                            value = rowKey,
+                                            onValueChange = { extraRows[idx] = it to rowVal },
+                                            placeholder = "键名 (如 region)",
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (isUrl) {
+                                            VesperIconButton(
+                                                icon = Icons.AutoMirrored.Filled.OpenInNew,
+                                                contentDescription = "打开链接",
+                                                accent = true,
+                                                onClick = {
+                                                    runCatching {
+                                                        context.startActivity(
+                                                            Intent(Intent.ACTION_VIEW, Uri.parse(rowVal.trim()))
+                                                        )
+                                                    }
+                                                }
+                                            )
+                                        }
+                                        VesperIconButton(
+                                            icon = Icons.Default.Close,
+                                            contentDescription = "移除该属性",
+                                            danger = true,
+                                            onClick = { extraRows.removeAt(idx) }
+                                        )
+                                    }
+                                    VesperTextField(
+                                        value = rowVal,
+                                        onValueChange = { extraRows[idx] = rowKey to it },
+                                        placeholder = "属性值",
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            VesperCard(
-                cornerRadius = 14.dp,
-                onClick = { autoRenew = !autoRenew },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .sizeIn(minHeight = 54.dp)
-                        .padding(start = 14.dp, end = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("自动续费", fontSize = 14.5.sp, color = theme.textPrimary)
-                    VesperSwitch(
-                        checked = autoRenew,
-                        onCheckedChange = { autoRenew = it }
-                    )
-                }
-            }
-
+            // Action Footer
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 if (onDelete != null) {
                     VesperSecondaryButton(
-                        text = "删除",
+                        text = "删除资产",
                         tone = VesperButtonTone.DANGER,
                         minHeight = 48.dp,
                         onClick = onDelete,
@@ -1131,8 +1479,11 @@ internal fun AssetEditorSheet(
                                 category.ifBlank { "general" },
                                 spec.trim(),
                                 formatAssetStructuredPrice(currency, amountNum, billingCycle),
-                                if (isPermanent) "2099-12-31" else dueDate.trim().ifEmpty { "2099-12-31" },
-                                autoRenew
+                                status,
+                                if (isPermanent) "2099-12-31" else dueDate.trim().ifEmpty { defaultDate },
+                                autoRenew,
+                                warnDays,
+                                serializeExtraConfigRows(extraRows)
                             )
                         }
                     },
@@ -1140,7 +1491,7 @@ internal fun AssetEditorSheet(
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
         }
     }
 

@@ -14,6 +14,7 @@ export interface ReplyQuoteTarget {
 export function useBotChatStream(options: {
   store: ReturnType<typeof useAppStore>
   inputPrompt: Ref<string>
+  pendingImages: Ref<string[]>
   selectedModel: Ref<string>
   enableThinking: Ref<boolean>
   replyTarget: Ref<ReplyQuoteTarget | null>
@@ -23,6 +24,7 @@ export function useBotChatStream(options: {
   const {
     store,
     inputPrompt,
+    pendingImages,
     selectedModel,
     enableThinking,
     replyTarget,
@@ -51,13 +53,15 @@ export function useBotChatStream(options: {
     overrideText?: string,
     turnOpts?: {
       overrideModel?: string
-      allowPaidOnce?: boolean
+      images?: string[]
       replaceAssistantMsg?: ChatMessageUI
     }
   ) {
     if (store.state.isStreaming) return
+    const rawImages = turnOpts?.images ?? (overrideText === undefined ? [...pendingImages.value] : [])
+    const images = rawImages.filter((u) => typeof u === 'string' && u.trim().length > 0)
     const msg = (overrideText ?? inputPrompt.value).trim()
-    if (!msg) return
+    if (!msg && images.length === 0) return
 
     const curBot = store.activeBot.value
     if (!curBot) {
@@ -68,10 +72,12 @@ export function useBotChatStream(options: {
     const activeThreadSnapshot = store.state.activeThreadId || ''
     const quote = replyTarget.value
     const notifQuote = store.state.pendingNotificationQuote
-    const effectiveModel = (turnOpts?.overrideModel || selectedModel.value || 'auto:paid').trim()
-    lastPrompt.value = msg
+    const effectiveModel = (turnOpts?.overrideModel || selectedModel.value || 'auto').trim()
+    const displayText = msg || '请分析这张图片'
+    lastPrompt.value = displayText
     if (!overrideText) {
       inputPrompt.value = ''
+      pendingImages.value = []
       store.setBotDraft(botId, '', activeThreadSnapshot)
     }
     onClosePopovers?.()
@@ -85,8 +91,8 @@ export function useBotChatStream(options: {
       ? `[服务通知] ${notifQuote.title}: ${(notifQuote.summary || notifQuote.markdown || '').slice(0, 80)}`
       : ''
     const payloadMessage = notifQuote
-      ? `[引用服务通知上下文]\n标题：${notifQuote.title}\n正文：\n${(notifQuote.markdown || notifQuote.summary).slice(0, 1500)}\n\n[用户追问]\n${msg}`
-      : msg
+      ? `[引用服务通知上下文]\n标题：${notifQuote.title}\n正文：\n${(notifQuote.markdown || notifQuote.summary).slice(0, 1500)}\n\n[用户追问]\n${displayText}`
+      : displayText
     const effectiveReplyPreview = quote?.preview || notifPreview
 
     // In-place replacement when retrying with another model: remove the old assistant reply and its paired user turn
@@ -127,8 +133,9 @@ export function useBotChatStream(options: {
       model: effectiveModel,
       msgKind: 'chat',
       createdAt: new Date().toISOString(),
-      content: msg,
+      content: displayText,
       reasoning: '',
+      attachments: images.length > 0 ? images : undefined,
       tools: [],
       replyToId: quote?.serverId,
       replyPreview: effectiveReplyPreview || undefined,
@@ -217,9 +224,9 @@ export function useBotChatStream(options: {
           bot_id: botId,
           thread_id: store.state.activeThreadId || '',
           message: payloadMessage,
+          ...(images.length > 0 ? { images } : {}),
           model: effectiveModel,
           enable_thinking: enableThinking.value,
-          ...(turnOpts?.allowPaidOnce ? { allow_paid_fallback: true } : {}),
           reply_to_id: quote?.serverId || 0,
           reply_preview: effectiveReplyPreview,
         }),
@@ -357,9 +364,16 @@ export function useBotChatStream(options: {
                   : payload.model
               }
               if (payload.model_target_id) activeTurn.modelTargetId = String(payload.model_target_id)
-              if (payload.model_tier) activeTurn.modelTier = String(payload.model_tier)
               const elapsedSec = ((Date.now() - turnStartedAt) / 1000).toFixed(1)
-              activeTurn.statusText = modelSwitchedInTurn ? `已回退模型 · 用时 ${elapsedSec}s` : `用时 ${elapsedSec}s`
+              const cachedTokens = Number(payload.usage?.cached_tokens || 0)
+              const promptTokens = Number(payload.usage?.prompt_tokens || 0)
+              const cacheSuffix =
+                cachedTokens > 0 && promptTokens > 0
+                  ? ` · 缓存命中 ${Math.round((cachedTokens / promptTokens) * 100)}%`
+                  : ''
+              activeTurn.statusText = modelSwitchedInTurn
+                ? `已回退模型 · 用时 ${elapsedSec}s${cacheSuffix}`
+                : `用时 ${elapsedSec}s${cacheSuffix}`
             }
           }
         }

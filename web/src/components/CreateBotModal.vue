@@ -41,8 +41,7 @@ const mode = computed({
 const name = ref('')
 const roleTitle = ref('')
 const avatarStyle = ref('butler:gold')
-const model = ref(store.modelOptions.value[0]?.value || 'auto:paid')
-const allowPaidFallback = ref(true)
+const model = ref(store.modelOptions.value[0]?.value || 'auto')
 const botMode = ref<BotMode>('hybrid')
 const memoryPolicy = ref<MemoryPolicy>('standard')
 const traits = ref('')
@@ -146,9 +145,8 @@ watch(
   (open) => {
     if (!open) return
     if (!store.modelOptions.value.some((o) => o.value === model.value)) {
-      model.value = store.modelOptions.value[0]?.value || 'auto:paid'
+      model.value = store.modelOptions.value[0]?.value || 'auto'
     }
-    allowPaidFallback.value = true
     enableThinking.value = true
     if (groupMembers.value.length === 0) {
       groupMembers.value = availableSpecialistBots.value.slice(0, 3).map((b) => b.id)
@@ -183,7 +181,7 @@ async function forgePromptWithAI() {
     if (res.traits && res.traits.trim()) {
       traits.value = res.traits.trim()
     }
-    store.notify('已用付费主力模型深度精修人设，可继续微调后创建')
+    store.notify('已完成 AI 人设深度精修，可继续微调后创建')
   } catch (err: any) {
     store.notify(err.message || 'AI 精修人设失败')
   } finally {
@@ -227,10 +225,10 @@ async function handleSubmit() {
         groupMembers.value.includes(b.id)
       )
       const skillSet = new Set<string>()
-      let derivedModel = groupModel.value || store.modelOptions.value[0]?.value || 'auto:paid'
+      let derivedModel = groupModel.value || store.modelOptions.value[0]?.value || 'auto'
       let allCompanion = selectedBots.length > 0
       selectedBots.forEach((b) => {
-        if (!groupModel.value && b.model && derivedModel === (store.modelOptions.value[0]?.value || 'auto:paid')) {
+        if (!groupModel.value && b.model && derivedModel === (store.modelOptions.value[0]?.value || 'auto')) {
           derivedModel = b.model
         }
         if (b.bot_mode !== 'companion') allCompanion = false
@@ -242,7 +240,6 @@ async function handleSubmit() {
         role_title: groupDesc.value.trim() || `多 Bot 协同群 (${groupMembers.value.length} 成员)`,
         avatar_style: groupAvatar.value,
         model: derivedModel,
-        allow_paid_fallback: true,
         bot_mode: allCompanion ? 'companion' : 'hybrid',
         memory_policy: 'standard',
         enable_thinking: true,
@@ -285,7 +282,6 @@ async function handleSubmit() {
       role_title: roleTitle.value.trim() || (botMode.value === 'companion' ? '专属生活伙伴' : '专属智能助理'),
       avatar_style: avatarStyle.value,
       model: model.value,
-      allow_paid_fallback: allowPaidFallback.value,
       bot_mode: botMode.value,
       memory_policy: memoryPolicy.value,
       traits: traits.value.trim(),
@@ -418,18 +414,12 @@ async function handleSubmit() {
               <span>记忆隔离策略</span>
               <CustomSelect v-model="memoryPolicy" :options="MEMORY_POLICY_OPTIONS" aria-label="记忆隔离策略" />
             </div>
-            <div class="sm:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
+            <div class="sm:col-span-2 flex items-center justify-between gap-2.5 pt-1">
               <ToggleSwitch v-model="enableThinking" label="默认开启深度思考推理链" />
-              <ToggleSwitch
-                v-model="allowPaidFallback"
-                label="允许付费主力调用"
-                description="默认开启；关闭则严格限免费模型池"
-              />
             </div>
             <div class="sm:col-span-2">
               <ModelRoutePreview
                 :selected-model="model"
-                :allow-paid-fallback="allowPaidFallback"
                 :need-tools="botMode !== 'companion' || selectedSkillIds.length > 0"
               />
             </div>

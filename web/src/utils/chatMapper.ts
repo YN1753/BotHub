@@ -10,11 +10,11 @@ export interface ChatMessageUI {
   avatarStyle: string
   model: string
   modelTargetId?: string
-  modelTier?: string
   msgKind: 'chat' | 'routine' | 'system'
   createdAt: string
   content: string
   reasoning: string
+  attachments?: string[]
   tools: Array<{
     id: string
     name: string
@@ -68,6 +68,16 @@ export function mapServerMessage(
   const role: ChatMessageUI['role'] =
     kind === 'system' ? 'system' : m.role === 'user' ? 'user' : 'assistant'
 
+  let parsedAttachments: string[] = []
+  try {
+    const rawAtt = JSON.parse(m.attachments || '[]')
+    if (Array.isArray(rawAtt)) {
+      parsedAttachments = rawAtt.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+    }
+  } catch {
+    parsedAttachments = []
+  }
+
   return {
     localId: `srv_${m.id}`,
     serverId: m.id,
@@ -78,11 +88,11 @@ export function mapServerMessage(
     avatarStyle: sender?.avatar_style || 'cyan',
     model: m.model_used || sender?.model || options.defaultModel || '',
     modelTargetId: m.model_target_id || undefined,
-    modelTier: m.model_tier || undefined,
     msgKind: kind,
     createdAt: m.created_at,
     content: m.content || '',
     reasoning: m.reasoning_content || '',
+    attachments: parsedAttachments.length > 0 ? parsedAttachments : undefined,
     tools: parsedTools,
     replyToId: m.reply_to_id || undefined,
     replyPreview: m.reply_preview || undefined,
@@ -142,9 +152,6 @@ export function mapServerMessages(
       }
       if (mapped.modelTargetId) {
         prev.modelTargetId = mapped.modelTargetId
-      }
-      if (mapped.modelTier) {
-        prev.modelTier = mapped.modelTier
       }
       prev.createdAt = mapped.createdAt
       continue

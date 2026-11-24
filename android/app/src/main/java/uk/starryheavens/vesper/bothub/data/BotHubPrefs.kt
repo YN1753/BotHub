@@ -101,8 +101,8 @@ class BotHubPrefs(context: Context) {
         set(value) = prefs.edit().putString("active_persona", value).apply()
 
     var activeModel: String
-        get() = prefs.getString("active_model", "auto:paid") ?: "auto:paid"
-        set(value) = prefs.edit().putString("active_model", value).apply()
+        get() = normalizeModelIdForSinglePool(prefs.getString("active_model", "auto") ?: "auto")
+        set(value) = prefs.edit().putString("active_model", normalizeModelIdForSinglePool(value)).apply()
 
     var realtimeServiceEnabled: Boolean
         get() = prefs.getBoolean("realtime_service_enabled", true)

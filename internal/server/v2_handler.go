@@ -371,13 +371,12 @@ func (s *Server) handleV2RerollNotification(w http.ResponseWriter, r *http.Reque
 	runCtx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 	if task != nil {
-		runCtx = store.WithTaskQuota(runCtx, task.ID, task.MaxPaidCallsPerDay)
+		runCtx = store.WithTaskID(runCtx, task.ID)
 		if strings.TrimSpace(task.Model) != "" {
 			runCtx = store.WithTaskModelOverride(runCtx, task.Model)
 		}
-		runCtx = store.WithPaidFallback(runCtx, task.AllowPaidFallback)
 	} else if strings.TrimSpace(notif.ModuleID) != "" {
-		runCtx = store.WithTaskQuota(runCtx, notif.ModuleID, 0)
+		runCtx = store.WithTaskID(runCtx, notif.ModuleID)
 	}
 
 	newReply, err := s.agent.RerollBotRoutine(runCtx, botID, prompt, taskName, rejectedBody, feedback)
@@ -640,8 +639,9 @@ func (s *Server) handleV2AppBootstrap(w http.ResponseWriter, r *http.Request) {
 	stash, _ := s.store.SearchStashItemsWithKind("", "all", "", "", 60)
 	todos, _ := s.store.ListTodos("all", "", 100)
 	notes, _ := s.store.ListNotes("", "", 60)
-	providers, pooledModels, poolStrategies := s.store.GetModelConfig()
+	providers, pooledModels, poolStrategy := s.store.GetModelConfig()
 	usageSummary, _ := s.store.SummarizeModelUsage(7)
+	usage30d, _ := s.store.SummarizeModelUsage(30)
 	var modelOptions any
 	var modelHealth any
 	if s.agent != nil {
@@ -663,11 +663,11 @@ func (s *Server) handleV2AppBootstrap(w http.ResponseWriter, r *http.Request) {
 		"tasks":               tasks,
 		"todos":               todos,
 		"notes":               notes,
-		"model_pool":          store.MaskModelPool(s.store.GetModelPool()),
 		"model_providers":     store.MaskModelProviders(providers),
 		"pooled_models":       pooledModels,
-		"pool_strategies":     poolStrategies,
+		"pool_strategy":       poolStrategy,
 		"model_usage_summary": usageSummary,
+		"model_usage_30d":     usage30d,
 		"model_options":       modelOptions,
 		"model_health":        modelHealth,
 		"configs":             s.safeMaskedConfigs(),

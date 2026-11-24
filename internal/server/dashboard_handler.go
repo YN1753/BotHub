@@ -45,7 +45,6 @@ func (s *Server) safeMaskedConfigs() map[string]string {
 	cfgs, _ := s.store.GetAllConfigs()
 	delete(cfgs, store.KeyAdminPassHash)
 	delete(cfgs, store.KeySessionSecret)
-	delete(cfgs, store.KeyFreeModelPool)
 	delete(cfgs, store.KeyModelProviders)
 	delete(cfgs, store.KeyPooledModels)
 	store.MaskSensitiveConfigs(cfgs)
@@ -166,13 +165,14 @@ func (s *Server) handleDashboardSlice(w http.ResponseWriter, r *http.Request) {
 		resp["stats"] = stats
 	}
 	if want["models"] {
-		providers, pooledModels, poolStrategies := s.store.GetModelConfig()
+		providers, pooledModels, poolStrategy := s.store.GetModelConfig()
 		usageSummary, _ := s.store.SummarizeModelUsage(7)
-		resp["model_pool"] = store.MaskModelPool(s.store.GetModelPool())
+		usage30d, _ := s.store.SummarizeModelUsage(30)
 		resp["model_providers"] = store.MaskModelProviders(providers)
 		resp["pooled_models"] = pooledModels
-		resp["pool_strategies"] = poolStrategies
+		resp["pool_strategy"] = poolStrategy
 		resp["model_usage_summary"] = usageSummary
+		resp["model_usage_30d"] = usage30d
 		if s.agent != nil {
 			resp["model_options"] = s.agent.ModelOptionsPayload()
 			resp["model_health"] = s.agent.GetModelHealth()
@@ -208,9 +208,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	notes, _ := s.store.ListNotes("", "", 80)
 	stashItems, _ := s.store.SearchStashItems("", "all", "", 100)
 	stashTags, _ := s.store.ListTopStashTags(14)
-	modelPool := store.MaskModelPool(s.store.GetModelPool())
-	providers, pooledModels, poolStrategies := s.store.GetModelConfig()
+	providers, pooledModels, poolStrategy := s.store.GetModelConfig()
 	usageSummary, _ := s.store.SummarizeModelUsage(7)
+	usage30d, _ := s.store.SummarizeModelUsage(30)
 	var modelHealth any
 	var modelOptions any
 	if s.agent != nil {
@@ -237,11 +237,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"notes":               notes,
 		"stash":               stashItems,
 		"stash_tags":          stashTags,
-		"model_pool":          modelPool,
 		"model_providers":     store.MaskModelProviders(providers),
 		"pooled_models":       pooledModels,
-		"pool_strategies":     poolStrategies,
+		"pool_strategy":       poolStrategy,
 		"model_usage_summary": usageSummary,
+		"model_usage_30d":     usage30d,
 		"model_options":       modelOptions,
 		"model_health":        modelHealth,
 		"available_tools": agent.AvailableToolsPayload(),

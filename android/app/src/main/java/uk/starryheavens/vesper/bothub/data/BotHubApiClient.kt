@@ -317,9 +317,10 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 modelOptions = dash.modelOptions,
                 modelProviders = JsonMappers.parseModelProviders(json.optJSONArray("model_providers")),
                 pooledModels = JsonMappers.parsePooledModels(json.optJSONArray("pooled_models")),
-                poolStrategies = JsonMappers.parsePoolStrategies(json.optJSONObject("pool_strategies")),
+                poolStrategy = JsonMappers.parsePoolStrategy(json.optString("pool_strategy", "priority")),
                 modelHealth = JsonMappers.parseModelHealth(json.optJSONObject("model_health")),
-                modelUsageSummary = JsonMappers.parseModelUsageSummary(json.optJSONObject("model_usage_summary")),
+                modelUsageSummary = JsonMappers.parseModelUsageSummary(json.optJSONObject("model_usage_summary"), 7),
+                modelUsage30d = JsonMappers.parseModelUsageSummary(json.optJSONObject("model_usage_30d"), 30),
                 revisions = dash.revisions
             )
         }
@@ -345,9 +346,10 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 modelOptions = if (json.has("model_options")) JsonMappers.parseModelOptions(json.optJSONArray("model_options")) else null,
                 modelProviders = if (json.has("model_providers")) JsonMappers.parseModelProviders(json.optJSONArray("model_providers")) else null,
                 pooledModels = if (json.has("pooled_models")) JsonMappers.parsePooledModels(json.optJSONArray("pooled_models")) else null,
-                poolStrategies = if (json.has("pool_strategies")) JsonMappers.parsePoolStrategies(json.optJSONObject("pool_strategies")) else null,
+                poolStrategy = if (json.has("pool_strategy")) JsonMappers.parsePoolStrategy(json.optString("pool_strategy", "priority")) else null,
                 modelHealth = if (json.has("model_health")) JsonMappers.parseModelHealth(json.optJSONObject("model_health")) else null,
-                modelUsageSummary = if (json.has("model_usage_summary")) JsonMappers.parseModelUsageSummary(json.optJSONObject("model_usage_summary")) else null,
+                modelUsageSummary = if (json.has("model_usage_summary")) JsonMappers.parseModelUsageSummary(json.optJSONObject("model_usage_summary"), 7) else null,
+                modelUsage30d = if (json.has("model_usage_30d")) JsonMappers.parseModelUsageSummary(json.optJSONObject("model_usage_30d"), 30) else null,
                 revisions = JsonMappers.parseRevisions(json.optJSONObject("revisions"))
             )
         }
@@ -364,7 +366,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
     suspend fun saveModelConfig(
         providers: List<ModelProviderItem>,
         models: List<PooledModelItem>,
-        strategies: PoolStrategiesItem
+        strategy: String
     ): Result<ModelConfigPayload> = withContext(Dispatchers.IO) {
         runCatching {
             val provArr = JSONArray()
@@ -388,10 +390,13 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 val obj = JSONObject()
                     .put("provider_id", m.providerId.trim())
                     .put("model_id", m.modelId.trim())
-                    .put("tier", m.tier.ifBlank { "free" })
+                    .put("display_name", m.displayName.trim())
                     .put("enabled", m.enabled)
                     .put("priority", m.priority)
+                    .put("is_light", m.isLight)
                     .put("last_latency_ms", m.lastLatencyMs)
+                if (m.inputPricePerM > 0.0) obj.put("input_price_per_m", m.inputPricePerM)
+                if (m.outputPricePerM > 0.0) obj.put("output_price_per_m", m.outputPricePerM)
                 if (m.supportsTools != null) obj.put("supports_tools", m.supportsTools)
                 if (m.supportsThinking != null) obj.put("supports_thinking", m.supportsThinking)
                 modArr.put(obj)
@@ -399,12 +404,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
             val payload = JSONObject()
                 .put("providers", provArr)
                 .put("models", modArr)
-                .put(
-                    "strategies",
-                    JSONObject()
-                        .put("free", strategies.free.ifBlank { "priority" })
-                        .put("paid", strategies.paid.ifBlank { "priority" })
-                )
+                .put("strategy", JsonMappers.parsePoolStrategy(strategy))
                 .toString()
             val req = requestBuilder("/api/v2/model-config")
                 .post(jsonBody(payload))
@@ -496,12 +496,10 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
     }
 
     suspend fun testModelBatch(
-        tier: String = "free",
         disableFailed: Boolean = false
     ): Result<BatchModelProbePayload> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = JSONObject()
-                .put("tier", tier.trim())
                 .put("disable_failed", disableFailed)
                 .put("probe_tools", true)
                 .toString()
@@ -519,7 +517,6 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                                 targetId = o.optString("target_id", ""),
                                 providerId = o.optString("provider_id", ""),
                                 modelId = o.optString("model_id", ""),
-                                tier = o.optString("tier", "free"),
                                 ok = o.optBoolean("ok", false),
                                 latencyMs = o.optLong("latency_ms", 0L),
                                 error = o.optString("error", ""),
@@ -587,8 +584,6 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         runAt: String,
         description: String,
         model: String,
-        allowPaidFallback: Boolean,
-        maxPaidCallsPerDay: Int,
         enabled: Boolean,
         params: String = "{}"
     ): Result<Unit> = withContext(Dispatchers.IO) {
@@ -604,8 +599,6 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("run_at", runAt.trim())
                 .put("description", description.trim())
                 .put("model", model.trim())
-                .put("allow_paid_fallback", allowPaidFallback)
-                .put("max_paid_calls_per_day", maxPaidCallsPerDay.coerceAtLeast(0))
                 .put("enabled", enabled)
                 .put("params", params.ifBlank { "{}" })
                 .toString()
@@ -737,20 +730,32 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         category: String,
         spec: String,
         price: String,
+        status: String = "生效中",
         dueDate: String,
-        autoRenew: Boolean
+        autoRenew: Boolean,
+        warnDays: String = "[7, 3, 1]",
+        extraConfig: String = "{}"
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val id = existingId?.trim().takeUnless { it.isNullOrEmpty() }
                 ?: "asset_${System.currentTimeMillis() % 100000000}"
+            val rawDue = dueDate.trim()
+            val normalizedDue = when {
+                rawDue.isEmpty() || rawDue.startsWith("2099") -> "2099-12-31T23:59:59+08:00"
+                rawDue.length == 10 && !rawDue.contains('T') -> "${rawDue}T23:59:59+08:00"
+                else -> rawDue
+            }
             val payload = JSONObject()
                 .put("id", id)
                 .put("name", name.trim())
                 .put("category", category.ifBlank { "general" })
                 .put("spec", spec.trim())
                 .put("price", price.trim())
-                .put("due_date", dueDate.trim())
+                .put("status", status.trim().ifEmpty { "生效中" })
+                .put("due_date", normalizedDue)
                 .put("auto_renew", autoRenew)
+                .put("warn_days", warnDays.trim().ifEmpty { "[7, 3, 1]" })
+                .put("extra_config", extraConfig.trim().ifEmpty { "{}" })
                 .toString()
             val path = if (existingId.isNullOrBlank()) "/api/assets" else "/api/assets/${existingId.trim()}"
             val req = requestBuilder(path)
@@ -814,7 +819,8 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
             BotMessagesPayload(
                 messages = JsonMappers.parseHistoryMessages(json.optJSONArray("messages")),
                 threads = JsonMappers.parseBotThreads(json.optJSONArray("threads")),
-                activeThreadId = json.optString("thread_id", "")
+                activeThreadId = json.optString("thread_id", ""),
+                compactionSummary = json.optString("compaction_summary", "").trim()
             )
         }
     }
@@ -891,6 +897,155 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 activeThreadId = created.id
             )
             created to msgPayload
+        }
+    }
+
+    suspend fun compactBotThread(
+        botId: String,
+        threadId: String
+    ): Result<Pair<String, Int>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject().put("thread_id", threadId.trim()).toString()
+            val req = requestBuilder("/api/v2/bots/$botId/threads/compact")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "压缩上下文失败")
+            val summary = json.optString("summary", "").trim()
+            val count = json.optInt("compacted_count", 0)
+            summary to count
+        }
+    }
+
+    suspend fun uploadChatImage(dataUrl: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject().put("data_url", dataUrl).toString()
+            val req = requestBuilder("/api/v2/chat/upload-image")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "上传图片失败")
+            val url = json.optString("url", "").trim()
+            if (url.isEmpty()) throw IllegalStateException("服务端未返回图片地址")
+            url
+        }
+    }
+
+    suspend fun fetchAuthenticatedBytes(relativeOrAbsoluteUrl: String): Result<ByteArray> = withContext(Dispatchers.IO) {
+        runCatching {
+            val clean = relativeOrAbsoluteUrl.trim()
+            val req = if (clean.startsWith("http://") || clean.startsWith("https://")) {
+                Request.Builder().url(clean).get().build()
+            } else {
+                val path = if (clean.startsWith("/")) clean else "/$clean"
+                requestBuilder(path).get().build()
+            }
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    throw IllegalStateException("加载图片失败 (${resp.code})")
+                }
+                resp.body?.bytes() ?: throw IllegalStateException("图片内容为空")
+            }
+        }
+    }
+
+    suspend fun forgeBotPrompt(
+        botId: String? = null,
+        name: String,
+        roleTitle: String,
+        botMode: String,
+        traits: String,
+        systemPrompt: String
+    ): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject()
+                .put("bot_id", botId?.trim().orEmpty())
+                .put("name", name.trim())
+                .put("role_title", roleTitle.trim())
+                .put("bot_mode", botMode.trim())
+                .put("traits", traits.trim())
+                .put("system_prompt", systemPrompt.trim())
+                .put("apply", false)
+                .toString()
+            val req = requestBuilder("/api/v2/bots/forge-prompt")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "AI 深度精修人设失败")
+            val forgedPrompt = json.optString("system_prompt", "").trim()
+            val forgedTraits = json.optString("traits", "").trim()
+            if (forgedPrompt.isEmpty()) throw IllegalStateException("未返回有效精修结果")
+            forgedPrompt to forgedTraits
+        }
+    }
+
+    suspend fun fetchMemoryMarkdown(scope: String): Result<MemoryMarkdownPayload> = withContext(Dispatchers.IO) {
+        runCatching {
+            val encScope = URLEncoder.encode(scope.trim(), "UTF-8")
+            val req = requestBuilder("/api/agent/memories/markdown?scope=$encScope").get().build()
+            val json = executeJson(req, "读取 MEMORY.md 失败")
+            val lastRep = json.optJSONObject("last_dream_report")
+            MemoryMarkdownPayload(
+                scope = json.optString("scope", scope),
+                count = json.optInt("count", 0),
+                markdown = json.optString("markdown", ""),
+                lastDreamAt = json.optString("last_dream_at", ""),
+                lastDreamSummary = lastRep?.optString("summary", "").orEmpty()
+            )
+        }
+    }
+
+    suspend fun dreamMemories(scope: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject().put("scope", scope.trim().ifEmpty { "all" }).toString()
+            val req = requestBuilder("/api/agent/memories/dream")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "AutoDream 记忆整合失败")
+            val rep = json.optJSONObject("report")
+            val summary = rep?.optString("summary", "").orEmpty().trim()
+            if (summary.isNotEmpty()) {
+                summary
+            } else {
+                val up = rep?.optInt("upserted", 0) ?: 0
+                val merged = rep?.optInt("merged_duplicates", 0) ?: 0
+                val pruned = rep?.optInt("pruned_cold", 0) ?: 0
+                "AutoDream 完成：更新 $up 条，合并 $merged 条，归档 $pruned 条"
+            }
+        }
+    }
+
+    suspend fun fetchSkills(): Result<List<SkillItemUi>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = requestBuilder("/api/v2/skills").get().build()
+            val json = executeJson(req, "读取 MCP 与扩展列表失败")
+            JsonMappers.parseSkills(json.optJSONArray("skills"))
+        }
+    }
+
+    suspend fun toggleSkillEnabled(skillId: String, enabled: Boolean): Result<SkillItemUi> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject().put("enabled", enabled).toString()
+            val req = requestBuilder("/api/v2/skills/${skillId.trim()}")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "更新扩展状态失败")
+            JsonMappers.parseSkill(json.optJSONObject("skill") ?: JSONObject())
+                ?: throw IllegalStateException("返回数据异常")
+        }
+    }
+
+    suspend fun testSkill(skillId: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = JSONObject().put("args", JSONObject()).toString()
+            val req = requestBuilder("/api/v2/skills/${skillId.trim()}/test")
+                .post(jsonBody(payload))
+                .build()
+            val json = executeJson(req, "服务连通测试失败")
+            val res = json.optString("result", "").trim()
+            val latency = json.optLong("latency_ms", 0L)
+            when {
+                res.isNotEmpty() -> res
+                latency > 0L -> "连通正常 (${latency}ms)"
+                else -> "连通正常"
+            }
         }
     }
 
@@ -996,14 +1151,12 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
     suspend fun updateBotPreferences(
         botId: String,
         model: String? = null,
-        enableThinking: Boolean? = null,
-        allowPaidFallback: Boolean? = null
+        enableThinking: Boolean? = null
     ): Result<BotItem> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = JSONObject()
-            if (!model.isNullOrBlank()) payload.put("model", model.trim())
+            if (!model.isNullOrBlank()) payload.put("model", normalizeModelIdForSinglePool(model))
             if (enableThinking != null) payload.put("enable_thinking", enableThinking)
-            if (allowPaidFallback != null) payload.put("allow_paid_fallback", allowPaidFallback)
             val req = requestBuilder("/api/v2/bots/$botId")
                 .post(jsonBody(payload.toString()))
                 .build()
@@ -1040,7 +1193,6 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         systemPrompt: String,
         groupMode: String,
         announcement: String,
-        allowPaidFallback: Boolean? = null,
         allowedTools: List<String>? = null,
         skillIds: List<String>? = null
     ): Result<BotItem> = withContext(Dispatchers.IO) {
@@ -1053,9 +1205,6 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("system_prompt", systemPrompt.trim())
                 .put("group_mode", groupMode)
                 .put("announcement", announcement.trim())
-            if (allowPaidFallback != null) {
-                payload.put("allow_paid_fallback", allowPaidFallback)
-            }
             if (allowedTools != null) {
                 val arr = JSONArray()
                 allowedTools.forEach { arr.put(it) }
@@ -1081,8 +1230,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         botMode: String,
         traits: String,
         systemPrompt: String,
-        model: String = "auto:paid",
-        allowPaidFallback: Boolean = true,
+        model: String = "auto",
         allowedTools: List<String>? = null,
         skillIds: List<String> = emptyList()
     ): Result<BotItem> = withContext(Dispatchers.IO) {
@@ -1097,8 +1245,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("avatar_style", avatarStyle)
                 .put("bot_mode", botMode)
                 .put("memory_policy", "standard")
-                .put("model", model.ifBlank { "auto:paid" })
-                .put("allow_paid_fallback", allowPaidFallback)
+                .put("model", normalizeModelIdForSinglePool(model))
                 .put("traits", traits.trim())
                 .put("system_prompt", systemPrompt.trim())
                 .put("allowed_tools", toolsArr.toString())
@@ -1305,10 +1452,10 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         botId: String = "",
         threadId: String = "",
         message: String,
+        images: List<String> = emptyList(),
         persona: String,
         model: String,
         enableThinking: Boolean = true,
-        allowPaidFallback: Boolean? = null,
         onCallCreated: (Call) -> Unit = {},
         onSession: (String) -> Unit,
         onReasoningDelta: (String) -> Unit,
@@ -1316,7 +1463,7 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         onToolDetail: (id: String, name: String, arguments: String, result: String, status: String) -> Unit = { _, _, _, _, _ -> },
         onContentDelta: (String) -> Unit,
         onModelSwitch: (fromLabel: String, toLabel: String, toModel: String, reason: String) -> Unit = { _, _, _, _ -> },
-        onDoneModel: (usedModel: String, targetId: String, tier: String) -> Unit = { _, _, _ -> },
+        onDoneModel: (usedModel: String, targetId: String) -> Unit = { _, _ -> },
         onError: (String) -> Unit
     ) = withContext(Dispatchers.IO) {
         runCatching {
@@ -1326,10 +1473,14 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("thread_id", threadId)
                 .put("message", message)
                 .put("persona", persona)
-                .put("model", model)
+                .put("model", normalizeModelIdForSinglePool(model))
                 .put("enable_thinking", enableThinking)
-            if (allowPaidFallback != null) {
-                payloadObj.put("allow_paid_fallback", allowPaidFallback)
+            if (images.isNotEmpty()) {
+                val imgArr = JSONArray()
+                images.forEach { if (it.isNotBlank()) imgArr.put(it.trim()) }
+                if (imgArr.length() > 0) {
+                    payloadObj.put("images", imgArr)
+                }
             }
             val payload = payloadObj.toString()
 
@@ -1387,9 +1538,8 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                         "done" -> {
                             val usedModel = dataObj.optString("model", "").trim()
                             val targetId = dataObj.optString("model_target_id", "").trim()
-                            val tier = dataObj.optString("model_tier", "").trim()
                             if (usedModel.isNotEmpty() || targetId.isNotEmpty()) {
-                                onDoneModel(usedModel, targetId, tier)
+                                onDoneModel(usedModel, targetId)
                             }
                         }
                         "error" -> {

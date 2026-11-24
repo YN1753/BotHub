@@ -131,11 +131,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/config", s.requireAuth(s.handleUpdateConfig))
 	mux.HandleFunc("GET /api/v2/model-config", s.requireAuth(s.handleGetModelConfig))
 	mux.HandleFunc("POST /api/v2/model-config", s.requireAuth(s.handleSaveModelConfig))
-	mux.HandleFunc("POST /api/v2/model-pool", s.requireAuth(s.handleSaveModelPool))
 	mux.HandleFunc("POST /api/v2/model-pool/test", s.requireAuth(s.handleTestModelTarget))
 	mux.HandleFunc("POST /api/v2/model-pool/test-batch", s.requireAuth(s.handleTestModelBatch))
 	mux.HandleFunc("POST /api/v2/model-pool/models", s.requireAuth(s.handleFetchUpstreamModels))
 	mux.HandleFunc("POST /api/v2/model-pool/cooldown/clear", s.requireAuth(s.handleClearModelCooldown))
+	mux.HandleFunc("POST /api/v2/chat/upload-image", s.requireAuth(s.handleUploadChatImage))
+	mux.HandleFunc("GET /api/v2/chat/uploads/{name}", s.requireAuth(s.handleServeChatUpload))
 	mux.HandleFunc("POST /api/auth/password", s.requireAuth(s.handleUpdatePassword))
 	mux.HandleFunc("POST /api/modules/{id}/run", s.requireAuth(s.handleRunTask))
 	mux.HandleFunc("POST /api/test-push", s.requireAuth(s.handleTestPush))
@@ -194,6 +195,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v2/bots/{id}/messages/{msgId}", s.requireAuth(s.handleDeleteBotMessage))
 	mux.HandleFunc("POST /api/v2/bots/{id}/threads", s.requireAuth(s.handleCreateBotThread))
 	mux.HandleFunc("POST /api/v2/bots/{id}/threads/fork", s.requireAuth(s.handleForkBotThread))
+	mux.HandleFunc("POST /api/v2/bots/{id}/threads/compact", s.requireAuth(s.handleCompactBotThread))
 	mux.HandleFunc("POST /api/v2/bots/{id}/threads/{threadId}", s.requireAuth(s.handleUpdateBotThread))
 	mux.HandleFunc("POST /api/v2/bots/{id}/threads/{threadId}/summarize", s.requireAuth(s.handleSummarizeBotThread))
 	mux.HandleFunc("DELETE /api/v2/bots/{id}/threads/{threadId}", s.requireAuth(s.handleDeleteBotThread))
@@ -310,8 +312,12 @@ func shouldSkipGzip(r *http.Request) bool {
 		p == "/api/events" ||
 		p == "/api/agent/chat" ||
 		p == "/api/v2/app/apk" ||
+		strings.HasPrefix(p, "/api/v2/chat/uploads/") ||
 		strings.HasSuffix(p, ".apk") ||
 		strings.HasSuffix(p, ".png") ||
+		strings.HasSuffix(p, ".jpg") ||
+		strings.HasSuffix(p, ".jpeg") ||
+		strings.HasSuffix(p, ".gif") ||
 		strings.HasSuffix(p, ".webp")
 }
 
@@ -344,7 +350,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		if w.Header().Get("Content-Security-Policy") == "" {
 			w.Header().Set(
 				"Content-Security-Policy",
-				"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; form-action 'self'; base-uri 'self'; frame-ancestors 'self'",
+				"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; form-action 'self'; base-uri 'self'; frame-ancestors 'self'",
 			)
 		}
 		next.ServeHTTP(w, r)

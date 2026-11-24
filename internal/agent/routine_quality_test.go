@@ -145,11 +145,10 @@ func TestRunBotRoutineDetachesChatHistoryInjectsPastLedgerAndRewritesOnRepeat(t 
 		[]store.PooledModel{{
 			ProviderID: "prov_test",
 			ModelID:    "mock-chat",
-			Tier:       store.ModelTierFree,
 			Enabled:    true,
 			Priority:   10,
 		}},
-		store.PoolStrategyConfig{},
+		store.PoolStrategyPriority,
 	); err != nil {
 		t.Fatalf("SaveModelConfig: %v", err)
 	}
@@ -158,7 +157,7 @@ func TestRunBotRoutineDetachesChatHistoryInjectsPastLedgerAndRewritesOnRepeat(t 
 		ID:      "bot_muse",
 		Name:    "Muse",
 		BotMode: store.BotModeWorker,
-		Model:   "auto:free",
+		Model:   "auto",
 	})
 
 	// Seed a chat room message with a unique marker that MUST NOT leak into background routine runs
@@ -179,7 +178,7 @@ func TestRunBotRoutineDetachesChatHistoryInjectsPastLedgerAndRewritesOnRepeat(t 
 	)
 
 	eng := NewEngine(st, &fakeTaskController{st: st})
-	ctx := store.WithTaskQuota(context.Background(), "task_daily_trivia", 0)
+	ctx := store.WithTaskID(context.Background(), "task_daily_trivia")
 	reply, err := eng.RunBotRoutine(ctx, "bot_muse", "每天推送一条硬核冷知识（比如猫为什么喜欢钻纸箱）", "每日冷知识")
 	if err != nil {
 		t.Fatalf("RunBotRoutine failed: %v", err)
@@ -251,22 +250,21 @@ func TestRunBotRoutineMonitoringSuppressesUnchangedAlert(t *testing.T) {
 		[]store.PooledModel{{
 			ProviderID: "prov_mon",
 			ModelID:    "mock-chat",
-			Tier:       store.ModelTierFree,
 			Enabled:    true,
 			Priority:   10,
 		}},
-		store.PoolStrategyConfig{},
+		store.PoolStrategyPriority,
 	)
 	_ = st.SaveBot(store.Bot{
 		ID:      "bot_ops",
 		Name:    "Ops",
 		BotMode: store.BotModeWorker,
-		Model:   "auto:free",
+		Model:   "auto",
 	})
 	_, _ = st.CreateNotification("task_node_watch", "[Ops] 节点巡检", sameAlert, sameAlert, "high")
 
 	eng := NewEngine(st, &fakeTaskController{st: st})
-	ctx := store.WithTaskQuota(context.Background(), "task_node_watch", 0)
+	ctx := store.WithTaskID(context.Background(), "task_node_watch")
 	reply, err := eng.RunBotRoutine(ctx, "bot_ops", "巡检服务器节点健康状态，如有异常告警", "节点巡检")
 	if err != nil {
 		t.Fatalf("RunBotRoutine monitoring failed: %v", err)

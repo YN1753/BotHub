@@ -58,25 +58,22 @@ data class AssetItem(
     val dueDate: String,
     val status: String,
     val daysLeft: Int,
-    val autoRenew: Boolean
+    val autoRenew: Boolean,
+    val warnDays: String = "[7, 3, 1]",
+    val extraConfig: String = "{}"
 ) {
     val isPerpetual: Boolean
-        get() = dueDate.startsWith("2099")
+        get() = status == "长期有效" || dueDate.startsWith("2099") || daysLeft > 3650
 
     val isExpiringSoon: Boolean
-        get() = !isPerpetual && daysLeft in 0..7
+        get() = !isPerpetual && status != "已停用" && status != "已归档" && daysLeft <= 7
 
     val dueBadgeLabel: String
-        get() = if (isPerpetual) "长期" else "${daysLeft}天"
-
-    fun inferRecommendedRenewMonths(): Int {
-        val raw = price.trim().lowercase()
-        return when {
-            raw.contains("月") || raw.contains("mo") -> 1
-            raw.contains("季") || raw.contains("quarter") -> 3
-            else -> 12
+        get() = when {
+            isPerpetual -> "长期"
+            daysLeft < 0 -> "逾期 ${kotlin.math.abs(daysLeft)} 天"
+            else -> "${daysLeft} 天"
         }
-    }
 }
 
 @Immutable
@@ -89,8 +86,6 @@ data class TaskItem(
     val nextRunAt: String,
     val lastSummary: String,
     val model: String = "",
-    val allowPaidFallback: Boolean = true,
-    val maxPaidCallsPerDay: Int = 0,
     val botId: String = "",
     val description: String = "",
     val runAt: String = "",
@@ -155,8 +150,17 @@ data class BotThreadItem(
 data class BotMessagesPayload(
     val messages: List<AgentHistoryMessage>,
     val threads: List<BotThreadItem> = emptyList(),
-    val activeThreadId: String = ""
+    val activeThreadId: String = "",
+    val compactionSummary: String = ""
 )
+
+fun normalizeModelIdForSinglePool(raw: String): String {
+    val clean = raw.trim()
+    return when (clean.lowercase()) {
+        "", "auto", "auto:free", "auto:paid", "free-pool", "paid-pool", "primary" -> "auto"
+        else -> clean
+    }
+}
 
 private fun formatShortNextRun(raw: String): String {
     val clean = raw.trim()
@@ -177,7 +181,8 @@ data class AppVersionInfo(
 data class ModelOptionItem(
     val id: String,
     val label: String,
-    val tier: String = "free",
+    val isAuto: Boolean = false,
+    val isLight: Boolean = false,
     val provider: String = "",
     val model: String = "",
     val available: Boolean = true
@@ -213,9 +218,12 @@ data class UpstreamFetchResult(
 data class PooledModelItem(
     val providerId: String,
     val modelId: String,
-    val tier: String = "free",
+    val displayName: String = "",
     val enabled: Boolean = true,
     val priority: Int = 10,
+    val isLight: Boolean = false,
+    val inputPricePerM: Double = 0.0,
+    val outputPricePerM: Double = 0.0,
     val supportsTools: Boolean? = null,
     val supportsThinking: Boolean? = null,
     val lastLatencyMs: Long = 0L
@@ -223,12 +231,6 @@ data class PooledModelItem(
     val canonicalTargetId: String
         get() = "pool:${providerId.trim()}::${modelId.trim()}"
 }
-
-@Immutable
-data class PoolStrategiesItem(
-    val free: String = "priority",
-    val paid: String = "priority"
-)
 
 @Immutable
 data class ModelHealthItem(
@@ -245,9 +247,10 @@ data class ModelHealthItem(
 data class ModelUsageModelStatItem(
     val targetId: String = "",
     val modelId: String = "",
-    val tier: String = "free",
     val calls: Int = 0,
     val tokens: Int = 0,
+    val cachedTokens: Int = 0,
+    val costUsd: Double = 0.0,
     val avgLatencyMs: Long = 0L
 )
 
@@ -256,9 +259,9 @@ data class ModelUsageCallerStatItem(
     val botId: String = "",
     val taskId: String = "",
     val source: String = "",
-    val freeCalls: Int = 0,
-    val paidCalls: Int = 0,
-    val tokens: Int = 0
+    val calls: Int = 0,
+    val tokens: Int = 0,
+    val costUsd: Double = 0.0
 )
 
 @Immutable
@@ -266,10 +269,13 @@ data class ModelUsageSummaryItem(
     val days: Int = 7,
     val totalCalls: Int = 0,
     val successCalls: Int = 0,
-    val freeCalls: Int = 0,
-    val paidCalls: Int = 0,
-    val freeTokens: Int = 0,
-    val paidTokens: Int = 0,
+    val totalPromptTokens: Int = 0,
+    val totalCachedTokens: Int = 0,
+    val totalCompletionTokens: Int = 0,
+    val totalTokens: Int = 0,
+    val cacheHitRate: Double = 0.0,
+    val totalCostUsd: Double = 0.0,
+    val totalCostCny: Double = 0.0,
     val topModels: List<ModelUsageModelStatItem> = emptyList(),
     val topCallers: List<ModelUsageCallerStatItem> = emptyList()
 )
@@ -281,14 +287,31 @@ data class SkillItemUi(
     val name: String,
     val description: String = "",
     val kind: String = "prompt",
+    val httpUrl: String = "",
+    val toolCount: Int = 0,
     val enabled: Boolean = true
+) {
+    val isAppConnector: Boolean
+        get() = id.trim().startsWith("mcp_app_")
+
+    val isBuiltinMcp: Boolean
+        get() = kind == "builtin_mcp" || id.trim().startsWith("mcp_")
+}
+
+@Immutable
+data class MemoryMarkdownPayload(
+    val scope: String = "",
+    val count: Int = 0,
+    val markdown: String = "",
+    val lastDreamAt: String = "",
+    val lastDreamSummary: String = ""
 )
 
 @Immutable
 data class MemoryItemUi(
     val id: Long,
     val scope: String = "global",
-    val category: String = "fact",
+    val category: String = "user",
     val factKey: String = "",
     val content: String = "",
     val importance: Int = 3,
@@ -301,7 +324,6 @@ data class BatchModelProbeEntryItem(
     val targetId: String,
     val providerId: String,
     val modelId: String,
-    val tier: String = "free",
     val ok: Boolean = false,
     val latencyMs: Long = 0L,
     val error: String = "",
@@ -321,10 +343,11 @@ data class BatchModelProbePayload(
 data class ModelConfigPayload(
     val providers: List<ModelProviderItem> = emptyList(),
     val models: List<PooledModelItem> = emptyList(),
-    val strategies: PoolStrategiesItem = PoolStrategiesItem(),
+    val strategy: String = "priority",
     val modelOptions: List<ModelOptionItem> = emptyList(),
     val modelHealth: Map<String, ModelHealthItem> = emptyMap(),
-    val usageSummary: ModelUsageSummaryItem = ModelUsageSummaryItem()
+    val usageSummary: ModelUsageSummaryItem = ModelUsageSummaryItem(days = 7),
+    val usage30d: ModelUsageSummaryItem = ModelUsageSummaryItem(days = 30)
 )
 
 @Immutable
@@ -351,9 +374,10 @@ data class BootstrapPayload(
     val modelOptions: List<ModelOptionItem> = emptyList(),
     val modelProviders: List<ModelProviderItem> = emptyList(),
     val pooledModels: List<PooledModelItem> = emptyList(),
-    val poolStrategies: PoolStrategiesItem = PoolStrategiesItem(),
+    val poolStrategy: String = "priority",
     val modelHealth: Map<String, ModelHealthItem> = emptyMap(),
-    val modelUsageSummary: ModelUsageSummaryItem = ModelUsageSummaryItem(),
+    val modelUsageSummary: ModelUsageSummaryItem = ModelUsageSummaryItem(days = 7),
+    val modelUsage30d: ModelUsageSummaryItem = ModelUsageSummaryItem(days = 30),
     val revisions: Map<String, Long> = emptyMap()
 )
 
@@ -371,9 +395,10 @@ data class DashboardSlicePayload(
     val modelOptions: List<ModelOptionItem>? = null,
     val modelProviders: List<ModelProviderItem>? = null,
     val pooledModels: List<PooledModelItem>? = null,
-    val poolStrategies: PoolStrategiesItem? = null,
+    val poolStrategy: String? = null,
     val modelHealth: Map<String, ModelHealthItem>? = null,
     val modelUsageSummary: ModelUsageSummaryItem? = null,
+    val modelUsage30d: ModelUsageSummaryItem? = null,
     val revisions: Map<String, Long> = emptyMap()
 )
 
@@ -413,7 +438,6 @@ data class BotItem(
     val groupMode: String = "smart",
     val announcement: String = "",
     val updatedAt: String = "",
-    val allowPaidFallback: Boolean = true,
     val allowedTools: List<String> = emptyList(),
     val skillIds: List<String> = emptyList()
 ) {
@@ -514,7 +538,7 @@ data class AgentHistoryMessage(
     val senderBotId: String = "",
     val modelUsed: String = "",
     val modelTargetId: String = "",
-    val modelTier: String = "",
+    val attachments: List<String> = emptyList(),
     val toolTraces: List<ChatToolTraceUi> = emptyList()
 ) {
     fun toChatTurnUi(
@@ -543,11 +567,11 @@ data class AgentHistoryMessage(
             persona = senderBot?.name ?: defaultPersona,
             model = modelUsed.ifBlank { senderBot?.model ?: defaultModel },
             modelTargetId = modelTargetId,
-            modelTier = modelTier,
             reasoning = reasoningContent,
             tools = derivedTools,
             toolTraces = toolTraces,
             content = content,
+            attachments = attachments,
             msgKind = msgKind,
             senderBotId = senderBot?.id ?: defaultBotId,
             avatarStyle = senderBot?.avatarStyle ?: defaultAvatarStyle
@@ -686,11 +710,11 @@ data class ChatTurnUi(
     val persona: String,
     val model: String,
     val modelTargetId: String = "",
-    val modelTier: String = "",
     val reasoning: String = "",
     val tools: List<String> = emptyList(),
     val toolTraces: List<ChatToolTraceUi> = emptyList(),
     val content: String = "",
+    val attachments: List<String> = emptyList(),
     val msgKind: String = "chat",
     val senderBotId: String = "",
     val avatarStyle: String = "butler:gold"

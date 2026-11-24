@@ -88,7 +88,7 @@ object JsonMappers {
     }
 
     fun parseBot(b: JSONObject): BotItem {
-        val rawModel = b.optString("model", "").ifBlank { "auto:paid" }
+        val rawModel = normalizeModelIdForSinglePool(b.optString("model", ""))
         return BotItem(
             id = b.optString("id"),
             name = b.optString("name"),
@@ -109,9 +109,29 @@ object JsonMappers {
             groupMode = b.optString("group_mode", "smart"),
             announcement = b.optString("announcement", ""),
             updatedAt = b.optString("updated_at", ""),
-            allowPaidFallback = b.optBoolean("allow_paid_fallback", true),
             allowedTools = optStringList(b, "allowed_tools"),
             skillIds = optStringList(b, "skill_ids")
+        )
+    }
+
+    fun parseSkill(s: JSONObject): SkillItemUi? {
+        val id = s.optString("id", "").trim()
+        if (id.isEmpty()) return null
+        val paramsRaw = s.optString("params_schema", "").trim()
+        val toolCount = if (paramsRaw.startsWith("[")) {
+            runCatching { JSONArray(paramsRaw).length() }.getOrDefault(0)
+        } else {
+            s.optJSONArray("params_schema")?.length() ?: 0
+        }
+        return SkillItemUi(
+            id = id,
+            slug = s.optString("slug", ""),
+            name = s.optString("name", id).ifBlank { id },
+            description = s.optString("description", ""),
+            kind = s.optString("kind", "prompt").ifBlank { "prompt" },
+            httpUrl = s.optString("http_url", ""),
+            toolCount = toolCount,
+            enabled = s.optBoolean("enabled", true)
         )
     }
 
@@ -120,19 +140,7 @@ object JsonMappers {
         return buildList {
             for (i in 0 until arr.length()) {
                 val s = arr.optJSONObject(i) ?: continue
-                val id = s.optString("id", "").trim()
-                if (id.isNotEmpty()) {
-                    add(
-                        SkillItemUi(
-                            id = id,
-                            slug = s.optString("slug", ""),
-                            name = s.optString("name", id).ifBlank { id },
-                            description = s.optString("description", ""),
-                            kind = s.optString("kind", "prompt").ifBlank { "prompt" },
-                            enabled = s.optBoolean("enabled", true)
-                        )
-                    )
-                }
+                parseSkill(s)?.let { add(it) }
             }
         }
     }
@@ -197,7 +205,6 @@ object JsonMappers {
                     .put("group_mode", b.groupMode)
                     .put("announcement", b.announcement)
                     .put("updated_at", b.updatedAt)
-                    .put("allow_paid_fallback", b.allowPaidFallback)
                     .put("allowed_tools", JSONArray().apply { b.allowedTools.forEach { put(it) } })
                     .put("skill_ids", JSONArray().apply { b.skillIds.forEach { put(it) } })
             )
@@ -352,7 +359,7 @@ object JsonMappers {
                 senderBotId = m.optString("sender_bot_id", ""),
                 modelUsed = m.optString("model_used", ""),
                 modelTargetId = m.optString("model_target_id", ""),
-                modelTier = m.optString("model_tier", ""),
+                attachments = optStringList(m, "attachments"),
                 toolTraces = traces
             )
 
@@ -376,8 +383,7 @@ object JsonMappers {
                     toolTraces = prev.toolTraces + mapped.toolTraces,
                     content = mapped.content.ifEmpty { prev.content },
                     modelUsed = mapped.modelUsed.ifBlank { prev.modelUsed },
-                    modelTargetId = mapped.modelTargetId.ifBlank { prev.modelTargetId },
-                    modelTier = mapped.modelTier.ifBlank { prev.modelTier }
+                    modelTargetId = mapped.modelTargetId.ifBlank { prev.modelTargetId }
                 )
                 continue
             }
@@ -418,7 +424,8 @@ object JsonMappers {
                         ModelOptionItem(
                             id = id,
                             label = o.optString("label", id).ifBlank { id },
-                            tier = o.optString("tier", "free").ifBlank { "free" },
+                            isAuto = o.optBoolean("is_auto", id == "auto"),
+                            isLight = o.optBoolean("is_light", false),
                             provider = o.optString("provider", ""),
                             model = o.optString("model", ""),
                             available = o.optBoolean("available", true)
@@ -467,9 +474,12 @@ object JsonMappers {
                         PooledModelItem(
                             providerId = pid,
                             modelId = mid,
-                            tier = o.optString("tier", "free").ifBlank { "free" },
+                            displayName = o.optString("display_name", ""),
                             enabled = o.optBoolean("enabled", true),
                             priority = o.optInt("priority", 10),
+                            isLight = o.optBoolean("is_light", false),
+                            inputPricePerM = o.optDouble("input_price_per_m", 0.0).takeIf { !it.isNaN() && it > 0.0 } ?: 0.0,
+                            outputPricePerM = o.optDouble("output_price_per_m", 0.0).takeIf { !it.isNaN() && it > 0.0 } ?: 0.0,
                             supportsTools = if (o.has("supports_tools") && !o.isNull("supports_tools")) {
                                 o.optBoolean("supports_tools")
                             } else null,
@@ -484,12 +494,12 @@ object JsonMappers {
         }
     }
 
-    fun parsePoolStrategies(obj: JSONObject?): PoolStrategiesItem {
-        if (obj == null) return PoolStrategiesItem()
-        return PoolStrategiesItem(
-            free = obj.optString("free", "priority").ifBlank { "priority" },
-            paid = obj.optString("paid", "priority").ifBlank { "priority" }
-        )
+    fun parsePoolStrategy(raw: String?): String {
+        return when (raw?.trim()?.lowercase().orEmpty()) {
+            "round_robin" -> "round_robin"
+            "lowest_latency" -> "lowest_latency"
+            else -> "priority"
+        }
     }
 
     fun parseModelHealth(obj: JSONObject?): Map<String, ModelHealthItem> {
@@ -515,8 +525,8 @@ object JsonMappers {
         }
     }
 
-    fun parseModelUsageSummary(obj: JSONObject?): ModelUsageSummaryItem {
-        if (obj == null) return ModelUsageSummaryItem()
+    fun parseModelUsageSummary(obj: JSONObject?, defaultDays: Int = 7): ModelUsageSummaryItem {
+        if (obj == null) return ModelUsageSummaryItem(days = defaultDays)
         val topModelsArr = obj.optJSONArray("top_models")
         val topModels = buildList {
             if (topModelsArr != null) {
@@ -526,9 +536,10 @@ object JsonMappers {
                         ModelUsageModelStatItem(
                             targetId = m.optString("target_id", ""),
                             modelId = m.optString("model_id", ""),
-                            tier = m.optString("tier", "free"),
                             calls = m.optInt("calls", 0),
                             tokens = m.optInt("tokens", 0),
+                            cachedTokens = m.optInt("cached_tokens", 0),
+                            costUsd = m.optDouble("cost_usd", 0.0).takeIf { !it.isNaN() } ?: 0.0,
                             avgLatencyMs = m.optLong("avg_latency_ms", 0L)
                         )
                     )
@@ -545,22 +556,25 @@ object JsonMappers {
                             botId = c.optString("bot_id", ""),
                             taskId = c.optString("task_id", ""),
                             source = c.optString("source", ""),
-                            freeCalls = c.optInt("free_calls", 0),
-                            paidCalls = c.optInt("paid_calls", 0),
-                            tokens = c.optInt("tokens", 0)
+                            calls = c.optInt("calls", 0),
+                            tokens = c.optInt("tokens", 0),
+                            costUsd = c.optDouble("cost_usd", 0.0).takeIf { !it.isNaN() } ?: 0.0
                         )
                     )
                 }
             }
         }
         return ModelUsageSummaryItem(
-            days = obj.optInt("days", 7),
+            days = obj.optInt("days", defaultDays),
             totalCalls = obj.optInt("total_calls", 0),
             successCalls = obj.optInt("success_calls", 0),
-            freeCalls = obj.optInt("free_calls", 0),
-            paidCalls = obj.optInt("paid_calls", 0),
-            freeTokens = obj.optInt("free_tokens", 0),
-            paidTokens = obj.optInt("paid_tokens", 0),
+            totalPromptTokens = obj.optInt("total_prompt_tokens", 0),
+            totalCachedTokens = obj.optInt("total_cached_tokens", 0),
+            totalCompletionTokens = obj.optInt("total_completion_tokens", 0),
+            totalTokens = obj.optInt("total_tokens", 0),
+            cacheHitRate = obj.optDouble("cache_hit_rate", 0.0).takeIf { !it.isNaN() } ?: 0.0,
+            totalCostUsd = obj.optDouble("total_cost_usd", 0.0).takeIf { !it.isNaN() } ?: 0.0,
+            totalCostCny = obj.optDouble("total_cost_cny", 0.0).takeIf { !it.isNaN() } ?: 0.0,
             topModels = topModels,
             topCallers = topCallers
         )
@@ -569,14 +583,15 @@ object JsonMappers {
     fun parseModelConfigPayload(json: JSONObject): ModelConfigPayload {
         val provArr = json.optJSONArray("providers") ?: json.optJSONArray("model_providers")
         val modArr = json.optJSONArray("models") ?: json.optJSONArray("pooled_models")
-        val stratObj = json.optJSONObject("strategies") ?: json.optJSONObject("pool_strategies")
+        val rawStrat = json.optString("strategy", "").ifBlank { json.optString("pool_strategy", "priority") }
         return ModelConfigPayload(
             providers = parseModelProviders(provArr),
             models = parsePooledModels(modArr),
-            strategies = parsePoolStrategies(stratObj),
+            strategy = parsePoolStrategy(rawStrat),
             modelOptions = parseModelOptions(json.optJSONArray("model_options")),
             modelHealth = parseModelHealth(json.optJSONObject("model_health")),
-            usageSummary = parseModelUsageSummary(json.optJSONObject("model_usage_summary"))
+            usageSummary = parseModelUsageSummary(json.optJSONObject("model_usage_summary"), 7),
+            usage30d = parseModelUsageSummary(json.optJSONObject("model_usage_30d"), 30)
         )
     }
 
@@ -686,8 +701,6 @@ object JsonMappers {
                         nextRunAt = t.optString("next_run_at", "--"),
                         lastSummary = lastRun?.optString("summary")?.ifEmpty { "等待执行" } ?: "等待执行",
                         model = t.optString("model", ""),
-                        allowPaidFallback = t.optBoolean("allow_paid_fallback", true),
-                        maxPaidCallsPerDay = t.optInt("max_paid_calls_per_day", 0),
                         botId = t.optString("bot_id", ""),
                         description = t.optString("description", ""),
                         runAt = t.optString("run_at", ""),
@@ -711,9 +724,11 @@ object JsonMappers {
                         spec = a.optString("spec"),
                         price = a.optString("price"),
                         dueDate = a.optString("due_date", ""),
-                        status = a.optString("status"),
+                        status = a.optString("status", "生效中").ifBlank { "生效中" },
                         daysLeft = a.optInt("days_left", 999),
-                        autoRenew = a.optBoolean("auto_renew", false)
+                        autoRenew = a.optBoolean("auto_renew", false),
+                        warnDays = a.optString("warn_days", "[7, 3, 1]").ifBlank { "[7, 3, 1]" },
+                        extraConfig = a.optString("extra_config", "{}").ifBlank { "{}" }
                     )
                 )
             }
@@ -777,6 +792,8 @@ object JsonMappers {
                     .put("status", a.status)
                     .put("days_left", a.daysLeft)
                     .put("auto_renew", a.autoRenew)
+                    .put("warn_days", a.warnDays)
+                    .put("extra_config", a.extraConfig)
             )
         }
         val tasksArr = JSONArray()
@@ -790,8 +807,6 @@ object JsonMappers {
                     .put("enabled", t.enabled)
                     .put("next_run_at", t.nextRunAt)
                     .put("model", t.model)
-                    .put("allow_paid_fallback", t.allowPaidFallback)
-                    .put("max_paid_calls_per_day", t.maxPaidCallsPerDay)
                     .put("bot_id", t.botId)
                     .put("description", t.description)
                     .put("run_at", t.runAt)
@@ -841,7 +856,8 @@ object JsonMappers {
                 JSONObject()
                     .put("id", m.id)
                     .put("label", m.label)
-                    .put("tier", m.tier)
+                    .put("is_auto", m.isAuto)
+                    .put("is_light", m.isLight)
                     .put("provider", m.provider)
                     .put("model", m.model)
                     .put("available", m.available)
@@ -903,6 +919,7 @@ object JsonMappers {
                     .put("tools", toolsArr)
                     .put("tool_traces", tracesArr)
                     .put("content", t.content)
+                    .put("attachments", JSONArray().apply { t.attachments.forEach { put(it) } })
                     .put("msg_kind", t.msgKind)
                     .put("sender_bot_id", t.senderBotId)
                     .put("avatar_style", t.avatarStyle)
@@ -949,6 +966,7 @@ object JsonMappers {
                             tools = optStringList(o, "tools"),
                             toolTraces = traces,
                             content = o.optString("content", ""),
+                            attachments = optStringList(o, "attachments"),
                             msgKind = o.optString("msg_kind", "chat"),
                             senderBotId = o.optString("sender_bot_id", ""),
                             avatarStyle = o.optString("avatar_style", "butler:gold")

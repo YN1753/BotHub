@@ -127,9 +127,11 @@ func TestLoginRememberDeviceCookieTTL(t *testing.T) {
 
 	// Verify redacted backup export (?mask_secrets=1) and masked-secret preservation on backup import
 	_ = s.store.SetConfig(store.KeyDeepSeekAPIKey, "sk-real-secret-key-9876")
-	_ = s.store.SaveModelPool([]store.ModelPoolEntry{
-		{ID: "pool_1", Name: "Gemini", Provider: "openai", BaseURL: "https://api.example.com/v1", APIKey: "sk-pool-real-1111", Model: "gemini-2.5-flash", Enabled: true},
-	})
+	_ = s.store.SaveModelConfig(
+		[]store.ModelProvider{{ID: "prov_1", Name: "Gemini", Protocol: "openai", BaseURL: "https://api.example.com/v1", APIKey: "sk-pool-real-1111", Enabled: true}},
+		[]store.PooledModel{{ProviderID: "prov_1", ModelID: "gemini-2.5-flash", Enabled: true, Priority: 10}},
+		store.PoolStrategyPriority,
+	)
 	expRec := httptest.NewRecorder()
 	expReq := httptest.NewRequest(http.MethodGet, "/api/system/export?mask_secrets=1", nil)
 	expReq.AddCookie(newCookies[0])
@@ -154,9 +156,9 @@ func TestLoginRememberDeviceCookieTTL(t *testing.T) {
 	if storedKey != "sk-real-secret-key-9876" {
 		t.Fatalf("expected stored deepseek_api_key preserved on masked import, got %q", storedKey)
 	}
-	poolAfter := s.store.GetModelPool()
-	if len(poolAfter) != 1 || poolAfter[0].APIKey != "sk-pool-real-1111" {
-		t.Fatalf("expected model pool API key preserved on masked import, got %+v", poolAfter)
+	provsAfter, _, _ := s.store.GetModelConfig()
+	if len(provsAfter) != 1 || provsAfter[0].APIKey != "sk-pool-real-1111" {
+		t.Fatalf("expected model provider API key preserved on masked import, got %+v", provsAfter)
 	}
 }
 

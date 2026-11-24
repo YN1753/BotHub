@@ -1,6 +1,9 @@
 package uk.starryheavens.vesper.bothub.ui.screens
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
@@ -17,6 +20,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,6 +33,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -58,6 +63,8 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -88,10 +95,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
@@ -161,7 +170,7 @@ private val BUILTIN_SLASH_SPECS = listOf(
     SlashCommandItem("/tasks", "调度队列核查", "检查各自动化例程状态与下次触发时间", prompt = "请核查当前所有自动化调度任务的运行状态与上次执行摘要。", anyOfTools = setOf("manage_tasks")),
     SlashCommandItem("/remind", "创建定时/单次提醒", "设定一次性定时提醒或周期性自动任务", prompt = "请帮我设定一个定时提醒：", anyOfTools = setOf("manage_tasks")),
     SlashCommandItem("/briefing", "今日行动全景简报", "汇总逾期/今日待办、临期资产与未读预警", prompt = "请调用 workspace_briefing 为我梳理今日重点待办、日程与风险，并给出行动建议。", anyOfTools = setOf("workspace_briefing")),
-    SlashCommandItem("/models", "巡检模型池与用量", "查看免费池/付费池健康度及近 7 日统计", prompt = "请调用 manage_models(action=\"status\") 巡检当前免费池与付费池健康状态及近 7 日调用统计。", anyOfTools = setOf("manage_models")),
+    SlashCommandItem("/models", "巡检模型池与费用", "查看统一模型池健康度、缓存命中率及近 7 日费用统计", prompt = "请调用 manage_models(action=\"status\") 巡检当前统一模型池健康状态及近 7 日用量与费用统计。", anyOfTools = setOf("manage_models")),
     SlashCommandItem("/newbot", "创建专属 Bot", "用自然语言描述角色定位，自动配置并创建", prompt = "请调用 manage_bots(action=\"create_bot\") 帮我创建一个专属 Bot：", anyOfTools = setOf("manage_bots")),
     SlashCommandItem("/group", "组建协同群聊", "指定成员与讨论主题，一键组建多 Bot 群聊", prompt = "请调用 manage_bots(action=\"create_group\") 帮我拉一个多 Bot 协同群聊：", anyOfTools = setOf("manage_bots")),
     SlashCommandItem("/newskill", "创建自定义技能", "创建 Prompt 或 Webhook 技能并挂载给 Bot", prompt = "请调用 manage_skills(action=\"upsert\") 帮我创建一个自定义技能：", anyOfTools = setOf("manage_skills")),
@@ -169,6 +178,7 @@ private val BUILTIN_SLASH_SPECS = listOf(
     SlashCommandItem("/calc", "精确表达式计算", "使用高精度计算引擎核算费用或比例", prompt = "请调用 calculate_eval 精确计算：", anyOfTools = setOf("calculate_eval")),
     SlashCommandItem("/memories", "回忆关键信息", "检索与当前会话相关的历史重要记忆", prompt = "请先检索我们的历史记忆，梳理目前你记住的关键事实与约定。", anyOfTools = setOf("manage_memory", "recall_memory")),
     SlashCommandItem("/dream", "AutoDream 深度整理记忆", "回放近期对话、消歧矛盾记忆并重建 MEMORY.md 索引", prompt = "请调用 manage_memory(action=\"dream\") 执行 AutoDream 四阶段深度记忆整理，并简报本次提炼与清理结果。", anyOfTools = setOf("manage_memory")),
+    SlashCommandItem("/compact", "压缩历史上下文", "将较早的对话记录压缩为滚动摘要，降低 Token 开销", action = "compact_thread"),
     SlashCommandItem("/thread", "新建独立话题", "在当前会话内开启一条干净的新话题线", action = "new_thread"),
     SlashCommandItem("/summarize", "提炼话题存记忆", "提炼当前话题核心结论并沉淀到专属记忆库", action = "summarize_thread"),
     SlashCommandItem("/clear", "清空当前对话", "清空当前话题聊天时间线", action = "clear_timeline")
@@ -240,12 +250,19 @@ fun ChatRoomScreen(
     messages: List<ChatTurnUi>,
     botThreads: List<BotThreadItem> = emptyList(),
     activeThreadId: String = "",
+    compactionSummary: String = "",
+    compactingThread: Boolean = false,
+    pendingImages: List<String> = emptyList(),
+    uploadingImage: Boolean = false,
     inputText: String,
     isStreaming: Boolean,
     quotedNotification: NotificationItem? = null,
     onDismissQuotedNotification: () -> Unit = {},
     onBack: () -> Unit,
     onInputChange: (String) -> Unit,
+    onPickImageUri: (Uri) -> Unit = {},
+    onRemovePendingImage: (String) -> Unit = {},
+    onLoadChatImage: suspend (String) -> ImageBitmap? = { null },
     onSendPrompt: (String) -> Unit,
     onStop: () -> Unit,
     onModelChange: (String) -> Unit,
@@ -254,8 +271,9 @@ fun ChatRoomScreen(
     onCreateThread: (String) -> Unit = {},
     onDeleteThread: (String) -> Unit = {},
     onSummarizeThread: () -> Unit = {},
+    onCompactThread: () -> Unit = {},
     onForkFromTurn: (ChatTurnUi) -> Unit = {},
-    onRetryTurnWithModel: (ChatTurnUi, String, Boolean) -> Unit = { _, _, _ -> },
+    onRetryTurnWithModel: (ChatTurnUi, String) -> Unit = { _, _ -> },
     onCopyText: (String) -> Unit,
     onDeleteTurn: (ChatTurnUi) -> Unit = {},
     onForwardMessage: (BotItem, String, String, String, Boolean) -> Unit = { _, _, _, _, _ -> },
@@ -281,9 +299,18 @@ fun ChatRoomScreen(
     var quoteTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     var forwardPayload by remember { mutableStateOf<Pair<String, String>?>(null) }
     var dismissAnnouncement by remember(activeBot?.id) { mutableStateOf(false) }
+    var expandCompactionSummary by remember(activeBot?.id, activeThreadId) { mutableStateOf(false) }
     var showSearchBar by remember(activeBot?.id) { mutableStateOf(false) }
     var searchQuery by remember(activeBot?.id) { mutableStateOf("") }
     var activeMatchCursor by remember(activeBot?.id) { mutableStateOf(0) }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            onPickImageUri(uri)
+        }
+    }
 
     BackHandler {
         if (showSearchBar) {
@@ -408,10 +435,10 @@ fun ChatRoomScreen(
 
     fun dispatchSend() {
         val raw = inputText.trim()
-        if (raw.isEmpty() || isStreaming) return
+        if ((raw.isEmpty() && pendingImages.isEmpty()) || isStreaming) return
         val finalPrompt = quoteTarget?.let { (sender, snippet) ->
             val shortQuote = snippet.replace('\n', ' ').take(90)
-            "> 引用 $sender: $shortQuote\n\n$raw"
+            if (raw.isNotEmpty()) "> 引用 $sender: $shortQuote\n\n$raw" else "> 引用 $sender: $shortQuote"
         } ?: raw
         quoteTarget = null
         showPlusDrawer = false
@@ -760,6 +787,41 @@ fun ChatRoomScreen(
             VesperDivider()
         }
 
+        // 2b. Rolling Context Compaction Summary Banner
+        if (compactionSummary.isNotBlank()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(theme.surfaceCard)
+                    .clickable { expandCompactionSummary = !expandCompactionSummary }
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    VesperTag(text = "已压缩上下文", toneColor = theme.info)
+                    Text(
+                        text = compactionSummary.replace('\n', ' '),
+                        fontSize = 12.sp,
+                        color = theme.textSecondary,
+                        maxLines = if (expandCompactionSummary) 8 else 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = if (expandCompactionSummary) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (expandCompactionSummary) "收起摘要" else "展开摘要",
+                        tint = theme.textMuted,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            VesperDivider()
+        }
+
         // 3. Message Stream + Scroll-to-Bottom Pill
         Box(
             modifier = Modifier
@@ -878,7 +940,7 @@ fun ChatRoomScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 contentAlignment = Alignment.CenterEnd
                             ) {
-                                Box(
+                                Column(
                                     modifier = Modifier
                                         .widthIn(max = 304.dp)
                                         .clip(userShape)
@@ -891,16 +953,34 @@ fun ChatRoomScreen(
                                                 showUserMenu = true
                                             }
                                         )
-                                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text(
-                                        text = msg.content,
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            fontSize = 14.5.sp,
-                                            lineHeight = 21.5.sp
-                                        ),
-                                        color = theme.userBubbleText
-                                    )
+                                    if (msg.attachments.isNotEmpty()) {
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            items(msg.attachments, key = { it }) { imgUrl ->
+                                                AuthenticatedChatImage(
+                                                    url = imgUrl,
+                                                    onLoadImage = onLoadChatImage,
+                                                    modifier = Modifier
+                                                        .sizeIn(minWidth = 96.dp, maxWidth = 180.dp, minHeight = 96.dp, maxHeight = 180.dp)
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (msg.content.isNotBlank()) {
+                                        Text(
+                                            text = msg.content,
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontSize = 14.5.sp,
+                                                lineHeight = 21.5.sp
+                                            ),
+                                            color = theme.userBubbleText
+                                        )
+                                    }
                                 }
 
                                 VesperPopoverMenu(
@@ -1123,6 +1203,10 @@ fun ChatRoomScreen(
                                         "summarize_thread" -> {
                                             onInputChange("")
                                             onSummarizeThread()
+                                        }
+                                        "compact_thread" -> {
+                                            onInputChange("")
+                                            onCompactThread()
                                         }
                                         "clear_timeline" -> {
                                             onInputChange("")
@@ -1413,21 +1497,92 @@ fun ChatRoomScreen(
                 }
             }
 
+            // Pending Vision Image Strip
+            if (pendingImages.isNotEmpty() || uploadingImage) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(pendingImages, key = { it }) { imgUrl ->
+                        Box(modifier = Modifier.size(64.dp)) {
+                            AuthenticatedChatImage(
+                                url = imgUrl,
+                                onLoadImage = onLoadChatImage,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(1.dp, theme.border, RoundedCornerShape(10.dp))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(2.dp)
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.68f))
+                                    .clickable { onRemovePendingImage(imgUrl) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "移除图片",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                    }
+                    if (uploadingImage) {
+                        item(key = "__img_uploading__") {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(theme.surfaceControl)
+                                    .border(1.dp, theme.border, RoundedCornerShape(10.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "上传中",
+                                    fontSize = 11.sp,
+                                    color = theme.textMuted
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // Input Row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 6.dp, end = 10.dp, top = 4.dp, bottom = 8.dp),
+                    .padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 VesperIconButton(
                     icon = if (showPlusDrawer) Icons.Default.Close else Icons.Default.Add,
                     contentDescription = "更多功能",
                     accent = showPlusDrawer,
-                    visualSize = 38.dp,
+                    visualSize = 36.dp,
                     iconSize = 20.dp,
                     onClick = { showPlusDrawer = !showPlusDrawer }
+                )
+
+                VesperIconButton(
+                    icon = Icons.Default.Image,
+                    contentDescription = "添加图片",
+                    accent = pendingImages.isNotEmpty(),
+                    visualSize = 36.dp,
+                    iconSize = 19.dp,
+                    onClick = {
+                        if (!isStreaming && !uploadingImage) {
+                            imagePickerLauncher.launch("image/*")
+                        }
+                    }
                 )
 
                 val inputShape = RoundedCornerShape(22.dp)
@@ -1463,7 +1618,7 @@ fun ChatRoomScreen(
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (inputText.isEmpty()) {
                                     Text(
-                                        text = "发消息或输入 / 调出快捷指令...",
+                                        text = if (pendingImages.isNotEmpty()) "补充图片提问（也可直接发送）..." else "发消息或输入 / 调出快捷指令...",
                                         fontSize = 14.sp,
                                         color = theme.textMuted,
                                         maxLines = 1,
@@ -1501,7 +1656,7 @@ fun ChatRoomScreen(
                         }
                     }
                 } else {
-                    val canSend = inputText.isNotBlank()
+                    val canSend = (inputText.isNotBlank() || pendingImages.isNotEmpty()) && !uploadingImage
                     Box(
                         modifier = Modifier
                             .size(46.dp)
@@ -1542,18 +1697,22 @@ fun ChatRoomScreen(
             ) {
                 val tools = listOf(
                     PlusActionTile(
-                        label = modelDisplayName,
-                        icon = Icons.Default.AutoAwesome,
+                        label = "发送图片",
+                        icon = Icons.Default.Image,
                         accent = theme.accentForeground
                     ) {
-                        showModelPickerSheet = true
+                        showPlusDrawer = false
+                        if (!isStreaming && !uploadingImage) {
+                            imagePickerLauncher.launch("image/*")
+                        }
                     },
                     PlusActionTile(
-                        label = if (enableThinking) "思考:开" else "思考:关",
-                        icon = Icons.Default.Psychology,
-                        accent = if (enableThinking) theme.accentForeground else theme.textSecondary
+                        label = if (compactingThread) "压缩中..." else "压缩上下文",
+                        icon = Icons.Default.History,
+                        accent = theme.info
                     ) {
-                        onThinkingChange(!enableThinking)
+                        showPlusDrawer = false
+                        if (!isStreaming && !compactingThread) onCompactThread()
                     },
                     PlusActionTile(
                         label = "新开话题",
@@ -1566,7 +1725,7 @@ fun ChatRoomScreen(
                     PlusActionTile(
                         label = "提炼记忆",
                         icon = Icons.Default.Description,
-                        accent = theme.info
+                        accent = theme.accentForeground
                     ) {
                         showPlusDrawer = false
                         if (!isStreaming) onSummarizeThread()
@@ -1632,10 +1791,7 @@ fun ChatRoomScreen(
             modelOptions = modelOptions,
             onSelect = { chosen ->
                 retryingTurn = null
-                val isPaid = chosen == "auto:paid" || modelOptions.any {
-                    (it.id == chosen || it.model == chosen) && it.tier == "paid"
-                }
-                onRetryTurnWithModel(targetTurn, chosen, isPaid)
+                onRetryTurnWithModel(targetTurn, chosen)
             },
             onDismiss = { retryingTurn = null }
         )
@@ -1945,13 +2101,6 @@ private fun AssistantMessageRow(
                         }
                     }
                 }
-                val isPaidModelUsed = remember(msg.model, msg.modelTier, msg.modelTargetId, matchedModelOpt) {
-                    msg.modelTier.equals("paid", ignoreCase = true) ||
-                        msg.modelTargetId == "primary" ||
-                        msg.modelTargetId == "auto:paid" ||
-                        msg.model == "auto:paid" ||
-                        matchedModelOpt?.tier == "paid"
-                }
                 val shortModelUsed = remember(msg.model, matchedModelOpt) {
                     val raw = msg.model.ifBlank { matchedModelOpt?.model?.ifBlank { matchedModelOpt.label }.orEmpty() }
                     raw.removePrefix("pool:").substringAfter("::").substringAfterLast("/").take(24)
@@ -1972,8 +2121,8 @@ private fun AssistantMessageRow(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     VesperTag(
-                                        text = if (isPaidModelUsed) "付费 · $shortModelUsed" else shortModelUsed,
-                                        toneColor = if (isPaidModelUsed) theme.warning else theme.success
+                                        text = shortModelUsed,
+                                        toneColor = theme.accentForeground
                                     )
                                 }
                             }
@@ -2507,5 +2656,46 @@ private fun PlusTrayItem(
             softWrap = false,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+@Composable
+private fun AuthenticatedChatImage(
+    url: String,
+    onLoadImage: suspend (String) -> ImageBitmap?,
+    modifier: Modifier = Modifier
+) {
+    val theme = BotHubThemeTokens
+    var bitmap by remember(url) { mutableStateOf<ImageBitmap?>(null) }
+    var failed by remember(url) { mutableStateOf(false) }
+
+    LaunchedEffect(url) {
+        failed = false
+        val loaded = onLoadImage(url)
+        bitmap = loaded
+        if (loaded == null) {
+            failed = true
+        }
+    }
+
+    val currentBmp = bitmap
+    if (currentBmp != null) {
+        Image(
+            bitmap = currentBmp,
+            contentDescription = "聊天图片附件",
+            contentScale = ContentScale.Crop,
+            modifier = modifier.background(theme.surfaceControl)
+        )
+    } else {
+        Box(
+            modifier = modifier.background(theme.surfaceControl),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (failed) "图片加载失败" else "加载中...",
+                fontSize = 11.sp,
+                color = theme.textMuted
+            )
+        }
     }
 }

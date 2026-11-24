@@ -35,8 +35,7 @@ func DefaultConciergeBot() Bot {
 		BotMode:           BotModeHybrid,
 		MemoryPolicy:      MemoryPolicyStandard,
 		Traits:            "自然靠谱、言简意赅，主动通过工具把用户的想法落地为 Bot、群聊、提醒或清单",
-		Model:             "auto:paid",
-		AllowPaidFallback: true,
+		Model:             "auto",
 		EnableThinking:    true,
 		AllowedTools:      "[]",
 		SkillIDs:          "[]",
@@ -49,7 +48,7 @@ func DefaultConciergeBot() Bot {
 1. 锻造高智商专属 Bot：当用户想要新增角色、专家、伴聊或工具助理，或调整已有 Bot 的名字、定位、人设、模型时，直接调用 manage_bots（create_bot / update_bot / upgrade_bot / list / delete_bot）落地执行。务必为新 Bot 写出有深度、有判断标准、反AI套话、具体可执行的专业 System Prompt，绝不能只写一句空洞模板。
 2. 拉群与多 Bot 协同：当用户想把几位 Bot 拉进一个讨论群、给现有群加人或移人、调整群协同模式（smart / sequential / parallel / mention_only）或设置群公告时，直接调用 manage_bots（create_group / add_group_members / remove_group_members / update_group）一步完成；需要跨成员分工调查时可调用 consult_bot。
 3. 调度、工作台与 MCP 扩展：遇到定时/单次提醒、待办拆解、文档整理、链接收藏、MCP/连接器管理或资产台账需求，主动挂载并调用对应 MCP 工具落实并回报真实结果。
-4. AI 模型池默认主力策略：所有新建的 Bot 与定时任务默认直接使用付费主力模型池（model="auto:paid", allow_paid_fallback=true, enable_thinking=true）以保证最高智商与执行力；除非用户明确指定走免费池。
+4. AI 模型路由策略：所有新建的 Bot 与定时任务默认使用统一模型池自动路由（model="auto", enable_thinking=true），按优先级自动选择最强主力模型并故障转移；除非用户明确指定某个具体模型。
 5. 保持真诚清晰、结论先行，绝不假装执行过未调用的工具，严禁使用任何 Emoji 表情。`),
 	}
 }
@@ -62,10 +61,9 @@ type Bot struct {
 	SystemPrompt   string `json:"system_prompt"`
 	BotMode        string `json:"bot_mode"`      // worker | companion | hybrid
 	MemoryPolicy   string `json:"memory_policy"` // isolated | standard
-	Traits            string `json:"traits"`        // tone / speaking style nuances
-	Model             string `json:"model"`
-	AllowPaidFallback bool   `json:"allow_paid_fallback"`
-	EnableThinking    bool   `json:"enable_thinking"`
+	Traits         string `json:"traits"`        // tone / speaking style nuances
+	Model          string `json:"model"`
+	EnableThinking bool   `json:"enable_thinking"`
 	AllowedTools   string `json:"allowed_tools"` // JSON string array
 	SkillIDs       string `json:"skill_ids"`     // JSON string array of Skill IDs
 	State          string `json:"state"`         // idle | thinking | working | blocked | done
@@ -123,13 +121,12 @@ func (b Bot) MemberIDList() []string {
 
 const botSelectCols = `id, name, role_title, avatar_style, system_prompt,
 		COALESCE(bot_mode,'hybrid'), COALESCE(memory_policy,'standard'), COALESCE(traits,''),
-		model, COALESCE(allow_paid_fallback,0), enable_thinking, allowed_tools, COALESCE(skill_ids,'[]'),
+		model, enable_thinking, allowed_tools, COALESCE(skill_ids,'[]'),
 		state, unread_count, is_pinned, is_builtin, is_group, member_ids,
 		COALESCE(group_mode,'smart'), COALESCE(announcement,''), COALESCE(active_thread_id,''),
 		sort_order, last_summary, created_at, updated_at`
 
-func normalizeLoadedBot(b *Bot, paidFallback, et, pin, isGroup int) {
-	b.AllowPaidFallback = paidFallback == 1
+func normalizeLoadedBot(b *Bot, et, pin, isGroup int) {
 	b.EnableThinking = et == 1
 	b.IsPinned = pin == 1
 	b.IsBuiltin = false
@@ -151,16 +148,16 @@ func (s *Store) ListBots() ([]Bot, error) {
 	list := make([]Bot, 0)
 	for rows.Next() {
 		var b Bot
-		var paidFallback, et, pin, isBuiltin, isGroup int
+		var et, pin, isBuiltin, isGroup int
 		if err := rows.Scan(
 			&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt,
 			&b.BotMode, &b.MemoryPolicy, &b.Traits,
-			&b.Model, &paidFallback, &et, &b.AllowedTools, &b.SkillIDs,
+			&b.Model, &et, &b.AllowedTools, &b.SkillIDs,
 			&b.State, &b.UnreadCount, &pin, &isBuiltin, &isGroup, &b.MemberIDs,
 			&b.GroupMode, &b.Announcement, &b.ActiveThreadID,
 			&b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt,
 		); err == nil {
-			normalizeLoadedBot(&b, paidFallback, et, pin, isGroup)
+			normalizeLoadedBot(&b, et, pin, isGroup)
 			list = append(list, b)
 		}
 	}
@@ -169,12 +166,12 @@ func (s *Store) ListBots() ([]Bot, error) {
 
 func (s *Store) GetBot(id string) (*Bot, error) {
 	var b Bot
-	var paidFallback, et, pin, isBuiltin, isGroup int
+	var et, pin, isBuiltin, isGroup int
 	err := s.db.QueryRow(`SELECT `+botSelectCols+` FROM bots WHERE id = ?`, strings.TrimSpace(id)).
 		Scan(
 			&b.ID, &b.Name, &b.RoleTitle, &b.AvatarStyle, &b.SystemPrompt,
 			&b.BotMode, &b.MemoryPolicy, &b.Traits,
-			&b.Model, &paidFallback, &et, &b.AllowedTools, &b.SkillIDs,
+			&b.Model, &et, &b.AllowedTools, &b.SkillIDs,
 			&b.State, &b.UnreadCount, &pin, &isBuiltin, &isGroup, &b.MemberIDs,
 			&b.GroupMode, &b.Announcement, &b.ActiveThreadID,
 			&b.SortOrder, &b.LastSummary, &b.CreatedAt, &b.UpdatedAt,
@@ -185,7 +182,7 @@ func (s *Store) GetBot(id string) (*Bot, error) {
 	if err != nil {
 		return nil, err
 	}
-	normalizeLoadedBot(&b, paidFallback, et, pin, isGroup)
+	normalizeLoadedBot(&b, et, pin, isGroup)
 	return &b, nil
 }
 
@@ -215,10 +212,6 @@ func (s *Store) SaveBot(b Bot) error {
 	if b.State == "" {
 		b.State = BotStateIdle
 	}
-	paidFallback := 0
-	if b.AllowPaidFallback {
-		paidFallback = 1
-	}
 	et := 0
 	if b.EnableThinking {
 		et = 1
@@ -235,8 +228,8 @@ func (s *Store) SaveBot(b Bot) error {
 	if b.IsGroup {
 		isGroup = 1
 	}
-	_, err := s.db.Exec(`INSERT INTO bots (id, name, role_title, avatar_style, system_prompt, bot_mode, memory_policy, traits, model, allow_paid_fallback, enable_thinking, allowed_tools, skill_ids, state, unread_count, is_pinned, is_builtin, is_group, member_ids, group_mode, announcement, active_thread_id, sort_order, last_summary, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := s.db.Exec(`INSERT INTO bots (id, name, role_title, avatar_style, system_prompt, bot_mode, memory_policy, traits, model, enable_thinking, allowed_tools, skill_ids, state, unread_count, is_pinned, is_builtin, is_group, member_ids, group_mode, announcement, active_thread_id, sort_order, last_summary, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			role_title = excluded.role_title,
@@ -246,7 +239,6 @@ func (s *Store) SaveBot(b Bot) error {
 			memory_policy = excluded.memory_policy,
 			traits = excluded.traits,
 			model = excluded.model,
-			allow_paid_fallback = excluded.allow_paid_fallback,
 			enable_thinking = excluded.enable_thinking,
 			allowed_tools = excluded.allowed_tools,
 			skill_ids = excluded.skill_ids,
@@ -260,7 +252,7 @@ func (s *Store) SaveBot(b Bot) error {
 			sort_order = excluded.sort_order,
 			last_summary = excluded.last_summary,
 			updated_at = excluded.updated_at`,
-		b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.BotMode, b.MemoryPolicy, b.Traits, b.Model, paidFallback, et, b.AllowedTools, b.SkillIDs, b.State, b.UnreadCount, pin, builtin, isGroup, b.MemberIDs, b.GroupMode, b.Announcement, b.ActiveThreadID, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
+		b.ID, b.Name, b.RoleTitle, b.AvatarStyle, b.SystemPrompt, b.BotMode, b.MemoryPolicy, b.Traits, b.Model, et, b.AllowedTools, b.SkillIDs, b.State, b.UnreadCount, pin, builtin, isGroup, b.MemberIDs, b.GroupMode, b.Announcement, b.ActiveThreadID, b.SortOrder, b.LastSummary, b.CreatedAt, b.UpdatedAt)
 	return err
 }
 

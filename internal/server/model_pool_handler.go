@@ -11,18 +11,19 @@ import (
 )
 
 func (s *Server) modelConfigPayload() map[string]any {
-	providers, models, strategies := s.store.GetModelConfig()
-	usage, _ := s.store.SummarizeModelUsage(7)
+	providers, models, strategy := s.store.GetModelConfig()
+	usage7d, _ := s.store.SummarizeModelUsage(7)
+	usage30d, _ := s.store.SummarizeModelUsage(30)
 	resp := map[string]any{
 		"ok":                  true,
 		"providers":           store.MaskModelProviders(providers),
 		"models":              models,
-		"strategies":          strategies,
+		"strategy":            strategy,
 		"model_providers":     store.MaskModelProviders(providers),
 		"pooled_models":       models,
-		"pool_strategies":     strategies,
-		"model_pool":          store.MaskModelPool(s.store.GetModelPool()),
-		"model_usage_summary": usage,
+		"pool_strategy":       strategy,
+		"model_usage_summary": usage7d,
+		"model_usage_30d":     usage30d,
 	}
 	if s.agent != nil {
 		resp["model_options"] = s.agent.ModelOptionsPayload()
@@ -37,14 +38,14 @@ func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSaveModelConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Providers  []store.ModelProvider    `json:"providers"`
-		Models     []store.PooledModel      `json:"models"`
-		Strategies store.PoolStrategyConfig `json:"strategies"`
+		Providers []store.ModelProvider `json:"providers"`
+		Models    []store.PooledModel   `json:"models"`
+		Strategy  string                `json:"strategy"`
 	}
 	if !decodeJSON(w, r, 512*1024, &req) {
 		return
 	}
-	if err := s.store.SaveModelConfig(req.Providers, req.Models, req.Strategies); err != nil {
+	if err := s.store.SaveModelConfig(req.Providers, req.Models, req.Strategy); err != nil {
 		writeError(w, http.StatusInternalServerError, "保存模型配置失败: "+err.Error())
 		return
 	}
@@ -71,22 +72,6 @@ func (s *Server) handleClearModelCooldown(w http.ResponseWriter, r *http.Request
 		resp["model_options"] = s.agent.ModelOptionsPayload()
 	}
 	writeJSON(w, http.StatusOK, resp)
-}
-
-func (s *Server) handleSaveModelPool(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Entries []store.ModelPoolEntry `json:"entries"`
-	}
-	if !decodeJSON(w, r, 256*1024, &req) {
-		return
-	}
-	if err := s.store.SaveModelPool(req.Entries); err != nil {
-		writeError(w, http.StatusInternalServerError, "保存模型池失败: "+err.Error())
-		return
-	}
-	s.publishAssistantEvent("models")
-	s.publishAssistantEvent("model_health")
-	writeJSON(w, http.StatusOK, s.modelConfigPayload())
 }
 
 func (s *Server) resolveProviderSecrets(providerID, entryID, rawKey string, rawKeys []string, rawBaseURL, rawProtocol string) (apiKeys []string, baseURL, protocol string) {
@@ -123,24 +108,12 @@ func (s *Server) resolveProviderSecrets(providerID, entryID, rawKey string, rawK
 		}
 	}
 
-	if len(storedKeys) == 0 {
-		if lookupID == "primary" || lookupID == "legacy_deepseek" {
-			if k, _ := s.store.GetConfig(store.KeyDeepSeekAPIKey); strings.TrimSpace(k) != "" {
-				storedKeys = store.SplitAPIKeys(k)
-			}
-			if baseURL == "" {
-				baseURL, _ = s.store.GetConfig(store.KeyDeepSeekBaseURL)
-			}
-		} else if lookupID != "" {
-			for _, item := range s.store.GetModelPool() {
-				if item.ID == lookupID {
-					storedKeys = store.SplitAPIKeys(append(append([]string(nil), item.APIKeys...), item.APIKey)...)
-					if baseURL == "" {
-						baseURL = item.BaseURL
-					}
-					break
-				}
-			}
+	if len(storedKeys) == 0 && (lookupID == "primary" || lookupID == "legacy_deepseek") {
+		if k, _ := s.store.GetConfig(store.KeyDeepSeekAPIKey); strings.TrimSpace(k) != "" {
+			storedKeys = store.SplitAPIKeys(k)
+		}
+		if baseURL == "" {
+			baseURL, _ = s.store.GetConfig(store.KeyDeepSeekBaseURL)
 		}
 	}
 
@@ -309,7 +282,6 @@ type batchModelProbeResult struct {
 	TargetID         string `json:"target_id"`
 	ProviderID       string `json:"provider_id"`
 	ModelID          string `json:"model_id"`
-	Tier             string `json:"tier"`
 	OK               bool   `json:"ok"`
 	LatencyMs        int64  `json:"latency_ms"`
 	Error            string `json:"error,omitempty"`
@@ -323,19 +295,17 @@ func (s *Server) handleTestModelBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Tier          string `json:"tier"`
-		DisableFailed bool   `json:"disable_failed"`
-		ProbeTools    *bool  `json:"probe_tools"`
+		DisableFailed bool  `json:"disable_failed"`
+		ProbeTools    *bool `json:"probe_tools"`
 	}
 	_ = decodeOptionalJSON(w, r, 8192, &req)
 
-	wantTier := strings.ToLower(strings.TrimSpace(req.Tier))
 	probeTools := true
 	if req.ProbeTools != nil {
 		probeTools = *req.ProbeTools
 	}
 
-	providers, models, strategies := s.store.GetModelConfig()
+	providers, models, strategy := s.store.GetModelConfig()
 	provMap := make(map[string]store.ModelProvider, len(providers))
 	for _, p := range providers {
 		provMap[p.ID] = p
@@ -345,11 +315,6 @@ func (s *Server) handleTestModelBatch(w http.ResponseWriter, r *http.Request) {
 	for _, m := range models {
 		if !m.Enabled {
 			continue
-		}
-		if wantTier == store.ModelTierFree || wantTier == store.ModelTierPaid {
-			if store.NormalizeModelTier(m.Tier) != wantTier {
-				continue
-			}
 		}
 		p, ok := provMap[m.ProviderID]
 		if !ok || !p.Enabled || strings.TrimSpace(p.APIKey) == "" {
@@ -390,7 +355,6 @@ func (s *Server) handleTestModelBatch(w http.ResponseWriter, r *http.Request) {
 				TargetID:   pm.CanonicalTargetID(),
 				ProviderID: pm.ProviderID,
 				ModelID:    pm.ModelID,
-				Tier:       store.NormalizeModelTier(pm.Tier),
 			}
 			if err != nil {
 				entry.OK = false
@@ -428,7 +392,7 @@ func (s *Server) handleTestModelBatch(w http.ResponseWriter, r *http.Request) {
 			if changed {
 				_ = s.store.SaveModelConfig(providers, latestModels, latestStrat)
 			} else {
-				_ = strategies
+				_ = strategy
 			}
 		}
 	}

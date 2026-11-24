@@ -30,11 +30,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -59,13 +61,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uk.starryheavens.vesper.bothub.data.BotItem
 import uk.starryheavens.vesper.bothub.data.MemoryItemUi
+import uk.starryheavens.vesper.bothub.data.MemoryMarkdownPayload
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
 import uk.starryheavens.vesper.bothub.data.SkillItemUi
+import uk.starryheavens.vesper.bothub.data.normalizeModelIdForSinglePool
 import uk.starryheavens.vesper.bothub.ui.GROKBOT_COLOR_OPTIONS
 import uk.starryheavens.vesper.bothub.ui.GROKBOT_SHAPE_OPTIONS
 import uk.starryheavens.vesper.bothub.ui.GrokBotAvatar
 import uk.starryheavens.vesper.bothub.ui.parseBotAvatarParts
 import uk.starryheavens.vesper.bothub.ui.components.BotAvatar
+import uk.starryheavens.vesper.bothub.ui.components.RichMarkdownText
 import uk.starryheavens.vesper.bothub.ui.components.VesperButtonTone
 import uk.starryheavens.vesper.bothub.ui.components.VesperCard
 import uk.starryheavens.vesper.bothub.ui.components.VesperDivider
@@ -362,12 +367,34 @@ fun BotProfileSheet(
     }
 }
 
+private fun canonicalMemoryType(raw: String): String {
+    return when (raw.trim().lowercase()) {
+        "feedback", "correction", "rule" -> "feedback"
+        "project", "context", "decision" -> "project"
+        "reference", "link", "resource" -> "reference"
+        else -> "user"
+    }
+}
+
+private fun memoryTypeLabel(canonical: String): String {
+    return when (canonical) {
+        "feedback" -> "纠偏"
+        "project" -> "项目"
+        "reference" -> "参考"
+        else -> "偏好"
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BotMemoriesSheet(
     bot: BotItem,
     memories: List<MemoryItemUi>,
     loading: Boolean,
+    memoryMarkdown: MemoryMarkdownPayload? = null,
+    dreaming: Boolean = false,
+    onLoadMarkdown: () -> Unit = {},
+    onRunDream: () -> Unit = {},
     onCreateMemory: (category: String, factKey: String, content: String, pinned: Boolean) -> Unit,
     onTogglePin: (MemoryItemUi) -> Unit,
     onDeleteMemory: (MemoryItemUi) -> Unit,
@@ -376,10 +403,20 @@ fun BotMemoriesSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val theme = BotHubThemeTokens
     var showAddForm by remember { mutableStateOf(false) }
+    var showMarkdownIndex by remember { mutableStateOf(false) }
+    var activeTypeFilter by remember { mutableStateOf("all") }
     var factKey by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("preference") }
+    var category by remember { mutableStateOf("feedback") }
     var pinned by remember { mutableStateOf(false) }
+
+    val filteredMemories = remember(memories, activeTypeFilter) {
+        if (activeTypeFilter == "all") {
+            memories
+        } else {
+            memories.filter { canonicalMemoryType(it.category) == activeTypeFilter }
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -396,7 +433,7 @@ fun BotMemoriesSheet(
                 .imePadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 18.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(11.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -411,8 +448,8 @@ fun BotMemoriesSheet(
                         color = theme.textPrimary
                     )
                     Text(
-                        text = "共 ${memories.size} 条记忆（含本 Bot 专属与全局共享记忆）",
-                        fontSize = 12.sp,
+                        text = "共 ${memories.size} 条记忆（Claude 4 类结构化记忆 + AutoDream）",
+                        fontSize = 11.5.sp,
                         color = theme.textMuted
                     )
                 }
@@ -427,13 +464,48 @@ fun BotMemoriesSheet(
                 )
             }
 
+            // Action strip: MEMORY.md Index Viewer + AutoDream Consolidation
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                VesperSecondaryButton(
+                    text = if (showMarkdownIndex) "返回列表" else "MEMORY.md 索引",
+                    leadingIcon = Icons.Default.Description,
+                    tone = if (showMarkdownIndex) VesperButtonTone.ACCENT else VesperButtonTone.NEUTRAL,
+                    minHeight = 44.dp,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                    onClick = {
+                        val next = !showMarkdownIndex
+                        showMarkdownIndex = next
+                        if (next) onLoadMarkdown()
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                VesperSecondaryButton(
+                    text = if (dreaming) "AutoDream 整合中..." else "AutoDream 整合",
+                    leadingIcon = Icons.Default.AutoAwesome,
+                    tone = VesperButtonTone.ACCENT,
+                    enabled = !dreaming,
+                    minHeight = 44.dp,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                    onClick = onRunDream,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
             if (showAddForm) {
                 VesperCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        val cats = listOf("preference" to "偏好", "fact" to "事实", "project" to "项目")
+                        val cats = listOf(
+                            "feedback" to "纠偏",
+                            "user" to "偏好",
+                            "project" to "项目",
+                            "reference" to "参考"
+                        )
                         VesperSegmentedTabs(
                             options = cats.map { it.second },
                             selectedIndex = cats.indexOfFirst { it.first == category }.coerceAtLeast(0),
@@ -451,7 +523,7 @@ fun BotMemoriesSheet(
                             value = content,
                             onValueChange = { content = it },
                             label = "记忆内容",
-                            placeholder = "希望 Bot 长期牢记的偏好或事实...",
+                            placeholder = "希望 Bot 长期牢记的规则、偏好或项目上下文...",
                             singleLine = false,
                             maxLines = 3,
                             modifier = Modifier.fillMaxWidth()
@@ -484,88 +556,166 @@ fun BotMemoriesSheet(
                 }
             }
 
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (loading && memories.isEmpty()) {
-                    item {
-                        Text(
-                            text = "正在加载长期记忆...",
-                            fontSize = 13.sp,
-                            color = theme.textMuted,
-                            modifier = Modifier.padding(vertical = 16.dp)
-                        )
+            if (showMarkdownIndex) {
+                VesperCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState())
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "MEMORY.md 实时索引",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.Monospace,
+                                color = theme.accentForeground
+                            )
+                            val lastAt = memoryMarkdown?.lastDreamAt.orEmpty().trim()
+                            if (lastAt.isNotEmpty()) {
+                                Text(
+                                    text = "上次整合 ${lastAt.take(16)}",
+                                    fontSize = 11.sp,
+                                    color = theme.textMuted
+                                )
+                            }
+                        }
+                        VesperDivider()
+                        val mdBody = memoryMarkdown?.markdown.orEmpty().trim()
+                        if (mdBody.isEmpty()) {
+                            Text(
+                                text = "正在读取 MEMORY.md 索引视图...",
+                                fontSize = 13.sp,
+                                color = theme.textMuted
+                            )
+                        } else {
+                            RichMarkdownText(
+                                markdown = mdBody,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
-                } else if (memories.isEmpty()) {
-                    item {
-                        VesperEmptyState(
-                            icon = Icons.Outlined.Psychology,
-                            title = "暂无长期记忆",
-                            subtitle = "对话中可通过「提炼记忆」自动沉淀，或点击右上角「新增」手动写入"
+                }
+            } else {
+                // 4-Type Canonical Filter Pills
+                val filterOptions = listOf(
+                    "all" to "全部 (${memories.size})",
+                    "feedback" to "纠偏 (${memories.count { canonicalMemoryType(it.category) == "feedback" }})",
+                    "user" to "偏好 (${memories.count { canonicalMemoryType(it.category) == "user" }})",
+                    "project" to "项目 (${memories.count { canonicalMemoryType(it.category) == "project" }})",
+                    "reference" to "参考 (${memories.count { canonicalMemoryType(it.category) == "reference" }})"
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(filterOptions, key = { it.first }) { (key, label) ->
+                        VesperFilterChip(
+                            label = label,
+                            selected = activeTypeFilter == key,
+                            onClick = { activeTypeFilter = key }
                         )
                     }
                 }
-                items(memories, key = { it.id }) { mem ->
-                    VesperCard(cornerRadius = 14.dp, modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier.padding(start = 13.dp, end = 4.dp, top = 8.dp, bottom = 11.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (loading && memories.isEmpty()) {
+                        item {
+                            Text(
+                                text = "正在加载长期记忆...",
+                                fontSize = 13.sp,
+                                color = theme.textMuted,
+                                modifier = Modifier.padding(vertical = 16.dp)
+                            )
+                        }
+                    } else if (filteredMemories.isEmpty()) {
+                        item {
+                            VesperEmptyState(
+                                icon = Icons.Outlined.Psychology,
+                                title = if (activeTypeFilter == "all") "暂无长期记忆" else "该分类暂无记忆",
+                                subtitle = "对话中可通过「AutoDream 整合」自动提炼，或点击右上角「新增」手动写入"
+                            )
+                        }
+                    }
+                    items(filteredMemories, key = { it.id }) { mem ->
+                        val canonType = canonicalMemoryType(mem.category)
+                        val typeTone = when (canonType) {
+                            "feedback" -> theme.warning
+                            "project" -> theme.info
+                            "reference" -> theme.success
+                            else -> theme.accent
+                        }
+                        VesperCard(cornerRadius = 14.dp, modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier.padding(start = 13.dp, end = 4.dp, top = 8.dp, bottom = 11.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    VesperTag(
-                                        text = if (mem.scope == "global") "全局" else "专属",
-                                        bgColor = theme.surfaceInput,
-                                        borderColor = theme.border,
-                                        textColor = theme.textSecondary
-                                    )
-                                    Text(
-                                        text = mem.factKey.ifBlank { mem.category },
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = theme.textPrimary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        VesperTag(
+                                            text = memoryTypeLabel(canonType),
+                                            toneColor = typeTone
+                                        )
+                                        VesperTag(
+                                            text = if (mem.scope == "global") "全局" else "专属",
+                                            bgColor = theme.surfaceInput,
+                                            borderColor = theme.border,
+                                            textColor = theme.textSecondary
+                                        )
+                                        Text(
+                                            text = mem.factKey.ifBlank { canonType },
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = theme.textPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        VesperIconButton(
+                                            icon = if (mem.pinned) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                            contentDescription = if (mem.pinned) "取消置顶" else "置顶记忆",
+                                            accent = mem.pinned,
+                                            filled = false,
+                                            iconSize = 18.dp,
+                                            onClick = { onTogglePin(mem) }
+                                        )
+                                        VesperIconButton(
+                                            icon = Icons.Default.DeleteOutline,
+                                            contentDescription = "删除记忆",
+                                            danger = true,
+                                            filled = false,
+                                            iconSize = 18.dp,
+                                            onClick = { onDeleteMemory(mem) }
+                                        )
+                                    }
                                 }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    VesperIconButton(
-                                        icon = if (mem.pinned) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                        contentDescription = if (mem.pinned) "取消置顶" else "置顶记忆",
-                                        accent = mem.pinned,
-                                        filled = false,
-                                        iconSize = 18.dp,
-                                        onClick = { onTogglePin(mem) }
-                                    )
-                                    VesperIconButton(
-                                        icon = Icons.Default.DeleteOutline,
-                                        contentDescription = "删除记忆",
-                                        danger = true,
-                                        filled = false,
-                                        iconSize = 18.dp,
-                                        onClick = { onDeleteMemory(mem) }
-                                    )
-                                }
+                                Text(
+                                    text = mem.content,
+                                    fontSize = 13.sp,
+                                    lineHeight = 19.sp,
+                                    color = theme.textSecondary,
+                                    modifier = Modifier.padding(end = 9.dp)
+                                )
                             }
-                            Text(
-                                text = mem.content,
-                                fontSize = 13.sp,
-                                lineHeight = 19.sp,
-                                color = theme.textSecondary,
-                                modifier = Modifier.padding(end = 9.dp)
-                            )
                         }
                     }
                 }
@@ -608,6 +758,15 @@ private fun ProfileFieldRow(label: String, value: String) {
 fun EditBotSheet(
     bot: BotItem,
     availableSkills: List<SkillItemUi> = emptyList(),
+    onForgePrompt: (
+        botId: String?,
+        name: String,
+        roleTitle: String,
+        botMode: String,
+        traits: String,
+        systemPrompt: String,
+        onResult: (String?, String?) -> Unit
+    ) -> Unit = { _, _, _, _, _, _, cb -> cb(null, null) },
     onSave: (
         name: String,
         roleTitle: String,
@@ -616,7 +775,6 @@ fun EditBotSheet(
         systemPrompt: String,
         groupMode: String,
         announcement: String,
-        allowPaidFallback: Boolean,
         allowedTools: List<String>?,
         skillIds: List<String>?
     ) -> Unit,
@@ -631,8 +789,8 @@ fun EditBotSheet(
     var systemPrompt by remember(bot.id) { mutableStateOf(bot.systemPrompt) }
     var groupMode by remember(bot.id) { mutableStateOf(bot.groupMode.ifBlank { "smart" }) }
     var announcement by remember(bot.id) { mutableStateOf(bot.announcement) }
-    var allowPaidFallback by remember(bot.id) { mutableStateOf(bot.allowPaidFallback) }
     var selectedSkillIds by remember(bot.id) { mutableStateOf(bot.skillIds) }
+    var forgingPrompt by remember(bot.id) { mutableStateOf(false) }
 
     val groupModes = listOf(
         "smart" to "智能协同",
@@ -719,15 +877,44 @@ fun EditBotSheet(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                VesperTextField(
-                    value = systemPrompt,
-                    onValueChange = { systemPrompt = it },
-                    label = "系统提示词",
-                    placeholder = "设定角色指令与边界...",
-                    singleLine = false,
-                    maxLines = 4,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "系统提示词",
+                            fontSize = 12.sp,
+                            color = theme.textMuted
+                        )
+                        VesperSecondaryButton(
+                            text = if (forgingPrompt) "AI 精修中..." else "AI 深度精修人设",
+                            leadingIcon = Icons.Default.AutoAwesome,
+                            tone = VesperButtonTone.ACCENT,
+                            enabled = !forgingPrompt && name.isNotBlank(),
+                            cornerRadius = 999.dp,
+                            minHeight = 36.dp,
+                            contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
+                            onClick = {
+                                forgingPrompt = true
+                                onForgePrompt(bot.id, name, roleTitle, bot.botMode, traits, systemPrompt) { fp, ft ->
+                                    if (!fp.isNullOrBlank()) systemPrompt = fp
+                                    if (!ft.isNullOrBlank()) traits = ft
+                                    forgingPrompt = false
+                                }
+                            }
+                        )
+                    }
+                    VesperTextField(
+                        value = systemPrompt,
+                        onValueChange = { systemPrompt = it },
+                        placeholder = "设定角色指令与边界...",
+                        singleLine = false,
+                        maxLines = 5,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
 
                 BuiltinAndCustomSkillsBlock(
                     botMode = bot.botMode,
@@ -741,39 +928,6 @@ fun EditBotSheet(
                         }
                     }
                 )
-            }
-
-            VesperCard(
-                cornerRadius = 14.dp,
-                onClick = { allowPaidFallback = !allowPaidFallback },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .sizeIn(minHeight = 58.dp)
-                        .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
-                        Text(
-                            text = "允许该 Bot 付费兜底",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = theme.textPrimary
-                        )
-                        Text(
-                            text = "关闭时严格只走免费模型池",
-                            fontSize = 12.sp,
-                            color = theme.textMuted
-                        )
-                    }
-                    VesperSwitch(
-                        checked = allowPaidFallback,
-                        onCheckedChange = { allowPaidFallback = it }
-                    )
-                }
             }
 
             VesperPrimaryButton(
@@ -790,7 +944,6 @@ fun EditBotSheet(
                             systemPrompt.trim(),
                             groupMode,
                             announcement.trim(),
-                            allowPaidFallback,
                             if (bot.isGroup) null else emptyList(),
                             if (bot.isGroup) null else selectedSkillIds
                         )
@@ -929,6 +1082,15 @@ private fun AvatarPickerRow(
 @Composable
 fun CreateFriendSheet(
     availableSkills: List<SkillItemUi> = emptyList(),
+    onForgePrompt: (
+        botId: String?,
+        name: String,
+        roleTitle: String,
+        botMode: String,
+        traits: String,
+        systemPrompt: String,
+        onResult: (String?, String?) -> Unit
+    ) -> Unit = { _, _, _, _, _, _, cb -> cb(null, null) },
     onSubmit: (
         name: String,
         roleTitle: String,
@@ -936,7 +1098,6 @@ fun CreateFriendSheet(
         botMode: String,
         traits: String,
         systemPrompt: String,
-        allowPaidFallback: Boolean,
         allowedTools: List<String>,
         skillIds: List<String>
     ) -> Unit,
@@ -956,8 +1117,8 @@ fun CreateFriendSheet(
     var roleTitle by remember { mutableStateOf("") }
     var traits by remember { mutableStateOf("") }
     var systemPrompt by remember { mutableStateOf("") }
-    var allowPaidFallback by remember { mutableStateOf(true) }
     var selectedSkillIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var forgingPrompt by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1025,15 +1186,44 @@ fun CreateFriendSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            VesperTextField(
-                value = systemPrompt,
-                onValueChange = { systemPrompt = it },
-                label = "系统提示词（可选）",
-                placeholder = "补充设定或回答偏好...",
-                singleLine = false,
-                maxLines = 3,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "系统提示词（留空自动生成）",
+                        fontSize = 12.sp,
+                        color = theme.textMuted
+                    )
+                    VesperSecondaryButton(
+                        text = if (forgingPrompt) "AI 精修中..." else "AI 深度精修人设",
+                        leadingIcon = Icons.Default.AutoAwesome,
+                        tone = VesperButtonTone.ACCENT,
+                        enabled = !forgingPrompt && name.isNotBlank(),
+                        cornerRadius = 999.dp,
+                        minHeight = 36.dp,
+                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
+                        onClick = {
+                            forgingPrompt = true
+                            onForgePrompt(null, name, roleTitle, selectedMode, traits, systemPrompt) { fp, ft ->
+                                if (!fp.isNullOrBlank()) systemPrompt = fp
+                                if (!ft.isNullOrBlank()) traits = ft
+                                forgingPrompt = false
+                            }
+                        }
+                    )
+                }
+                VesperTextField(
+                    value = systemPrompt,
+                    onValueChange = { systemPrompt = it },
+                    placeholder = "补充设定或回答偏好，也可点击右上角一键 AI 精修...",
+                    singleLine = false,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             BuiltinAndCustomSkillsBlock(
                 botMode = selectedMode,
@@ -1047,39 +1237,6 @@ fun CreateFriendSheet(
                     }
                 }
             )
-
-            VesperCard(
-                cornerRadius = 14.dp,
-                onClick = { allowPaidFallback = !allowPaidFallback },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .sizeIn(minHeight = 58.dp)
-                        .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
-                        Text(
-                            text = "允许该 Bot 调用付费主力池",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = theme.textPrimary
-                        )
-                        Text(
-                            text = "默认开启（优先使用付费主力模型池）",
-                            fontSize = 12.sp,
-                            color = theme.textMuted
-                        )
-                    }
-                    VesperSwitch(
-                        checked = allowPaidFallback,
-                        onCheckedChange = { allowPaidFallback = it }
-                    )
-                }
-            }
 
             VesperPrimaryButton(
                 text = "创建 AI 好友",
@@ -1095,7 +1252,6 @@ fun CreateFriendSheet(
                             selectedMode,
                             traits.trim(),
                             systemPrompt.trim(),
-                            allowPaidFallback,
                             emptyList(),
                             selectedSkillIds
                         )
@@ -1358,7 +1514,6 @@ fun ChatInfoSheet(
     enableThinking: Boolean,
     onModelChange: (String) -> Unit,
     onThinkingChange: (Boolean) -> Unit,
-    onAllowPaidFallbackChange: (Boolean) -> Unit = {},
     onTogglePin: () -> Unit,
     onInviteToGroup: () -> Unit,
     onOpenMemberProfile: (BotItem) -> Unit,
@@ -1578,31 +1733,6 @@ fun ChatInfoSheet(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .sizeIn(minHeight = 58.dp)
-                                .clickable { onAllowPaidFallbackChange(!activeBot.allowPaidFallback) }
-                                .padding(start = 15.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
-                                Text("允许付费兜底", fontSize = 14.5.sp, color = theme.textPrimary)
-                                Text(
-                                    text = "关闭时严格限用免费模型池",
-                                    fontSize = 11.5.sp,
-                                    color = theme.textMuted
-                                )
-                            }
-                            VesperSwitch(
-                                checked = activeBot.allowPaidFallback,
-                                onCheckedChange = onAllowPaidFallbackChange
-                            )
-                        }
-
-                        VesperDivider(startIndent = 15.dp, endIndent = 15.dp)
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
                                 .sizeIn(minHeight = 54.dp)
                                 .clickable {
                                     onDismiss()
@@ -1751,25 +1881,20 @@ internal fun resolveModelOptionDisplayName(
     activeModel: String,
     modelOptions: List<ModelOptionItem>
 ): String {
-    val clean = activeModel.trim()
+    val clean = normalizeModelIdForSinglePool(activeModel)
     modelOptions.firstOrNull { it.id == clean }?.let { opt ->
-        return opt.model.takeIf { it.isNotBlank() && opt.tier != "auto" }
-            ?: when (opt.id) {
-                "auto:free" -> "自动 · 免费池"
-                "auto:paid" -> "自动 · 付费池"
-                else -> opt.label
-            }
+        return opt.model.takeIf { it.isNotBlank() && !opt.isAuto }
+            ?: if (opt.isAuto || opt.id == "auto") "自动 · 统一模型池" else opt.label
     }
     return when {
-        clean.isEmpty() || clean == "auto:paid" || clean == "paid-pool" -> "自动 · 付费池"
-        clean == "auto:free" || clean == "free-pool" -> "自动 · 免费池"
+        clean.isEmpty() || clean == "auto" -> "自动 · 统一模型池"
         clean.contains("::") -> clean.substringAfter("::")
         else -> clean
     }
 }
 
 /**
- * 7. Dual-Pool Theme-Aware Model Picker Sheet ("切换推理模型").
+ * 7. Unified Single-Pool Model Picker Sheet ("切换推理模型").
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1781,23 +1906,16 @@ fun ModelPickerSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val theme = BotHubThemeTokens
+    val normalizedActive = remember(activeModel) { normalizeModelIdForSinglePool(activeModel) }
     val effectiveOptions = remember(modelOptions) {
         modelOptions.ifEmpty {
             listOf(
                 ModelOptionItem(
-                    id = "auto:paid",
-                    label = "自动 · 付费主力池",
-                    tier = "auto",
-                    provider = "paid-pool",
-                    model = "auto:paid",
-                    available = true
-                ),
-                ModelOptionItem(
-                    id = "auto:free",
-                    label = "自动 · 免费模型池",
-                    tier = "auto",
-                    provider = "free-pool",
-                    model = "auto:free",
+                    id = "auto",
+                    label = "自动路由 · 统一模型池",
+                    isAuto = true,
+                    provider = "pool",
+                    model = "auto",
                     available = true
                 )
             )
@@ -1805,9 +1923,8 @@ fun ModelPickerSheet(
     }
     val sections = remember(effectiveOptions) {
         listOf(
-            "自动池路由" to effectiveOptions.filter { it.tier == "auto" },
-            "付费主力池" to effectiveOptions.filter { it.tier == "paid" },
-            "免费模型池" to effectiveOptions.filter { it.tier == "free" }
+            "自动路由" to effectiveOptions.filter { it.isAuto || it.id == "auto" },
+            "统一模型池" to effectiveOptions.filter { !it.isAuto && it.id != "auto" }
         ).filter { it.second.isNotEmpty() }
     }
 
@@ -1834,7 +1951,7 @@ fun ModelPickerSheet(
                 color = theme.textPrimary
             )
             Text(
-                text = "按自动路由、付费主力池与免费池实时读取服务端配置",
+                text = "按统一模型池优先级与健康状态自动故障转移，或指定固定模型",
                 fontSize = 12.sp,
                 color = theme.textMuted
             )
@@ -1854,10 +1971,7 @@ fun ModelPickerSheet(
                         )
                     }
                     items(itemsList, key = { it.id }) { opt ->
-                        val selected = activeModel == opt.id ||
-                            (activeModel == "free-pool" && opt.id == "auto:free") ||
-                            (activeModel == "paid-pool" && opt.id == "auto:paid") ||
-                            (activeModel.isBlank() && opt.id == "auto:paid")
+                        val selected = normalizedActive == opt.id
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1881,24 +1995,33 @@ fun ModelPickerSheet(
                                     .background(
                                         when {
                                             !opt.available -> theme.textMuted
-                                            opt.tier == "paid" -> theme.warning
-                                            opt.tier == "auto" -> theme.accent
+                                            opt.isAuto || opt.id == "auto" -> theme.accent
+                                            opt.isLight -> theme.info
                                             else -> theme.success
                                         }
                                     )
                             )
                             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(
-                                    text = opt.label,
-                                    fontSize = 14.sp,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                    color = theme.textPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                if (opt.tier != "auto" && opt.provider.isNotBlank()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
                                     Text(
-                                        text = "${opt.provider} · ${opt.id}",
+                                        text = opt.label,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                        color = theme.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    if (opt.isLight) {
+                                        VesperTag(text = "轻量", toneColor = theme.info)
+                                    }
+                                }
+                                if (!opt.isAuto && opt.id != "auto" && opt.provider.isNotBlank()) {
+                                    Text(
+                                        text = "${opt.provider} · ${opt.model.ifBlank { opt.id }}",
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
                                         color = theme.textMuted,

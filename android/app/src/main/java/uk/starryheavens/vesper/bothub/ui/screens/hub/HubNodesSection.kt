@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material3.Text
 import androidx.compose.runtime.remember
@@ -71,7 +70,6 @@ internal fun LazyListScope.hubNodesItems(
     nezhaAlerts: List<NotificationItem>,
     fxRates: Map<String, Double>,
     onInspectNezhaWithAi: () -> Unit,
-    onSyncAssets: () -> Unit,
     onEditNodeAsset: (AssetItem) -> Unit,
     onOpenServiceFeed: () -> Unit
 ) {
@@ -121,27 +119,14 @@ internal fun LazyListScope.hubNodesItems(
                     )
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    VesperPrimaryButton(
-                        text = "AI 实时巡检探针",
-                        leadingIcon = Icons.Default.AutoAwesome,
-                        minHeight = 44.dp,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        onClick = onInspectNezhaWithAi,
-                        modifier = Modifier.weight(1.35f)
-                    )
-                    VesperSecondaryButton(
-                        text = "同步台账",
-                        leadingIcon = Icons.Default.Refresh,
-                        minHeight = 44.dp,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-                        onClick = onSyncAssets,
-                        modifier = Modifier.weight(0.85f)
-                    )
-                }
+                VesperPrimaryButton(
+                    text = "AI 实时巡检探针",
+                    leadingIcon = Icons.Default.AutoAwesome,
+                    minHeight = 44.dp,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    onClick = onInspectNezhaWithAi,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }

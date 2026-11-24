@@ -534,18 +534,21 @@ func TestBootstrapSyncPayloadAndRevisionBumps(t *testing.T) {
 	_, _ = s.store.SaveAssetCategories([]store.AssetCategoryOption{
 		{ID: "cloud_vps", Label: "云主机", Icon: "server"},
 	})
-	_ = s.store.SaveModelPool([]store.ModelPoolEntry{
-		{
-			ID:       "openrouter_free",
-			Name:     "OpenRouter 免费",
-			Tier:     store.ModelTierFree,
-			Provider: "openai",
+	_ = s.store.SaveModelConfig(
+		[]store.ModelProvider{{
+			ID:       "openrouter_main",
+			Name:     "OpenRouter",
+			Protocol: store.ProviderProtocolOpenAI,
 			BaseURL:  "https://openrouter.ai/api/v1",
 			APIKey:   "sk-or-test",
-			Models:   []string{"qwen/qwen3-free", "meta/llama-free"},
 			Enabled:  true,
+		}},
+		[]store.PooledModel{
+			{ProviderID: "openrouter_main", ModelID: "anthropic/claude-sonnet-4", Enabled: true, Priority: 10},
+			{ProviderID: "openrouter_main", ModelID: "google/gemini-2.5-flash", Enabled: true, Priority: 20, IsLight: true},
 		},
-	})
+		store.PoolStrategyPriority,
+	)
 
 	// Update config and verify revision bumps
 	beforeRevs := s.revisionsSnapshot()
@@ -623,17 +626,16 @@ func TestV2NotificationRerollInPlaceAndPreferenceMemory(t *testing.T) {
 		[]store.PooledModel{{
 			ProviderID: "prov_reroll",
 			ModelID:    "mock-chat",
-			Tier:       store.ModelTierFree,
 			Enabled:    true,
 			Priority:   10,
 		}},
-		store.PoolStrategyConfig{},
+		store.PoolStrategyPriority,
 	)
 	_ = s.store.SaveBot(store.Bot{
 		ID:      "bot_tips",
 		Name:    "TipsBot",
 		BotMode: store.BotModeWorker,
-		Model:   "auto:free",
+		Model:   "auto",
 	})
 	_ = s.store.SaveTask(store.Task{
 		ID:       "task_daily_tip",

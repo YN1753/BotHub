@@ -61,7 +61,6 @@ import uk.starryheavens.vesper.bothub.data.ModelHealthItem
 import uk.starryheavens.vesper.bothub.data.ModelOptionItem
 import uk.starryheavens.vesper.bothub.data.ModelProviderItem
 import uk.starryheavens.vesper.bothub.data.ModelUsageSummaryItem
-import uk.starryheavens.vesper.bothub.data.PoolStrategiesItem
 import uk.starryheavens.vesper.bothub.data.PooledModelItem
 import uk.starryheavens.vesper.bothub.ui.components.NoFontPaddingStyle
 import uk.starryheavens.vesper.bothub.ui.components.VesperButtonTone
@@ -90,8 +89,8 @@ private data class PublicProviderPresetItem(
 
 private val ANDROID_PUBLIC_PROVIDER_PRESETS = listOf(
     PublicProviderPresetItem("openrouter", "OpenRouter", "OpenRouter", "openai", "https://openrouter.ai/api/v1"),
-    PublicProviderPresetItem("siliconflow", "硅基流动", "硅基流动", "openai", "https://api.siliconflow.cn/v1"),
     PublicProviderPresetItem("deepseek", "DeepSeek", "DeepSeek 官方", "openai", "https://api.deepseek.com/v1"),
+    PublicProviderPresetItem("siliconflow", "硅基流动", "硅基流动", "openai", "https://api.siliconflow.cn/v1"),
     PublicProviderPresetItem("gemini", "Google AI", "Google AI Studio", "gemini", "https://generativelanguage.googleapis.com/v1beta/openai"),
     PublicProviderPresetItem("groq", "Groq", "Groq", "openai", "https://api.groq.com/openai/v1"),
     PublicProviderPresetItem("ollama", "Ollama", "Ollama 本地", "openai", "http://127.0.0.1:11434/v1"),
@@ -117,11 +116,21 @@ private fun formatTokenShort(tokens: Int): String {
     }
 }
 
-private fun isLikelyFreeModelAndroid(id: String): Boolean {
-    val lower = id.trim().lowercase()
-    return lower.contains(":free") ||
-        Regex("""(^|[-_/])free($|[-_/])""").containsMatchIn(lower) ||
-        Regex("""(^|[-_/])zero($|[-_/])""").containsMatchIn(lower)
+private fun formatCostCnyShort(cny: Double): String {
+    return when {
+        cny <= 0.0 -> "¥0.00"
+        cny < 0.01 -> "¥<0.01"
+        else -> String.format(Locale.US, "¥%.2f", cny)
+    }
+}
+
+private fun formatCostUsdShort(usd: Double): String {
+    return when {
+        usd <= 0.0 -> "\$0.00"
+        usd < 0.001 -> "\$<0.001"
+        usd < 0.1 -> String.format(Locale.US, "\$%.3f", usd)
+        else -> String.format(Locale.US, "\$%.2f", usd)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -129,9 +138,10 @@ private fun isLikelyFreeModelAndroid(id: String): Boolean {
 fun ModelConfigSheet(
     providers: List<ModelProviderItem>,
     pooledModels: List<PooledModelItem>,
-    strategies: PoolStrategiesItem,
+    strategy: String,
     modelHealth: Map<String, ModelHealthItem>,
     usageSummary: ModelUsageSummaryItem,
+    usage30d: ModelUsageSummaryItem = ModelUsageSummaryItem(days = 30),
     api: BotHubApiClient,
     onApplied: (ModelConfigPayload) -> Unit,
     onHealthUpdated: (Map<String, ModelHealthItem>, List<PooledModelItem>?, List<ModelOptionItem>?) -> Unit,
@@ -142,21 +152,21 @@ fun ModelConfigSheet(
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    var activeTab by remember { mutableStateOf("providers") } // providers | free | paid
+    var activeTab by remember { mutableStateOf("pool") } // providers | pool
+    var usageWindowDays by remember { mutableStateOf(7) } // 7 | 30
     var draftProviders by remember(providers) { mutableStateOf(providers) }
     var draftModels by remember(pooledModels) { mutableStateOf(pooledModels) }
-    var draftStrategies by remember(strategies) { mutableStateOf(strategies) }
+    var draftStrategy by remember(strategy) { mutableStateOf(strategy.ifBlank { "priority" }) }
     var expandedProviderId by remember { mutableStateOf(providers.firstOrNull()?.id ?: "") }
 
     val fetchedModelsMap = remember { mutableStateMapOf<String, List<String>>() }
     val searchQueryMap = remember { mutableStateMapOf<String, String>() }
-    val freeOnlyFilterMap = remember { mutableStateMapOf<String, Boolean>() }
     val manualInputMap = remember { mutableStateMapOf<String, String>() }
     val probeStatusMap = remember { mutableStateMapOf<String, Pair<Boolean, String>>() }
 
     var fetchingProviderId by remember { mutableStateOf("") }
     var probingTargetId by remember { mutableStateOf("") }
-    var probingBatchTier by remember { mutableStateOf("") }
+    var probingBatch by remember { mutableStateOf(false) }
     var showUsageDetail by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
 
@@ -165,59 +175,45 @@ fun ModelConfigSheet(
             onApplied(payload)
             draftProviders = payload.providers
             draftModels = payload.models
-            draftStrategies = payload.strategies
+            draftStrategy = payload.strategy
             if (expandedProviderId.isBlank() && payload.providers.isNotEmpty()) {
                 expandedProviderId = payload.providers.first().id
             }
         }
     }
 
-    val freeList = remember(draftModels) {
-        draftModels.filter { it.tier != "paid" }.sortedBy { it.priority }
-    }
-    val paidList = remember(draftModels) {
-        draftModels.filter { it.tier == "paid" }.sortedBy { it.priority }
+    val sortedModels = remember(draftModels) {
+        draftModels.sortedBy { it.priority }
     }
     val providerById = remember(draftProviders) {
         draftProviders.associateBy { it.id }
     }
+    val activeUsage = if (usageWindowDays == 30) usage30d else usageSummary
 
-    fun assignModelToTier(providerId: String, modelId: String, targetTier: String) {
+    fun toggleModelInPool(providerId: String, modelId: String) {
         val clean = modelId.trim()
         if (clean.isEmpty()) return
         val existing = draftModels.find { it.providerId == providerId && it.modelId == clean }
         draftModels = if (existing != null) {
-            if (existing.tier == targetTier) {
-                draftModels.filterNot { it.providerId == providerId && it.modelId == clean }
-            } else {
-                val nextPrio = draftModels.count { it.tier == targetTier } * 10 + 10
-                draftModels.map {
-                    if (it.providerId == providerId && it.modelId == clean) {
-                        it.copy(tier = targetTier, priority = nextPrio)
-                    } else it
-                }
-            }
+            draftModels.filterNot { it.providerId == providerId && it.modelId == clean }
         } else {
-            val nextPrio = draftModels.count { it.tier == targetTier } * 10 + 10
+            val nextPrio = (draftModels.maxOfOrNull { it.priority } ?: 0) + 10
             draftModels + PooledModelItem(
                 providerId = providerId,
                 modelId = clean,
-                tier = targetTier,
                 enabled = true,
                 priority = nextPrio
             )
         }
     }
 
-    fun moveModelPriority(tier: String, index: Int, delta: Int) {
-        val current = (if (tier == "paid") paidList else freeList).toMutableList()
+    fun moveModelPriority(index: Int, delta: Int) {
+        val current = sortedModels.toMutableList()
         val nextIdx = index + delta
         if (nextIdx !in current.indices) return
         val item = current.removeAt(index)
         current.add(nextIdx, item)
-        val renumbered = current.mapIndexed { i, m -> m.copy(priority = (i + 1) * 10) }
-        val others = draftModels.filter { it.tier != tier }
-        draftModels = if (tier == "free") renumbered + others else others + renumbered
+        draftModels = current.mapIndexed { i, m -> m.copy(priority = (i + 1) * 10) }
     }
 
     fun saveAll() {
@@ -227,13 +223,13 @@ fun ModelConfigSheet(
             val cleanedProviders = draftProviders.map {
                 it.copy(baseUrl = cleanBaseUrlAndroid(it.baseUrl))
             }
-            api.saveModelConfig(cleanedProviders, draftModels, draftStrategies)
+            api.saveModelConfig(cleanedProviders, draftModels, draftStrategy)
                 .onSuccess { payload ->
                     onApplied(payload)
                     draftProviders = payload.providers
                     draftModels = payload.models
-                    draftStrategies = payload.strategies
-                    onShowMessage("模型渠道与双池配置已同步保存")
+                    draftStrategy = payload.strategy
+                    onShowMessage("模型渠道与统一模型池配置已同步保存")
                 }
                 .onFailure { err ->
                     onShowMessage(err.message ?: "保存失败")
@@ -267,7 +263,7 @@ fun ModelConfigSheet(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "AI 模型渠道与双池",
+                        text = "AI 模型渠道与统一池",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = theme.textPrimary,
@@ -275,7 +271,7 @@ fun ModelConfigSheet(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "渠道共享密钥 · 免费池与付费池独立调度",
+                        text = "统一主力池调度 · Prompt 缓存与实时费用估算",
                         fontSize = 11.5.sp,
                         color = theme.textMuted,
                         maxLines = 1,
@@ -296,10 +292,10 @@ fun ModelConfigSheet(
                 )
             }
 
-            // 7-Day Telemetry Summary Card
-            val hasUsageDetail = usageSummary.topModels.isNotEmpty() || usageSummary.topCallers.isNotEmpty()
+            // 7d / 30d Cost & Prompt Cache Telemetry Card
+            val hasUsageDetail = activeUsage.topModels.isNotEmpty() || activeUsage.topCallers.isNotEmpty()
             VesperCard(
-                cornerRadius = 14.dp,
+                cornerRadius = 16.dp,
                 onClick = if (hasUsageDetail) {
                     { showUsageDetail = !showUsageDetail }
                 } else null,
@@ -316,37 +312,93 @@ fun ModelConfigSheet(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("7日免费池", fontSize = 11.sp, color = theme.success)
+                        Text(
+                            text = "近 ${usageWindowDays} 日费用与缓存看板",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = theme.textSecondary
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(7 to "7天", 30 to "30天").forEach { (days, label) ->
+                                val selected = usageWindowDays == days
+                                val pillShape = RoundedCornerShape(8.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(pillShape)
+                                        .background(if (selected) theme.accentSoft else theme.surfaceControl, pillShape)
+                                        .border(1.dp, if (selected) theme.accentMuted else theme.border, pillShape)
+                                        .vesperPressable(pressedScale = 0.94f) { usageWindowDays = days }
+                                        .padding(horizontal = 9.dp, vertical = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                        color = if (selected) theme.accentForeground else theme.textMuted
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1.1f)) {
+                            Text("预估花费", fontSize = 11.sp, color = theme.accentForeground)
                             Text(
-                                text = "${usageSummary.freeCalls}次 · ${formatTokenShort(usageSummary.freeTokens)}",
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold,
+                                text = formatCostCnyShort(activeUsage.totalCostCny),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
                                 color = theme.textPrimary
                             )
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("7日付费池", fontSize = 11.sp, color = theme.accentForeground)
                             Text(
-                                text = "${usageSummary.paidCalls}次 · ${formatTokenShort(usageSummary.paidTokens)}",
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold,
+                                text = formatCostUsdShort(activeUsage.totalCostUsd),
+                                fontSize = 10.5.sp,
                                 fontFamily = FontFamily.Monospace,
-                                color = theme.textPrimary
+                                color = theme.textMuted
                             )
                         }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("成功率", fontSize = 11.sp, color = theme.textMuted)
-                            val rate = if (usageSummary.totalCalls > 0) {
-                                "${(usageSummary.successCalls * 100) / usageSummary.totalCalls}%"
+                        Column(modifier = Modifier.weight(1.1f)) {
+                            Text("Prompt 缓存", fontSize = 11.sp, color = theme.success)
+                            val pct = if (activeUsage.totalPromptTokens > 0) {
+                                String.format(Locale.US, "%.0f%%", activeUsage.cacheHitRate * 100.0)
                             } else "--"
                             Text(
-                                text = rate,
+                                text = pct,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = theme.textPrimary
+                            )
+                            Text(
+                                text = "命中 ${formatTokenShort(activeUsage.totalCachedTokens)}",
+                                fontSize = 10.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = theme.textMuted
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End, modifier = Modifier.weight(1f)) {
+                            Text("调用 / 用量", fontSize = 11.sp, color = theme.textMuted)
+                            val rate = if (activeUsage.totalCalls > 0) {
+                                "${(activeUsage.successCalls * 100) / activeUsage.totalCalls}%"
+                            } else "--"
+                            Text(
+                                text = "${activeUsage.totalCalls}次 · $rate",
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = FontFamily.Monospace,
                                 color = theme.textPrimary
+                            )
+                            Text(
+                                text = "${formatTokenShort(activeUsage.totalTokens)} tok",
+                                fontSize = 10.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = theme.textMuted
                             )
                         }
                     }
@@ -357,7 +409,7 @@ fun ModelConfigSheet(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = if (showUsageDetail) "收起按模型/按Bot消耗明细" else "展开 7日按模型 / 按Bot与任务明细",
+                                text = if (showUsageDetail) "收起按模型 / Bot 费用明细" else "展开按模型 / 按 Bot 与任务费用明细",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = theme.accentForeground
@@ -372,15 +424,15 @@ fun ModelConfigSheet(
                     }
 
                     if (showUsageDetail) {
-                        if (usageSummary.topModels.isNotEmpty()) {
+                        if (activeUsage.topModels.isNotEmpty()) {
                             VesperDivider()
                             Text(
-                                text = "按模型调用排行",
+                                text = "按模型调用与费用排行",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = theme.textSecondary
                             )
-                            usageSummary.topModels.take(6).forEach { m ->
+                            activeUsage.topModels.take(6).forEach { m ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
@@ -397,15 +449,15 @@ fun ModelConfigSheet(
                                             .padding(end = 8.dp)
                                     )
                                     Text(
-                                        text = "${m.calls}次 · ${formatTokenShort(m.tokens)}",
+                                        text = "${m.calls}次 · ${formatTokenShort(m.tokens)} · ${formatCostUsdShort(m.costUsd)}",
                                         fontSize = 11.sp,
                                         fontFamily = FontFamily.Monospace,
-                                        color = if (m.tier == "paid") theme.accentForeground else theme.success
+                                        color = theme.accentForeground
                                     )
                                 }
                             }
                         }
-                        if (usageSummary.topCallers.isNotEmpty()) {
+                        if (activeUsage.topCallers.isNotEmpty()) {
                             VesperDivider()
                             Text(
                                 text = "按 Bot / 任务消耗排行",
@@ -413,7 +465,7 @@ fun ModelConfigSheet(
                                 fontWeight = FontWeight.SemiBold,
                                 color = theme.textSecondary
                             )
-                            usageSummary.topCallers.take(6).forEach { c ->
+                            activeUsage.topCallers.take(6).forEach { c ->
                                 val callerLabel = when {
                                     c.taskId.isNotBlank() -> "任务:${c.taskId}"
                                     c.botId.isNotBlank() -> "Bot:${c.botId}"
@@ -434,10 +486,10 @@ fun ModelConfigSheet(
                                             .padding(end = 8.dp)
                                     )
                                     Text(
-                                        text = "${c.freeCalls}免/${c.paidCalls}付 · ${formatTokenShort(c.tokens)}",
+                                        text = "${c.calls}次 · ${formatTokenShort(c.tokens)} · ${formatCostUsdShort(c.costUsd)}",
                                         fontSize = 11.sp,
                                         fontFamily = FontFamily.Monospace,
-                                        color = if (c.paidCalls > 0) theme.accentForeground else theme.success
+                                        color = theme.textSecondary
                                     )
                                 }
                             }
@@ -446,12 +498,11 @@ fun ModelConfigSheet(
                 }
             }
 
-            // 3-Tab Segmented Row (48dp touch height)
+            // 2-Tab Segmented Row (48dp touch height)
             PoolSegmentedControl(
                 options = listOf(
-                    "providers" to "渠道 (${draftProviders.size})",
-                    "free" to "免费池 (${freeList.size})",
-                    "paid" to "付费池 (${paidList.size})"
+                    "pool" to "统一模型池 (${sortedModels.size})",
+                    "providers" to "渠道管理 (${draftProviders.size})"
                 ),
                 selectedId = activeTab,
                 onSelect = { activeTab = it }
@@ -461,13 +512,13 @@ fun ModelConfigSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 520.dp)
+                    .heightIn(max = 500.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 if (activeTab == "providers") {
                     Text(
-                        text = "快速添加渠道（仅填入公开标准地址）",
+                        text = "快速添加渠道（自动填入标准端点）",
                         fontSize = 11.5.sp,
                         fontWeight = FontWeight.Medium,
                         color = theme.textMuted,
@@ -531,14 +582,13 @@ fun ModelConfigSheet(
                         VesperEmptyState(
                             icon = Icons.Default.Dns,
                             title = "尚未添加模型渠道",
-                            subtitle = "点击上方模板填入 API Key 后，可实测拉取可用模型并一键分配至免费池或付费池。"
+                            subtitle = "点击上方模板填入 API Key 后，可实测拉取可用模型并一键加入统一模型池。"
                         )
                     }
 
                     draftProviders.forEach { prov ->
                         val isExpanded = expandedProviderId == prov.id
-                        val freeCount = draftModels.count { it.providerId == prov.id && it.tier != "paid" }
-                        val paidCount = draftModels.count { it.providerId == prov.id && it.tier == "paid" }
+                        val modelCount = draftModels.count { it.providerId == prov.id }
 
                         VesperCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
                             Column(
@@ -585,7 +635,7 @@ fun ModelConfigSheet(
                                             val keyCount = prov.effectiveApiKeys().size
                                             val keyTag = if (keyCount > 1) " · $keyCount 密钥" else ""
                                             Text(
-                                                text = "${if (prov.protocol == "gemini") "Gemini" else "OpenAI 兼容"}$keyTag · 免费 $freeCount / 付费 $paidCount",
+                                                text = "${if (prov.protocol == "gemini") "Gemini" else "OpenAI 兼容"}$keyTag · 已入池 $modelCount 个",
                                                 fontSize = 11.5.sp,
                                                 color = theme.textMuted,
                                                 maxLines = 1,
@@ -621,7 +671,7 @@ fun ModelConfigSheet(
                                             }
                                         },
                                         label = "渠道名称",
-                                        placeholder = "例如 OpenRouter / 硅基流动"
+                                        placeholder = "例如 OpenRouter / DeepSeek"
                                     )
 
                                     PoolSegmentedControl(
@@ -696,7 +746,7 @@ fun ModelConfigSheet(
                                                         .onSuccess { res ->
                                                             fetchedModelsMap[prov.id] = res.models
                                                             val filteredTotal = res.filteredOutCount + res.failedVerifyCount
-                                                            val note = if (filteredTotal > 0) "（已拦截 $filteredTotal 个不可用/非对话模型）" else ""
+                                                            val note = if (filteredTotal > 0) "（已过滤 $filteredTotal 个非对话/不可用模型）" else ""
                                                             onShowMessage("实测拉取成功：共 ${res.models.size} 个可用模型$note")
                                                         }
                                                         .onFailure { err ->
@@ -724,89 +774,43 @@ fun ModelConfigSheet(
                                         value = manualVal,
                                         onValueChange = { manualInputMap[prov.id] = it },
                                         label = "手动输入模型 ID",
-                                        placeholder = "如 deepseek-chat（逗号分隔）"
+                                        placeholder = "如 claude-sonnet-4-5, deepseek-chat（逗号分隔）"
                                     )
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        VesperSecondaryButton(
-                                            text = "加入免费池",
-                                            leadingIcon = Icons.Default.Add,
-                                            minHeight = 48.dp,
-                                            onClick = {
-                                                val parts = manualVal.split(",", "，", "\n").map { it.trim() }.filter { it.isNotEmpty() }
-                                                parts.forEach { mid -> assignModelToTier(prov.id, mid, "free") }
-                                                manualInputMap[prov.id] = ""
-                                            },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        VesperSecondaryButton(
-                                            text = "加入付费池",
-                                            leadingIcon = Icons.Default.Add,
-                                            minHeight = 48.dp,
-                                            onClick = {
-                                                val parts = manualVal.split(",", "，", "\n").map { it.trim() }.filter { it.isNotEmpty() }
-                                                parts.forEach { mid -> assignModelToTier(prov.id, mid, "paid") }
-                                                manualInputMap[prov.id] = ""
-                                            },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
+                                    VesperSecondaryButton(
+                                        text = "加入统一模型池",
+                                        leadingIcon = Icons.Default.Add,
+                                        tone = VesperButtonTone.ACCENT,
+                                        enabled = manualVal.isNotBlank(),
+                                        minHeight = 48.dp,
+                                        onClick = {
+                                            val parts = manualVal.split(",", "，", "\n").map { it.trim() }.filter { it.isNotEmpty() }
+                                            parts.forEach { mid ->
+                                                if (draftModels.none { it.providerId == prov.id && it.modelId == mid }) {
+                                                    toggleModelInPool(prov.id, mid)
+                                                }
+                                            }
+                                            manualInputMap[prov.id] = ""
+                                            onShowMessage("已添加至统一模型池，点击右上角「保存」生效")
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
 
                                     // Searchable Fetched Model List
                                     val fetched = fetchedModelsMap[prov.id]
                                     if (!fetched.isNullOrEmpty()) {
                                         val query = searchQueryMap[prov.id].orEmpty()
-                                        val onlyFreeTag = freeOnlyFilterMap[prov.id] == true
                                         VesperSearchField(
                                             value = query,
                                             onValueChange = { searchQueryMap[prov.id] = it },
                                             placeholder = "搜索模型名（共 ${fetched.size} 个）..."
                                         )
-                                        val likelyFreeList = fetched.filter { isLikelyFreeModelAndroid(it) }
-                                        if (likelyFreeList.isNotEmpty()) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .horizontalScroll(rememberScrollState()),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                PoolActionPill(
-                                                    text = if (onlyFreeTag) "已筛选免费 (${likelyFreeList.size})" else "仅看免费 (${likelyFreeList.size})",
-                                                    active = onlyFreeTag,
-                                                    toneColor = theme.success,
-                                                    onClick = { freeOnlyFilterMap[prov.id] = !onlyFreeTag }
-                                                )
-                                                PoolActionPill(
-                                                    text = "+ 一键免费加池",
-                                                    active = true,
-                                                    toneColor = theme.success,
-                                                    onClick = {
-                                                        var addedCount = 0
-                                                        likelyFreeList.take(40).forEach { mid ->
-                                                            if (draftModels.none { it.providerId == prov.id && it.modelId == mid }) {
-                                                                assignModelToTier(prov.id, mid, "free")
-                                                                addedCount += 1
-                                                            }
-                                                        }
-                                                        onShowMessage(
-                                                            if (addedCount > 0) "已将 $addedCount 个免费模型加入免费池" else "免费模型已在池中"
-                                                        )
-                                                    }
-                                                )
-                                            }
-                                        }
-
                                         val filtered = fetched.filter { id ->
-                                            val qMatch = query.isBlank() || id.contains(query.trim(), ignoreCase = true)
-                                            val fMatch = !onlyFreeTag || isLikelyFreeModelAndroid(id)
-                                            qMatch && fMatch
+                                            query.isBlank() || id.contains(query.trim(), ignoreCase = true)
                                         }.take(40)
 
                                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             filtered.forEach { mid ->
-                                                val curTier = draftModels.find { it.providerId == prov.id && it.modelId == mid }?.tier.orEmpty()
+                                                val inPool = draftModels.any { it.providerId == prov.id && it.modelId == mid }
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
@@ -826,17 +830,11 @@ fun ModelConfigSheet(
                                                         overflow = TextOverflow.Ellipsis,
                                                         modifier = Modifier.weight(1f)
                                                     )
-                                                    TierAssignPill(
-                                                        label = if (curTier == "free") "已选免" else "免费",
-                                                        active = curTier == "free",
-                                                        activeColor = theme.success,
-                                                        onClick = { assignModelToTier(prov.id, mid, "free") }
-                                                    )
-                                                    TierAssignPill(
-                                                        label = if (curTier == "paid") "已选付" else "付费",
-                                                        active = curTier == "paid",
+                                                    PoolAssignPill(
+                                                        label = if (inPool) "已入池" else "入池",
+                                                        active = inPool,
                                                         activeColor = theme.accent,
-                                                        onClick = { assignModelToTier(prov.id, mid, "paid") }
+                                                        onClick = { toggleModelInPool(prov.id, mid) }
                                                     )
                                                 }
                                             }
@@ -847,11 +845,7 @@ fun ModelConfigSheet(
                         }
                     }
                 } else {
-                    val tier = if (activeTab == "paid") "paid" else "free"
-                    val list = if (tier == "paid") paidList else freeList
-                    val curStrategy = if (tier == "paid") draftStrategies.paid else draftStrategies.free
-
-                    // Pool Strategy & Batch Actions Card
+                    // Unified Model Pool Tab
                     VesperCard(cornerRadius = 16.dp, modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier
@@ -860,7 +854,7 @@ fun ModelConfigSheet(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
-                                text = if (tier == "paid") "付费池调度策略" else "免费池调度策略",
+                                text = "统一模型池调度策略",
                                 fontSize = 13.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = theme.textPrimary
@@ -872,36 +866,30 @@ fun ModelConfigSheet(
                                     "round_robin" to "轮询均摊",
                                     "lowest_latency" to "最快延迟"
                                 ),
-                                selectedId = curStrategy,
-                                onSelect = { sid ->
-                                    draftStrategies = if (tier == "paid") {
-                                        draftStrategies.copy(paid = sid)
-                                    } else {
-                                        draftStrategies.copy(free = sid)
-                                    }
-                                }
+                                selectedId = draftStrategy,
+                                onSelect = { draftStrategy = it }
                             )
 
-                            val anyCooling = list.any { (modelHealth[it.canonicalTargetId]?.cooldownSec ?: 0L) > 0L }
-                            val anyFailedProbe = list.any { it.enabled && probeStatusMap[it.canonicalTargetId]?.first == false }
-                            if (list.isNotEmpty() || anyCooling || anyFailedProbe) {
+                            val anyCooling = sortedModels.any { (modelHealth[it.canonicalTargetId]?.cooldownSec ?: 0L) > 0L }
+                            val anyFailedProbe = sortedModels.any { it.enabled && probeStatusMap[it.canonicalTargetId]?.first == false }
+                            if (sortedModels.isNotEmpty() || anyCooling || anyFailedProbe) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    if (list.isNotEmpty()) {
+                                    if (sortedModels.isNotEmpty()) {
                                         PoolActionPill(
-                                            text = if (probingBatchTier == tier) "测速中..." else "并发测速",
+                                            text = if (probingBatch) "测速中..." else "全池并发测速",
                                             active = true,
                                             toneColor = theme.success,
-                                            enabled = probingBatchTier.isEmpty(),
+                                            enabled = !probingBatch,
                                             onClick = {
-                                                if (probingBatchTier.isNotEmpty()) return@PoolActionPill
-                                                probingBatchTier = tier
+                                                if (probingBatch) return@PoolActionPill
+                                                probingBatch = true
                                                 scope.launch {
-                                                    api.testModelBatch(tier = tier, disableFailed = false)
+                                                    api.testModelBatch(disableFailed = false)
                                                         .onSuccess { batch ->
                                                             var okCnt = 0
                                                             var failCnt = 0
@@ -934,7 +922,7 @@ fun ModelConfigSheet(
                                                         .onFailure { err ->
                                                             onShowMessage(err.message ?: "批量测速失败")
                                                         }
-                                                    probingBatchTier = ""
+                                                    probingBatch = false
                                                 }
                                             }
                                         )
@@ -962,7 +950,7 @@ fun ModelConfigSheet(
                                             onClick = {
                                                 var disabledCount = 0
                                                 draftModels = draftModels.map { m ->
-                                                    if (m.tier == tier && m.enabled && probeStatusMap[m.canonicalTargetId]?.first == false) {
+                                                    if (m.enabled && probeStatusMap[m.canonicalTargetId]?.first == false) {
                                                         disabledCount += 1
                                                         m.copy(enabled = false)
                                                     } else m
@@ -976,11 +964,11 @@ fun ModelConfigSheet(
                         }
                     }
 
-                    if (list.isEmpty()) {
+                    if (sortedModels.isEmpty()) {
                         VesperEmptyState(
                             icon = Icons.Default.AutoAwesome,
-                            title = if (tier == "paid") "付费池暂无模型" else "免费池暂无模型",
-                            subtitle = "前往「渠道」页拉取或手动输入模型 ID 后即可一键分配。",
+                            title = "统一模型池暂无模型",
+                            subtitle = "前往「渠道管理」拉取或手动输入模型 ID 后即可一键加入。",
                             actions = {
                                 VesperSecondaryButton(
                                     text = "去渠道管理添加",
@@ -992,7 +980,7 @@ fun ModelConfigSheet(
                         )
                     }
 
-                    list.forEachIndexed { idx, m ->
+                    sortedModels.forEachIndexed { idx, m ->
                         val prov = providerById[m.providerId]
                         val health = modelHealth[m.canonicalTargetId]
                         val probeNote = probeStatusMap[m.canonicalTargetId]
@@ -1024,6 +1012,9 @@ fun ModelConfigSheet(
                                                 borderColor = theme.border,
                                                 textColor = theme.textSecondary
                                             )
+                                            if (m.isLight) {
+                                                VesperTag(text = "轻量后台", toneColor = theme.info)
+                                            }
                                             Text(
                                                 text = prov?.name ?: m.providerId,
                                                 fontSize = 11.5.sp,
@@ -1054,7 +1045,6 @@ fun ModelConfigSheet(
                                     )
                                 }
 
-                                // Capability & Health Tag Strip
                                 val hasAnyBadge = m.supportsTools != null ||
                                     m.supportsThinking == true ||
                                     isCooling ||
@@ -1149,6 +1139,18 @@ fun ModelConfigSheet(
                                             }
                                         }
                                     )
+                                    PoolActionPill(
+                                        text = if (m.isLight) "取消轻量" else "设为轻量",
+                                        active = m.isLight,
+                                        toneColor = theme.info,
+                                        onClick = {
+                                            draftModels = draftModels.map {
+                                                if (it.providerId == m.providerId && it.modelId == m.modelId) {
+                                                    it.copy(isLight = !it.isLight)
+                                                } else it
+                                            }
+                                        }
+                                    )
                                     if (isCooling) {
                                         PoolActionPill(
                                             text = "解封",
@@ -1164,25 +1166,18 @@ fun ModelConfigSheet(
                                             }
                                         )
                                     }
-                                    PoolActionPill(
-                                        text = if (tier == "paid") "移至免费" else "移至付费",
-                                        onClick = {
-                                            val otherTier = if (tier == "paid") "free" else "paid"
-                                            assignModelToTier(m.providerId, m.modelId, otherTier)
-                                        }
-                                    )
                                     if (idx > 0) {
                                         PoolIconActionPill(
                                             icon = Icons.Default.KeyboardArrowUp,
                                             contentDescription = "上移优先级",
-                                            onClick = { moveModelPriority(tier, idx, -1) }
+                                            onClick = { moveModelPriority(idx, -1) }
                                         )
                                     }
-                                    if (idx < list.lastIndex) {
+                                    if (idx < sortedModels.lastIndex) {
                                         PoolIconActionPill(
                                             icon = Icons.Default.KeyboardArrowDown,
                                             contentDescription = "下移优先级",
-                                            onClick = { moveModelPriority(tier, idx, 1) }
+                                            onClick = { moveModelPriority(idx, 1) }
                                         )
                                     }
                                     PoolActionPill(
@@ -1264,7 +1259,7 @@ private fun PoolSegmentedControl(
 }
 
 @Composable
-private fun TierAssignPill(
+private fun PoolAssignPill(
     label: String,
     active: Boolean,
     activeColor: Color,
@@ -1289,7 +1284,7 @@ private fun TierAssignPill(
                     BorderStroke(1.dp, if (active) activeColor else theme.border),
                     shape
                 )
-                .padding(horizontal = 9.dp, vertical = 6.dp),
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(

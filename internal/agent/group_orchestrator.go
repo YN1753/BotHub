@@ -311,8 +311,10 @@ func (e *Engine) runTeamRoomHandoffWithRelay(
 		if resp.Usage != nil {
 			hasUsage = true
 			totalUsage.PromptTokens += resp.Usage.PromptTokens
+			totalUsage.CachedTokens += resp.Usage.CachedTokens
 			totalUsage.CompletionTokens += resp.Usage.CompletionTokens
 			totalUsage.TotalTokens += resp.Usage.TotalTokens
+			totalUsage.CostUSD += resp.Usage.CostUSD
 		}
 
 		// 1-hop smart group relay when the lead specialist explicitly @mentions another group member
@@ -475,8 +477,10 @@ func (e *Engine) runTeamRoomParallel(
 		if r.resp.Usage != nil {
 			hasUsage = true
 			totalUsage.PromptTokens += r.resp.Usage.PromptTokens
+			totalUsage.CachedTokens += r.resp.Usage.CachedTokens
 			totalUsage.CompletionTokens += r.resp.Usage.CompletionTokens
 			totalUsage.TotalTokens += r.resp.Usage.TotalTokens
+			totalUsage.CostUSD += r.resp.Usage.CostUSD
 		}
 	}
 

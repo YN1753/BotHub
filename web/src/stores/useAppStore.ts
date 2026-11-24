@@ -14,11 +14,10 @@ import type {
   BotThread,
   ModelHealthStats,
   ModelOptionDTO,
-  ModelPoolEntry,
   ModelProvider,
   ModelUsageSummary,
   NotificationItem,
-  PoolStrategies,
+  PoolStrategy,
   PooledModel,
   PushLog,
   SelectOption,
@@ -133,20 +132,38 @@ const state = reactive({
   notes: [] as WorkNote[],
   stash: (initialSnap?.stash || []) as StashItem[],
   stashTags: [] as StashTagCount[],
-  modelPool: [] as ModelPoolEntry[],
   modelProviders: [] as ModelProvider[],
   pooledModels: [] as PooledModel[],
-  poolStrategies: { free: 'priority', paid: 'priority' } as PoolStrategies,
+  poolStrategy: 'priority' as PoolStrategy,
   modelUsageSummary: {
     days: 7,
     total_calls: 0,
     success_calls: 0,
-    free_calls: 0,
-    paid_calls: 0,
-    free_tokens: 0,
-    paid_tokens: 0,
+    total_prompt_tokens: 0,
+    total_cached_tokens: 0,
+    total_completion_tokens: 0,
+    total_tokens: 0,
+    cache_hit_rate: 0,
+    total_cost_usd: 0,
+    total_cost_cny: 0,
     top_models: [],
+    top_callers: [],
   } as ModelUsageSummary,
+  modelUsage30d: {
+    days: 30,
+    total_calls: 0,
+    success_calls: 0,
+    total_prompt_tokens: 0,
+    total_cached_tokens: 0,
+    total_completion_tokens: 0,
+    total_tokens: 0,
+    cache_hit_rate: 0,
+    total_cost_usd: 0,
+    total_cost_cny: 0,
+    top_models: [],
+    top_callers: [],
+  } as ModelUsageSummary,
+  compactionSummary: '',
   modelOptions: [] as ModelOptionDTO[],
   revisions: {} as Record<string, number>,
   availableTools: [] as AvailableToolMeta[],
@@ -389,46 +406,25 @@ export function useAppStore() {
         label: o.label,
       }))
     }
-    const enabledNodes = state.modelPool.filter((m) => m.enabled)
-    const freeOpts: SelectOption[] = []
-    const paidOpts: SelectOption[] = []
-    let freeReady = 0
-    let paidReady = 0
-
-    for (const node of enabledNodes) {
-      const tier = node.tier === 'paid' ? 'paid' : 'free'
-      const models = Array.from(
-        new Set([...(node.models || []), node.model || ''].map((x) => x.trim()).filter(Boolean))
-      )
-      const list = models.length > 0 ? models : ['']
-      list.forEach((m, idx) => {
-        const ready = Boolean(node.api_key && m)
-        if (ready) {
-          if (tier === 'paid') paidReady++
-          else freeReady++
-        }
-        const optId = idx === 0 || !m ? `pool:${node.id}` : `pool:${node.id}::${m}`
-        const tag = tier === 'paid' ? '[付费]' : '[免费]'
-        const opt = {
-          value: optId,
-          label: `${tag} ${node.name} · ${m || '待选择模型'} (${ready ? '可用' : '待配置'})`,
-        }
-        if (tier === 'paid') paidOpts.push(opt)
-        else freeOpts.push(opt)
-      })
+    const pMap = new Map<string, ModelProvider>()
+    for (const p of state.modelProviders) {
+      if (p.enabled && p.api_key) pMap.set(p.id, p)
     }
-
+    const enabledModels = state.pooledModels.filter((m) => m.enabled && pMap.has(m.provider_id))
     const out: SelectOption[] = [
       {
-        value: 'auto:paid',
-        label: paidReady > 0 ? `自动 · 付费主力池 (${paidReady} 可用)` : '自动 · 付费主力池 (未配置)',
-      },
-      {
-        value: 'auto:free',
-        label: freeReady > 0 ? `自动 · 免费模型池 (${freeReady} 可用)` : '自动 · 免费模型池 (未配置)',
+        value: 'auto',
+        label: enabledModels.length > 0 ? `自动路由 · 模型池 (${enabledModels.length} 可用)` : '自动路由 · 模型池 (待配置)',
       },
     ]
-    return [...out, ...paidOpts, ...freeOpts]
+    for (const m of enabledModels) {
+      const p = pMap.get(m.provider_id)!
+      out.push({
+        value: `pool:${m.provider_id}::${m.model_id}`,
+        label: `${p.name || p.id} · ${m.display_name || m.model_id}`,
+      })
+    }
+    return out
   })
 
   async function checkAuth() {
@@ -559,12 +555,14 @@ export function useAppStore() {
           if (data.notifications !== undefined) state.notifications = data.notifications || []
           if (data.push_logs !== undefined) state.pushLogs = data.push_logs || []
           if (data.configs !== undefined && data.configs) state.configs = data.configs
-          if (data.model_pool !== undefined) state.modelPool = data.model_pool || []
           if (data.model_providers !== undefined) state.modelProviders = data.model_providers || []
           if (data.pooled_models !== undefined) state.pooledModels = data.pooled_models || []
-          if (data.pool_strategies !== undefined && data.pool_strategies) state.poolStrategies = data.pool_strategies
+          if (data.pool_strategy) state.poolStrategy = data.pool_strategy
           if (data.model_usage_summary !== undefined && data.model_usage_summary) {
             state.modelUsageSummary = data.model_usage_summary
+          }
+          if (data.model_usage_30d !== undefined && data.model_usage_30d) {
+            state.modelUsage30d = data.model_usage_30d
           }
           if (data.model_options !== undefined) state.modelOptions = data.model_options || []
           if (data.revisions !== undefined && data.revisions) state.revisions = { ...state.revisions, ...data.revisions }
@@ -638,11 +636,11 @@ export function useAppStore() {
         state.notes = data.notes || []
         state.stash = data.stash || []
         state.stashTags = data.stash_tags || []
-        state.modelPool = data.model_pool || []
         state.modelProviders = data.model_providers || []
         state.pooledModels = data.pooled_models || []
-        if (data.pool_strategies) state.poolStrategies = data.pool_strategies
+        if (data.pool_strategy) state.poolStrategy = data.pool_strategy
         if (data.model_usage_summary) state.modelUsageSummary = data.model_usage_summary
+        if (data.model_usage_30d) state.modelUsage30d = data.model_usage_30d
         state.modelOptions = data.model_options || []
         if (data.revisions) state.revisions = data.revisions
         state.availableTools = data.available_tools || []
@@ -719,6 +717,7 @@ export function useAppStore() {
       const res = await BotHubApi.getBotMessages(botId, targetThread)
       if (seq !== latestSelectSeq) return
       state.activeThreadId = res.thread_id || ''
+      state.compactionSummary = res.compaction_summary || ''
       state.botThreads = res.threads || []
       state.botMemories = res.memories || []
       state.botExecutions = res.executions || []
@@ -828,6 +827,23 @@ export function useAppStore() {
       return res
     } catch (err: any) {
       notify(err.message || '提炼话题摘要失败')
+      return null
+    }
+  }
+
+  async function compactActiveThread() {
+    if (!state.activeBotId) return null
+    try {
+      const res = await BotHubApi.compactBotThread(state.activeBotId, state.activeThreadId || '')
+      if (res.summary) state.compactionSummary = res.summary
+      notify(
+        res.compacted_count > 0
+          ? `已压缩早期 ${res.compacted_count} 条对话为滚动摘要，后续上下文更轻盈`
+          : '当前未压缩消息较少，暂无需压缩'
+      )
+      return res
+    } catch (err: any) {
+      notify(err.message || '压缩对话上下文失败')
       return null
     }
   }
@@ -1165,6 +1181,7 @@ export function useAppStore() {
     renameThread,
     deleteThread,
     summarizeThread,
+    compactActiveThread,
     jumpToBot,
     quoteNotificationToBot,
     togglePinBot,

@@ -16,21 +16,19 @@ import (
 )
 
 type TaskStatus struct {
-	ID                 string           `json:"id"`
-	Name               string           `json:"name"`
-	Type               string           `json:"type"`
-	BotID              string           `json:"bot_id"`
-	Description        string           `json:"description"`
-	CronExpr           string           `json:"cron_expr"`
-	RunAt              string           `json:"run_at,omitempty"`
-	Model              string           `json:"model,omitempty"`
-	AllowPaidFallback  bool             `json:"allow_paid_fallback"`
-	MaxPaidCallsPerDay int              `json:"max_paid_calls_per_day"`
-	Enabled            bool             `json:"enabled"`
-	Params             string           `json:"params"`
-	NextRunAt          string           `json:"next_run_at"`
-	IsRunning          bool             `json:"is_running"`
-	LastRun            *store.ModuleRun `json:"last_run,omitempty"`
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Type        string           `json:"type"`
+	BotID       string           `json:"bot_id"`
+	Description string           `json:"description"`
+	CronExpr    string           `json:"cron_expr"`
+	RunAt       string           `json:"run_at,omitempty"`
+	Model       string           `json:"model,omitempty"`
+	Enabled     bool             `json:"enabled"`
+	Params      string           `json:"params"`
+	NextRunAt   string           `json:"next_run_at"`
+	IsRunning   bool             `json:"is_running"`
+	LastRun     *store.ModuleRun `json:"last_run,omitempty"`
 }
 
 // Scheduler coordinates cron jobs, one-shot reminders, and manual task triggers.
@@ -280,8 +278,7 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 		}
 	}
 
-	taskCtx := store.WithPaidFallback(ctx, task.AllowPaidFallback)
-	taskCtx = store.WithTaskQuota(taskCtx, task.ID, task.MaxPaidCallsPerDay)
+	taskCtx := store.WithTaskID(ctx, task.ID)
 	if strings.TrimSpace(task.Model) != "" {
 		taskCtx = store.WithTaskModelOverride(taskCtx, task.Model)
 	}
@@ -303,11 +300,6 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 		status = "error"
 		if summary == "" {
 			summary = runErr.Error()
-		}
-		if strings.Contains(runErr.Error(), "付费调用已达上限") || strings.Contains(runErr.Error(), "已拦截付费") {
-			alertTitle := fmt.Sprintf("付费护栏触发 · %s", task.Name)
-			alertMD := fmt.Sprintf("### %s\n\n%s\n\n可在对应任务配置中调整「允许付费兜底」或「单日付费上限」。", alertTitle, notifier.StripEmoji(runErr.Error()))
-			_ = notifier.NewClientWithHub(s.store, s.hub).SendWithPriority(context.Background(), "paid_guard", alertTitle, alertMD, "high")
 		}
 	}
 	if runID > 0 {
@@ -335,7 +327,7 @@ func (s *Scheduler) execute(ctx context.Context, taskID, triggerType string) (re
 
 		// All routine reports & error alerts are unified into 服务通知 (notifications),
 		// never inserted into the Bot's 1v1 chat dialog timeline.
-		if runErr != nil && !strings.Contains(runErr.Error(), "付费调用已达上限") && !strings.Contains(runErr.Error(), "已拦截付费") {
+		if runErr != nil {
 			botLabel := botID
 			if b, bErr := s.store.GetBot(botID); bErr == nil && b != nil && strings.TrimSpace(b.Name) != "" {
 				botLabel = b.Name
@@ -397,21 +389,19 @@ func (s *Scheduler) Status() ([]TaskStatus, error) {
 		}
 
 		out = append(out, TaskStatus{
-			ID:                t.ID,
-			Name:              t.Name,
-			Type:              t.Type,
-			BotID:             t.BotID,
-			Description:       t.Description,
-			CronExpr:          t.CronExpr,
-			RunAt:             t.RunAt,
-			Model:              t.Model,
-			AllowPaidFallback:  t.AllowPaidFallback,
-			MaxPaidCallsPerDay: t.MaxPaidCallsPerDay,
-			Enabled:            t.Enabled,
-			Params:            t.Params,
-			NextRunAt:         nextRun,
-			IsRunning:         s.running[t.ID],
-			LastRun:           lastPtr,
+			ID:          t.ID,
+			Name:        t.Name,
+			Type:        t.Type,
+			BotID:       t.BotID,
+			Description: t.Description,
+			CronExpr:    t.CronExpr,
+			RunAt:       t.RunAt,
+			Model:       t.Model,
+			Enabled:     t.Enabled,
+			Params:      t.Params,
+			NextRunAt:   nextRun,
+			IsRunning:   s.running[t.ID],
+			LastRun:     lastPtr,
 		})
 	}
 	return out, nil

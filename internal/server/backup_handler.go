@@ -49,9 +49,10 @@ func (s *Server) handleExportBackup(w http.ResponseWriter, r *http.Request) {
 	maskSecrets := r.URL.Query().Get("mask_secrets") == "1" || r.URL.Query().Get("mask_secrets") == "true"
 	if maskSecrets {
 		store.MaskSensitiveConfigs(cfgs)
-		if rawPool, ok := cfgs[store.KeyFreeModelPool]; ok && strings.TrimSpace(rawPool) != "" {
-			if maskedPoolBytes, mErr := json.Marshal(store.MaskModelPool(s.store.GetModelPool())); mErr == nil {
-				cfgs[store.KeyFreeModelPool] = string(maskedPoolBytes)
+		if _, ok := cfgs[store.KeyModelProviders]; ok {
+			providers, _, _ := s.store.GetModelConfig()
+			if maskedProvBytes, mErr := json.Marshal(store.MaskModelProviders(providers)); mErr == nil {
+				cfgs[store.KeyModelProviders] = string(maskedProvBytes)
 			}
 		}
 	}
@@ -118,10 +119,19 @@ func (s *Server) handleImportBackup(w http.ResponseWriter, r *http.Request) {
 	_ = s.store.SetConfig(store.KeyPushChannel, "native")
 	for k, v := range backup.Configs {
 		val := strings.TrimSpace(v)
-		if k == store.KeyFreeModelPool {
-			var entries []store.ModelPoolEntry
-			if json.Unmarshal([]byte(val), &entries) == nil {
-				_ = s.store.SaveModelPool(entries)
+		if k == store.KeyModelProviders {
+			var provs []store.ModelProvider
+			if json.Unmarshal([]byte(val), &provs) == nil {
+				_, existingModels, existingStrat := s.store.GetModelConfig()
+				_ = s.store.SaveModelConfig(provs, existingModels, existingStrat)
+			}
+			continue
+		}
+		if k == store.KeyPooledModels {
+			var mods []store.PooledModel
+			if json.Unmarshal([]byte(val), &mods) == nil {
+				existingProvs, _, existingStrat := s.store.GetModelConfig()
+				_ = s.store.SaveModelConfig(existingProvs, mods, existingStrat)
 			}
 			continue
 		}

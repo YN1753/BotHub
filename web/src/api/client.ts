@@ -11,7 +11,7 @@ import type {
   ModelOptionDTO,
   ModelProvider,
   ModelUsageSummary,
-  PoolStrategies,
+  PoolStrategy,
   PooledModel,
   Skill,
   StashItem,
@@ -36,8 +36,9 @@ async function executeRequest<T = any>(
         : signal || deadlineSignal
   }
   const hasBody = fetchOpts.body !== undefined && fetchOpts.body !== null
+  const isFormData = typeof FormData !== 'undefined' && fetchOpts.body instanceof FormData
   const headers: Record<string, string> = {
-    ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+    ...(hasBody && !isFormData ? { 'Content-Type': 'application/json' } : {}),
     ...((fetchOpts.headers as Record<string, string> | undefined) || {}),
   }
   try {
@@ -145,24 +146,26 @@ export const BotHubApi = {
       ok: boolean
       providers: ModelProvider[]
       models: PooledModel[]
-      strategies: PoolStrategies
+      strategy: PoolStrategy
       model_options?: ModelOptionDTO[]
       model_health?: Record<string, ModelHealthStats>
       model_usage_summary?: ModelUsageSummary
+      model_usage_30d?: ModelUsageSummary
     }>('/api/v2/model-config'),
   saveModelConfig: (payload: {
     providers: ModelProvider[]
     models: PooledModel[]
-    strategies: PoolStrategies
+    strategy: PoolStrategy
   }) =>
     apiRequest<{
       ok: boolean
       providers: ModelProvider[]
       models: PooledModel[]
-      strategies: PoolStrategies
+      strategy: PoolStrategy
       model_options?: ModelOptionDTO[]
       model_health?: Record<string, ModelHealthStats>
       model_usage_summary?: ModelUsageSummary
+      model_usage_30d?: ModelUsageSummary
     }>('/api/v2/model-config', {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -200,7 +203,6 @@ export const BotHubApi = {
       model_options?: ModelOptionDTO[]
     }>('/api/v2/model-pool/test', { method: 'POST', timeoutMs: 90_000, body: JSON.stringify(payload) }),
   testModelBatch: (payload: {
-    tier?: 'free' | 'paid' | ''
     disable_failed?: boolean
     probe_tools?: boolean
   }) =>
@@ -210,7 +212,6 @@ export const BotHubApi = {
         target_id: string
         provider_id: string
         model_id: string
-        tier: string
         ok: boolean
         latency_ms: number
         error?: string
@@ -221,6 +222,14 @@ export const BotHubApi = {
       model_health?: Record<string, ModelHealthStats>
       model_options?: ModelOptionDTO[]
     }>('/api/v2/model-pool/test-batch', { method: 'POST', timeoutMs: 120_000, body: JSON.stringify(payload) }),
+  uploadChatImage: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return apiRequest<{ ok: boolean; url: string; filename: string; mime: string; size: number }>(
+      '/api/v2/chat/upload-image',
+      { method: 'POST', body: fd, timeoutMs: 30_000 }
+    )
+  },
   fetchUpstreamModels: (payload: {
     provider_id?: string
     entry_id?: string
@@ -319,6 +328,7 @@ export const BotHubApi = {
       bot: Bot
       thread_id: string
       messages: AgentMessage[]
+      compaction_summary?: string
       threads: BotThread[]
       memories: AgentMemory[]
       executions: BotExecutionLog[]
@@ -362,6 +372,17 @@ export const BotHubApi = {
       `/api/v2/bots/${encodeURIComponent(botId)}/threads/${encodeURIComponent(threadId || 'main')}/summarize`,
       { method: 'POST', body: JSON.stringify({ save_to_memory: saveToMemory }) }
     ),
+  compactBotThread: (botId: string, threadId = '') =>
+    apiRequest<{
+      ok: boolean
+      thread_id: string
+      summary: string
+      compacted_count: number
+    }>(`/api/v2/bots/${encodeURIComponent(botId)}/threads/compact`, {
+      method: 'POST',
+      timeoutMs: 45_000,
+      body: JSON.stringify({ thread_id: threadId }),
+    }),
   deleteBotMessage: (botId: string, msgId: number) =>
     apiRequest(`/api/v2/bots/${encodeURIComponent(botId)}/messages/${encodeURIComponent(String(msgId))}`, {
       method: 'DELETE',

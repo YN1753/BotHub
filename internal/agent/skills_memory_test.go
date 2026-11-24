@@ -313,21 +313,29 @@ func TestSearchTokenizationGroupRoutingAndManageMemoryTool(t *testing.T) {
 		t.Fatalf("expected forgotten memory removed from bot:bot_life scope, got %+v", listAfter)
 	}
 
-	// 5. hasLightTarget works with Free Model Pool when pool_for_light=true without light_api_key
-	if err := st.SaveModelPool([]store.ModelPoolEntry{{
-		ID:       "pool1",
-		Name:     "Free Pool Node",
-		Provider: "openai",
-		BaseURL:  "https://example.invalid/v1",
-		APIKey:   "sk-pool-test",
-		Model:    "gpt-test-mini",
-		Enabled:  true,
-		Priority: 10,
-	}}); err != nil {
-		t.Fatalf("save pool failed: %v", err)
+	// 5. hasLightTarget works with Unified Model Pool without light_api_key
+	if err := st.SaveModelConfig(
+		[]store.ModelProvider{{
+			ID:       "prov1",
+			Name:     "Unified Pool Provider",
+			Protocol: "openai",
+			BaseURL:  "https://example.invalid/v1",
+			APIKey:   "sk-pool-test",
+			Enabled:  true,
+		}},
+		[]store.PooledModel{{
+			ProviderID: "prov1",
+			ModelID:    "gpt-test-mini",
+			Enabled:    true,
+			Priority:   10,
+			IsLight:    true,
+		}},
+		store.PoolStrategyPriority,
+	); err != nil {
+		t.Fatalf("save model config failed: %v", err)
 	}
 	if !eng.hasLightTarget() {
-		t.Fatalf("expected hasLightTarget()=true when active free pool node exists and pool_for_light defaults true")
+		t.Fatalf("expected hasLightTarget()=true when active model pool node exists")
 	}
 }
 
@@ -887,7 +895,6 @@ func TestClaudeMemoryTwoZonePromptIndexAndAutoDream(t *testing.T) {
 	_ = st.SetConfig(store.KeyLightAPIKey, "sk-test-dream")
 	_ = st.SetConfig(store.KeyLightBaseURL, dreamLLM.URL)
 	_ = st.SetConfig(store.KeyLightModel, "test-light")
-	_ = st.SetConfig(store.KeyPoolForLight, "false")
 
 	_, _ = st.AppendAgentMessage(store.AgentMessage{
 		SessionID: "bot:bot_muse",

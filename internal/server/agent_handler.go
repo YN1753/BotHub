@@ -16,11 +16,11 @@ import (
 
 func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	var req agent.ChatRequest
-	if !decodeJSON(w, r, 64*1024, &req) {
+	if !decodeJSON(w, r, 128*1024, &req) {
 		return
 	}
 	req.Message = strings.TrimSpace(req.Message)
-	if req.Message == "" {
+	if req.Message == "" && len(req.Images) == 0 {
 		writeError(w, http.StatusBadRequest, "对话内容不能为空")
 		return
 	}

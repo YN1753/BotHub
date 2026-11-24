@@ -37,6 +37,44 @@ func (e *Engine) publishLiveChatMessage(msg store.AgentMessage) {
 	e.hub.PublishEvent("bot_message", msg)
 }
 
+func sanitizeChatImages(raw []string) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	seen := make(map[string]bool, len(raw))
+	for _, item := range raw {
+		s := strings.TrimSpace(item)
+		if s == "" || seen[s] {
+			continue
+		}
+		if !(strings.HasPrefix(s, "/api/v2/chat/uploads/") ||
+			strings.HasPrefix(s, "https://") ||
+			strings.HasPrefix(s, "http://") ||
+			strings.HasPrefix(s, "data:image/")) {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+		if len(out) >= 4 {
+			break
+		}
+	}
+	return out
+}
+
+func parseAttachmentsJSON(raw string) []string {
+	s := strings.TrimSpace(raw)
+	if s == "" || s == "[]" {
+		return nil
+	}
+	var list []string
+	if err := json.Unmarshal([]byte(s), &list); err != nil {
+		return nil
+	}
+	return sanitizeChatImages(list)
+}
+
 func (e *Engine) chatStreamForBot(
 	ctx context.Context,
 	req ChatRequest,
@@ -48,21 +86,76 @@ func (e *Engine) chatStreamForBot(
 		return nil, fmt.Errorf("未找到专属 Bot: %s", botID)
 	}
 
+	cleanImages := sanitizeChatImages(req.Images)
+	req.Images = cleanImages
 	userMsg := notifier.StripEmoji(strings.TrimSpace(req.Message))
+	if userMsg == "" && len(cleanImages) > 0 {
+		userMsg = "请分析这张图片"
+	}
 	if userMsg == "" {
 		return nil, fmt.Errorf("消息内容不能为空")
 	}
 	replyPreview := notifier.StripEmoji(strings.TrimSpace(req.ReplyPreview))
 	threadID := strings.TrimSpace(req.ThreadID)
 
-	// Load prior messages strictly scoped to this Bot/Group + Thread
-	history, _ := e.store.ListBotMessagesByThread(bot.ID, threadID, 40)
+	// Built-in /compact slash command to immediately fold earlier turns into a rolling summary
+	if len(cleanImages) == 0 && (strings.EqualFold(userMsg, "/compact") || userMsg == "/压缩") {
+		summary, compactedCount, cErr := e.CompactBotThread(ctx, bot, threadID)
+		var replyText string
+		if cErr != nil {
+			replyText = fmt.Sprintf("压缩上下文失败：%v", cErr)
+		} else if compactedCount == 0 {
+			replyText = "当前未压缩对话轮次较少，暂无需压缩上下文。"
+		} else {
+			replyText = fmt.Sprintf("已完成上下文压缩：已将早期 %d 条消息折叠进滚动摘要，后续对话将更轻盈连贯。\n\n### 当前滚动摘要\n%s", compactedCount, summary)
+		}
+		if emit != nil {
+			emit("content", map[string]any{"delta": replyText, "sender_bot_id": bot.ID})
+		}
+		replyEntry := store.AgentMessage{
+			SessionID:   "bot:" + bot.ID,
+			BotID:       bot.ID,
+			ThreadID:    threadID,
+			SenderBotID: bot.ID,
+			MsgKind:     "chat",
+			Role:        "assistant",
+			Content:     replyText,
+			ToolCalls:   "[]",
+		}
+		if aid, aErr := e.store.AppendAgentMessage(replyEntry); aErr == nil {
+			replyEntry.ID = aid
+			e.publishLiveChatMessage(replyEntry)
+		}
+		resp := &ChatResponse{
+			BotID:       bot.ID,
+			ThreadID:    threadID,
+			SenderBotID: bot.ID,
+			SessionID:   "bot:" + bot.ID,
+			Persona:     bot.ID,
+			Content:     replyText,
+		}
+		if emit != nil {
+			emit("done", resp)
+		}
+		return resp, nil
+	}
+
+	// Load prior messages after the latest rolling compaction checkpoint
+	compState := e.store.GetThreadCompactionState(bot.ID, threadID)
+	history, _ := e.store.ListBotMessagesAfterID(bot.ID, threadID, compState.UpToID, 60)
 
 	// Auto-title custom topic thread on first user message
 	if threadID != "" {
 		if th, _ := e.store.GetBotThread(bot.ID, threadID); th != nil && (th.Title == "新话题" || th.Title == "新对话" || strings.TrimSpace(th.Title) == "") {
 			th.Title = truncateTitle(userMsg)
 			_ = e.store.SaveBotThread(*th)
+		}
+	}
+
+	attachmentsJSON := ""
+	if len(cleanImages) > 0 {
+		if b, mErr := json.Marshal(cleanImages); mErr == nil {
+			attachmentsJSON = string(b)
 		}
 	}
 
@@ -74,6 +167,7 @@ func (e *Engine) chatStreamForBot(
 		MsgKind:      "chat",
 		Role:         "user",
 		Content:      userMsg,
+		Attachments:  attachmentsJSON,
 		ReplyToID:    req.ReplyToID,
 		ReplyPreview: replyPreview,
 	}
@@ -213,10 +307,6 @@ func (e *Engine) runSingleBotTurn(
 	if rawModel == "" {
 		rawModel = actingBot.Model
 	}
-	allowPaid := actingBot.AllowPaidFallback
-	if req.AllowPaidFallback != nil {
-		allowPaid = *req.AllowPaidFallback
-	}
 
 	var thinkFlag *bool
 	if req.EnableThinking != nil {
@@ -233,9 +323,8 @@ func (e *Engine) runSingleBotTurn(
 	tools := pruneToolsForTurn(allBotTools, userMsg, history)
 
 	targets, err := e.ResolveChatTargetsWithOptions(ctx, rawModel, ModelResolveOptions{
-		AllowPaidFallback: allowPaid,
-		NeedTools:         len(tools) > 0,
-		NeedThinking:      thinkFlag != nil && *thinkFlag,
+		NeedTools:    len(tools) > 0,
+		NeedThinking: thinkFlag != nil && *thinkFlag,
 	})
 	if err != nil {
 		e.emitBotState(actingBot.ID, store.BotStateBlocked, err.Error())
@@ -314,7 +403,12 @@ func (e *Engine) runSingleBotTurn(
 			workingCtx = unmountedDir
 		}
 	}
-	sysPrompt := buildBotSystemPromptWithMemoryIndex(actingBot, attachedSkills, memories, rawMemories, peerBots, threadTitle, timelineBotID != actingBot.ID, workingCtx)
+	zones := buildBotSystemPromptZones(actingBot, attachedSkills, memories, rawMemories, peerBots, threadTitle, timelineBotID != actingBot.ID, workingCtx)
+	sysPrompt := zones.Static
+	if strings.TrimSpace(zones.Dynamic) != "" {
+		sysPrompt += "\n\n" + zones.Dynamic
+	}
+	compState := e.store.GetThreadCompactionState(timelineBotID, threadID)
 
 	var botNameMap map[string]string
 	if timelineBotID != actingBot.ID && len(allBots) > 0 {
@@ -324,18 +418,38 @@ func (e *Engine) runSingleBotTurn(
 		}
 	}
 
+	// Only hydrate image attachments for the latest 4 user messages in history to keep multimodal token budget lean.
+	hydrateImageFromIdx := len(history)
+	userImagesSeen := 0
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" && strings.TrimSpace(history[i].Attachments) != "" && strings.TrimSpace(history[i].Attachments) != "[]" {
+			userImagesSeen++
+			hydrateImageFromIdx = i
+			if userImagesSeen >= 4 {
+				break
+			}
+		}
+	}
+
 	messages := make([]apiMessage, 0, len(history)+8)
 	messages = append(messages, apiMessage{
-		Role:    "system",
-		Content: sysPrompt,
+		Role:                "system",
+		Content:             sysPrompt,
+		StaticSystemPrefix:  zones.Static,
+		DynamicSystemSuffix: zones.Dynamic,
 	})
-	if threadSummary != "" && len(history) >= 16 {
+	if strings.TrimSpace(compState.Summary) != "" {
+		messages = append(messages, apiMessage{
+			Role:    "system",
+			Content: fmt.Sprintf("[早期对话滚动摘要（上下文已压缩）]\n%s", compState.Summary),
+		})
+	} else if threadSummary != "" && len(history) >= 16 {
 		messages = append(messages, apiMessage{
 			Role:    "system",
 			Content: fmt.Sprintf("[此前较早对话压缩前情摘要]\n%s", threadSummary),
 		})
 	}
-	for _, m := range history {
+	for idx, m := range history {
 		switch m.Role {
 		case "system":
 			if strings.TrimSpace(m.Content) != "" {
@@ -346,7 +460,11 @@ func (e *Engine) runSingleBotTurn(
 			if strings.TrimSpace(m.ReplyPreview) != "" {
 				content = fmt.Sprintf("[引用历史消息: %s]\n%s", m.ReplyPreview, content)
 			}
-			messages = append(messages, apiMessage{Role: "user", Content: content})
+			uMsg := apiMessage{Role: "user", Content: content}
+			if idx >= hydrateImageFromIdx {
+				uMsg.Images = parseAttachmentsJSON(m.Attachments)
+			}
+			messages = append(messages, uMsg)
 		case "assistant":
 			content := m.Content
 			if botNameMap != nil && m.SenderBotID != "" && m.SenderBotID != actingBot.ID {
@@ -377,7 +495,11 @@ func (e *Engine) runSingleBotTurn(
 			})
 		}
 	}
-	messages = append(messages, apiMessage{Role: "user", Content: userMsg})
+	messages = append(messages, apiMessage{
+		Role:    "user",
+		Content: userMsg,
+		Images:  sanitizeChatImages(req.Images),
+	})
 	messages = budgetChatMessages(messages, 48000)
 
 	parentScope := toolScopeFromContext(ctx)
@@ -553,8 +675,10 @@ func (e *Engine) runSingleBotTurn(
 		if roundUsage != nil {
 			hasUsage = true
 			totalUsage.PromptTokens += roundUsage.PromptTokens
+			totalUsage.CachedTokens += roundUsage.CachedTokens
 			totalUsage.CompletionTokens += roundUsage.CompletionTokens
 			totalUsage.TotalTokens += roundUsage.TotalTokens
+			totalUsage.CostUSD += roundUsage.CostUSD
 		}
 
 		// Harness 3: Rescue text-embedded tool calls (<tool_call>, <function=...>, ```json {"name":...} ```)
@@ -683,8 +807,10 @@ func (e *Engine) runSingleBotTurn(
 					if rwUsage != nil {
 						hasUsage = true
 						totalUsage.PromptTokens += rwUsage.PromptTokens
+						totalUsage.CachedTokens += rwUsage.CachedTokens
 						totalUsage.CompletionTokens += rwUsage.CompletionTokens
 						totalUsage.TotalTokens += rwUsage.TotalTokens
+						totalUsage.CostUSD += rwUsage.CostUSD
 					}
 					cleanRW := notifier.StripEmoji(rwContent)
 					roundContent = cleanRW
@@ -708,7 +834,6 @@ func (e *Engine) runSingleBotTurn(
 					ToolCalls:        "[]",
 					ModelUsed:        activeTarget.Model,
 					ModelTargetID:    activeTarget.ID,
-					ModelTier:        activeTarget.Tier,
 				}
 				if aid, aErr := e.store.AppendAgentMessage(finalEntry); aErr == nil && msgKind != "routine" {
 					finalEntry.ID = aid
@@ -748,7 +873,6 @@ func (e *Engine) runSingleBotTurn(
 				ToolCalls:        string(tcBytes),
 				ModelUsed:        activeTarget.Model,
 				ModelTargetID:    activeTarget.ID,
-				ModelTier:        activeTarget.Tier,
 			})
 		}
 		messages = append(messages, apiMessage{
@@ -966,8 +1090,10 @@ func (e *Engine) runSingleBotTurn(
 			if sUsage != nil {
 				hasUsage = true
 				totalUsage.PromptTokens += sUsage.PromptTokens
+				totalUsage.CachedTokens += sUsage.CachedTokens
 				totalUsage.CompletionTokens += sUsage.CompletionTokens
 				totalUsage.TotalTokens += sUsage.TotalTokens
+				totalUsage.CostUSD += sUsage.CostUSD
 			}
 			if strings.TrimSpace(sContent) == "" && strings.TrimSpace(finalContent.String()) == "" {
 				fallback := "已完成工具调用，但模型未返回进一步总结，请在下方工具记录中查看执行详情。"
@@ -994,7 +1120,6 @@ func (e *Engine) runSingleBotTurn(
 					ToolCalls:        "[]",
 					ModelUsed:        activeTarget.Model,
 					ModelTargetID:    activeTarget.ID,
-					ModelTier:        activeTarget.Tier,
 				}
 				if aid, aErr := e.store.AppendAgentMessage(finalEntry); aErr == nil && msgKind != "routine" {
 					finalEntry.ID = aid
@@ -1024,6 +1149,9 @@ func (e *Engine) runSingleBotTurn(
 	if req.MsgKind != "routine" && req.MsgKind != "delegate" && !rememberedInTurn && strings.TrimSpace(finalContent.String()) != "" {
 		go e.distillMemoryWithScope("bot:"+timelineBotID, actingBot.BotMode, userMsg, finalContent.String())
 	}
+	if (req.MsgKind == "" || req.MsgKind == "chat") && len(history) >= 28 {
+		go e.autoCompactThreadAsync(actingBot, timelineBotID, threadID)
+	}
 	if req.MsgKind == "chat" && threadID != "" && len(history) >= 22 {
 		go e.maybeAutoSummarizeThread(actingBot, timelineBotID, threadID, len(history))
 	}
@@ -1036,7 +1164,6 @@ func (e *Engine) runSingleBotTurn(
 		Persona:          actingBot.ID,
 		Model:            activeTarget.Model,
 		ModelTargetID:    activeTarget.ID,
-		ModelTier:        activeTarget.Tier,
 		ProviderLabel:    activeTarget.Label,
 		ReasoningContent: totalReasoning.String(),
 		Content:          finalContent.String(),
@@ -1050,6 +1177,106 @@ func (e *Engine) runSingleBotTurn(
 		emit("done", resp)
 	}
 	return resp, nil
+}
+
+// CompactBotThread folds older messages in a Bot thread (including the default main timeline)
+// into a dense rolling summary so long conversations stay sharp without losing key context.
+func (e *Engine) CompactBotThread(ctx context.Context, bot *store.Bot, threadID string) (string, int, error) {
+	if e == nil || e.store == nil || bot == nil {
+		return "", 0, fmt.Errorf("未指定有效 Bot")
+	}
+	return e.compactBotThreadInternal(ctx, bot, bot.ID, strings.TrimSpace(threadID), 4)
+}
+
+func (e *Engine) autoCompactThreadAsync(actingBot *store.Bot, timelineBotID, threadID string) {
+	if e == nil || e.store == nil || actingBot == nil || !e.hasLightTarget() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, _, _ = e.compactBotThreadInternal(ctx, actingBot, timelineBotID, threadID, 16)
+}
+
+func (e *Engine) compactBotThreadInternal(ctx context.Context, actingBot *store.Bot, timelineBotID, threadID string, keepRecent int) (string, int, error) {
+	if !e.hasLightTarget() {
+		return "", 0, fmt.Errorf("当前未配置可用模型，无法压缩对话上下文")
+	}
+	lockKey := timelineBotID + ":" + threadID
+	if _, loaded := e.compactingThreads.LoadOrStore(lockKey, true); loaded {
+		return "", 0, nil
+	}
+	defer e.compactingThreads.Delete(lockKey)
+
+	state := e.store.GetThreadCompactionState(timelineBotID, threadID)
+	msgs, err := e.store.ListBotMessagesAfterID(timelineBotID, threadID, state.UpToID, 200)
+	if err != nil {
+		return "", 0, err
+	}
+	if keepRecent < 2 {
+		keepRecent = 2
+	}
+	if len(msgs) <= keepRecent {
+		if len(msgs) >= 3 && keepRecent > 2 {
+			keepRecent = 2
+		} else {
+			return state.Summary, 0, nil
+		}
+	}
+
+	toFold := msgs[:len(msgs)-keepRecent]
+	newUpToID := toFold[len(toFold)-1].ID
+
+	var sb strings.Builder
+	if strings.TrimSpace(state.Summary) != "" {
+		sb.WriteString("[已有滚动摘要]\n")
+		sb.WriteString(strings.TrimSpace(state.Summary))
+		sb.WriteString("\n\n")
+	}
+	sb.WriteString("[新增待压缩对话记录]\n")
+	for _, m := range toFold {
+		if m.Role == "tool" {
+			continue
+		}
+		roleLabel := m.Role
+		switch m.Role {
+		case "user":
+			roleLabel = "用户"
+		case "assistant":
+			roleLabel = actingBot.Name
+		case "system":
+			roleLabel = "系统"
+		}
+		text := strings.TrimSpace(m.Content)
+		if text == "" {
+			continue
+		}
+		text = store.TruncateRunes(text, 420)
+		sb.WriteString(fmt.Sprintf("%s: %s\n", roleLabel, text))
+		if sb.Len() > 12000 {
+			break
+		}
+	}
+
+	sysPrompt := `你是对话上下文压缩引擎（Context Compactor）。请将「已有滚动摘要」与「新增待压缩对话记录」合并提炼为一份精炼、高信息密度的中文滚动摘要（严格 180~550 字，严禁使用 Emoji）。
+必须保留：
+1. 用户的核心目标、明确偏好与已确定的约束条件；
+2. 已经达成的关键结论、执行结果与重要数据/链接/ID；
+3. 尚未完成或后续仍需跟进的事项。
+剔除：寒暄客套、重复试错过程与无关废话。直接输出纯文本摘要，不要加前缀解释。`
+
+	summary, err := e.CallLightModel(ctx, sysPrompt, sb.String())
+	if err != nil {
+		return "", 0, err
+	}
+	summary = notifier.StripEmoji(strings.TrimSpace(summary))
+	if summary == "" {
+		return "", 0, fmt.Errorf("模型返回空摘要")
+	}
+	if err := e.store.SaveThreadCompactionState(timelineBotID, threadID, summary, newUpToID); err != nil {
+		return "", 0, err
+	}
+	e.publishBotThreadEvent(timelineBotID, "compacted")
+	return summary, len(toFold), nil
 }
 
 func (e *Engine) maybeAutoSummarizeThread(actingBot *store.Bot, timelineBotID, threadID string, historyLen int) {
@@ -1113,7 +1340,7 @@ func (e *Engine) runBotRoutineInternal(ctx context.Context, botID, prompt, taskN
 	prevUnread := bot.UnreadCount
 
 	threadID := strings.TrimSpace(bot.ActiveThreadID)
-	taskID, _ := store.TaskQuotaFromContext(ctx)
+	taskID := store.TaskIDFromContext(ctx)
 	var recentPushes []store.Notification
 	if taskID != "" {
 		recentPushes, _ = e.store.ListRecentNotificationsByModule(taskID, 7)
@@ -1156,18 +1383,12 @@ func (e *Engine) runBotRoutineInternal(ctx context.Context, botID, prompt, taskN
 	if taskOverride := store.TaskModelFromContext(ctx); taskOverride != "" {
 		reqModel = taskOverride
 	}
-	allowPaid, explicitPaid := store.PaidFallbackFromContext(ctx)
-	var allowPaidPtr *bool
-	if explicitPaid {
-		allowPaidPtr = &allowPaid
-	}
 	req := ChatRequest{
-		BotID:             bot.ID,
-		ThreadID:          threadID,
-		MsgKind:           "routine",
-		Message:           routinePrompt,
-		Model:             reqModel,
-		AllowPaidFallback: allowPaidPtr,
+		BotID:    bot.ID,
+		ThreadID: threadID,
+		MsgKind:  "routine",
+		Message:  routinePrompt,
+		Model:    reqModel,
 	}
 
 	// Intentionally pass nil chat history so background routines rely on the Bot's persona,

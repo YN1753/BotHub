@@ -62,12 +62,14 @@ func (s *Server) handleGetBotMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	compState := s.store.GetThreadCompactionState(id, threadID)
 	if compact {
 		payload := map[string]any{
-			"ok":        true,
-			"bot":       bot,
-			"thread_id": threadID,
-			"messages":  msgs,
+			"ok":                 true,
+			"bot":                bot,
+			"thread_id":          threadID,
+			"messages":           msgs,
+			"compaction_summary": compState.Summary,
 		}
 		if r.URL.Query().Get("include_threads") == "1" {
 			threads, _ := s.store.ListBotThreads(id)
@@ -86,13 +88,14 @@ func (s *Server) handleGetBotMessages(w http.ResponseWriter, r *http.Request) {
 	executions, _ := s.store.ListBotExecutions(id, 40)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":         true,
-		"bot":        bot,
-		"thread_id":  threadID,
-		"messages":   msgs,
-		"threads":    threads,
-		"memories":   memories,
-		"executions": executions,
+		"ok":                 true,
+		"bot":                bot,
+		"thread_id":          threadID,
+		"messages":           msgs,
+		"compaction_summary": compState.Summary,
+		"threads":            threads,
+		"memories":           memories,
+		"executions":         executions,
 	})
 }
 
@@ -104,9 +107,13 @@ func (s *Server) handleClearBotMessages(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusInternalServerError, "清空话题对话流失败: "+err.Error())
 			return
 		}
-	} else if err := s.store.ClearBotMessages(id); err != nil {
-		writeError(w, http.StatusInternalServerError, "清空 Bot 对话流失败: "+err.Error())
-		return
+		s.store.ClearThreadCompactionState(id, tid)
+	} else {
+		if err := s.store.ClearBotMessages(id); err != nil {
+			writeError(w, http.StatusInternalServerError, "清空 Bot 对话流失败: "+err.Error())
+			return
+		}
+		s.store.ClearThreadCompactionState(id, "")
 	}
 	_ = s.store.ClearBotUnread(id)
 	if s.push != nil && s.push.Hub() != nil {
@@ -361,9 +368,9 @@ func (s *Server) handleForkBotThread(w http.ResponseWriter, r *http.Request) {
 			Role:         m.Role,
 			Content:      m.Content,
 			ReplyPreview:  m.ReplyPreview,
+			Attachments:   m.Attachments,
 			ModelUsed:     m.ModelUsed,
 			ModelTargetID: m.ModelTargetID,
-			ModelTier:     m.ModelTier,
 		})
 	}
 
@@ -512,5 +519,40 @@ func (s *Server) handleSummarizeBotThread(w http.ResponseWriter, r *http.Request
 		"saved_fact_key": savedFactKey,
 		"threads":        threads,
 		"memories":       memories,
+	})
+}
+
+func (s *Server) handleCompactBotThread(w http.ResponseWriter, r *http.Request) {
+	if s.agent == nil {
+		writeError(w, http.StatusServiceUnavailable, "Agent 引擎未初始化")
+		return
+	}
+	botID := strings.TrimSpace(r.PathValue("id"))
+	bot, err := s.store.GetBot(botID)
+	if err != nil || bot == nil {
+		writeError(w, http.StatusNotFound, "Bot 不存在")
+		return
+	}
+	var req struct {
+		ThreadID string `json:"thread_id"`
+	}
+	_ = decodeOptionalJSON(w, r, 4096, &req)
+	threadID := strings.TrimSpace(req.ThreadID)
+	if threadID == "main" {
+		threadID = ""
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+	defer cancel()
+
+	summary, compactedCount, err := s.agent.CompactBotThread(ctx, bot, threadID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "压缩上下文失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":              true,
+		"thread_id":       threadID,
+		"summary":         summary,
+		"compacted_count": compactedCount,
 	})
 }

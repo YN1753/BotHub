@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -125,6 +126,8 @@ fun SettingsPairingSheet(
     clipboardBannerEnabled: Boolean = true,
     floatingBallEnabled: Boolean = false,
     appThemeId: String = "dark:blue",
+    skillsTotalCount: Int = 0,
+    skillsEnabledCount: Int = 0,
     api: BotHubApiClient,
     onConnected: (String) -> Unit,
     onServerUrlSaved: (String) -> Unit,
@@ -135,6 +138,7 @@ fun SettingsPairingSheet(
     onFloatingBallChanged: (Boolean) -> Unit = {},
     onThemeSelected: (String) -> Unit = {},
     onOpenModelConfig: () -> Unit = {},
+    onOpenMcpApps: () -> Unit = {},
     onTestHealth: (String) -> Unit,
     onTestPush: () -> Unit = {},
     onUnbindServer: () -> Unit,
@@ -669,21 +673,52 @@ fun SettingsPairingSheet(
                         cornerRadius = 16.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        SettingsActionRow(
-                            icon = Icons.Default.AutoAwesome,
-                            iconTint = theme.accent,
-                            title = "AI 模型渠道与双池",
-                            subtitle = "管理付费主力池、免费池、API Key、调度策略与测速",
-                            trailingContent = {
-                                Icon(
-                                    imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = "进入配置",
-                                    tint = theme.textMuted,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            },
-                            onClick = onOpenModelConfig
-                        )
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            SettingsActionRow(
+                                icon = Icons.Default.AutoAwesome,
+                                iconTint = theme.accent,
+                                title = "AI 模型渠道与统一池",
+                                subtitle = "管理模型渠道、统一主力池、7日/30日费用估算与测速",
+                                trailingContent = {
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = "进入模型配置",
+                                        tint = theme.textMuted,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                onClick = onOpenModelConfig
+                            )
+
+                            VesperDivider(startIndent = 60.dp, endIndent = 14.dp)
+
+                            SettingsActionRow(
+                                icon = Icons.Default.Extension,
+                                iconTint = theme.info,
+                                title = "MCP 服务与已连接应用",
+                                subtitle = "管理 GitHub / 邮箱 / Cloudflare 连接器与远程 MCP 服务",
+                                trailingContent = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (skillsTotalCount > 0) {
+                                            VesperTag(
+                                                text = "$skillsEnabledCount/$skillsTotalCount",
+                                                toneColor = theme.info
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.ChevronRight,
+                                            contentDescription = "进入 MCP 管理",
+                                            tint = theme.textMuted,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                },
+                                onClick = onOpenMcpApps
+                            )
+                        }
                     }
                 }
 

@@ -33,43 +33,35 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var raw struct {
-		ID                 string `json:"id"`
-		Name               string `json:"name"`
-		Type               string `json:"type"`
-		BotID              string `json:"bot_id"`
-		Description        string `json:"description"`
-		CronExpr           string `json:"cron_expr"`
-		RunAt              string `json:"run_at"`
-		Model              string `json:"model"`
-		AllowPaidFallback  *bool  `json:"allow_paid_fallback"`
-		MaxPaidCallsPerDay int    `json:"max_paid_calls_per_day"`
-		Enabled            *bool  `json:"enabled"`
-		Params             string `json:"params"`
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		BotID       string `json:"bot_id"`
+		Description string `json:"description"`
+		CronExpr    string `json:"cron_expr"`
+		RunAt       string `json:"run_at"`
+		Model       string `json:"model"`
+		Enabled     *bool  `json:"enabled"`
+		Params      string `json:"params"`
 	}
 	if !decodeJSON(w, r, 16384, &raw) {
 		return
-	}
-	allowPaid := true
-	if raw.AllowPaidFallback != nil {
-		allowPaid = *raw.AllowPaidFallback
 	}
 	enabled := true
 	if raw.Enabled != nil {
 		enabled = *raw.Enabled
 	}
 	req := store.Task{
-		ID:                 strings.TrimSpace(raw.ID),
-		Name:               strings.TrimSpace(raw.Name),
-		Type:               strings.TrimSpace(raw.Type),
-		BotID:              strings.TrimSpace(raw.BotID),
-		Description:        strings.TrimSpace(raw.Description),
-		CronExpr:           strings.TrimSpace(raw.CronExpr),
-		RunAt:              strings.TrimSpace(raw.RunAt),
-		Model:              strings.TrimSpace(raw.Model),
-		AllowPaidFallback:  allowPaid,
-		MaxPaidCallsPerDay: raw.MaxPaidCallsPerDay,
-		Enabled:            enabled,
-		Params:             raw.Params,
+		ID:          strings.TrimSpace(raw.ID),
+		Name:        strings.TrimSpace(raw.Name),
+		Type:        strings.TrimSpace(raw.Type),
+		BotID:       strings.TrimSpace(raw.BotID),
+		Description: strings.TrimSpace(raw.Description),
+		CronExpr:    strings.TrimSpace(raw.CronExpr),
+		RunAt:       strings.TrimSpace(raw.RunAt),
+		Model:       strings.TrimSpace(raw.Model),
+		Enabled:     enabled,
+		Params:      raw.Params,
 	}
 
 	if req.ID == "" || req.Name == "" || req.Type == "" || (req.CronExpr == "" && req.RunAt == "") {
@@ -129,18 +121,16 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ID                string  `json:"id"`
-		Name              string  `json:"name"`
-		Type              string  `json:"type"`
-		BotID             *string `json:"bot_id"`
-		Description       *string `json:"description"`
-		CronExpr          string  `json:"cron_expr"`
-		RunAt             string  `json:"run_at"`
-		Model              *string `json:"model"`
-		AllowPaidFallback  *bool   `json:"allow_paid_fallback"`
-		MaxPaidCallsPerDay *int    `json:"max_paid_calls_per_day"`
-		Enabled            *bool   `json:"enabled"`
-		Params            string  `json:"params"`
+		ID          string  `json:"id"`
+		Name        string  `json:"name"`
+		Type        string  `json:"type"`
+		BotID       *string `json:"bot_id"`
+		Description *string `json:"description"`
+		CronExpr    string  `json:"cron_expr"`
+		RunAt       string  `json:"run_at"`
+		Model       *string `json:"model"`
+		Enabled     *bool   `json:"enabled"`
+		Params      string  `json:"params"`
 	}
 	if !decodeJSON(w, r, 16384, &req) {
 		return
@@ -150,8 +140,6 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if req.BotID != nil { existing.BotID = strings.TrimSpace(*req.BotID) }
 	if req.Description != nil { existing.Description = strings.TrimSpace(*req.Description) }
 	if req.Model != nil { existing.Model = strings.TrimSpace(*req.Model) }
-	if req.AllowPaidFallback != nil { existing.AllowPaidFallback = *req.AllowPaidFallback }
-	if req.MaxPaidCallsPerDay != nil && *req.MaxPaidCallsPerDay >= 0 { existing.MaxPaidCallsPerDay = *req.MaxPaidCallsPerDay }
 	if req.RunAt != "" {
 		if _, err := scheduler.ParseRunAt(req.RunAt, nil); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
