@@ -25,7 +25,6 @@ const props = defineProps<{
   inputPrompt: string
   pendingImages: string[]
   selectedModel: string
-  enableThinking: boolean
   streamStatus: string
   replyTarget: ReplyQuoteTarget | null
   relaySteps: RelayStepItem[]
@@ -40,7 +39,6 @@ const emit = defineEmits<{
   'update:inputPrompt': [val: string]
   'update:pendingImages': [val: string[]]
   'update:selectedModel': [val: string]
-  'update:enableThinking': [val: boolean]
   'update:replyTarget': [val: ReplyQuoteTarget | null]
   submitPrompt: [overrideText?: string]
   stopStream: []
@@ -590,25 +588,6 @@ function handleComposerKeydown(e: KeyboardEvent) {
               <circle cx="8.5" cy="8.5" r="1.5" />
               <polyline points="21 15 16 10 5 21" />
             </svg>
-          </button>
-          <button
-            type="button"
-            :aria-pressed="enableThinking"
-            @click="emit('update:enableThinking', !enableThinking)"
-            title="开启或关闭深度推理思考链（作用于支持 Thinking 的模型）"
-            :class="[
-              'min-h-[40px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 rounded-lg text-xs cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
-              enableThinking ? 'btn-tactile-gold' : 'btn-tactile text-fg-muted',
-            ]"
-          >
-            <span
-              :class="[
-                'w-1.5 h-1.5 rounded-full transition-colors',
-                enableThinking ? 'bg-accent' : 'bg-fg-muted',
-              ]"
-              aria-hidden="true"
-            />
-            <span>思考</span>
           </button>
           <span
             v-if="store.state.isStreaming"

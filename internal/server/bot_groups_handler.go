@@ -282,7 +282,7 @@ func (s *Server) handleCreateAdhocGroup(w http.ResponseWriter, r *http.Request) 
 		AvatarStyle:    "swarm:gold",
 		SystemPrompt:   "根据每位群成员的性格、专业与分工自然协作交流，必要时汇总决策或轻松互动，严禁使用 Emoji。",
 		Model:          groupModel,
-		EnableThinking: !allCompanion,
+		EnableThinking: true,
 		AllowedTools:   string(rawTools),
 		BotMode:        derivedMode,
 		MemoryPolicy:   store.MemoryPolicyStandard,

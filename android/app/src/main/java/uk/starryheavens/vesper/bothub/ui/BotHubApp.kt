@@ -286,7 +286,6 @@ fun BotHubApp(
                                 otherUnreadCount = otherUnreadWhileInChat,
                                 activeModel = viewModel.activeModel,
                                 modelOptions = viewModel.modelOptions,
-                                enableThinking = viewModel.enableThinking,
                                 messages = viewModel.messages,
                                 botThreads = viewModel.botThreads,
                                 activeThreadId = viewModel.activeThreadId,
@@ -306,7 +305,6 @@ fun BotHubApp(
                                 onSendPrompt = { prompt -> viewModel.sendAgentPrompt(prompt) },
                                 onStop = { viewModel.stopAgentStream(notifyUser = true) },
                                 onModelChange = viewModel::updateModel,
-                                onThinkingChange = viewModel::updateThinking,
                                 onSelectThread = viewModel::selectBotThread,
                                 onCreateThread = viewModel::createNewBotThread,
                                 onDeleteThread = viewModel::deleteBotThread,
@@ -719,9 +717,7 @@ fun BotHubApp(
                 allBots = viewModel.bots,
                 activeModel = viewModel.activeModel,
                 modelOptions = viewModel.modelOptions,
-                enableThinking = viewModel.enableThinking,
                 onModelChange = viewModel::updateModel,
-                onThinkingChange = viewModel::updateThinking,
                 onTogglePin = {
                     if (activeBot != null) viewModel.togglePinBot(activeBot)
                 },

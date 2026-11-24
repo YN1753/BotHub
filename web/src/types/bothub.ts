@@ -10,7 +10,7 @@ export interface Bot {
   avatar_style: string
   system_prompt: string
   model: string
-  enable_thinking: boolean
+  enable_thinking?: boolean
   allowed_tools: string
   bot_mode?: BotMode | string
   memory_policy?: MemoryPolicy | string

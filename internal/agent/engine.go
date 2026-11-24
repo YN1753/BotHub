@@ -528,7 +528,7 @@ func (e *Engine) ChatStream(ctx context.Context, req ChatRequest, emit func(even
 
 	const maxRounds = 5
 	for round := 0; round < maxRounds; round++ {
-		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(ctx, targets, messages, tools, req.EnableThinking, emit, func(deltaReasoning, deltaContent string) {
+		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(ctx, targets, messages, tools, emit, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
 				clean := notifier.StripEmoji(deltaReasoning)
 				totalReasoning.WriteString(clean)
@@ -897,7 +897,6 @@ func (e *Engine) streamRoundWithFailover(
 	targets []ModelTarget,
 	messages []apiMessage,
 	tools []ToolDefinition,
-	enableThinking *bool,
 	emit func(event string, data any),
 	onDelta func(deltaReasoning, deltaContent string),
 ) (string, string, []apiToolCall, *TokenUsage, ModelTarget, error) {
@@ -937,15 +936,7 @@ func (e *Engine) streamRoundWithFailover(
 
 		var thinkingCfg *thinkingConfig
 		if target.AllowThinking {
-			enabled := true
-			if enableThinking != nil {
-				enabled = *enableThinking
-			}
-			if enabled {
-				thinkingCfg = &thinkingConfig{Type: "enabled"}
-			} else {
-				thinkingCfg = &thinkingConfig{Type: "disabled"}
-			}
+			thinkingCfg = &thinkingConfig{Type: "enabled"}
 		}
 
 		targetFailed := false

@@ -151,6 +151,7 @@ func (s *Server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(req.Model) == "" {
 		req.Model = "auto"
 	}
+	req.EnableThinking = true
 	req.IsBuiltin = false
 	req.State = store.BotStateIdle
 	if req.IsGroup {

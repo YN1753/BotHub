@@ -357,7 +357,7 @@ func TestCreateBotAutoForgeAndUpgradeBot(t *testing.T) {
 	if upgraded.Model != "auto" || !upgraded.EnableThinking || upgraded.AllowedTools != "[]" || upgraded.MemoryPolicy != "standard" {
 		t.Fatalf("expected upgraded bot to use auto with full native core, got %+v", upgraded)
 	}
-	if len([]rune(upgraded.SystemPrompt)) < 160 {
-		t.Fatalf("expected upgraded SystemPrompt to be forged (>=160 runes), got %d runes: %s", len([]rune(upgraded.SystemPrompt)), upgraded.SystemPrompt)
+	if len([]rune(upgraded.SystemPrompt)) < 100 || strings.Contains(upgraded.SystemPrompt, "web_search") {
+		t.Fatalf("expected upgraded SystemPrompt to be forged cleanly without built-in tool boilerplate (>=100 runes), got %d runes: %s", len([]rune(upgraded.SystemPrompt)), upgraded.SystemPrompt)
 	}
 }

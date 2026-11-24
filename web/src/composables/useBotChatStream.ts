@@ -16,7 +16,6 @@ export function useBotChatStream(options: {
   inputPrompt: Ref<string>
   pendingImages: Ref<string[]>
   selectedModel: Ref<string>
-  enableThinking: Ref<boolean>
   replyTarget: Ref<ReplyQuoteTarget | null>
   scrollToBottom: (force?: boolean) => void
   onClosePopovers?: () => void
@@ -26,7 +25,6 @@ export function useBotChatStream(options: {
     inputPrompt,
     pendingImages,
     selectedModel,
-    enableThinking,
     replyTarget,
     scrollToBottom,
     onClosePopovers,
@@ -226,7 +224,6 @@ export function useBotChatStream(options: {
           message: payloadMessage,
           ...(images.length > 0 ? { images } : {}),
           model: effectiveModel,
-          enable_thinking: enableThinking.value,
           reply_to_id: quote?.serverId || 0,
           reply_preview: effectiveReplyPreview,
         }),

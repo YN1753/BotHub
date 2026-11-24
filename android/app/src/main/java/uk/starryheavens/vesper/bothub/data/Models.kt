@@ -424,7 +424,6 @@ data class BotItem(
     val roleTitle: String,
     val avatarStyle: String,
     val model: String,
-    val enableThinking: Boolean,
     val state: String,
     val unreadCount: Int,
     val lastSummary: String,

@@ -96,54 +96,22 @@ private fun BuiltinAndCustomSkillsBlock(
     availableSkills: List<SkillItemUi>,
     onToggleSkill: (String) -> Unit
 ) {
-    val theme = BotHubThemeTokens
+    if (availableSkills.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        VesperCard(
-            cornerRadius = 14.dp,
-            modifier = Modifier.fillMaxWidth()
+        VesperSectionHeader(
+            title = "已挂载 MCP 服务与扩展 (${selectedSkillIds.size}/${availableSkills.size})"
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Agent 原生认知底座",
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = theme.textPrimary
-                    )
-                    VesperTag(text = "全员内置", toneColor = theme.success)
-                }
-                Text(
-                    text = "实时多源联网搜索、网页正文读取、长期记忆、时间计算与多 Bot 协同已默认内置；外部扩展与 MCP 服务可在下方按需挂载。",
-                    fontSize = 11.5.sp,
-                    lineHeight = 16.5.sp,
-                    color = theme.textMuted
+            availableSkills.forEach { sk ->
+                val checked = sk.id in selectedSkillIds
+                VesperFilterChip(
+                    label = sk.name,
+                    selected = checked,
+                    onClick = { onToggleSkill(sk.id) }
                 )
-            }
-        }
-
-        if (availableSkills.isNotEmpty()) {
-            VesperSectionHeader(
-                title = "已挂载 MCP 服务与扩展 (${selectedSkillIds.size}/${availableSkills.size})"
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                availableSkills.forEach { sk ->
-                    val checked = sk.id in selectedSkillIds
-                    VesperFilterChip(
-                        label = sk.name,
-                        selected = checked,
-                        onClick = { onToggleSkill(sk.id) }
-                    )
-                }
             }
         }
     }
@@ -1511,9 +1479,7 @@ fun ChatInfoSheet(
     allBots: List<BotItem>,
     activeModel: String,
     modelOptions: List<ModelOptionItem> = emptyList(),
-    enableThinking: Boolean,
     onModelChange: (String) -> Unit,
-    onThinkingChange: (Boolean) -> Unit,
     onTogglePin: () -> Unit,
     onInviteToGroup: () -> Unit,
     onOpenMemberProfile: (BotItem) -> Unit,
@@ -1676,24 +1642,6 @@ fun ChatInfoSheet(
                         }
                         VesperDivider(startIndent = 15.dp, endIndent = 15.dp)
                     }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .sizeIn(minHeight = 54.dp)
-                            .clickable { onThinkingChange(!enableThinking) }
-                            .padding(start = 15.dp, end = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("深度思考", fontSize = 14.5.sp, color = theme.textPrimary)
-                        VesperSwitch(
-                            checked = enableThinking,
-                            onCheckedChange = onThinkingChange
-                        )
-                    }
-
-                    VesperDivider(startIndent = 15.dp, endIndent = 15.dp)
 
                     val currentModelLabel = resolveModelOptionDisplayName(activeModel, modelOptions)
                     Row(

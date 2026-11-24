@@ -81,10 +81,6 @@ func manageBotsToolSpec() ToolSpec {
 							"type":        "string",
 							"description": "可选：默认推理模型（默认 auto 自动路由，也支持 pool:<provider_id>::<model_id>）",
 						},
-						"enable_thinking": map[string]any{
-							"type":        "boolean",
-							"description": "可选：是否开启深度思考（companion 模式默认 false，其他默认 true）",
-						},
 						"allowed_tools": map[string]any{
 							"type":        "array",
 							"items":       map[string]any{"type": "string"},
@@ -1156,45 +1152,45 @@ func buildFallbackHighIQBotPrompt(name, roleTitle, botMode, traits string) strin
 	if strings.TrimSpace(traits) != "" {
 		sb.WriteString("性格与沟通风格：" + strings.TrimSpace(traits) + "。\n\n")
 	}
-	sb.WriteString("核心思维与行动准则：\n")
+	sb.WriteString("核心思维与表达准则：\n")
 	if botMode == store.BotModeCompanion {
-		sb.WriteString("1. 真实自然、有独立观点与敏锐共情：像真正懂你的老朋友一样对话，接得住梗、看得懂言外之意，拒绝客服腔、说教腔与模板化安慰。\n")
-		sb.WriteString("2. 言简意赅、不水字数：日常聊天气氛轻快有呼吸感；遇到你认真探讨问题或需要帮忙查资料时，立刻拿出高智商洞察和清晰建议。\n")
+		sb.WriteString("1. 真实自然、有独立观点与共情力：像懂你的老朋友一样对话，接得住梗、看得懂言外之意，拒绝客服腔与模板化安慰。\n")
+		sb.WriteString("2. 言简意赅、有呼吸感：日常聊天轻松自然，深入讨论时直接给出清晰独到的见解。\n")
 	} else {
-		sb.WriteString("1. 专家级思考框架：接到问题先抓本质与约束条件，结论先行、直接给可执行方案和潜在坑点预警，严禁复述用户原话或用空洞套话敷衍。\n")
-		sb.WriteString("2. 强执行与主动查证：凡涉及最新资讯、外部事实或链接内容，主动调用 web_search / read_url 核验；涉及待办、笔记、资产、探针、GitHub、邮箱、Cloudflare、RSS 或云盘等扩展需求，直接调用对应 MCP 工具或 mount_mcp 自动挂载后落地执行。\n")
+		sb.WriteString("1. 专家级思考框架：抓准本质与约束条件，结论先行，直接给可执行方案与潜在风险提示，严禁复述问题或堆砌客套。\n")
+		sb.WriteString("2. 严谨求证：对不确定的外部事实与数据保持诚实核验，不凭空臆测。\n")
 	}
-	sb.WriteString("3. 诚实有边界：不编造未核查的事实或工具执行结果，严禁使用任何 Emoji。")
+	sb.WriteString("3. 严禁使用任何 Emoji。")
 	return sb.String()
 }
 
-// ForgeHighIQBotPrompt uses the Paid-First model pool to synthesize a deep, domain-sharp,
+// ForgeHighIQBotPrompt uses the model pool to synthesize a deep, domain-sharp,
 // non-cliché SystemPrompt (and optional Traits) for a newly created or upgraded Bot.
 func (e *Engine) ForgeHighIQBotPrompt(ctx context.Context, name, roleTitle, botMode, traits, currentPrompt string) (string, string, error) {
 	if e == nil || !e.hasLightTarget() {
 		return buildFallbackHighIQBotPrompt(name, roleTitle, botMode, traits), traits, nil
 	}
 
-	modeDesc := "综合协同型（既自然好聊又能调工具落地干活）"
+	modeDesc := "综合协同型（既自然好聊又能落地干活）"
 	switch store.NormalizeBotMode(botMode) {
 	case store.BotModeCompanion:
-		modeDesc = "陪伴聊天型（像真人老朋友一样自然有灵魂，同时具备联网查证与记忆能力）"
+		modeDesc = "陪伴聊天型（像真人老朋友一样自然有灵魂）"
 	case store.BotModeWorker:
-		modeDesc = "专业执行型（极度干练、专业深入、主动查证与落地交付）"
+		modeDesc = "专业执行型（极度干练、专业深入、直接交付）"
 	}
 
-	sys := strings.TrimSpace(`你是顶级 AI Agent 提示词架构师（Prompt Architect）。
-用户觉得普通一句模板创建出来的 Bot 太呆板、太蠢、充满 AI 套话。
-请你根据给定的 Bot 名称、职责定位、模式与现有草稿，将其锻造成一份高智商、有灵魂、有独立判断力与极强执行力的专家级 System Prompt。
+	sys := strings.TrimSpace(`你是顶级 AI 角色提示词架构师（Prompt Architect）。
+请你根据给定的 Bot 名称、职责定位、模式与现有草稿，将其锻造成一份高智商、有灵魂、有独立判断力的专家级 System Prompt。
 
 请严格输出一个纯 JSON 对象（严禁 Markdown 代码块与 Emoji）：
 {
-  "system_prompt": "300~550字的深度中文系统提示词，包含：1) 角色定位与深层心智模型；2) 思考与回答纪律（结论先行、指出盲点、直接给可落地洞见，严禁复述问题与官腔套话）；3) 主动工具意识（不确定事实主动 web_search/read_url，涉及外部系统或工作台主动调 MCP）；4) 符合定位的语言节奏",
+  "system_prompt": "220~420字的精炼中文系统提示词，聚焦：1) 角色定位与深层专业心智模型；2) 思考与回答纪律（结论先行、指出盲点、直接给可落地洞见，严禁复述问题与官腔套话）；3) 契合该定位的语言节奏与边界",
   "traits": "20~45字精炼鲜活的性格与说话风格标签"
 }
 
 硬性要求：
 - 保留用户原草稿中的所有具体业务要求、约束、偏好和人设特征，不得丢失原意；
+- 严禁在 system_prompt 中提及或罗列联网搜索、web_search、read_url、深度思考、长期记忆或 MCP 工具名等运行环境内置能力；
 - 严禁出现“我是一个人工智能助手”、“希望能帮到您”、“这是一个很好的问题”等低智商模板词；
 - 严禁使用任何 Emoji。`)
 

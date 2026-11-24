@@ -40,7 +40,6 @@ const bot = store.activeBot
 const inputPrompt = ref('')
 const pendingImages = ref<string[]>([])
 const selectedModel = ref('auto')
-const enableThinking = ref(true)
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const composerRef = ref<InstanceType<typeof BotChatComposer> | null>(null)
 const chatSearchBarRef = ref<InstanceType<typeof BotChatSearchBar> | null>(null)
@@ -92,7 +91,6 @@ const {
   inputPrompt,
   pendingImages,
   selectedModel,
-  enableThinking,
   replyTarget,
   scrollToBottom,
   onClosePopovers: () => composerRef.value?.closePopovers(),
@@ -157,15 +155,6 @@ function handleSelectedModelChange(nextModel: string) {
   if (b) {
     b.model = nextModel
     void BotHubApi.updateBot(b.id, { model: nextModel }).catch(() => {})
-  }
-}
-
-function handleEnableThinkingChange(nextEnabled: boolean) {
-  enableThinking.value = nextEnabled
-  const b = bot.value
-  if (b) {
-    b.enable_thinking = nextEnabled
-    void BotHubApi.updateBot(b.id, { enable_thinking: nextEnabled }).catch(() => {})
   }
 }
 
@@ -256,7 +245,6 @@ watch(
         ? 'auto'
         : b.model
     selectedModel.value = normModel
-    enableThinking.value = b.enable_thinking !== false
     announcementDismissed.value = false
     replyTarget.value = null
     pendingImages.value = []
@@ -861,7 +849,6 @@ async function clearTimeline() {
             v-model:input-prompt="inputPrompt"
             v-model:pending-images="pendingImages"
             :selected-model="selectedModel"
-            :enable-thinking="enableThinking"
             v-model:reply-target="replyTarget"
             :stream-status="streamStatus"
             :relay-steps="relaySteps"
@@ -871,7 +858,6 @@ async function clearTimeline() {
             :centered-stage="isStreamEmpty"
             :starter-chips="starterChips"
             @update:selected-model="handleSelectedModelChange"
-            @update:enable-thinking="handleEnableThinkingChange"
             @submit-prompt="sendPrompt"
             @stop-stream="stopStream"
             @clear-timeline="clearTimeline"

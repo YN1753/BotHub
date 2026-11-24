@@ -180,8 +180,11 @@ func TestCompanionVsWorkerPromptAndSkills(t *testing.T) {
 		SystemPrompt: "平时像微信聊天一样互动。",
 	}
 	prompt := buildBotSystemPrompt(&companionBot, []store.Skill{playbook}, nil, nil, "", false)
-	if !strings.Contains(prompt, "真实、有温度、有自己性格特点的聊天伙伴") || !strings.Contains(prompt, "说话简短自然、幽默接梗") || !strings.Contains(prompt, "先接住对方的情绪") {
+	if !strings.Contains(prompt, "真实、有温度的老朋友") || !strings.Contains(prompt, "说话简短自然、幽默接梗") || !strings.Contains(prompt, "先接住对方的情绪") {
 		t.Fatalf("expected companion prompt with traits and playbook skill, got:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "原生联网与核心能力声明") {
+		t.Fatalf("expected redundant native web_search boilerplate removed from prompt, got:\n%s", prompt)
 	}
 
 	// Companion with default empty allowed_tools receives the 9 Native Core tools (including web_search, read_url, mount_mcp)
@@ -198,7 +201,7 @@ func TestCompanionVsWorkerPromptAndSkills(t *testing.T) {
 		AllowedTools: `["query_nezha_nodes"]`,
 	}
 	workerPrompt := buildBotSystemPrompt(&workerBot, nil, nil, nil, "", false)
-	if !strings.Contains(workerPrompt, "干练务实的专业执行者") || !strings.Contains(workerPrompt, "结构化展示准则") {
+	if !strings.Contains(workerPrompt, "干练务实") || !strings.Contains(workerPrompt, "结构化展示准则") {
 		t.Fatalf("expected worker prompt guidance with structured display hint, got:\n%s", workerPrompt)
 	}
 	workerTools := filterToolsForBot(&workerBot, nil)
@@ -881,7 +884,7 @@ func TestClaudeMemoryTwoZonePromptIndexAndAutoDream(t *testing.T) {
 	if !strings.Contains(prompt, "## 纠偏与工作纪律 (feedback)") || !strings.Contains(prompt, "## 长尾记忆索引") || !strings.Contains(prompt, "`old_ref_tail`") {
 		t.Fatalf("expected layered MEMORY.md sections + tail index, got:\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "严禁生硬说出“根据我的记忆库”") {
+	if !strings.Contains(prompt, "不要说出“根据我的记忆库”") {
 		t.Fatalf("expected natural memory integration boundary in prompt")
 	}
 

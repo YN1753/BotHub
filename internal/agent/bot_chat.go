@@ -308,14 +308,6 @@ func (e *Engine) runSingleBotTurn(
 		rawModel = actingBot.Model
 	}
 
-	var thinkFlag *bool
-	if req.EnableThinking != nil {
-		thinkFlag = req.EnableThinking
-	} else {
-		v := actingBot.EnableThinking
-		thinkFlag = &v
-	}
-
 	newlyAutoMounted := e.autoMountRelevantMCPs(actingBot, userMsg)
 	attachedSkills, _ := e.store.GetSkillsByIDs(actingBot.SkillIDList())
 	allWorkspaceSkills, _ := e.store.ListSkills()
@@ -323,8 +315,7 @@ func (e *Engine) runSingleBotTurn(
 	tools := pruneToolsForTurn(allBotTools, userMsg, history)
 
 	targets, err := e.ResolveChatTargetsWithOptions(ctx, rawModel, ModelResolveOptions{
-		NeedTools:    len(tools) > 0,
-		NeedThinking: thinkFlag != nil && *thinkFlag,
+		NeedTools: len(tools) > 0,
 	})
 	if err != nil {
 		e.emitBotState(actingBot.ID, store.BotStateBlocked, err.Error())
@@ -651,7 +642,7 @@ func (e *Engine) runSingleBotTurn(
 
 	for round := 0; round < maxRounds; round++ {
 		contentPrefixBeforeRound := finalContent.String()
-		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(toolCtx, targets, messages, tools, thinkFlag, emit, func(deltaReasoning, deltaContent string) {
+		roundReasoning, roundContent, toolCalls, roundUsage, usedTarget, err := e.streamRoundWithFailover(toolCtx, targets, messages, tools, emit, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
 				clean := notifier.StripEmoji(deltaReasoning)
 				totalReasoning.WriteString(clean)
@@ -797,7 +788,7 @@ func (e *Engine) runSingleBotTurn(
 					},
 				)
 				var rwContentBuf strings.Builder
-				rwReasoning, rwContent, _, rwUsage, rwTarget, rwErr := e.streamRoundWithFailover(toolCtx, rewriteTargets, rewriteMsgs, nil, thinkFlag, nil, func(dR, dC string) {
+				rwReasoning, rwContent, _, rwUsage, rwTarget, rwErr := e.streamRoundWithFailover(toolCtx, rewriteTargets, rewriteMsgs, nil, nil, func(dR, dC string) {
 					if dC != "" {
 						rwContentBuf.WriteString(notifier.StripEmoji(dC))
 					}
@@ -1069,7 +1060,7 @@ func (e *Engine) runSingleBotTurn(
 			Role:    "system",
 			Content: "已达到本轮最大工具调用步数。请立即根据以上收集到的全部工具结果直接给出完整、清晰的中文最终答复，不要再发起新的工具调用。",
 		})
-		sReasoning, sContent, _, sUsage, usedTarget, sErr := e.streamRoundWithFailover(ctx, targets, messages, nil, thinkFlag, emit, func(deltaReasoning, deltaContent string) {
+		sReasoning, sContent, _, sUsage, usedTarget, sErr := e.streamRoundWithFailover(ctx, targets, messages, nil, emit, func(deltaReasoning, deltaContent string) {
 			if deltaReasoning != "" {
 				clean := notifier.StripEmoji(deltaReasoning)
 				totalReasoning.WriteString(clean)

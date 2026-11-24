@@ -222,6 +222,9 @@ func TestModelHealthCooldownStrategiesCapabilitiesAndLightTag(t *testing.T) {
 	}
 
 	// 3. Lowest latency & round_robin strategies
+	eng.health.recordSuccess("pool:prov_a::no-tools-model", 520)
+	eng.health.recordSuccess("pool:prov_a::full-tools-model", 410)
+	eng.health.recordSuccess("pool:prov_a::fast-light-model", 45)
 	_ = st.SetConfig(store.KeyPoolStrategy, store.PoolStrategyLowestLatency)
 	latTargets, err := eng.ResolveChatTargetsWithOptions(context.Background(), "auto", ModelResolveOptions{})
 	if err != nil || latTargets[0].Model != "fast-light-model" {

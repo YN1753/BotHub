@@ -1150,13 +1150,11 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
 
     suspend fun updateBotPreferences(
         botId: String,
-        model: String? = null,
-        enableThinking: Boolean? = null
+        model: String? = null
     ): Result<BotItem> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = JSONObject()
             if (!model.isNullOrBlank()) payload.put("model", normalizeModelIdForSinglePool(model))
-            if (enableThinking != null) payload.put("enable_thinking", enableThinking)
             val req = requestBuilder("/api/v2/bots/$botId")
                 .post(jsonBody(payload.toString()))
                 .build()
@@ -1250,7 +1248,6 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("system_prompt", systemPrompt.trim())
                 .put("allowed_tools", toolsArr.toString())
                 .put("skill_ids", skillArr.toString())
-                .put("enable_thinking", true)
                 .toString()
             val req = requestBuilder("/api/v2/bots")
                 .post(jsonBody(payload))
@@ -1455,7 +1452,6 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
         images: List<String> = emptyList(),
         persona: String,
         model: String,
-        enableThinking: Boolean = true,
         onCallCreated: (Call) -> Unit = {},
         onSession: (String) -> Unit,
         onReasoningDelta: (String) -> Unit,
@@ -1474,7 +1470,6 @@ class BotHubApiClient(private val prefs: BotHubPrefs) {
                 .put("message", message)
                 .put("persona", persona)
                 .put("model", normalizeModelIdForSinglePool(model))
-                .put("enable_thinking", enableThinking)
             if (images.isNotEmpty()) {
                 val imgArr = JSONArray()
                 images.forEach { if (it.isNotBlank()) imgArr.put(it.trim()) }

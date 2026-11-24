@@ -10,7 +10,6 @@ import BotAvatar from './BotAvatar.vue'
 import BotAvatarPicker from './BotAvatarPicker.vue'
 import CustomSelect from './CustomSelect.vue'
 import SegmentedTabs from './SegmentedTabs.vue'
-import ToggleSwitch from './ToggleSwitch.vue'
 import ModelRoutePreview from './ui/ModelRoutePreview.vue'
 
 const store = useAppStore()
@@ -45,7 +44,6 @@ const model = ref(store.modelOptions.value[0]?.value || 'auto')
 const botMode = ref<BotMode>('hybrid')
 const memoryPolicy = ref<MemoryPolicy>('standard')
 const traits = ref('')
-const enableThinking = ref(true)
 const systemPrompt = ref('')
 const selectedSkillIds = ref<string[]>([])
 const forgingPrompt = ref(false)
@@ -90,7 +88,7 @@ const STARTER_ARCHETYPES: Array<{
     mode: 'hybrid',
     avatar: 'butler:gold',
     traits: '简洁高效、主动帮用户拆解待办与时间规划',
-    prompt: '你是用户的专属个人总助。收到想法时先查现有待办/文档/收藏匣，能落地就调用工具直接创建待办、收纳闪念链接、写笔记或设定提醒，禁止废话与 Emoji。',
+    prompt: '你是用户的专属个人总助。收到想法时先梳理现有事项与优先级，直接把模糊想法落地成清晰行动计划、笔记或提醒，禁止废话与 Emoji。',
     tools: ['manage_todos', 'manage_notes', 'manage_stash', 'manage_tasks', 'workspace_briefing', 'datetime_calc', 'calculate_eval', 'remember_fact', 'recall_memory', 'manage_memory', 'send_notification'],
   },
   {
@@ -100,7 +98,7 @@ const STARTER_ARCHETYPES: Array<{
     mode: 'worker',
     avatar: 'visor:obsidian',
     traits: '严谨客观、先核查资产台账与到期规则再汇报结论',
-    prompt: '你是资产与周期提醒管理助手。涉及到期账单、分类汇总与提醒计划时优先调用 manage_assets 与 manage_tasks 获取真实数据，严禁使用 Emoji。',
+    prompt: '你是资产与周期提醒管理助手。涉及到期账单、分类汇总与提醒计划时，以真实核查数据为准，突出续费风险与可执行建议，严禁使用 Emoji。',
     tools: ['manage_assets', 'manage_tasks', 'send_notification', 'remember_fact', 'recall_memory', 'datetime_calc', 'calculate_eval'],
   },
   {
@@ -109,8 +107,8 @@ const STARTER_ARCHETYPES: Array<{
     role: '技术情报与长文精读分析师',
     mode: 'worker',
     avatar: 'radar:indigo',
-    traits: '结构清晰、善用网页检索与链接阅读提炼要点',
-    prompt: '你是深度技术调研员。回答复杂调研问题前先调用 web_search、read_url 与 manage_stash 获取一手依据与历史收藏，给出对照对比与可执行建议，严禁使用 Emoji。',
+    traits: '结构清晰、善用一手资料做对照分析与要点提炼',
+    prompt: '你是深度技术调研员。回答复杂调研问题前先查证一手资料与最新动态，给出结构化对照对比与可执行建议，严禁使用 Emoji。',
     tools: ['web_search', 'read_url', 'manage_stash', 'manage_notes', 'remember_fact', 'recall_memory', 'calculate_eval'],
   },
   {
@@ -147,7 +145,6 @@ watch(
     if (!store.modelOptions.value.some((o) => o.value === model.value)) {
       model.value = store.modelOptions.value[0]?.value || 'auto'
     }
-    enableThinking.value = true
     if (groupMembers.value.length === 0) {
       groupMembers.value = availableSpecialistBots.value.slice(0, 3).map((b) => b.id)
     }
@@ -242,7 +239,6 @@ async function handleSubmit() {
         model: derivedModel,
         bot_mode: allCompanion ? 'companion' : 'hybrid',
         memory_policy: 'standard',
-        enable_thinking: true,
         is_group: true,
         member_ids: JSON.stringify(groupMembers.value),
         group_mode: groupMode.value,
@@ -285,7 +281,6 @@ async function handleSubmit() {
       bot_mode: botMode.value,
       memory_policy: memoryPolicy.value,
       traits: traits.value.trim(),
-      enable_thinking: enableThinking.value,
       is_group: false,
       member_ids: '[]',
       allowed_tools: '[]',
@@ -414,9 +409,6 @@ async function handleSubmit() {
               <span>记忆隔离策略</span>
               <CustomSelect v-model="memoryPolicy" :options="MEMORY_POLICY_OPTIONS" aria-label="记忆隔离策略" />
             </div>
-            <div class="sm:col-span-2 flex items-center justify-between gap-2.5 pt-1">
-              <ToggleSwitch v-model="enableThinking" label="默认开启深度思考推理链" />
-            </div>
             <div class="sm:col-span-2">
               <ModelRoutePreview
                 :selected-model="model"
@@ -445,18 +437,6 @@ async function handleSubmit() {
                 class="auto-size-textarea w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent resize-y"
               />
             </label>
-
-            <div class="rounded-xl border border-line bg-canvas/70 px-3 py-2 flex flex-col gap-1 text-xs">
-              <div class="flex items-center justify-between gap-2">
-                <span class="font-medium text-fg">Agent 原生认知底座 (Native Core)</span>
-                <span class="font-mono text-[11px] px-2 py-0.5 rounded-full border border-ok-border bg-ok-soft text-ok">
-                  全员永久内置
-                </span>
-              </div>
-              <p class="text-fg-muted leading-relaxed">
-                实时联网搜索、网页读取、长期记忆、时间计算与多 Bot 协同默认自带；业务模块与外部工具通过下方 MCP 服务按需挂载（在对话中提及相关需求时也会自动发现并永久挂载）。
-              </p>
-            </div>
 
             <div class="flex flex-col gap-1.5 text-xs text-fg-sub pt-1 border-t border-line">
               <div class="flex items-center justify-between">
@@ -592,7 +572,7 @@ async function handleSubmit() {
       <div class="flex items-center justify-between gap-2 pt-2 border-t border-line shrink-0 flex-wrap">
         <span class="font-mono text-xs text-fg-muted">
           <template v-if="mode === 'bot'">
-            {{ BOT_MODE_TABS.find((t) => t.id === botMode)?.label }} · Native Core 联网+记忆 · {{ selectedSkillIds.length }} 预挂载 MCP
+            {{ BOT_MODE_TABS.find((t) => t.id === botMode)?.label }} · {{ selectedSkillIds.length }} 项预挂载 MCP
           </template>
           <template v-else>
             已拉起 {{ groupMembers.length }} 位群成员 · {{ groupModeLabel(groupMode) }}

@@ -246,7 +246,6 @@ fun ChatRoomScreen(
     otherUnreadCount: Int,
     activeModel: String,
     modelOptions: List<ModelOptionItem> = emptyList(),
-    enableThinking: Boolean,
     messages: List<ChatTurnUi>,
     botThreads: List<BotThreadItem> = emptyList(),
     activeThreadId: String = "",
@@ -266,7 +265,6 @@ fun ChatRoomScreen(
     onSendPrompt: (String) -> Unit,
     onStop: () -> Unit,
     onModelChange: (String) -> Unit,
-    onThinkingChange: (Boolean) -> Unit,
     onSelectThread: (String) -> Unit = {},
     onCreateThread: (String) -> Unit = {},
     onDeleteThread: (String) -> Unit = {},
@@ -1461,38 +1459,6 @@ fun ChatRoomScreen(
                         contentDescription = "切换模型",
                         tint = theme.textMuted,
                         modifier = Modifier.size(14.dp)
-                    )
-                }
-
-                Row(
-                    modifier = Modifier
-                        .sizeIn(minHeight = 32.dp)
-                        .clip(capsuleShape)
-                        .background(if (enableThinking) theme.accentSoft else theme.surfaceControl, capsuleShape)
-                        .border(1.dp, if (enableThinking) theme.accentMuted else theme.border, capsuleShape)
-                        .vesperPressable(pressedScale = 0.95f, hapticOnTap = true) {
-                            onThinkingChange(!enableThinking)
-                        }
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Psychology,
-                        contentDescription = null,
-                        tint = if (enableThinking) theme.accentForeground else theme.textMuted,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = if (enableThinking) "深度思考" else "快答",
-                        style = TextStyle(
-                            fontSize = 11.5.sp,
-                            fontWeight = if (enableThinking) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (enableThinking) theme.accentForeground else theme.textSecondary,
-                            platformStyle = NoFontPaddingStyle
-                        ),
-                        maxLines = 1,
-                        softWrap = false
                     )
                 }
             }

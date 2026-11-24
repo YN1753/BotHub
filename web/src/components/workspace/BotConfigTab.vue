@@ -9,7 +9,6 @@ import BotAvatar from '../BotAvatar.vue'
 import BotAvatarPicker from '../BotAvatarPicker.vue'
 import CustomSelect from '../CustomSelect.vue'
 import SegmentedTabs from '../SegmentedTabs.vue'
-import ToggleSwitch from '../ToggleSwitch.vue'
 import ModelRoutePreview from '../ui/ModelRoutePreview.vue'
 
 const store = useAppStore()
@@ -20,7 +19,6 @@ const cfgRole = ref('')
 const cfgPrompt = ref('')
 const cfgModel = ref('auto')
 const cfgAvatar = ref('butler:gold')
-const cfgThinking = ref(true)
 const cfgBotMode = ref<BotMode>('hybrid')
 const cfgMemoryPolicy = ref<MemoryPolicy>('standard')
 const cfgTraits = ref('')
@@ -68,7 +66,6 @@ const hasProfileChanges = computed(() => {
     cfgPrompt.value.trim() !== (b.system_prompt || '').trim() ||
     cfgModel.value !== normModel ||
     cfgAvatar.value !== (b.avatar_style || 'cyan') ||
-    cfgThinking.value !== (b.enable_thinking !== false) ||
     cfgBotMode.value !== normMode ||
     cfgMemoryPolicy.value !== normPolicy ||
     cfgTraits.value.trim() !== (b.traits || '').trim() ||
@@ -92,7 +89,6 @@ watch(
     cfgPrompt.value = b.system_prompt
     cfgModel.value = normModel
     cfgAvatar.value = b.avatar_style || 'cyan'
-    cfgThinking.value = b.enable_thinking !== false
     cfgBotMode.value = (b.bot_mode as BotMode) || 'hybrid'
     cfgMemoryPolicy.value = (b.memory_policy as MemoryPolicy) || 'standard'
     cfgTraits.value = b.traits || ''
@@ -154,7 +150,6 @@ async function saveBotProfile() {
       bot_mode: cfgBotMode.value,
       memory_policy: cfgMemoryPolicy.value,
       traits: cfgTraits.value.trim(),
-      enable_thinking: cfgThinking.value,
       system_prompt: cfgPrompt.value.trim(),
       allowed_tools: '[]',
       skill_ids: JSON.stringify(cfgSkillIds.value),
@@ -303,9 +298,6 @@ function openScopedMemoriesManager() {
             <span>记忆隔离策略</span>
             <CustomSelect v-model="cfgMemoryPolicy" :options="MEMORY_POLICY_OPTIONS" aria-label="记忆隔离策略" />
           </div>
-          <div class="md:col-span-2 flex items-center justify-between gap-3">
-            <ToggleSwitch v-model="cfgThinking" label="默认开启深度思考" />
-          </div>
           <div class="md:col-span-2">
             <ModelRoutePreview
               :selected-model="cfgModel"
@@ -369,18 +361,6 @@ function openScopedMemoriesManager() {
             </div>
             <textarea v-model="cfgPrompt" rows="5" class="auto-size-textarea rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg focus:border-accent resize-y" />
           </label>
-
-          <div class="md:col-span-2 rounded-xl border border-line bg-canvas/70 px-3.5 py-2.5 flex flex-col gap-1 text-xs">
-            <div class="flex items-center justify-between gap-2">
-              <span class="font-medium text-fg">Agent 原生认知底座 (Native Core)</span>
-              <span class="font-mono text-[11px] px-2 py-0.5 rounded-full border border-ok-border bg-ok-soft text-ok">
-                已全员永久内置
-              </span>
-            </div>
-            <p class="text-fg-muted leading-relaxed">
-              实时多源联网搜索 (web_search)、网页正文读取 (read_url)、长期记忆、精确时间与数学计算、多 Bot 协同及 MCP 动态发现能力已对所有模式 Bot 默认内置，无需手动勾选且永不被裁剪。
-            </p>
-          </div>
 
           <div class="md:col-span-2 flex flex-col gap-2 text-xs text-fg-sub pt-2 border-t border-line">
             <div class="flex items-center justify-between">

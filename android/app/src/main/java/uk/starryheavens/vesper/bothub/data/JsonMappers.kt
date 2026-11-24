@@ -95,7 +95,6 @@ object JsonMappers {
             roleTitle = b.optString("role_title"),
             avatarStyle = b.optString("avatar_style", "butler:gold"),
             model = rawModel,
-            enableThinking = b.optBoolean("enable_thinking", true),
             state = b.optString("state", "idle"),
             unreadCount = b.optInt("unread_count", 0),
             lastSummary = b.optString("last_summary", ""),
@@ -191,7 +190,6 @@ object JsonMappers {
                     .put("role_title", b.roleTitle)
                     .put("avatar_style", b.avatarStyle)
                     .put("model", b.model)
-                    .put("enable_thinking", b.enableThinking)
                     .put("state", b.state)
                     .put("unread_count", b.unreadCount)
                     .put("last_summary", b.lastSummary)

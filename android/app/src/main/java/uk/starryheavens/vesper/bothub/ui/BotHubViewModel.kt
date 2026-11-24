@@ -166,9 +166,6 @@ class BotHubViewModel(
     var activeModel by mutableStateOf(prefs.activeModel)
         private set
 
-    var enableThinking by mutableStateOf(prefs.enableThinking)
-        private set
-
     var inputText by mutableStateOf("")
         private set
 
@@ -638,7 +635,6 @@ class BotHubViewModel(
             prefs.lastActiveBotId = botId
             bots.find { it.id == botId }?.let { cachedBot ->
                 activeModel = normalizeModelIdForSinglePool(cachedBot.model)
-                enableThinking = cachedBot.enableThinking
             }
             val nextBots = bots.map { if (it.id == botId && it.unreadCount != 0) it.copy(unreadCount = 0) else it }
             if (nextBots != bots) {
@@ -1437,7 +1433,6 @@ class BotHubViewModel(
                     compactionSummary = payload.compactionSummary
                     if (target != null) {
                         activeModel = normalizeModelIdForSinglePool(target.model)
-                        enableThinking = target.enableThinking
                     }
                     if (chatMessages.toList() != mapped) {
                         chatMessages.clear()
@@ -1582,26 +1577,6 @@ class BotHubViewModel(
                         prefs.saveCachedBots(synced)
                     }.onFailure { err ->
                         showMessage("模型切换同步失败：${err.message ?: "网络异常"}")
-                    }
-                }
-            }
-        }
-    }
-
-    fun updateThinking(enabled: Boolean) {
-        enableThinking = enabled
-        prefs.enableThinking = enabled
-        val targetId = activeBotId
-        if (sessionId.isEmpty() && targetId.isNotBlank()) {
-            val optimistic = bots.map { if (it.id == targetId) it.copy(enableThinking = enabled) else it }
-            bots = optimistic
-            prefs.saveCachedBots(optimistic)
-            if (prefs.isLikelyPaired) {
-                viewModelScope.launch {
-                    api.updateBotPreferences(botId = targetId, enableThinking = enabled).onSuccess { updated ->
-                        val synced = bots.map { if (it.id == targetId) updated else it }
-                        bots = synced
-                        prefs.saveCachedBots(synced)
                     }
                 }
             }
@@ -1781,7 +1756,6 @@ class BotHubViewModel(
                     images = attachedImages,
                     persona = activePersona,
                     model = effectiveModel,
-                    enableThinking = enableThinking,
                     onCallCreated = { call -> activeStreamCall = call },
                     onSession = { sid ->
                         viewModelScope.launch { sessionId = sid }
