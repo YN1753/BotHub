@@ -44,6 +44,7 @@ func (m *BotPromptModule) RunWithTask(ctx context.Context, task store.Task) (Run
 
 	prompt := ""
 	rawXHandles := ""
+	rawTGChannels := ""
 	notifyInbox := true
 	if params != nil {
 		if p, ok := params["prompt"].(string); ok {
@@ -52,25 +53,36 @@ func (m *BotPromptModule) RunWithTask(ctx context.Context, task store.Task) (Run
 		if xh, ok := params["x_handles"].(string); ok {
 			rawXHandles = strings.TrimSpace(xh)
 		}
+		if tg, ok := params["tg_channels"].(string); ok {
+			rawTGChannels = strings.TrimSpace(tg)
+		}
 		if n, ok := params["notify"].(string); ok {
 			notifyInbox = !strings.EqualFold(strings.TrimSpace(n), "false") && strings.TrimSpace(n) != "0"
 		} else if nb, ok := params["notify"].(bool); ok {
 			notifyInbox = nb
 		}
 	}
-	if rawXHandles != "" {
-		parts := strings.FieldsFunc(rawXHandles, func(r rune) bool {
+	splitHandles := func(raw string) []string {
+		parts := strings.FieldsFunc(raw, func(r rune) bool {
 			return r == ',' || r == '，' || r == ';' || r == '；' || r == '\n' || r == '\r' || r == '\t' || r == ' '
 		})
-		var handles []string
+		var out []string
 		for _, p := range parts {
 			h := strings.TrimPrefix(strings.TrimSpace(p), "@")
 			if h != "" {
-				handles = append(handles, h)
+				out = append(out, h)
 			}
 		}
-		if len(handles) > 0 {
+		return out
+	}
+	if rawXHandles != "" {
+		if handles := splitHandles(rawXHandles); len(handles) > 0 {
 			ctx = store.WithTaskXHandles(ctx, handles)
+		}
+	}
+	if rawTGChannels != "" {
+		if channels := splitHandles(rawTGChannels); len(channels) > 0 {
+			ctx = store.WithTaskTGChannels(ctx, channels)
 		}
 	}
 	if prompt == "" {

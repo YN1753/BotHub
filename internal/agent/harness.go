@@ -693,6 +693,13 @@ func repairToolArguments(toolName string, rawArgs string) string {
 		promoteAlias("time_range", "freshness", "range", "period", "days")
 		promoteAlias("topic", "category")
 		promoteAlias("lang", "language")
+		promoteAlias("domains", "sites", "include_domains")
+		if dStr, ok := m["domains"].(string); ok {
+			parts := strings.FieldsFunc(dStr, func(r rune) bool {
+				return r == ',' || r == '，' || r == ';' || r == ' ' || r == '\n'
+			})
+			m["domains"] = normalizeSearchDomains(parts)
+		}
 		if tr := strVal("time_range"); tr != "" {
 			if norm := normalizeSearchTimeRange(tr); norm != "" {
 				m["time_range"] = norm

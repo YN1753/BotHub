@@ -24,7 +24,6 @@ import (
 // and web_search / read_url / mount_mcp are never pruned out by pruneToolsForTurn.
 var nativeCoreToolOrder = []string{
 	"web_search",
-	"x_search",
 	"read_url",
 	"remember_fact",
 	"recall_memory",
@@ -51,7 +50,7 @@ func IsNativeCoreTool(name string) bool {
 // IsPinnedCoreTool reports whether a tool must never be dropped by per-turn tool pruning.
 func IsPinnedCoreTool(name string) bool {
 	switch strings.TrimSpace(name) {
-	case "web_search", "x_search", "read_url", "mount_mcp", "datetime_calc", "recall_memory", "remember_fact":
+	case "web_search", "read_url", "mount_mcp", "datetime_calc", "recall_memory", "remember_fact":
 		return true
 	default:
 		return false

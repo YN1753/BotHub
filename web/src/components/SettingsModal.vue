@@ -54,9 +54,7 @@ const biliSessdata = ref('')
 const tavilyApiKey = ref('')
 const serperApiKey = ref('')
 const braveApiKey = ref('')
-const xaiApiKey = ref('')
-const xaiSearchModel = ref('')
-const defaultXHandles = ref('')
+const defaultTgChannels = ref('')
 const searxngUrl = ref('')
 
 const saving = ref(false)
@@ -88,9 +86,7 @@ function currentConfigSnapshot(): string {
     tavilyApiKey: tavilyApiKey.value.trim(),
     serperApiKey: serperApiKey.value.trim(),
     braveApiKey: braveApiKey.value.trim(),
-    xaiApiKey: xaiApiKey.value.trim(),
-    xaiSearchModel: xaiSearchModel.value.trim(),
-    defaultXHandles: defaultXHandles.value.trim(),
+    defaultTgChannels: defaultTgChannels.value.trim(),
     searxngUrl: searxngUrl.value.trim(),
   })
 }
@@ -113,9 +109,7 @@ watch(
     tavilyApiKey.value = c['tavily_api_key'] || ''
     serperApiKey.value = c['serper_api_key'] || ''
     braveApiKey.value = c['brave_api_key'] || ''
-    xaiApiKey.value = c['xai_api_key'] || ''
-    xaiSearchModel.value = c['xai_search_model'] || ''
-    defaultXHandles.value = c['default_x_handles'] || ''
+    defaultTgChannels.value = c['default_tg_channels'] || ''
     searxngUrl.value = c['searxng_url'] || ''
     savedSnapshot.value = currentConfigSnapshot()
 
@@ -162,9 +156,7 @@ async function saveAllConfig() {
       tavily_api_key: tavilyApiKey.value.trim(),
       serper_api_key: serperApiKey.value.trim(),
       brave_api_key: braveApiKey.value.trim(),
-      xai_api_key: xaiApiKey.value.trim(),
-      xai_search_model: xaiSearchModel.value.trim(),
-      default_x_handles: defaultXHandles.value.trim(),
+      default_tg_channels: defaultTgChannels.value.trim(),
       searxng_url: searxngUrl.value.trim(),
     }
     if (draftModels.value.length === 0 && (store.state.configs?.['deepseek_api_key'] || '').trim()) {
@@ -421,30 +413,20 @@ async function handleQuickCreatePasskey() {
           </div>
 
           <div class="modal-section flex flex-col gap-3">
-            <div class="text-xs font-semibold text-accent-fg">联网搜索与 X/Twitter 实时情报增强（可选）</div>
+            <div class="text-xs font-semibold text-accent-fg">Telegram 情报源与免费搜索增强（可选）</div>
             <p class="text-[11px] leading-relaxed text-fg-muted">
-              内置免 Key 并发搜索与实时社区源默认可用；填写 xAI API Key 可直接开启 X (Twitter) 原生实时抓帖（若模型池已接入 api.x.ai 渠道且留空，将自动复用该渠道 Key）。
+              无需付费 API：可直接订阅公开 Telegram 频道免登录抓取近 48 小时一手动态，并搭配 Tavily（每月 1000 次免费）或 Serper（注册送 2500 次真 Google 搜索）精准检索 X / Linux.do / V2EX / NodeSeek。
             </p>
             <label class="flex flex-col gap-1 text-xs text-fg-sub">
-              <span>xAI API Key（可选，用于 X/Twitter 原生实时抓帖 x_search）</span>
-              <SecretInput v-model="xaiApiKey" toggle-label="xAI API Key" />
+              <span>全局默认订阅 Telegram 公开频道（免 Key，可选）</span>
+              <input v-model="defaultTgChannels" type="text" placeholder="逗号或空格分隔，如 @channel1, https://t.me/xxx" class="min-h-[44px] sm:min-h-[40px] rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg placeholder:text-fg-muted focus:border-accent" />
             </label>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label class="flex flex-col gap-1 text-xs text-fg-sub">
-                <span>xAI 搜索模型（可选，默认 grok-4.7）</span>
-                <input v-model="xaiSearchModel" type="text" placeholder="grok-4.7" class="min-h-[44px] sm:min-h-[40px] rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg placeholder:text-fg-muted focus:border-accent" />
-              </label>
-              <label class="flex flex-col gap-1 text-xs text-fg-sub">
-                <span>全局默认关注 X 博主（可选，最多 20 个）</span>
-                <input v-model="defaultXHandles" type="text" placeholder="@handle1, @handle2" class="min-h-[44px] sm:min-h-[40px] rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-sm text-fg placeholder:text-fg-muted focus:border-accent" />
-              </label>
-            </div>
             <label class="flex flex-col gap-1 text-xs text-fg-sub">
-              <span>Tavily Search API Key（可选，每月 1000 次免费额度）</span>
+              <span>Tavily Search API Key（推荐，每月 1000 次免费额度）</span>
               <SecretInput v-model="tavilyApiKey" toggle-label="Tavily API Key" />
             </label>
             <label class="flex flex-col gap-1 text-xs text-fg-sub">
-              <span>Serper API Key（可选，真实 Google 搜索与时效筛选）</span>
+              <span>Serper API Key（推荐，免费 2500 次真 Google 搜索与域名筛选）</span>
               <SecretInput v-model="serperApiKey" toggle-label="Serper API Key" />
             </label>
             <label class="flex flex-col gap-1 text-xs text-fg-sub">

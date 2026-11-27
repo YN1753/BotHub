@@ -233,9 +233,9 @@ internal fun TaskEditorSheet(
         }.getOrDefault("")
         mutableStateOf(fromParams.ifBlank { task?.description.orEmpty() })
     }
-    var xHandles by remember(task) {
+    var tgChannels by remember(task) {
         val fromParams = runCatching {
-            JSONObject(task?.params.orEmpty()).optString("x_handles", "")
+            JSONObject(task?.params.orEmpty()).optString("tg_channels", "")
         }.getOrDefault("")
         mutableStateOf(fromParams)
     }
@@ -440,11 +440,11 @@ internal fun TaskEditorSheet(
                         singleLine = false,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text("关注 X/Twitter 博主（可选）", fontSize = 12.sp, color = theme.textMuted, modifier = Modifier.padding(top = 4.dp))
+                    Text("订阅 Telegram 公开频道（免 Key，可选）", fontSize = 12.sp, color = theme.textMuted, modifier = Modifier.padding(top = 4.dp))
                     VesperTextField(
-                        value = xHandles,
-                        onValueChange = { xHandles = it },
-                        placeholder = "逗号或空格分隔，如 @xxx, @yyy（留空则全网检索 X 实时帖）",
+                        value = tgChannels,
+                        onValueChange = { tgChannels = it },
+                        placeholder = "逗号或空格分隔，如 @channel1, @channel2",
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -528,10 +528,10 @@ internal fun TaskEditorSheet(
                         val paramsJson = if (type == "bot_prompt") {
                             val obj = runCatching { JSONObject(task?.params.orEmpty()) }.getOrDefault(JSONObject())
                             obj.put("prompt", promptText.trim())
-                            if (xHandles.trim().isNotEmpty()) {
-                                obj.put("x_handles", xHandles.trim())
+                            if (tgChannels.trim().isNotEmpty()) {
+                                obj.put("tg_channels", tgChannels.trim())
                             } else {
-                                obj.remove("x_handles")
+                                obj.remove("tg_channels")
                             }
                             obj.toString()
                         } else {

@@ -126,6 +126,11 @@ func webSearchToolSpec() ToolSpec {
 							"enum":        []string{"auto", "zh", "en", "all"},
 							"description": "可选语区偏好：all(中英双源并发)、en(海外一手源)、zh(中文源)、auto",
 						},
+						"domains": map[string]any{
+							"type":        "array",
+							"items":       map[string]any{"type": "string"},
+							"description": "可选限定检索域名列表，例如 [\"x.com\", \"linux.do\", \"v2ex.com\", \"nodeseek.com\"]，配合 Tavily/Serper 抓取推特与一线社区一手帖",
+						},
 						"limit": map[string]any{
 							"type":        "integer",
 							"description": "返回结果条数（默认 8，最大 15）",
@@ -370,7 +375,7 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 	var pageDesc string
 	sourceMode := "direct"
 
-	// Fast-path: GitHub repository root URL -> fetch raw README.md directly
+	// Fast-path 1: GitHub repository root URL -> fetch raw README.md directly
 	if owner, repo, ok := parseGitHubRepo(parsed); ok && !e.allowLocalhostForTest {
 		rawURL := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/HEAD/README.md", owner, repo)
 		if sc, _, _, body, gErr := e.fetchWebResource(ctx, rawURL, "text/plain", nil); gErr == nil && sc >= 200 && sc < 300 && strings.TrimSpace(body) != "" {
@@ -378,6 +383,23 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 			pageTitle = fmt.Sprintf("%s/%s", owner, repo)
 			text = notifier.StripEmoji(strings.TrimSpace(body))
 			sourceMode = "github_raw_readme"
+		}
+	}
+
+	// Fast-path 2: Telegram public channel URL (t.me/<channel> or t.me/s/<channel>)
+	if text == "" && !e.allowLocalhostForTest {
+		if tgCh, ok := extractTGChannelFromURL(target); ok {
+			if msgs, tErr := e.fetchTelegramChannel(ctx, tgCh, 168, 15); tErr == nil {
+				if len(msgs) == 0 {
+					msgs, _ = e.fetchTelegramChannel(ctx, tgCh, 0, 10)
+				}
+				if len(msgs) > 0 {
+					statusCode = 200
+					pageTitle = "Telegram @" + tgCh
+					text = formatTelegramMessagesForPrompt(msgs, []string{tgCh}, 15)
+					sourceMode = "telegram_channel"
+				}
+			}
 		}
 	}
 
@@ -389,6 +411,17 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 		statusCode = sc
 		if strings.Contains(contentType, "json") || strings.Contains(contentType, "plain") {
 			text = notifier.StripEmoji(strings.TrimSpace(rawBody))
+		} else if strings.Contains(rawBody, "tgme_widget_message_wrap") {
+			msgs := parseTelegramChannelHTML(rawBody, "", time.Now(), 0, 15)
+			if len(msgs) > 0 {
+				pageTitle = extractHTMLTitle(rawBody)
+				text = formatTelegramMessagesForPrompt(msgs, nil, 15)
+				sourceMode = "telegram_channel"
+			} else {
+				pageTitle = extractHTMLTitle(rawBody)
+				pageDesc = extractHTMLMetaDesc(rawBody)
+				text = stripHTMLToText(rawBody)
+			}
 		} else if strings.Contains(contentType, "xml") || strings.Contains(contentType, "rss") || strings.Contains(contentType, "atom") ||
 			strings.HasPrefix(strings.TrimSpace(rawBody), "<?xml") || strings.HasPrefix(strings.TrimSpace(rawBody), "<rss") || strings.HasPrefix(strings.TrimSpace(rawBody), "<feed") {
 			if feedTitle, feedBody, ok := parseFeedToReadableText(rawBody, 15); ok {
@@ -563,7 +596,7 @@ func (e *Engine) searchBingHTML(ctx context.Context, opts searchOptions) []webSe
 		return nil
 	}
 	q := u.Query()
-	q.Set("q", opts.Query)
+	q.Set("q", appendSiteFilter(opts.Query, opts.Domains))
 	q.Set("count", fmt.Sprintf("%d", opts.Limit+2))
 	if opts.Lang == "en" || (opts.Lang != "zh" && isASCIIOnlyQuery(opts.Query)) {
 		q.Set("setlang", "en")
@@ -729,6 +762,9 @@ func (e *Engine) searchTavilyAPI(ctx context.Context, apiKey string, opts search
 	if opts.Topic == "news" || opts.Topic == "deals" {
 		reqMap["topic"] = "news"
 		reqMap["search_depth"] = "advanced"
+	}
+	if len(opts.Domains) > 0 {
+		reqMap["include_domains"] = opts.Domains
 	}
 	payload, _ := json.Marshal(reqMap)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tavilySearchEndpoint, bytes.NewReader(payload))
@@ -1010,11 +1046,12 @@ func canonicalSearchURL(raw string) string {
 
 func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Query     string `json:"query"`
-		TimeRange string `json:"time_range"`
-		Topic     string `json:"topic"`
-		Lang      string `json:"lang"`
-		Limit     int    `json:"limit"`
+		Query     string   `json:"query"`
+		TimeRange string   `json:"time_range"`
+		Topic     string   `json:"topic"`
+		Lang      string   `json:"lang"`
+		Domains   []string `json:"domains"`
+		Limit     int      `json:"limit"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 web_search 参数失败: %w", err)
@@ -1039,6 +1076,7 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 		TimeRange: normalizeSearchTimeRange(args.TimeRange),
 		Topic:     normalizeSearchTopic(args.Topic, query),
 		Lang:      normalizeSearchLang(args.Lang),
+		Domains:   normalizeSearchDomains(args.Domains),
 		Limit:     limit,
 	}
 

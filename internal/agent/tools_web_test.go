@@ -257,7 +257,7 @@ func TestResearchRoutineExpansionPrompt(t *testing.T) {
 		t.Fatalf("expected deals curation rules in prompt, got:\n%s", dealsMsg)
 	}
 	techMsg := buildRoutinePromptMessage("每日 AI 与 Go 推荐", "每天搜集 AI 和 Go 的最新前沿动态与开源项目推荐", now, snap, "", nil, false)
-	if !strings.Contains(techMsg, "多维发散调研策略") || !strings.Contains(techMsg, "x_search") {
+	if !strings.Contains(techMsg, "多维发散调研策略") || !strings.Contains(techMsg, "domains") {
 		t.Fatalf("expected research expansion instructions in prompt, got:\n%s", techMsg)
 	}
 }

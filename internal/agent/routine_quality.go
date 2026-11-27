@@ -479,11 +479,11 @@ func buildRoutinePromptMessage(
 		sb.WriteString("2. 强制时间稀缺性：只推送最近 24~72 小时内新冒出来的限时口子、黑五活动、新上线免费试用/白嫖玩法（如新模型限免、突发大促码、云/AI 新活动）。\n")
 		sb.WriteString("3. 宁缺毋滥，允许静默：今天只有 1~2 条真新货就只发 1~2 条；若检索后确实没有够格的新口子，请直接仅输出 [SILENT_OK] 静默跳过，绝不拿常驻福利或旧闻凑数。\n")
 		sb.WriteString("4. 推特博主短平快风格：拒绝“今日为您汇总如下”等公文套话；直接按条输出 1~5 条干货，每条写清「一句话狠结论 + 为什么是新口子/时效 + 具体领取路径与门槛 + 原帖或直达链接」。\n")
-		sb.WriteString("5. 检索策略：若上下文已附带 X (Twitter) 实时动态或已启用 x_search，优先从真实 X 推文挖掘，并可追加 x_search(focus=\"deals\", days=2) 与 web_search(topic=\"deals\", time_range=\"day\", lang=\"all\") 交叉核实链接与有效期。\n")
+		sb.WriteString("5. 检索策略：若上下文已附带 Telegram 公开频道实时动态，优先从频道一手线报核实并精选；同时使用 web_search 配合 domains=[\"x.com\", \"linux.do\", \"nodeseek.com\", \"v2ex.com\"]、time_range=\"day\"、topic=\"deals\"、lang=\"all\" 并发搜推特精选与社区实时新口子。\n")
 	} else if !isMonitoring && isResearchOrDigestRoutine(taskName, rawPrompt) {
 		sb.WriteString("\n[多维发散调研策略]\n")
 		sb.WriteString("1. 推特一线技术博主视角：直接挑近 24~72 小时真正有信息量的新项目、新发布、工程拆解或硬核实践发 2~5 条短平快推荐（宁缺毋滥，若确实没有高价值新货可直接输出 [SILENT_OK]）。\n")
-		sb.WriteString("2. 禁止只用单一宽泛词搜一次就交差：围绕主题拆解 3~5 个具体子方向（例如最新 Agent/MCP/模型推理优化、Go 新发布/性能实战/高星新开源项目），若已启用 x_search 优先配合 x_search(focus=\"tech\", days=2) 抓取 X 一线讨论，再并发中英双语 web_search(time_range=\"day\"或\"week\", topic=\"tech\", lang=\"all\")。\n")
+		sb.WriteString("2. 禁止只用单一宽泛词搜一次就交差：围绕主题拆解 3~5 个具体子方向（例如最新 Agent/MCP/模型推理优化、Go 新发布/性能实战/高星新开源项目），若有 Telegram 订阅频道则先吸收一手动态，再并发调用 web_search(time_range=\"day\"或\"week\", topic=\"tech\", lang=\"all\") 并可用 domains=[\"x.com\", \"linux.do\", \"github.com\"] 定向捞一线新讨论。\n")
 		sb.WriteString("3. 对高价值条目进一步精读原文核实事实与发布时间，输出时每条附带「一句话看点 + 核心事实/代码或工程价值 + 来源/项目链接」。\n")
 	}
 

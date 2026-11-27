@@ -35,6 +35,7 @@ const (
 	KeyXAIAPIKey         = "xai_api_key"
 	KeyXAISearchModel    = "xai_search_model"
 	KeyDefaultXHandles   = "default_x_handles"
+	KeyDefaultTGChannels = "default_tg_channels"
 	KeySearXNGURL        = "searxng_url"
 	KeyFXRatesCNY        = "fx_rates_cny"
 	KeyDeepSeekAPIKey    = "deepseek_api_key"
@@ -64,6 +65,7 @@ const (
 type taskIDCtxKey struct{}
 type taskModelCtxKey struct{}
 type taskXHandlesCtxKey struct{}
+type taskTGChannelsCtxKey struct{}
 
 // WithTaskID binds a scheduled task's ID to ctx for usage attribution.
 func WithTaskID(ctx context.Context, taskID string) context.Context {
@@ -120,6 +122,35 @@ func TaskXHandlesFromContext(ctx context.Context) []string {
 		return nil
 	}
 	v, _ := ctx.Value(taskXHandlesCtxKey{}).([]string)
+	if len(v) == 0 {
+		return nil
+	}
+	out := make([]string, len(v))
+	copy(out, v)
+	return out
+}
+
+// WithTaskTGChannels attaches optional task-scoped Telegram public channel usernames to ctx.
+func WithTaskTGChannels(ctx context.Context, channels []string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	clean := make([]string, 0, len(channels))
+	for _, ch := range channels {
+		t := strings.TrimSpace(ch)
+		if t != "" {
+			clean = append(clean, t)
+		}
+	}
+	return context.WithValue(ctx, taskTGChannelsCtxKey{}, clean)
+}
+
+// TaskTGChannelsFromContext extracts task-scoped Telegram public channels from ctx, if any.
+func TaskTGChannelsFromContext(ctx context.Context) []string {
+	if ctx == nil {
+		return nil
+	}
+	v, _ := ctx.Value(taskTGChannelsCtxKey{}).([]string)
 	if len(v) == 0 {
 		return nil
 	}
@@ -696,6 +727,7 @@ func (s *Store) seedDefaults() error {
 		KeyXAIAPIKey:         "",
 		KeyXAISearchModel:    "",
 		KeyDefaultXHandles:   "",
+		KeyDefaultTGChannels: "",
 		KeySearXNGURL:        "",
 		KeyDeepSeekAPIKey:    deepseekKey,
 		KeyDeepSeekBaseURL:   deepseekBaseURL,

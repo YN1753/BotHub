@@ -30,7 +30,49 @@ type searchOptions struct {
 	TimeRange string // "", "day", "week", "month"
 	Topic     string // "general", "news", "tech", "deals"
 	Lang      string // "auto", "zh", "en", "all"
+	Domains   []string
 	Limit     int
+}
+
+func normalizeSearchDomains(raw []string) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(raw))
+	out := make([]string, 0, min(len(raw), 8))
+	for _, r := range raw {
+		d := strings.TrimSpace(strings.ToLower(r))
+		d = strings.TrimPrefix(d, "https://")
+		d = strings.TrimPrefix(d, "http://")
+		if slash := strings.IndexByte(d, '/'); slash >= 0 {
+			d = d[:slash]
+		}
+		d = strings.TrimPrefix(d, "www.")
+		if d == "" || !strings.Contains(d, ".") || strings.ContainsAny(d, " \t\n") || seen[d] {
+			continue
+		}
+		seen[d] = true
+		out = append(out, d)
+		if len(out) >= 8 {
+			break
+		}
+	}
+	return out
+}
+
+func appendSiteFilter(query string, domains []string) string {
+	cleanQuery := strings.TrimSpace(query)
+	if len(domains) == 0 || strings.Contains(strings.ToLower(cleanQuery), "site:") {
+		return cleanQuery
+	}
+	if len(domains) == 1 {
+		return cleanQuery + " site:" + domains[0]
+	}
+	parts := make([]string, 0, len(domains))
+	for _, d := range domains {
+		parts = append(parts, "site:"+d)
+	}
+	return cleanQuery + " (" + strings.Join(parts, " OR ") + ")"
 }
 
 func normalizeSearchTimeRange(raw string) string {
@@ -224,8 +266,9 @@ func (e *Engine) searchSerperAPI(ctx context.Context, apiKey string, opts search
 	if apiKey == "" || opts.Limit <= 0 {
 		return nil
 	}
+	effectiveQ := appendSiteFilter(opts.Query, opts.Domains)
 	bodyMap := map[string]any{
-		"q":   opts.Query,
+		"q":   effectiveQ,
 		"num": opts.Limit,
 	}
 	switch opts.TimeRange {
@@ -303,7 +346,7 @@ func (e *Engine) searchBraveAPI(ctx context.Context, apiKey string, opts searchO
 		return nil
 	}
 	q := u.Query()
-	q.Set("q", opts.Query)
+	q.Set("q", appendSiteFilter(opts.Query, opts.Domains))
 	q.Set("count", strconv.Itoa(min(opts.Limit, 20)))
 	switch opts.TimeRange {
 	case "day":

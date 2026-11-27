@@ -32,6 +32,7 @@ var ConfigRegistry = map[string]ConfigSpec{
 	KeyXAIAPIKey:         {Editable: true, Sensitive: true, EnvFallback: "BOTHUB_XAI_API_KEY"},
 	KeyXAISearchModel:    {Editable: true, EnvFallback: "BOTHUB_XAI_SEARCH_MODEL"},
 	KeyDefaultXHandles:   {Editable: true},
+	KeyDefaultTGChannels: {Editable: true},
 	KeySearXNGURL:        {Editable: true, IsURL: true, EnvFallback: "BOTHUB_SEARXNG_URL"},
 	KeyFXRatesCNY:        {Editable: false},
 	KeyDeepSeekAPIKey:    {Editable: true, Sensitive: true},

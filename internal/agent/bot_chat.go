@@ -1381,9 +1381,28 @@ func (e *Engine) runBotRoutineInternal(ctx context.Context, botID, prompt, taskN
 		ctx = store.WithTaskXHandles(ctx, effectiveHandles)
 	}
 
+	effectiveTGChannels := store.TaskTGChannelsFromContext(ctx)
+	if len(effectiveTGChannels) == 0 && e.store != nil {
+		if defTG, _ := e.store.GetConfig(store.KeyDefaultTGChannels); strings.TrimSpace(defTG) != "" {
+			effectiveTGChannels = parseTGChannels(defTG)
+		}
+	}
+	if len(effectiveTGChannels) > 0 {
+		ctx = store.WithTaskTGChannels(ctx, effectiveTGChannels)
+	}
+
 	contextSnapshot := buildRoutineContextSnapshotForMode(e.store, taskSeed, now, isResearch)
 	antiRepeatLedger := buildRoutineAntiRepeatLedger(recentPushes)
 	routinePrompt := buildRoutinePromptMessage(taskName, prompt, now, contextSnapshot, antiRepeatLedger, promptExamples, isMonitoring)
+
+	if (isResearch || isDeals) && len(effectiveTGChannels) > 0 && ctx.Err() == nil {
+		tgMsgs, _ := e.fetchTelegramChannelsDigest(ctx, effectiveTGChannels, 48, 12)
+		if len(tgMsgs) > 0 {
+			routinePrompt += "\n\n[Telegram 公开频道近 48 小时一手实时动态]\n" + formatTelegramMessagesForPrompt(tgMsgs, effectiveTGChannels, 24)
+		} else {
+			routinePrompt += fmt.Sprintf("\n\n[Telegram 公开频道检查：已检查 @%s，近 48 小时暂无新帖，请继续通过 web_search 检索全网最新动态]", strings.Join(effectiveTGChannels, ", @"))
+		}
+	}
 
 	if (isResearch || isDeals) && e.hasXAICredentials() && ctx.Err() == nil {
 		xFocus := "tech"
