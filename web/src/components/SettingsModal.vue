@@ -52,6 +52,8 @@ const nezhaDbPath = ref('')
 const cfApiToken = ref('')
 const biliSessdata = ref('')
 const tavilyApiKey = ref('')
+const serperApiKey = ref('')
+const braveApiKey = ref('')
 const searxngUrl = ref('')
 
 const saving = ref(false)
@@ -81,6 +83,8 @@ function currentConfigSnapshot(): string {
     cfApiToken: cfApiToken.value.trim(),
     biliSessdata: biliSessdata.value.trim(),
     tavilyApiKey: tavilyApiKey.value.trim(),
+    serperApiKey: serperApiKey.value.trim(),
+    braveApiKey: braveApiKey.value.trim(),
     searxngUrl: searxngUrl.value.trim(),
   })
 }
@@ -101,6 +105,8 @@ watch(
     cfApiToken.value = c['cf_api_token'] || ''
     biliSessdata.value = c['bili_sessdata'] || ''
     tavilyApiKey.value = c['tavily_api_key'] || ''
+    serperApiKey.value = c['serper_api_key'] || ''
+    braveApiKey.value = c['brave_api_key'] || ''
     searxngUrl.value = c['searxng_url'] || ''
     savedSnapshot.value = currentConfigSnapshot()
 
@@ -145,6 +151,8 @@ async function saveAllConfig() {
       cf_api_token: cfApiToken.value.trim(),
       bili_sessdata: biliSessdata.value.trim(),
       tavily_api_key: tavilyApiKey.value.trim(),
+      serper_api_key: serperApiKey.value.trim(),
+      brave_api_key: braveApiKey.value.trim(),
       searxng_url: searxngUrl.value.trim(),
     }
     if (draftModels.value.length === 0 && (store.state.configs?.['deepseek_api_key'] || '').trim()) {
@@ -403,11 +411,19 @@ async function handleQuickCreatePasskey() {
           <div class="modal-section flex flex-col gap-3">
             <div class="text-xs font-semibold text-accent-fg">联网搜索增强（可选）</div>
             <p class="text-[11px] leading-relaxed text-fg-muted">
-              内置免 Key 多源并发搜索（Bing / DuckDuckGo / Google News RSS + 首页正文自动精读）默认可用；填写以下任意一项可进一步提升复杂查询精度。
+              内置免 Key 并发搜索与实时社区源（Bing / DuckDuckGo / 中英 Google News / GitHub / HN / Lobsters / V2EX / NodeSeek）默认可用；填写以下任意专业搜索 Key 可进一步提升时效与全网召回率。
             </p>
             <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>Tavily Search API Key（可选，每月 1000 次免费额度）</span>
               <SecretInput v-model="tavilyApiKey" toggle-label="Tavily API Key" />
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
+              <span>Serper API Key（可选，真实 Google 搜索与时效筛选）</span>
+              <SecretInput v-model="serperApiKey" toggle-label="Serper API Key" />
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-fg-sub">
+              <span>Brave Search API Key（可选，海外一手源与时效筛选）</span>
+              <SecretInput v-model="braveApiKey" toggle-label="Brave Search API Key" />
             </label>
             <label class="flex flex-col gap-1 text-xs text-fg-sub">
               <span>自建 SearXNG 实例地址（可选）</span>

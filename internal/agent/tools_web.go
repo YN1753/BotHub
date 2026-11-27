@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -102,17 +103,32 @@ func webSearchToolSpec() ToolSpec {
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "web_search",
-				Description: "通过互联网搜索关键词获取最新资讯、技术方案或公开信息。",
+				Description: "通过多源搜索引擎与实时社区/开源榜单检索公开信息；支持按时间范围(time_range)、赛道(topic)和双语(lang)检索。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"query": map[string]any{
 							"type":        "string",
-							"description": "搜索关键词",
+							"description": "精准搜索关键词，建议结合中英文分别调用",
+						},
+						"time_range": map[string]any{
+							"type":        "string",
+							"enum":        []string{"day", "week", "month"},
+							"description": "可选时效过滤：day(24小时内)、week(近7天)、month(近30天)；每日推荐与羊毛任务务必传 day 或 week",
+						},
+						"topic": map[string]any{
+							"type":        "string",
+							"enum":        []string{"general", "news", "tech", "deals"},
+							"description": "可选垂直赛道：tech(AI/Go/GitHub/HN/Lobsters/论文)、deals(黑五/免费额度/羊毛/V2EX/NodeSeek)、news(突发新闻)、general",
+						},
+						"lang": map[string]any{
+							"type":        "string",
+							"enum":        []string{"auto", "zh", "en", "all"},
+							"description": "可选语区偏好：all(中英双源并发)、en(海外一手源)、zh(中文源)、auto",
 						},
 						"limit": map[string]any{
 							"type":        "integer",
-							"description": "返回结果条数（默认 5，最大 10）",
+							"description": "返回结果条数（默认 8，最大 15）",
 						},
 					},
 					"required": []string{"query"},
@@ -373,6 +389,19 @@ func (e *Engine) toolReadURL(ctx context.Context, argsJSON string) (string, erro
 		statusCode = sc
 		if strings.Contains(contentType, "json") || strings.Contains(contentType, "plain") {
 			text = notifier.StripEmoji(strings.TrimSpace(rawBody))
+		} else if strings.Contains(contentType, "xml") || strings.Contains(contentType, "rss") || strings.Contains(contentType, "atom") ||
+			strings.HasPrefix(strings.TrimSpace(rawBody), "<?xml") || strings.HasPrefix(strings.TrimSpace(rawBody), "<rss") || strings.HasPrefix(strings.TrimSpace(rawBody), "<feed") {
+			if feedTitle, feedBody, ok := parseFeedToReadableText(rawBody, 15); ok {
+				if feedTitle != "" {
+					pageTitle = feedTitle
+				}
+				text = feedBody
+				sourceMode = "feed"
+			} else {
+				pageTitle = extractHTMLTitle(rawBody)
+				pageDesc = extractHTMLMetaDesc(rawBody)
+				text = stripHTMLToText(rawBody)
+			}
 		} else {
 			pageTitle = extractHTMLTitle(rawBody)
 			pageDesc = extractHTMLMetaDesc(rawBody)
@@ -441,11 +470,12 @@ func unwrapDDGRedirectURL(raw string) string {
 }
 
 type webSearchItem struct {
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Snippet string `json:"snippet,omitempty"`
-	Excerpt string `json:"excerpt,omitempty"`
-	Source  string `json:"source"`
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Snippet     string `json:"snippet,omitempty"`
+	Excerpt     string `json:"excerpt,omitempty"`
+	PublishedAt string `json:"published_at,omitempty"`
+	Source      string `json:"source"`
 }
 
 func unwrapBingRedirectURL(raw string) string {
@@ -524,18 +554,44 @@ func parseBingHTML(rawHTML string, limit int) []webSearchItem {
 	return out
 }
 
-func (e *Engine) searchBingHTML(ctx context.Context, query string, limit int) []webSearchItem {
-	if e.allowLocalhostForTest || limit <= 0 {
+func (e *Engine) searchBingHTML(ctx context.Context, opts searchOptions) []webSearchItem {
+	if e.allowLocalhostForTest || opts.Limit <= 0 {
 		return nil
 	}
-	bingURL := fmt.Sprintf("https://www.bing.com/search?q=%s&setlang=zh-Hans&cc=CN&count=%d", url.QueryEscape(query), limit+2)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bingURL, nil)
+	u, err := url.Parse("https://www.bing.com/search")
+	if err != nil {
+		return nil
+	}
+	q := u.Query()
+	q.Set("q", opts.Query)
+	q.Set("count", fmt.Sprintf("%d", opts.Limit+2))
+	if opts.Lang == "en" || (opts.Lang != "zh" && isASCIIOnlyQuery(opts.Query)) {
+		q.Set("setlang", "en")
+	} else {
+		q.Set("setlang", "zh-Hans")
+		q.Set("cc", "CN")
+	}
+	switch opts.TimeRange {
+	case "day":
+		q.Set("filters", `ex1:"ez1"`)
+	case "week":
+		q.Set("filters", `ex1:"ez2"`)
+	case "month":
+		q.Set("filters", `ex1:"ez3"`)
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil
 	}
 	req.Header.Set("User-Agent", desktopBrowserUA)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	if opts.Lang == "en" || isASCIIOnlyQuery(opts.Query) {
+		req.Header.Set("Accept-Language", "en-US,en;q=0.9,zh-CN;q=0.7")
+	} else {
+		req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	}
 
 	resp, err := e.safeFetchClient().Do(req)
 	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -550,7 +606,7 @@ func (e *Engine) searchBingHTML(ctx context.Context, query string, limit int) []
 	if err != nil {
 		return nil
 	}
-	return parseBingHTML(string(bodyBytes), limit)
+	return parseBingHTML(string(bodyBytes), opts.Limit)
 }
 
 type googleNewsRSSDoc struct {
@@ -565,9 +621,12 @@ type googleNewsRSSDoc struct {
 	} `xml:"channel"`
 }
 
-func parseGoogleNewsRSS(rawXML string, limit int) []webSearchItem {
+func parseGoogleNewsRSS(rawXML string, limit int, sourceLabel string) []webSearchItem {
 	if limit <= 0 || strings.TrimSpace(rawXML) == "" {
 		return nil
+	}
+	if sourceLabel == "" {
+		sourceLabel = "GoogleNews"
 	}
 	var doc googleNewsRSSDoc
 	if err := xml.Unmarshal([]byte(rawXML), &doc); err != nil {
@@ -587,15 +646,7 @@ func parseGoogleNewsRSS(rawXML string, limit int) []webSearchItem {
 		if src := notifier.StripEmoji(strings.TrimSpace(it.Source)); src != "" {
 			parts = append(parts, "来源: "+src)
 		}
-		if pub := strings.TrimSpace(it.PubDate); pub != "" {
-			if parsedTime, err := time.Parse(time.RFC1123, pub); err == nil {
-				parts = append(parts, parsedTime.In(store.ShanghaiLocation()).Format("2006-01-02 15:04"))
-			} else if parsedTime, err := time.Parse(time.RFC1123Z, pub); err == nil {
-				parts = append(parts, parsedTime.In(store.ShanghaiLocation()).Format("2006-01-02 15:04"))
-			} else {
-				parts = append(parts, pub)
-			}
-		}
+		pubStr := formatSearchDate(it.PubDate)
 		desc := notifier.StripEmoji(strings.TrimSpace(stripHTMLToText(it.Description)))
 		if desc != "" && !strings.EqualFold(desc, title) {
 			if len([]rune(desc)) > 200 {
@@ -604,20 +655,38 @@ func parseGoogleNewsRSS(rawXML string, limit int) []webSearchItem {
 			parts = append(parts, desc)
 		}
 		out = append(out, webSearchItem{
-			Title:   title,
-			URL:     link,
-			Snippet: strings.Join(parts, " | "),
-			Source:  "GoogleNews",
+			Title:       title,
+			URL:         link,
+			Snippet:     strings.Join(parts, " | "),
+			PublishedAt: pubStr,
+			Source:      sourceLabel,
 		})
 	}
 	return out
 }
 
-func (e *Engine) searchGoogleNewsRSS(ctx context.Context, query string, limit int) []webSearchItem {
+func (e *Engine) searchGoogleNewsRSS(ctx context.Context, query, timeRange, locale string, limit int) []webSearchItem {
 	if e.allowLocalhostForTest || limit <= 0 {
 		return nil
 	}
-	rssURL := fmt.Sprintf("https://news.google.com/rss/search?q=%s&hl=zh-CN&gl=CN&ceid=CN:zh-Hans", url.QueryEscape(query))
+	q := strings.TrimSpace(query)
+	if timeRange != "" && !strings.Contains(strings.ToLower(q), "when:") {
+		switch timeRange {
+		case "day":
+			q += " when:1d"
+		case "week":
+			q += " when:7d"
+		case "month":
+			q += " when:30d"
+		}
+	}
+	rssParams := "hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+	sourceLabel := "GoogleNews-ZH"
+	if strings.EqualFold(locale, "en") {
+		rssParams = "hl=en-US&gl=US&ceid=US:en"
+		sourceLabel = "GoogleNews-EN"
+	}
+	rssURL := fmt.Sprintf("https://news.google.com/rss/search?q=%s&%s", url.QueryEscape(q), rssParams)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rssURL, nil)
 	if err != nil {
 		return nil
@@ -638,21 +707,30 @@ func (e *Engine) searchGoogleNewsRSS(ctx context.Context, query string, limit in
 	if err != nil {
 		return nil
 	}
-	return parseGoogleNewsRSS(string(bodyBytes), limit)
+	return parseGoogleNewsRSS(string(bodyBytes), limit, sourceLabel)
 }
 
-func (e *Engine) searchTavilyAPI(ctx context.Context, apiKey, query string, limit int) []webSearchItem {
+func (e *Engine) searchTavilyAPI(ctx context.Context, apiKey string, opts searchOptions) []webSearchItem {
 	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" || limit <= 0 {
+	if apiKey == "" || opts.Limit <= 0 {
 		return nil
 	}
-	payload, _ := json.Marshal(map[string]any{
+	reqMap := map[string]any{
 		"api_key":        apiKey,
-		"query":          query,
+		"query":          opts.Query,
 		"search_depth":   "basic",
-		"max_results":    limit,
+		"max_results":    opts.Limit,
 		"include_answer": false,
-	})
+	}
+	if opts.TimeRange != "" {
+		reqMap["time_range"] = opts.TimeRange
+		reqMap["search_depth"] = "advanced"
+	}
+	if opts.Topic == "news" || opts.Topic == "deals" {
+		reqMap["topic"] = "news"
+		reqMap["search_depth"] = "advanced"
+	}
+	payload, _ := json.Marshal(reqMap)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tavilySearchEndpoint, bytes.NewReader(payload))
 	if err != nil {
 		return nil
@@ -660,11 +738,7 @@ func (e *Engine) searchTavilyAPI(ctx context.Context, apiKey, query string, limi
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	client := e.safeFetchClient()
-	if e.allowLocalhostForTest {
-		client = e.httpClient
-	}
-	resp, err := client.Do(req)
+	resp, err := e.apiHTTPClient().Do(req)
 	if err != nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if resp != nil {
 			_ = resp.Body.Close()
@@ -675,17 +749,18 @@ func (e *Engine) searchTavilyAPI(ctx context.Context, apiKey, query string, limi
 
 	var parsed struct {
 		Results []struct {
-			Title   string `json:"title"`
-			URL     string `json:"url"`
-			Content string `json:"content"`
+			Title         string `json:"title"`
+			URL           string `json:"url"`
+			Content       string `json:"content"`
+			PublishedDate string `json:"published_date"`
 		} `json:"results"`
 	}
 	if json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&parsed) != nil {
 		return nil
 	}
-	out := make([]webSearchItem, 0, min(limit, len(parsed.Results)))
+	out := make([]webSearchItem, 0, min(opts.Limit, len(parsed.Results)))
 	for _, r := range parsed.Results {
-		if len(out) >= limit {
+		if len(out) >= opts.Limit {
 			break
 		}
 		title := notifier.StripEmoji(strings.TrimSpace(r.Title))
@@ -705,26 +780,34 @@ func (e *Engine) searchTavilyAPI(ctx context.Context, apiKey, query string, limi
 			}
 		}
 		out = append(out, webSearchItem{
-			Title:   title,
-			URL:     targetURL,
-			Snippet: snippet,
-			Excerpt: excerpt,
-			Source:  "Tavily",
+			Title:       title,
+			URL:         targetURL,
+			Snippet:     snippet,
+			Excerpt:     excerpt,
+			PublishedAt: formatSearchDate(r.PublishedDate),
+			Source:      "Tavily",
 		})
 	}
 	return out
 }
 
-func (e *Engine) searchSearXNG(ctx context.Context, baseURL, query string, limit int) []webSearchItem {
+func (e *Engine) searchSearXNG(ctx context.Context, baseURL string, opts searchOptions) []webSearchItem {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if baseURL == "" || limit <= 0 {
+	if baseURL == "" || opts.Limit <= 0 {
 		return nil
 	}
 	parsedBase, err := url.Parse(baseURL)
 	if err != nil || (parsedBase.Scheme != "http" && parsedBase.Scheme != "https") {
 		return nil
 	}
-	searchURL := fmt.Sprintf("%s/search?q=%s&format=json&language=zh-CN", baseURL, url.QueryEscape(query))
+	langParam := "zh-CN"
+	if opts.Lang == "en" || opts.Lang == "all" || isASCIIOnlyQuery(opts.Query) {
+		langParam = "all"
+	}
+	searchURL := fmt.Sprintf("%s/search?q=%s&format=json&language=%s", baseURL, url.QueryEscape(opts.Query), url.QueryEscape(langParam))
+	if opts.TimeRange != "" {
+		searchURL += "&time_range=" + url.QueryEscape(opts.TimeRange)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, nil)
 	if err != nil {
 		return nil
@@ -744,17 +827,18 @@ func (e *Engine) searchSearXNG(ctx context.Context, baseURL, query string, limit
 
 	var parsed struct {
 		Results []struct {
-			Title   string `json:"title"`
-			URL     string `json:"url"`
-			Content string `json:"content"`
+			Title         string `json:"title"`
+			URL           string `json:"url"`
+			Content       string `json:"content"`
+			PublishedDate string `json:"publishedDate"`
 		} `json:"results"`
 	}
 	if json.NewDecoder(io.LimitReader(resp.Body, 512*1024)).Decode(&parsed) != nil {
 		return nil
 	}
-	out := make([]webSearchItem, 0, min(limit, len(parsed.Results)))
+	out := make([]webSearchItem, 0, min(opts.Limit, len(parsed.Results)))
 	for _, r := range parsed.Results {
-		if len(out) >= limit {
+		if len(out) >= opts.Limit {
 			break
 		}
 		title := notifier.StripEmoji(strings.TrimSpace(r.Title))
@@ -767,10 +851,11 @@ func (e *Engine) searchSearXNG(ctx context.Context, baseURL, query string, limit
 			snippet = string([]rune(snippet)[:280]) + "..."
 		}
 		out = append(out, webSearchItem{
-			Title:   title,
-			URL:     targetURL,
-			Snippet: snippet,
-			Source:  "SearXNG",
+			Title:       title,
+			URL:         targetURL,
+			Snippet:     snippet,
+			PublishedAt: formatSearchDate(r.PublishedDate),
+			Source:      "SearXNG",
 		})
 	}
 	return out
@@ -859,7 +944,11 @@ func shouldAutoDeepReadResult(item webSearchItem) bool {
 	}
 	host := strings.ToLower(u.Hostname())
 	// Google News RSS article links are JS-redirect stubs; skip direct HTML fetch.
-	if host == "news.google.com" {
+	// Structured API/deal community results already carry crisp descriptions/metadata.
+	if host == "news.google.com" || host == "api.github.com" || strings.HasSuffix(host, "v2ex.com") || strings.HasSuffix(host, "slickdeals.net") {
+		return false
+	}
+	if host == "huggingface.co" && strings.HasPrefix(u.Path, "/papers/") {
 		return false
 	}
 	return true
@@ -921,8 +1010,11 @@ func canonicalSearchURL(raw string) string {
 
 func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Query string `json:"query"`
-		Limit int    `json:"limit"`
+		Query     string `json:"query"`
+		TimeRange string `json:"time_range"`
+		Topic     string `json:"topic"`
+		Lang      string `json:"lang"`
+		Limit     int    `json:"limit"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("解析 web_search 参数失败: %w", err)
@@ -936,31 +1028,59 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 		query = rawQuery
 	}
 	limit := args.Limit
-	if limit <= 0 || limit > 10 {
-		limit = 5
+	if limit <= 0 {
+		limit = 8
+	} else if limit > 15 {
+		limit = 15
 	}
 
-	var tavilyKey, searxngURL string
+	opts := searchOptions{
+		Query:     query,
+		TimeRange: normalizeSearchTimeRange(args.TimeRange),
+		Topic:     normalizeSearchTopic(args.Topic, query),
+		Lang:      normalizeSearchLang(args.Lang),
+		Limit:     limit,
+	}
+
+	var tavilyKey, serperKey, braveKey, searxngURL string
 	if e.store != nil {
 		tavilyKey, _ = e.store.GetConfig(store.KeyTavilyAPIKey)
+		serperKey, _ = e.store.GetConfig(store.KeySerperAPIKey)
+		braveKey, _ = e.store.GetConfig(store.KeyBraveAPIKey)
 		searxngURL, _ = e.store.GetConfig(store.KeySearXNGURL)
 	}
 	tavilyKey = strings.TrimSpace(tavilyKey)
+	serperKey = strings.TrimSpace(serperKey)
+	braveKey = strings.TrimSpace(braveKey)
 	searxngURL = strings.TrimSpace(searxngURL)
 
-	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 
 	// Priority buckets:
-	// 0: Tavily API (if configured)
-	// 1: SearXNG (if configured)
-	// 2: Bing Web Search HTML
-	// 3: DuckDuckGo HTML (with desktop browser UA)
-	// 4: Google News RSS (fresh news/events)
-	// 5: Hacker News Algolia (boosted before news for English/tech queries)
-	// 6: DuckDuckGo Instant Answer JSON
-	// 7: Chinese Wikipedia OpenSearch (demoted fallback)
-	buckets := make([][]webSearchItem, 8)
+	// 0: Tavily API
+	// 1: Google (Serper API)
+	// 2: Brave Search API
+	// 3: Self-hosted SearXNG
+	priorityBuckets := make([][]webSearchItem, 4)
+
+	// Live web + real-time community/vertical buckets (merged via round-robin diversity):
+	// 0: Bing Web Search HTML (locale + freshness aware)
+	// 1: Google News RSS EN (fresh overseas/tech/deals news)
+	// 2: Google News RSS ZH (fresh Chinese news)
+	// 3: DuckDuckGo HTML
+	// 4: Vertical 1 (Tech: GitHub Trending-last-Nd; Deals: NodeSeek RSS)
+	// 5: Vertical 2 (Tech: Hacker News search_by_date; Deals: V2EX deals/share)
+	// 6: Vertical 3 (Tech: Lobsters; Deals: Slickdeals Frontpage RSS)
+	// 7: Vertical 4 (Tech: HF Daily Papers; General/Other: nil)
+	// 8: Vertical 5 (Tech: V2EX go/programmer)
+	liveBuckets := make([][]webSearchItem, 9)
+
+	// Static encyclopedic fallback buckets:
+	// 0: DuckDuckGo Instant Answer JSON
+	// 1: Chinese Wikipedia OpenSearch
+	fallbackBuckets := make([][]webSearchItem, 2)
+
 	var wg sync.WaitGroup
 
 	if tavilyKey != "" {
@@ -969,106 +1089,167 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 			defer wg.Done()
 			pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
 			defer pCancel()
-			buckets[0] = e.searchTavilyAPI(pCtx, tavilyKey, query, limit)
+			priorityBuckets[0] = e.searchTavilyAPI(pCtx, tavilyKey, opts)
 		}()
 	}
-
+	if serperKey != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
+			defer pCancel()
+			priorityBuckets[1] = e.searchSerperAPI(pCtx, serperKey, opts)
+		}()
+	}
+	if braveKey != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
+			defer pCancel()
+			priorityBuckets[2] = e.searchBraveAPI(pCtx, braveKey, opts)
+		}()
+	}
 	if searxngURL != "" {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
 			defer pCancel()
-			buckets[1] = e.searchSearXNG(pCtx, searxngURL, query, limit)
+			priorityBuckets[3] = e.searchSearXNG(pCtx, searxngURL, opts)
 		}()
 	}
 
 	if !e.allowLocalhostForTest {
 		client := e.safeFetchClient()
 
-		// Provider 2: Bing Web Search HTML
+		// Live 0: Bing Web Search HTML
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
 			defer pCancel()
-			buckets[2] = e.searchBingHTML(pCtx, query, limit)
+			liveBuckets[0] = e.searchBingHTML(pCtx, opts)
 		}()
 
-		// Provider 3: DuckDuckGo HTML
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			pCtx, pCancel := context.WithTimeout(reqCtx, 7*time.Second)
-			defer pCancel()
-			buckets[3] = e.searchDuckDuckGoHTML(pCtx, query, limit)
-		}()
+		// Live 1: Google News RSS EN
+		if opts.Lang == "en" || opts.Lang == "all" || isASCIIOnlyQuery(opts.Query) || opts.Topic == "tech" || opts.Topic == "deals" {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
+				defer pCancel()
+				liveBuckets[1] = e.searchGoogleNewsRSS(pCtx, opts.Query, opts.TimeRange, "en", min(limit, 6))
+			}()
+		}
 
-		// Provider 4: Google News RSS
+		// Live 2: Google News RSS ZH
+		if opts.Lang != "en" {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
+				defer pCancel()
+				liveBuckets[2] = e.searchGoogleNewsRSS(pCtx, opts.Query, opts.TimeRange, "zh", min(limit, 6))
+			}()
+		}
+
+		// Live 3: DuckDuckGo HTML
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
 			defer pCancel()
-			buckets[4] = e.searchGoogleNewsRSS(pCtx, query, limit)
+			liveBuckets[3] = e.searchDuckDuckGoHTML(pCtx, opts.Query, min(limit, 6))
 		}()
 
-		// Provider 5: Hacker News Algolia Search
+		switch opts.Topic {
+		case "deals":
+			// Vertical 1: NodeSeek RSS (VPS / cloud / AI promos)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
+				defer pCancel()
+				liveBuckets[4] = e.searchNodeSeekRSS(pCtx, opts.Query, 6)
+			}()
+			// Vertical 2: V2EX deals & share nodes
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
+				defer pCancel()
+				liveBuckets[5] = e.searchV2EXNodes(pCtx, []string{"deals", "share"}, "V2EX", opts.Query, 6)
+			}()
+			// Vertical 3: Slickdeals Frontpage RSS
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
+				defer pCancel()
+				liveBuckets[6] = e.searchSlickdealsRSS(pCtx, opts.Query, 5)
+			}()
+
+		case "tech":
+			// Vertical 1: GitHub Search API (fresh repos in last 7-14d)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
+				defer pCancel()
+				liveBuckets[4] = e.searchGitHubRepos(pCtx, opts)
+			}()
+			// Vertical 2: Hacker News search_by_date
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
+				defer pCancel()
+				liveBuckets[5] = e.searchHackerNewsAlgolia(pCtx, client, opts, 6)
+			}()
+			// Vertical 3: Lobsters (/t/go.json, /t/ai.json)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
+				defer pCancel()
+				liveBuckets[6] = e.searchLobsters(pCtx, opts.Query, 5)
+			}()
+			// Vertical 4: HuggingFace Daily Papers
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
+				defer pCancel()
+				liveBuckets[7] = e.searchHuggingFacePapers(pCtx, opts.Query, 5)
+			}()
+			// Vertical 5: V2EX go & programmer nodes
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pCtx, pCancel := context.WithTimeout(reqCtx, 6*time.Second)
+				defer pCancel()
+				liveBuckets[8] = e.searchV2EXNodes(pCtx, []string{"go", "programmer"}, "V2EX", opts.Query, 5)
+			}()
+
+		default:
+			// Keep Hacker News search active for general/news queries too
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
+				defer pCancel()
+				liveBuckets[5] = e.searchHackerNewsAlgolia(pCtx, client, opts, min(limit, 5))
+			}()
+		}
+
+		// Fallback 0: DuckDuckGo Instant Answer JSON API
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
 			defer pCancel()
-			hnURL := fmt.Sprintf("https://hn.algolia.com/api/v1/search?query=%s&hitsPerPage=%d", url.QueryEscape(query), limit)
-			req, err := http.NewRequestWithContext(pCtx, http.MethodGet, hnURL, nil)
-			if err != nil {
-				return
-			}
-			req.Header.Set("User-Agent", desktopBrowserUA)
-			resp, err := client.Do(req)
-			if err != nil {
-				return
-			}
-			defer resp.Body.Close()
-			var hnResp struct {
-				Hits []struct {
-					Title     string `json:"title"`
-					URL       string `json:"url"`
-					StoryText string `json:"story_text"`
-					ObjectID  string `json:"objectID"`
-				} `json:"hits"`
-			}
-			if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&hnResp) != nil {
-				return
-			}
-			for _, h := range hnResp.Hits {
-				if h.Title == "" {
-					continue
-				}
-				itemURL := h.URL
-				if itemURL == "" {
-					itemURL = "https://news.ycombinator.com/item?id=" + h.ObjectID
-				}
-				snippet := stripHTMLToText(h.StoryText)
-				if len([]rune(snippet)) > 200 {
-					snippet = string([]rune(snippet)[:200]) + "..."
-				}
-				buckets[5] = append(buckets[5], webSearchItem{
-					Title:   notifier.StripEmoji(h.Title),
-					URL:     itemURL,
-					Snippet: snippet,
-					Source:  "HackerNews",
-				})
-			}
-		}()
-
-		// Provider 6: DuckDuckGo Instant Answer JSON API
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
-			defer pCancel()
-			ddgAPI := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", url.QueryEscape(query))
+			ddgAPI := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", url.QueryEscape(opts.Query))
 			req, err := http.NewRequestWithContext(pCtx, http.MethodGet, ddgAPI, nil)
 			if err != nil {
 				return
@@ -1096,7 +1277,7 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 				return
 			}
 			if ddg.AbstractText != "" && ddg.AbstractURL != "" {
-				buckets[6] = append(buckets[6], webSearchItem{
+				fallbackBuckets[0] = append(fallbackBuckets[0], webSearchItem{
 					Title:   notifier.StripEmoji(ddg.Heading),
 					URL:     ddg.AbstractURL,
 					Snippet: notifier.StripEmoji(ddg.AbstractText),
@@ -1104,7 +1285,7 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 				})
 			}
 			for _, rt := range ddg.RelatedTopics {
-				if len(buckets[6]) >= limit {
+				if len(fallbackBuckets[0]) >= limit {
 					break
 				}
 				if rt.Text != "" && rt.FirstURL != "" {
@@ -1112,7 +1293,7 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 					if idx := strings.Index(title, " - "); idx > 0 {
 						title = title[:idx]
 					}
-					buckets[6] = append(buckets[6], webSearchItem{
+					fallbackBuckets[0] = append(fallbackBuckets[0], webSearchItem{
 						Title:   notifier.StripEmoji(truncateTitle(title)),
 						URL:     rt.FirstURL,
 						Snippet: notifier.StripEmoji(rt.Text),
@@ -1120,11 +1301,11 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 					})
 				}
 				for _, sub := range rt.Topics {
-					if len(buckets[6]) >= limit {
+					if len(fallbackBuckets[0]) >= limit {
 						break
 					}
 					if sub.Text != "" && sub.FirstURL != "" {
-						buckets[6] = append(buckets[6], webSearchItem{
+						fallbackBuckets[0] = append(fallbackBuckets[0], webSearchItem{
 							Title:   notifier.StripEmoji(truncateTitle(sub.Text)),
 							URL:     sub.FirstURL,
 							Snippet: notifier.StripEmoji(sub.Text),
@@ -1135,13 +1316,13 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 			}
 		}()
 
-		// Provider 7: Chinese Wikipedia OpenSearch (demoted fallback)
+		// Fallback 1: Chinese Wikipedia OpenSearch
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			pCtx, pCancel := context.WithTimeout(reqCtx, 5*time.Second)
 			defer pCancel()
-			wikiURL := fmt.Sprintf("https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=%s&utf8=1&format=json&srlimit=%d", url.QueryEscape(query), limit)
+			wikiURL := fmt.Sprintf("https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=%s&utf8=1&format=json&srlimit=%d", url.QueryEscape(opts.Query), limit)
 			req, err := http.NewRequestWithContext(pCtx, http.MethodGet, wikiURL, nil)
 			if err != nil {
 				return
@@ -1164,7 +1345,7 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 				return
 			}
 			for _, s := range wikiResp.Query.Search {
-				buckets[7] = append(buckets[7], webSearchItem{
+				fallbackBuckets[1] = append(fallbackBuckets[1], webSearchItem{
 					Title:   notifier.StripEmoji(s.Title),
 					URL:     "https://zh.wikipedia.org/wiki/" + url.PathEscape(s.Title),
 					Snippet: stripHTMLToText(s.Snippet),
@@ -1176,72 +1357,144 @@ func (e *Engine) toolWebSearch(ctx context.Context, argsJSON string) (string, er
 
 	wg.Wait()
 
-	order := []int{0, 1, 2, 3, 4, 5, 6, 7}
-	if isLikelyTechOrASCIIQuery(query) {
-		order = []int{0, 1, 2, 3, 5, 4, 6, 7}
+	// Reorder Google News buckets slightly ahead of HTML scrapes on pure news/deals or ASCII queries
+	if opts.Lang == "en" || isASCIIOnlyQuery(opts.Query) {
+		liveBuckets[0], liveBuckets[1] = liveBuckets[1], liveBuckets[0]
 	}
 
-	results := make([]webSearchItem, 0, limit)
-	seenCanonical := make(map[string]bool)
-	providersSeen := make(map[string]bool)
-	providersUsed := make([]string, 0, 4)
-
-	for _, bIdx := range order {
-		for _, item := range buckets[bIdx] {
-			u := strings.TrimSpace(item.URL)
-			canon := canonicalSearchURL(u)
-			if u == "" || strings.TrimSpace(item.Title) == "" || seenCanonical[canon] {
-				continue
-			}
-			seenCanonical[canon] = true
-			if item.Source != "" && !providersSeen[item.Source] {
-				providersSeen[item.Source] = true
-				providersUsed = append(providersUsed, item.Source)
-			}
-			results = append(results, item)
-			if len(results) >= limit {
-				break
-			}
-		}
-		if len(results) >= limit {
-			break
-		}
-	}
+	results, providersUsed := mergeSearchBuckets(priorityBuckets, liveBuckets, fallbackBuckets, limit)
 
 	// If conversational query returned <2 results and a broader keyword fallback exists, run a quick second pass.
-	if len(results) < 2 && fallbackQuery != "" && fallbackQuery != query && !e.allowLocalhostForTest {
+	if len(results) < 2 && fallbackQuery != "" && fallbackQuery != opts.Query && !e.allowLocalhostForTest {
+		fbOpts := opts
+		fbOpts.Query = fallbackQuery
 		fbCtx, fbCancel := context.WithTimeout(ctx, 5*time.Second)
-		fbItems := e.searchBingHTML(fbCtx, fallbackQuery, limit)
+		fbItems := e.searchBingHTML(fbCtx, fbOpts)
 		if len(fbItems) == 0 {
-			fbItems = e.searchGoogleNewsRSS(fbCtx, fallbackQuery, limit)
+			fbItems = e.searchGoogleNewsRSS(fbCtx, fbOpts.Query, fbOpts.TimeRange, "zh", limit)
 		}
 		fbCancel()
-		for _, item := range fbItems {
-			u := strings.TrimSpace(item.URL)
-			canon := canonicalSearchURL(u)
-			if u == "" || strings.TrimSpace(item.Title) == "" || seenCanonical[canon] {
-				continue
-			}
-			seenCanonical[canon] = true
-			if item.Source != "" && !providersSeen[item.Source] {
-				providersSeen[item.Source] = true
-				providersUsed = append(providersUsed, item.Source)
-			}
-			results = append(results, item)
-			if len(results) >= limit {
-				break
-			}
+		extra, extraProviders := mergeSearchBuckets(nil, [][]webSearchItem{results, fbItems}, nil, limit)
+		if len(extra) > len(results) {
+			results = extra
+			providersUsed = extraProviders
 		}
 	}
 
-	// Automatically deep-read top 2 web hits concurrently so weaker models receive real page content in one call.
-	e.enrichTopSearchResults(ctx, results, 2)
+	// Automatically deep-read top 3 article hits concurrently so weaker models receive real page content in one call.
+	e.enrichTopSearchResults(ctx, results, 3)
 
 	payload, _ := json.Marshal(map[string]any{
-		"query":          query,
+		"query":          opts.Query,
+		"time_range":     opts.TimeRange,
+		"topic":          opts.Topic,
 		"count":          len(results),
 		"providers_used": providersUsed,
 		"results":        results,
 	})
 	return string(payload), nil
+}
+
+func (e *Engine) searchHackerNewsAlgolia(ctx context.Context, client *http.Client, opts searchOptions, limit int) []webSearchItem {
+	if e.allowLocalhostForTest || limit <= 0 {
+		return nil
+	}
+	useByDate := opts.TimeRange != "" || opts.Topic == "tech" || opts.Topic == "news"
+	u, _ := url.Parse("https://hn.algolia.com/api/v1/search")
+	if useByDate {
+		u, _ = url.Parse("https://hn.algolia.com/api/v1/search_by_date")
+	}
+	q := u.Query()
+	q.Set("tags", "story")
+	q.Set("hitsPerPage", strconv.Itoa(limit))
+
+	var asciiParts []string
+	for _, tok := range extractSearchTerms(opts.Query) {
+		if isASCIIOnlyQuery(tok) {
+			asciiParts = append(asciiParts, tok)
+		}
+	}
+	if len(asciiParts) > 0 {
+		q.Set("query", strings.Join(asciiParts, " "))
+	} else if !useByDate {
+		q.Set("query", opts.Query)
+	}
+
+	if useByDate {
+		window := 7 * 24 * time.Hour
+		switch opts.TimeRange {
+		case "day":
+			window = 48 * time.Hour
+		case "week":
+			window = 7 * 24 * time.Hour
+		case "month":
+			window = 30 * 24 * time.Hour
+		}
+		cutoff := time.Now().Add(-window).Unix()
+		filters := fmt.Sprintf("created_at_i>%d", cutoff)
+		if len(asciiParts) == 0 {
+			filters += ",points>35"
+		} else {
+			filters += ",points>10"
+		}
+		q.Set("numericFilters", filters)
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("User-Agent", desktopBrowserUA)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var hnResp struct {
+		Hits []struct {
+			Title     string `json:"title"`
+			URL       string `json:"url"`
+			StoryText string `json:"story_text"`
+			ObjectID  string `json:"objectID"`
+			Points    int    `json:"points"`
+			CreatedAt string `json:"created_at"`
+		} `json:"hits"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 256*1024)).Decode(&hnResp) != nil {
+		return nil
+	}
+	out := make([]webSearchItem, 0, min(limit, len(hnResp.Hits)))
+	for _, h := range hnResp.Hits {
+		if len(out) >= limit {
+			break
+		}
+		if strings.TrimSpace(h.Title) == "" {
+			continue
+		}
+		itemURL := strings.TrimSpace(h.URL)
+		if itemURL == "" {
+			itemURL = "https://news.ycombinator.com/item?id=" + h.ObjectID
+		}
+		snippet := stripHTMLToText(h.StoryText)
+		if len([]rune(snippet)) > 180 {
+			snippet = string([]rune(snippet)[:180]) + "..."
+		}
+		if h.Points > 0 {
+			if snippet != "" {
+				snippet = fmt.Sprintf("[%d points] %s", h.Points, snippet)
+			} else {
+				snippet = fmt.Sprintf("%d points on Hacker News", h.Points)
+			}
+		}
+		out = append(out, webSearchItem{
+			Title:       notifier.StripEmoji(h.Title),
+			URL:         itemURL,
+			Snippet:     snippet,
+			PublishedAt: formatSearchDate(h.CreatedAt),
+			Source:      "HackerNews",
+		})
+	}
+	return out
 }

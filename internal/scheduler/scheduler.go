@@ -177,7 +177,7 @@ func (s *Scheduler) Reload() error {
 				baseCtx = context.Background()
 			}
 			s.timers[taskID] = time.AfterFunc(delay, func() {
-				ctx, cancel := context.WithTimeout(baseCtx, 90*time.Second)
+				ctx, cancel := context.WithTimeout(baseCtx, 180*time.Second)
 				defer cancel()
 				if _, err := s.execute(ctx, taskID, "once"); err != nil {
 					log.Printf("[scheduler] one-shot task %s error: %v", taskID, err)
@@ -203,7 +203,7 @@ func (s *Scheduler) Reload() error {
 			baseCtx = context.Background()
 		}
 		entryID, err := c.AddFunc(t.CronExpr, func() {
-			ctx, cancel := context.WithTimeout(baseCtx, 90*time.Second)
+			ctx, cancel := context.WithTimeout(baseCtx, 180*time.Second)
 			defer cancel()
 			if _, err := s.execute(ctx, taskID, "cron"); err != nil {
 				log.Printf("[scheduler] cron run task %s error: %v", taskID, err)

@@ -61,7 +61,7 @@ func TestParseGoogleNewsRSS(t *testing.T) {
   </item>
 </channel></rss>`
 
-	items := parseGoogleNewsRSS(sampleXML, 3)
+	items := parseGoogleNewsRSS(sampleXML, 3, "GoogleNews")
 	if len(items) != 1 {
 		t.Fatalf("expected 1 RSS item, got %d", len(items))
 	}

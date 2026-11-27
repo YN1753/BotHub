@@ -508,7 +508,11 @@ func (e *Engine) runSingleBotTurn(
 	var totalUsage TokenUsage
 	hasUsage := false
 
-	const maxRounds = 8
+	maxRounds := 8
+	if strings.TrimSpace(req.MsgKind) == "routine" {
+		maxRounds = 10
+	}
+	webSearchCalls := 0
 	endedWithTools := false
 	fallbackSearchExecuted := false
 	var turnCacheMu sync.Mutex
@@ -714,7 +718,13 @@ func (e *Engine) runSingleBotTurn(
 				fallbackSearchExecuted = true
 				fbQuery := buildFallbackWebSearchQuery(userMsg)
 				if fbQuery != "" {
-					fbArgsBytes, _ := json.Marshal(map[string]any{"query": fbQuery, "limit": 5})
+					fbArgsBytes, _ := json.Marshal(map[string]any{
+						"query":      fbQuery,
+						"time_range": "week",
+						"topic":      detectSearchTopic(fbQuery),
+						"lang":       "all",
+						"limit":      8,
+					})
 					fbArgs := string(fbArgsBytes)
 					e.emitBotState(actingBot.ID, store.BotStateWorking, humanToolStatus("web_search", fbArgs))
 					fbID := fmt.Sprintf("auto_web_%d", round+1)
@@ -1027,8 +1037,15 @@ func (e *Engine) runSingleBotTurn(
 				})
 			}
 			toolMsgContent := toolOutput
-			if round >= 1 && tc.Function.Name == "web_search" {
-				toolMsgContent += "\n[系统提示：已完成多轮联网搜索，请勿继续重复发起搜索，下一轮请直接基于以上全部检索结果综合回答用户问题]"
+			if tc.Function.Name == "web_search" {
+				webSearchCalls++
+				softLimit := 4
+				if msgKind == "routine" {
+					softLimit = 6
+				}
+				if webSearchCalls >= softLimit {
+					toolMsgContent += "\n[系统提示：已完成多轮联网搜索，请勿继续重复发起搜索，下一轮请直接基于以上全部检索结果综合回答用户问题]"
+				}
 			}
 			messages = append(messages, apiMessage{
 				Role:       "tool",
@@ -1351,7 +1368,8 @@ func (e *Engine) runBotRoutineInternal(ctx context.Context, botID, prompt, taskN
 		// Perturb the daily angle seed so reroll picks a different editorial focus immediately
 		taskSeed += fmt.Sprintf(":reroll:%d", now.UnixNano()%100000)
 	}
-	contextSnapshot := buildRoutineContextSnapshot(e.store, taskSeed, now)
+	isResearch := !isMonitoring && isResearchOrDigestRoutine(taskName, prompt)
+	contextSnapshot := buildRoutineContextSnapshotForMode(e.store, taskSeed, now, isResearch)
 	antiRepeatLedger := buildRoutineAntiRepeatLedger(recentPushes)
 	routinePrompt := buildRoutinePromptMessage(taskName, prompt, now, contextSnapshot, antiRepeatLedger, promptExamples, isMonitoring)
 

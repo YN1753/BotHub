@@ -27,6 +27,8 @@ var ConfigRegistry = map[string]ConfigSpec{
 	KeyNezhaWebhookToken: {Editable: true, Sensitive: true},
 	KeyBiliSessdata:      {Editable: true, Sensitive: true},
 	KeyTavilyAPIKey:      {Editable: true, Sensitive: true, EnvFallback: "BOTHUB_TAVILY_API_KEY"},
+	KeySerperAPIKey:      {Editable: true, Sensitive: true, EnvFallback: "BOTHUB_SERPER_API_KEY"},
+	KeyBraveAPIKey:       {Editable: true, Sensitive: true, EnvFallback: "BOTHUB_BRAVE_API_KEY"},
 	KeySearXNGURL:        {Editable: true, IsURL: true, EnvFallback: "BOTHUB_SEARXNG_URL"},
 	KeyFXRatesCNY:        {Editable: false},
 	KeyDeepSeekAPIKey:    {Editable: true, Sensitive: true},

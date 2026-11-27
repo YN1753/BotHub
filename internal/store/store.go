@@ -30,6 +30,8 @@ const (
 	KeyCFAPIToken        = "cf_api_token"
 	KeyBiliSessdata      = "bili_sessdata"
 	KeyTavilyAPIKey      = "tavily_api_key"
+	KeySerperAPIKey      = "serper_api_key"
+	KeyBraveAPIKey       = "brave_api_key"
 	KeySearXNGURL        = "searxng_url"
 	KeyFXRatesCNY        = "fx_rates_cny"
 	KeyDeepSeekAPIKey    = "deepseek_api_key"
@@ -656,6 +658,8 @@ func (s *Store) seedDefaults() error {
 		KeyCFAPIToken:        "",
 		KeyBiliSessdata:      "",
 		KeyTavilyAPIKey:      "",
+		KeySerperAPIKey:      "",
+		KeyBraveAPIKey:       "",
 		KeySearXNGURL:        "",
 		KeyDeepSeekAPIKey:    deepseekKey,
 		KeyDeepSeekBaseURL:   deepseekBaseURL,

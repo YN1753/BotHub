@@ -136,6 +136,27 @@ func isMonitoringRoutine(taskName, prompt string) bool {
 	return false
 }
 
+// isResearchOrDigestRoutine reports whether a scheduled routine is a live-info
+// recommendation, tech digest, or deals/freebies scouting task that benefits from
+// multi-angle bilingual search expansion.
+func isResearchOrDigestRoutine(taskName, prompt string) bool {
+	if isMonitoringRoutine(taskName, prompt) {
+		return false
+	}
+	combined := strings.ToLower(taskName + " " + prompt)
+	researchKeywords := []string{
+		"推荐", "资讯", "日报", "早报", "晚报", "周报", "动态", "前沿", "热点", "趋势",
+		"雷达", "开源", "羊毛", "优惠", "黑五", "白嫖", "免费", "福利", "折扣", "促销",
+		"活动", "速递", "盘点", "精选", "情报", "快讯", "ai", "golang", "技术",
+	}
+	for _, kw := range researchKeywords {
+		if strings.Contains(combined, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 var dailyRoutineAngles = []string{
 	"反常识细节与隐藏机制（挑一个大多数人忽略的冷门切入点）",
 	"立刻可落地的一条实用技巧或微行动（具体到步骤或参数）",
@@ -178,11 +199,22 @@ func shanghaiDayPeriod(hour int) string {
 // buildRoutineContextSnapshot injects real-world daily context (date, rotating editorial angle,
 // active todos, unread stash items) so pushes stay grounded and concrete instead of generic filler.
 func buildRoutineContextSnapshot(st *store.Store, taskSeed string, now time.Time) string {
+	return buildRoutineContextSnapshotForMode(st, taskSeed, now, false)
+}
+
+func buildRoutineContextSnapshotForMode(st *store.Store, taskSeed string, now time.Time, isResearch bool) string {
 	weekday := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}[now.Weekday()]
 	period := shanghaiDayPeriod(now.Hour())
-	angle := pickDailyRoutineAngle(taskSeed, now)
 
 	var sb strings.Builder
+	if isResearch {
+		sb.WriteString("[今日实时时间窗口]\n")
+		sb.WriteString(fmt.Sprintf("- 当前时间：%s %s %s\n", now.Format("2006-01-02 15:04"), weekday, period))
+		sb.WriteString(fmt.Sprintf("- 时效优先窗口：近 72 小时（%s 至 %s），优先近期发布或当前仍在有效期内的内容\n", now.AddDate(0, 0, -3).Format("2006-01-02"), now.Format("2006-01-02")))
+		return strings.TrimSpace(sb.String())
+	}
+
+	angle := pickDailyRoutineAngle(taskSeed, now)
 	sb.WriteString("[今日实时上下文快照（按需结合，勿生硬罗列）]\n")
 	sb.WriteString(fmt.Sprintf("- 当前时间：%s %s %s\n", now.Format("2006-01-02 15:04"), weekday, period))
 	sb.WriteString(fmt.Sprintf("- 今日轮换切入维度：%s\n", angle))
@@ -376,7 +408,15 @@ func buildRoutinePromptMessage(
 	if isMonitoring {
 		sb.WriteString("4. 本任务属于状态巡检/异常提醒类：若当前各项指标正常且相比上次无新增异常/变化，请仅输出 [SILENT_OK]，不要发送例行“一切正常”的打扰消息。\n")
 	} else {
-		sb.WriteString("4. 严禁与下方「历史已推送去重账本」重复相同主题、案例或结构；请主动换一个全新具体切入点（可参考今日轮换切入维度）。\n")
+		sb.WriteString("4. 严禁与下方「历史已推送去重账本」重复相同主题、案例或结构；请主动换一个全新具体切入点。\n")
+	}
+
+	if !isMonitoring && isResearchOrDigestRoutine(taskName, rawPrompt) {
+		sb.WriteString("\n[多维发散调研策略]\n")
+		sb.WriteString("1. 禁止只用单一宽泛词搜一次就交差：先围绕主题拆解出 3 到 5 个具体子方向，并发起多组精准搜索（中英文结合），务必传入 time_range（\"day\" 或 \"week\"）、匹配 topic（\"tech\"/\"deals\"/\"news\"）和 lang: \"all\"。\n")
+		sb.WriteString("2. 技术/内容推荐类（topic=\"tech\"）：由核心关键词向外发散关联生态与近期突破（如最新模型/Agent/MCP/开源高星新项目/工程最佳实践/论文），挖掘真正值得读的一手项目或深文，别每次只搜大词首页水文。\n")
+		sb.WriteString("3. 羊毛/优惠/活动类（topic=\"deals\"）：分别搜索云厂商免费额度与黑五大促、AI 平台限时免费体验与优惠、开发者工具福利及实时社区讨论，核实仍在有效期内、写明领取条件与直达链接，淘汰过期旧闻。\n")
+		sb.WriteString("4. 对高价值条目进一步抓取原文核实核心数据与细节，输出时每条尽量标注发布时间或有效期与来源链接。\n")
 	}
 
 	if len(examples) > 0 {

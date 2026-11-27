@@ -690,6 +690,16 @@ func repairToolArguments(toolName string, rawArgs string) string {
 	switch strings.TrimSpace(toolName) {
 	case "web_search":
 		promoteAlias("query", "q", "keyword", "keywords", "search", "search_query", "text")
+		promoteAlias("time_range", "freshness", "range", "period", "days")
+		promoteAlias("topic", "category")
+		promoteAlias("lang", "language")
+		if tr := strVal("time_range"); tr != "" {
+			if norm := normalizeSearchTimeRange(tr); norm != "" {
+				m["time_range"] = norm
+			} else {
+				delete(m, "time_range")
+			}
+		}
 		if limStr, ok := m["limit"].(string); ok {
 			if n, err := strconv.Atoi(strings.TrimSpace(limStr)); err == nil {
 				m["limit"] = n
