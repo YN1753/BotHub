@@ -233,6 +233,12 @@ internal fun TaskEditorSheet(
         }.getOrDefault("")
         mutableStateOf(fromParams.ifBlank { task?.description.orEmpty() })
     }
+    var xHandles by remember(task) {
+        val fromParams = runCatching {
+            JSONObject(task?.params.orEmpty()).optString("x_handles", "")
+        }.getOrDefault("")
+        mutableStateOf(fromParams)
+    }
     var model by remember(task) { mutableStateOf(task?.model.orEmpty()) }
     var enabled by remember(task) { mutableStateOf(task?.enabled ?: true) }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -434,6 +440,14 @@ internal fun TaskEditorSheet(
                         singleLine = false,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Text("关注 X/Twitter 博主（可选）", fontSize = 12.sp, color = theme.textMuted, modifier = Modifier.padding(top = 4.dp))
+                    VesperTextField(
+                        value = xHandles,
+                        onValueChange = { xHandles = it },
+                        placeholder = "逗号或空格分隔，如 @xxx, @yyy（留空则全网检索 X 实时帖）",
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
@@ -512,7 +526,14 @@ internal fun TaskEditorSheet(
                         val finalCron = if (isOneShot) "" else cronExpr.trim().ifEmpty { "0 9 * * *" }
                         val finalRunAt = if (isOneShot) "${oneShotDate.trim()} ${oneShotTime.trim().ifEmpty { "09:00" }}" else ""
                         val paramsJson = if (type == "bot_prompt") {
-                            JSONObject().put("prompt", promptText.trim()).toString()
+                            val obj = runCatching { JSONObject(task?.params.orEmpty()) }.getOrDefault(JSONObject())
+                            obj.put("prompt", promptText.trim())
+                            if (xHandles.trim().isNotEmpty()) {
+                                obj.put("x_handles", xHandles.trim())
+                            } else {
+                                obj.remove("x_handles")
+                            }
+                            obj.toString()
                         } else {
                             task?.params?.ifBlank { "{}" } ?: "{}"
                         }

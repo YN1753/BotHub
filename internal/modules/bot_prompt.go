@@ -43,15 +43,34 @@ func (m *BotPromptModule) RunWithTask(ctx context.Context, task store.Task) (Run
 	_ = json.Unmarshal([]byte(task.Params), &params)
 
 	prompt := ""
+	rawXHandles := ""
 	notifyInbox := true
 	if params != nil {
 		if p, ok := params["prompt"].(string); ok {
 			prompt = strings.TrimSpace(p)
 		}
+		if xh, ok := params["x_handles"].(string); ok {
+			rawXHandles = strings.TrimSpace(xh)
+		}
 		if n, ok := params["notify"].(string); ok {
 			notifyInbox = !strings.EqualFold(strings.TrimSpace(n), "false") && strings.TrimSpace(n) != "0"
 		} else if nb, ok := params["notify"].(bool); ok {
 			notifyInbox = nb
+		}
+	}
+	if rawXHandles != "" {
+		parts := strings.FieldsFunc(rawXHandles, func(r rune) bool {
+			return r == ',' || r == '，' || r == ';' || r == '；' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+		})
+		var handles []string
+		for _, p := range parts {
+			h := strings.TrimPrefix(strings.TrimSpace(p), "@")
+			if h != "" {
+				handles = append(handles, h)
+			}
+		}
+		if len(handles) > 0 {
+			ctx = store.WithTaskXHandles(ctx, handles)
 		}
 	}
 	if prompt == "" {
@@ -78,7 +97,7 @@ func (m *BotPromptModule) RunWithTask(ctx context.Context, task store.Task) (Run
 
 	if strings.TrimSpace(reply) == "" {
 		return RunResult{
-			Summary:     "静默巡检正常，无需要报警的异常",
+			Summary:     "本轮无需要推送的高价值新动态或异常，已静默跳过",
 			ItemsPushed: 0,
 		}, nil
 	}

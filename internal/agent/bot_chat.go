@@ -1369,9 +1369,51 @@ func (e *Engine) runBotRoutineInternal(ctx context.Context, botID, prompt, taskN
 		taskSeed += fmt.Sprintf(":reroll:%d", now.UnixNano()%100000)
 	}
 	isResearch := !isMonitoring && isResearchOrDigestRoutine(taskName, prompt)
+	isDeals := !isMonitoring && isDealsRoutine(taskName, prompt)
+
+	effectiveHandles := store.TaskXHandlesFromContext(ctx)
+	if len(effectiveHandles) == 0 && e.store != nil {
+		if defHandles, _ := e.store.GetConfig(store.KeyDefaultXHandles); strings.TrimSpace(defHandles) != "" {
+			effectiveHandles = parseXHandles(defHandles)
+		}
+	}
+	if len(effectiveHandles) > 0 {
+		ctx = store.WithTaskXHandles(ctx, effectiveHandles)
+	}
+
 	contextSnapshot := buildRoutineContextSnapshotForMode(e.store, taskSeed, now, isResearch)
 	antiRepeatLedger := buildRoutineAntiRepeatLedger(recentPushes)
 	routinePrompt := buildRoutinePromptMessage(taskName, prompt, now, contextSnapshot, antiRepeatLedger, promptExamples, isMonitoring)
+
+	if (isResearch || isDeals) && e.hasXAICredentials() && ctx.Err() == nil {
+		xFocus := "tech"
+		if isDeals {
+			xFocus = "deals"
+		}
+		coreGoal, _ := extractPromptExamples(prompt)
+		xQuery := buildFallbackWebSearchQuery(coreGoal)
+		if strings.TrimSpace(xQuery) == "" {
+			xQuery = strings.TrimSpace(taskName)
+		}
+		if xRes, xErr := e.callXAIXSearch(ctx, xQuery, effectiveHandles, 2, xFocus); xErr == nil && xRes != nil && strings.TrimSpace(xRes.Summary) != "" {
+			var xSec strings.Builder
+			xSec.WriteString("\n\n[X (Twitter) 近 48 小时一手实时动态]\n")
+			if len(xRes.Handles) > 0 {
+				xSec.WriteString("- 定向监控账号: @" + strings.Join(xRes.Handles, ", @") + "\n")
+			}
+			xSec.WriteString(strings.TrimSpace(xRes.Summary))
+			if len(xRes.Citations) > 0 {
+				xSec.WriteString("\n- 引用原帖/来源链接:\n")
+				for i, cite := range xRes.Citations {
+					if i >= 12 {
+						break
+					}
+					xSec.WriteString("  - " + cite + "\n")
+				}
+			}
+			routinePrompt += strings.TrimRight(xSec.String(), "\n")
+		}
+	}
 
 	if isReroll {
 		var fb strings.Builder
@@ -1451,17 +1493,24 @@ func (e *Engine) runBotRoutineInternal(ctx context.Context, botID, prompt, taskN
 
 	finalReply := resp.Content
 	if !isSilentRoutineReply(finalReply) {
-		quality := evaluateRoutineDraft(finalReply, comparePushes, promptExamples)
+		quality := evaluateRoutineDraftForMode(finalReply, comparePushes, promptExamples, isDeals)
 		if quality.shouldSuppressMonitoring(isMonitoring) {
 			finalReply = ""
 		} else if quality.needsRewrite(isMonitoring) && ctx.Err() == nil {
 			rewritePrompt := routinePrompt + "\n\n" + buildRoutineRewriteInstruction(quality, finalReply)
-			if rwResp, rwErr := executeTurn(rewritePrompt); rwErr == nil && rwResp != nil && !isSilentRoutineReply(rwResp.Content) {
-				rwQuality := evaluateRoutineDraft(rwResp.Content, comparePushes, promptExamples)
-				improvedExample := quality.EchoedExample != "" && rwQuality.EchoedExample == ""
-				improvedSim := rwQuality.EchoedExample == "" && rwQuality.MaxPastSim < quality.MaxPastSim
-				if improvedExample || improvedSim || !rwQuality.needsRewrite(isMonitoring) {
-					finalReply = rwResp.Content
+			if rwResp, rwErr := executeTurn(rewritePrompt); rwErr == nil && rwResp != nil {
+				if isSilentRoutineReply(rwResp.Content) {
+					if !isReroll {
+						finalReply = ""
+					}
+				} else {
+					rwQuality := evaluateRoutineDraftForMode(rwResp.Content, comparePushes, promptExamples, isDeals)
+					improvedExample := quality.EchoedExample != "" && rwQuality.EchoedExample == ""
+					improvedEvergreen := quality.EvergreenFiller != "" && rwQuality.EvergreenFiller == ""
+					improvedSim := rwQuality.EchoedExample == "" && rwQuality.EvergreenFiller == "" && rwQuality.MaxPastSim < quality.MaxPastSim
+					if improvedExample || improvedEvergreen || improvedSim || !rwQuality.needsRewrite(isMonitoring) {
+						finalReply = rwResp.Content
+					}
 				}
 			}
 		}

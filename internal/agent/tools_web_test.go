@@ -252,8 +252,12 @@ func TestResearchRoutineExpansionPrompt(t *testing.T) {
 		t.Fatalf("expected freshness window in research snapshot, got:\n%s", snap)
 	}
 
-	msg := buildRoutinePromptMessage("每日羊毛推送", "搜索黑五优惠与云厂商免费 AI 额度", now, snap, "", nil, false)
-	if !strings.Contains(msg, "多维发散调研策略") || !strings.Contains(msg, "time_range") {
-		t.Fatalf("expected research expansion instructions in prompt, got:\n%s", msg)
+	dealsMsg := buildRoutinePromptMessage("每日羊毛推送", "搜索黑五优惠与云厂商免费 AI 额度", now, snap, "", nil, false)
+	if !strings.Contains(dealsMsg, "推特羊毛博主主编铁律") || !strings.Contains(dealsMsg, "time_range") {
+		t.Fatalf("expected deals curation rules in prompt, got:\n%s", dealsMsg)
+	}
+	techMsg := buildRoutinePromptMessage("每日 AI 与 Go 推荐", "每天搜集 AI 和 Go 的最新前沿动态与开源项目推荐", now, snap, "", nil, false)
+	if !strings.Contains(techMsg, "多维发散调研策略") || !strings.Contains(techMsg, "x_search") {
+		t.Fatalf("expected research expansion instructions in prompt, got:\n%s", techMsg)
 	}
 }

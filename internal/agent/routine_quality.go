@@ -157,6 +157,59 @@ func isResearchOrDigestRoutine(taskName, prompt string) bool {
 	return false
 }
 
+func isDealsRoutine(taskName, prompt string) bool {
+	if isMonitoringRoutine(taskName, prompt) {
+		return false
+	}
+	combined := strings.ToLower(taskName + " " + prompt)
+	dealKeywords := []string{
+		"羊毛", "黑五", "白嫖", "优惠", "折扣", "促销", "福利",
+		"免费用", "免费额度", "赠金", "deal", "freebie", "promo", "black friday",
+	}
+	for _, kw := range dealKeywords {
+		if strings.Contains(combined, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// detectEvergreenPromoFiller catches widely-known, always-available standing offers
+// that models lazily output when they fail to find fresh 24-72h deals.
+func detectEvergreenPromoFiller(reply string) string {
+	lower := strings.ToLower(strings.TrimSpace(reply))
+	if lower == "" {
+		return ""
+	}
+	if (strings.Contains(lower, "google pro") || strings.Contains(lower, "google one") || strings.Contains(lower, "google ai pro") || strings.Contains(lower, "谷歌 pro")) &&
+		(strings.Contains(lower, "10刀") || strings.Contains(lower, "$10") || strings.Contains(lower, "10美元") || strings.Contains(lower, "10 刀") || strings.Contains(lower, "赠金")) {
+		return "Google Pro/One 常驻赠金"
+	}
+	if (strings.Contains(lower, "google cloud") || strings.Contains(lower, "gcp")) &&
+		strings.Contains(lower, "300") &&
+		(strings.Contains(lower, "赠金") || strings.Contains(lower, "试用") || strings.Contains(lower, "新用户") || strings.Contains(lower, "credit")) {
+		return "Google Cloud 新户 300 刀常驻试用"
+	}
+	if (strings.Contains(lower, "oracle") || strings.Contains(lower, "甲骨文")) &&
+		(strings.Contains(lower, "永久免费") || strings.Contains(lower, "always free")) {
+		return "Oracle Cloud 常驻永久免费"
+	}
+	if strings.Contains(lower, "github") &&
+		(strings.Contains(lower, "学生包") || strings.Contains(lower, "student pack") || strings.Contains(lower, "student developer")) {
+		return "GitHub 学生包常驻福利"
+	}
+	if strings.Contains(lower, "aws") &&
+		(strings.Contains(lower, "12个月免费") || strings.Contains(lower, "12 个月免费") || strings.Contains(lower, "12 months free") || strings.Contains(lower, "免费套餐常驻")) {
+		return "AWS 常规 12 个月免费套餐"
+	}
+	if strings.Contains(lower, "azure") &&
+		strings.Contains(lower, "200") &&
+		(strings.Contains(lower, "赠金") || strings.Contains(lower, "新用户") || strings.Contains(lower, "credit")) {
+		return "Azure 新户 200 刀常驻试用"
+	}
+	return ""
+}
+
 var dailyRoutineAngles = []string{
 	"反常识细节与隐藏机制（挑一个大多数人忽略的冷门切入点）",
 	"立刻可落地的一条实用技巧或微行动（具体到步骤或参数）",
@@ -329,12 +382,13 @@ func bigramContainmentRatio(candidate, reference string) float64 {
 
 type routineQualityCheck struct {
 	EchoedExample   string
+	EvergreenFiller string
 	MaxPastSim      float64
 	MostSimilarPast *store.Notification
 }
 
 func (c routineQualityCheck) needsRewrite(isMonitoring bool) bool {
-	if c.EchoedExample != "" {
+	if c.EchoedExample != "" || c.EvergreenFiller != "" {
 		return true
 	}
 	if !isMonitoring && c.MaxPastSim >= 0.38 {
@@ -350,10 +404,17 @@ func (c routineQualityCheck) shouldSuppressMonitoring(isMonitoring bool) bool {
 // evaluateRoutineDraft checks a generated routine reply against both extracted user examples
 // and recent notification history to catch verbatim example echoing or cross-day repetition.
 func evaluateRoutineDraft(reply string, past []store.Notification, exampleSnippets []string) routineQualityCheck {
+	return evaluateRoutineDraftForMode(reply, past, exampleSnippets, false)
+}
+
+func evaluateRoutineDraftForMode(reply string, past []store.Notification, exampleSnippets []string, isDeals bool) routineQualityCheck {
 	var res routineQualityCheck
 	normReply := normalizeCompactText(reply)
 	if normReply == "" {
 		return res
+	}
+	if isDeals {
+		res.EvergreenFiller = detectEvergreenPromoFiller(reply)
 	}
 
 	for _, ex := range exampleSnippets {
@@ -411,12 +472,19 @@ func buildRoutinePromptMessage(
 		sb.WriteString("4. 严禁与下方「历史已推送去重账本」重复相同主题、案例或结构；请主动换一个全新具体切入点。\n")
 	}
 
-	if !isMonitoring && isResearchOrDigestRoutine(taskName, rawPrompt) {
+	isDeals := !isMonitoring && isDealsRoutine(taskName, rawPrompt)
+	if isDeals {
+		sb.WriteString("\n[推特羊毛博主主编铁律]\n")
+		sb.WriteString("1. 严禁常驻老羊毛凑数：绝对禁止推荐 Google One/Pro 常规 10 刀赠金、GCP 新户 300 刀、AWS 常规 12 月免费、Oracle 永久免费、GitHub 学生包、Azure 200 刀等广为人知的常驻福利。\n")
+		sb.WriteString("2. 强制时间稀缺性：只推送最近 24~72 小时内新冒出来的限时口子、黑五活动、新上线免费试用/白嫖玩法（如新模型限免、突发大促码、云/AI 新活动）。\n")
+		sb.WriteString("3. 宁缺毋滥，允许静默：今天只有 1~2 条真新货就只发 1~2 条；若检索后确实没有够格的新口子，请直接仅输出 [SILENT_OK] 静默跳过，绝不拿常驻福利或旧闻凑数。\n")
+		sb.WriteString("4. 推特博主短平快风格：拒绝“今日为您汇总如下”等公文套话；直接按条输出 1~5 条干货，每条写清「一句话狠结论 + 为什么是新口子/时效 + 具体领取路径与门槛 + 原帖或直达链接」。\n")
+		sb.WriteString("5. 检索策略：若上下文已附带 X (Twitter) 实时动态或已启用 x_search，优先从真实 X 推文挖掘，并可追加 x_search(focus=\"deals\", days=2) 与 web_search(topic=\"deals\", time_range=\"day\", lang=\"all\") 交叉核实链接与有效期。\n")
+	} else if !isMonitoring && isResearchOrDigestRoutine(taskName, rawPrompt) {
 		sb.WriteString("\n[多维发散调研策略]\n")
-		sb.WriteString("1. 禁止只用单一宽泛词搜一次就交差：先围绕主题拆解出 3 到 5 个具体子方向，并发起多组精准搜索（中英文结合），务必传入 time_range（\"day\" 或 \"week\"）、匹配 topic（\"tech\"/\"deals\"/\"news\"）和 lang: \"all\"。\n")
-		sb.WriteString("2. 技术/内容推荐类（topic=\"tech\"）：由核心关键词向外发散关联生态与近期突破（如最新模型/Agent/MCP/开源高星新项目/工程最佳实践/论文），挖掘真正值得读的一手项目或深文，别每次只搜大词首页水文。\n")
-		sb.WriteString("3. 羊毛/优惠/活动类（topic=\"deals\"）：分别搜索云厂商免费额度与黑五大促、AI 平台限时免费体验与优惠、开发者工具福利及实时社区讨论，核实仍在有效期内、写明领取条件与直达链接，淘汰过期旧闻。\n")
-		sb.WriteString("4. 对高价值条目进一步抓取原文核实核心数据与细节，输出时每条尽量标注发布时间或有效期与来源链接。\n")
+		sb.WriteString("1. 推特一线技术博主视角：直接挑近 24~72 小时真正有信息量的新项目、新发布、工程拆解或硬核实践发 2~5 条短平快推荐（宁缺毋滥，若确实没有高价值新货可直接输出 [SILENT_OK]）。\n")
+		sb.WriteString("2. 禁止只用单一宽泛词搜一次就交差：围绕主题拆解 3~5 个具体子方向（例如最新 Agent/MCP/模型推理优化、Go 新发布/性能实战/高星新开源项目），若已启用 x_search 优先配合 x_search(focus=\"tech\", days=2) 抓取 X 一线讨论，再并发中英双语 web_search(time_range=\"day\"或\"week\", topic=\"tech\", lang=\"all\")。\n")
+		sb.WriteString("3. 对高价值条目进一步精读原文核实事实与发布时间，输出时每条附带「一句话看点 + 核心事实/代码或工程价值 + 来源/项目链接」。\n")
 	}
 
 	if len(examples) > 0 {
@@ -443,6 +511,9 @@ func buildRoutineRewriteInstruction(check routineQualityCheck, rejectedDraft str
 	if check.EchoedExample != "" {
 		reasons = append(reasons, fmt.Sprintf("你刚刚生成的草稿原样照搬了用户举例「%s」", check.EchoedExample))
 	}
+	if check.EvergreenFiller != "" {
+		reasons = append(reasons, fmt.Sprintf("你刚刚生成的草稿包含了广为人知的常驻老羊毛「%s」", check.EvergreenFiller))
+	}
 	if check.MostSimilarPast != nil && check.MaxPastSim >= 0.38 {
 		reasons = append(reasons, fmt.Sprintf("你刚刚生成的草稿与 %s 的历史推送相似度过高（%.0f%%）", check.MostSimilarPast.CreatedAt, check.MaxPastSim*100))
 	}
@@ -450,9 +521,14 @@ func buildRoutineRewriteInstruction(check routineQualityCheck, rejectedDraft str
 	if reasonText == "" {
 		reasonText = "你刚刚生成的草稿信息密度偏低或与历史推送雷同"
 	}
+	extraRule := "请立即换一个完全不同的全新切入点与具体事实/案例重新撰写。要求：直接给干货，不复读任何用户举例，不解释为什么重写，不要提及“重写/换一个”等元话术。"
+	if check.EvergreenFiller != "" {
+		extraRule = "严禁推荐任何常驻基础福利（Google Pro/One 赠金、GCP 300 刀、Oracle 永久免费、GitHub 学生包等）；请彻底删掉常驻老羊毛，只保留最近 24~72 小时新出现的限时口子/活动；如果今天确实没有够格的新货，请直接仅输出 [SILENT_OK]。"
+	}
 	return fmt.Sprintf(
-		"[系统质量拦截强制重写：%s。请彻底抛弃刚才那版草稿的主题、案例、开头与模板：\n---被拦截草稿---\n%s\n---结束---\n请立即换一个完全不同的全新切入点与具体事实/案例重新撰写。要求：直接给干货，不复读任何用户举例，不解释为什么重写，不要提及“重写/换一个”等元话术。]",
+		"[系统质量拦截强制重写：%s。请彻底抛弃刚才那版草稿的主题、案例、开头与模板：\n---被拦截草稿---\n%s\n---结束---\n%s]",
 		reasonText,
 		truncateRunes(strings.TrimSpace(rejectedDraft), 360),
+		extraRule,
 	)
 }

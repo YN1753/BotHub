@@ -707,6 +707,19 @@ func repairToolArguments(toolName string, rawArgs string) string {
 				delete(m, "limit")
 			}
 		}
+	case "x_search":
+		promoteAlias("query", "q", "keyword", "keywords", "topic")
+		promoteAlias("handles", "x_handles", "accounts", "authors", "users")
+		if hStr, ok := m["handles"].(string); ok {
+			m["handles"] = parseXHandles(hStr)
+		}
+		if dStr, ok := m["days"].(string); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(dStr)); err == nil {
+				m["days"] = n
+			} else {
+				delete(m, "days")
+			}
+		}
 	case "read_url":
 		promoteAlias("url", "link", "href", "target", "target_url", "page_url", "uri")
 	case "remember_fact":

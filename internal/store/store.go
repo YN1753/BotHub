@@ -32,6 +32,9 @@ const (
 	KeyTavilyAPIKey      = "tavily_api_key"
 	KeySerperAPIKey      = "serper_api_key"
 	KeyBraveAPIKey       = "brave_api_key"
+	KeyXAIAPIKey         = "xai_api_key"
+	KeyXAISearchModel    = "xai_search_model"
+	KeyDefaultXHandles   = "default_x_handles"
 	KeySearXNGURL        = "searxng_url"
 	KeyFXRatesCNY        = "fx_rates_cny"
 	KeyDeepSeekAPIKey    = "deepseek_api_key"
@@ -60,6 +63,7 @@ const (
 
 type taskIDCtxKey struct{}
 type taskModelCtxKey struct{}
+type taskXHandlesCtxKey struct{}
 
 // WithTaskID binds a scheduled task's ID to ctx for usage attribution.
 func WithTaskID(ctx context.Context, taskID string) context.Context {
@@ -93,6 +97,35 @@ func TaskModelFromContext(ctx context.Context) string {
 	}
 	v, _ := ctx.Value(taskModelCtxKey{}).(string)
 	return strings.TrimSpace(v)
+}
+
+// WithTaskXHandles attaches optional task-scoped X/Twitter handles to ctx.
+func WithTaskXHandles(ctx context.Context, handles []string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	clean := make([]string, 0, len(handles))
+	for _, h := range handles {
+		t := strings.TrimSpace(h)
+		if t != "" {
+			clean = append(clean, t)
+		}
+	}
+	return context.WithValue(ctx, taskXHandlesCtxKey{}, clean)
+}
+
+// TaskXHandlesFromContext extracts task-scoped X/Twitter handles from ctx, if any.
+func TaskXHandlesFromContext(ctx context.Context) []string {
+	if ctx == nil {
+		return nil
+	}
+	v, _ := ctx.Value(taskXHandlesCtxKey{}).([]string)
+	if len(v) == 0 {
+		return nil
+	}
+	out := make([]string, len(v))
+	copy(out, v)
+	return out
 }
 
 type Store struct {
@@ -660,6 +693,9 @@ func (s *Store) seedDefaults() error {
 		KeyTavilyAPIKey:      "",
 		KeySerperAPIKey:      "",
 		KeyBraveAPIKey:       "",
+		KeyXAIAPIKey:         "",
+		KeyXAISearchModel:    "",
+		KeyDefaultXHandles:   "",
 		KeySearXNGURL:        "",
 		KeyDeepSeekAPIKey:    deepseekKey,
 		KeyDeepSeekBaseURL:   deepseekBaseURL,

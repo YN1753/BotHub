@@ -90,6 +90,7 @@ func init() {
 	builtinToolSpecs = []ToolSpec{
 		readURLToolSpec(),
 		webSearchToolSpec(),
+		xSearchToolSpec(),
 		queryNezhaNodesToolSpec(),
 		manageAssetsToolSpec(),
 		manageTasksToolSpec(),

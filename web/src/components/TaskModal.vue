@@ -403,7 +403,7 @@ async function handleOptimizePrompt() {
           <div
             v-for="f in currentFields"
             :key="f.key"
-            :class="['flex flex-col gap-1 text-xs text-fg-sub', f.key === 'prompt' ? 'sm:col-span-2' : '']"
+            :class="['flex flex-col gap-1 text-xs text-fg-sub', (f.key === 'prompt' || f.key === 'x_handles') ? 'sm:col-span-2' : '']"
           >
             <div class="flex items-center justify-between gap-2">
               <span>{{ f.label }}</span>

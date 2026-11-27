@@ -52,6 +52,14 @@ func BuiltinTemplates() []TaskTemplate {
 					Hint:        "到达设定时间后，系统将以归属 Bot 身份执行这段指令并推送结果",
 				},
 				{
+					Key:         "x_handles",
+					Label:       "关注 X/Twitter 博主（可选）",
+					Type:        "text",
+					DefaultVal:  "",
+					Placeholder: "逗号或空格分隔，如 @xxx, @yyy（留空则全网检索 X 实时帖）",
+					Hint:        "配置 xAI API Key 后，定时触发将定向抓取这些博主近 24~48 小时的真实推文",
+				},
+				{
 					Key:        "notify",
 					Label:      "同时投递至原生 APP 收件箱",
 					Type:       "select",
